@@ -190,6 +190,17 @@ Completed runs update `current/model/` in the CI directory. Reports, diffs, logs
 
 CI returns exit code `2` when the current confirmation results contain `REPRODUCED` or `ENV_LIMITED` bugs, regardless of whether the update introduced them. `MASKED` findings produce a warning and exit code `0`; completed checks without these findings also return `0`. Unfinished checks return a nonzero exit code. Inspect `ci-report.md` and `ci-verdict.json` for the incremental result and evidence. Initialization derives the same verdict from `confirmed-bugs.md`.
 
+Once a run starts, it records its outcome in `runs/<run-id>/ci-result.json`. A completed run has `"complete": true` and its verdict. An unfinished run has `"complete": false`, its exit code, a `failure` category, and `resume`, the resume command, or `null` when the run cannot be resumed:
+
+| `failure` | Meaning |
+|---|---|
+| `provider` | The Agent provider stopped the run after its retry budget; `reason` is `rate_limit`, `temporary`, `credentials`, or `policy`. |
+| `interrupted` | The run received SIGINT, SIGTERM, or SIGHUP. |
+| `incomplete` | The workflow did not produce an accepted result, but its conversation or post-confirmation work can be resumed. |
+| `error` | Specula stopped on an error and the run cannot be resumed; fix it and start a new run. |
+
+None of these categories is a finding about the checked source.
+
 `NEEDS MORE INFO` and `DEFERRED` are nonblocking for new findings. A remaining `PENDING REPAIR` fails CI.
 
 ### Resume an interrupted run
@@ -214,7 +225,7 @@ Same-repository PRs check the proposed merged code without changing the branch's
 
 Manual runs are available in the Actions tab. Uncomment `schedule` to enable cron; use `SPECULA_CI_BRANCH` to select a non-default branch for scheduled runs. Change `SPECULA_CI_ENVIRONMENT` when updating the runner's toolchain or external configuration so older check results are not reused under a different setup.
 
-The Actions summary lists each revision's outcome, with downloadable reports and usage summaries. Full working files and conversation state stay in the CI directory. Agent calls may recover within their configured retry budgets. Once a check exits with a failure, Actions reports it without automatically rerunning the check; use the existing resume command or request an explicit manual rerun.
+The Actions summary lists each revision's outcome, including the failure category and resume command of an unfinished check, with downloadable reports, `ci-result.json`, and usage summaries. Full working files and conversation state stay in the CI directory. Agent calls may recover within their configured retry budgets. Once a check exits with a failure, Actions reports it without automatically rerunning the check; use the existing resume command or request an explicit manual rerun.
 
 ## Bring Your Own Model (BYOM)
 

@@ -8,10 +8,13 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
+import time
 import unittest
 from pathlib import Path
+from typing import Any
 
 import test_cli_pipeline as fixtures
 
@@ -142,7 +145,9 @@ class IncrementalCLI(unittest.TestCase):
         self.assertTrue((work / "confirmed-bugs.md").is_file())
         self.assertEqual(list((run / ".specula-resume/active").glob("*.json")), [])
         self.assertEqual(json.loads((work / "spec/final-result.json").read_text()), prior)
-        self.assertFalse((run / "ci-result.json").exists())
+        record = self.unfinished(run)
+        self.assertEqual(record["failure"], "incomplete")
+        self.assertIn(f"To resume post-confirmation processing: {record['resume']}", failed.stdout)
         self.assertIsNone(CIStore(self.ci).current_token())
         phases = Path(f"{self.adapter}.phases").read_text().splitlines()
 
@@ -477,14 +482,21 @@ class IncrementalCLI(unittest.TestCase):
                 self.assertEqual(result.returncode, codes[-1], result.stdout + result.stderr)
                 self.assertEqual(Path(f"{self.adapter}.attempts").read_text(), "3\n")
                 self.assertEqual((self.ci / "current").resolve(), previous)
-                self.assertFalse((self.latest() / "ci-result.json").exists())
+                record = self.unfinished()
+                self.assertEqual(record["failure"], "provider")
+                self.assertEqual(record["reason"], {74: "temporary", 76: "policy"}[codes[-1]])
 
     def test_incremental_zero_budgets_and_rate_limits_stop_without_retry(self) -> None:
         self.initialize()
         previous = (self.ci / "current").resolve()
         self.change_source("disabled retry fixture\n")
         original = self.adapter.read_text()
-        for code, flags in ((74, ["--transient-resumes=0"]), (76, ["--policy-retries=0"]), (75, [])):
+        for code, flags, reason in (
+            (74, ["--transient-resumes=0"], "temporary"),
+            (72, ["--transient-resumes=0"], "credentials"),
+            (76, ["--policy-retries=0"], "policy"),
+            (75, [], "rate_limit"),
+        ):
             with self.subTest(code=code):
                 self.adapter.write_text(original)
                 Path(f"{self.adapter}.attempts").unlink(missing_ok=True)
@@ -493,7 +505,9 @@ class IncrementalCLI(unittest.TestCase):
                 self.assertEqual(result.returncode, code, result.stdout + result.stderr)
                 self.assertEqual(Path(f"{self.adapter}.attempts").read_text(), "1\n")
                 self.assertEqual((self.ci / "current").resolve(), previous)
-                self.assertFalse((self.latest() / "ci-result.json").exists())
+                record = self.unfinished()
+                self.assertEqual((record["exit_code"], record["failure"], record["reason"]), (code, "provider", reason))
+                self.assertEqual(record["resume"], f"specula run --ci-dir={self.ci} --run-id={self.latest().name}")
 
     def test_successful_retry_still_requires_incremental_completion(self) -> None:
         self.initialize()
@@ -508,7 +522,7 @@ class IncrementalCLI(unittest.TestCase):
         self.assertEqual(Path(f"{self.adapter}.attempts").read_text(), "2\n")
         self.assertIn("did not report completion", result.stdout)
         self.assertEqual((self.ci / "current").resolve(), previous)
-        self.assertFalse((self.latest() / "ci-result.json").exists())
+        self.unfinished()
 
     def test_confirmed_bugs_fail_but_publish_a_completed_model(self) -> None:
         self.initialize()
@@ -633,7 +647,7 @@ class IncrementalCLI(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("unresolved or invalid final status: PENDING REPAIR", result.stdout)
         self.assertEqual((self.ci / "current").resolve(), baseline)
-        self.assertFalse((self.latest() / "ci-result.json").exists())
+        self.unfinished()
 
     def test_old_findings_require_a_current_disposition_even_without_model_changes(self) -> None:
         self.initialize()
@@ -648,7 +662,7 @@ class IncrementalCLI(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("prior findings need current confirmation: MC-1", result.stdout)
         self.assertEqual((self.ci / "current").resolve(), baseline)
-        self.assertFalse((self.latest() / "ci-result.json").exists())
+        self.unfinished()
         summary = (self.latest() / "footest/.specula-output/summary.md").read_text()
         self.assertNotIn("CI verdict: **PASS**", summary)
         self.assertIn("Run status: **Incomplete**", summary)
@@ -673,11 +687,16 @@ class IncrementalCLI(unittest.TestCase):
         self.assertEqual(failed.returncode, 1, failed.stdout + failed.stderr)
         self.assertEqual((self.ci / "current").resolve(), previous)
         run = self.latest()
-        self.assertFalse((run / "ci-result.json").exists())
+        record = self.unfinished(run)
+        self.assertEqual(record["failure"], "incomplete")
+        self.assertNotIn("reason", record)
+        self.assertEqual(record["resume"], f"specula run --ci-dir={self.ci} --run-id={run.name}")
+        self.assertIn(f"To resume the conversation: {record['resume']}", failed.stdout)
         self.assertEqual(Path(f"{self.adapter}.phases").read_text().splitlines().count("incremental"), 1)
         flag.unlink()
         resumed = self.run_ci(f"--run-id={run.name}")
         self.assertEqual(resumed.returncode, 0, resumed.stdout + resumed.stderr)
+        self.assertEqual(json.loads((run / "ci-result.json").read_text())["verdict"], "PASS")
         self.assertTrue((self.ci / "current/model/spec/final-result.json").is_file())
         self.assertTrue((self.ci / "current/model/confirmed-bugs.md").is_file())
         summary = (run / "footest/.specula-output/summary.md").read_text()
@@ -756,6 +775,14 @@ class IncrementalCLI(unittest.TestCase):
 
     def latest(self) -> Path:
         return (self.ci / "runs/latest").resolve()
+
+    def unfinished(self, run: Path | None = None) -> dict[str, Any]:
+        run = run or self.latest()
+        record: dict[str, Any] = json.loads((run / "ci-result.json").read_text())
+        self.assertEqual(record["run_id"], run.name)
+        self.assertIs(record["complete"], False)
+        self.assertNotIn("verdict", record)
+        return record
 
     def supplied_model(self) -> Path:
         model = self.work / "Supplied.tla"
@@ -858,7 +885,7 @@ class IncrementalCLI(unittest.TestCase):
         self.assertEqual(first.returncode, 9, first.stdout + first.stderr)
         run = self.latest()
         self.assertFalse((self.ci / "current").is_symlink())
-        self.assertFalse((run / "ci-result.json").exists())
+        self.unfinished(run)
         baseline = (run / "ci-baseline.json").read_bytes()
         self.assertEqual(json.loads(baseline)["validation_status"], "UNVERIFIED")
         phases_before = Path(f"{self.adapter}.phases").read_bytes()
@@ -936,7 +963,7 @@ class IncrementalCLI(unittest.TestCase):
         result = self.run_ci("--ci-init", "--agent=fake", f"--artifact={self.source}", f"--byom={supplied}", "footest")
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse((self.ci / "current").is_symlink())
-        self.assertFalse((self.latest() / "ci-result.json").exists())
+        self.unfinished()
 
     def test_initialization_then_single_agent_incremental_update(self) -> None:
         self.initialize()
@@ -1000,7 +1027,7 @@ class IncrementalCLI(unittest.TestCase):
         work = run / "footest/.specula-output"
         self.assertFalse((work / "ci-report.md").exists())
         self.assertEqual((work / "spec/base.tla").read_text(), "unfinished edit\n")
-        self.assertFalse((run / "ci-result.json").exists())
+        self.assertEqual(self.unfinished(run)["failure"], "incomplete")
         original_diff = (run / "source.diff").read_bytes()
         self.change_source("version C\n")
         flag.unlink()
@@ -1130,6 +1157,76 @@ class IncrementalCLI(unittest.TestCase):
         result = self.run_ci("--incremental", "--agent=fake", f"--revision={self.initial_sha}")
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(Path(str(self.adapter) + ".phases").read_text(), phases)
+        record = self.unfinished()
+        self.assertEqual((record["exit_code"], record["failure"], record["resume"]), (1, "error", None))
+
+    def test_terminated_run_records_an_interruption(self) -> None:
+        self.initialize()
+        previous = (self.ci / "current").resolve()
+        self.change_source("terminated update\n")
+        started = self.work / "agent-started"
+        self.adapter.write_text(
+            self.adapter.read_text().replace(
+                "  incremental)\n",
+                "  incremental)\n"
+                '    printf "fixture-native-session\\n" > "$resume"\n'
+                f'    touch "{started}"\n'
+                "    sleep 60\n",
+            )
+        )
+        env = {key: value for key, value in os.environ.items() if key not in fixtures._VOLATILE}
+        env["HOME"] = str(self.work)
+        process = subprocess.Popen(
+            [sys.executable, str(self.root / "src/specula/cli.py"), "run", f"--ci-dir={self.ci}"]
+            + ["--incremental", "--agent=fake"],
+            cwd=self.work,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        try:
+            for _ in range(600):
+                if started.exists() or process.poll() is not None:
+                    break
+                time.sleep(0.1)
+            self.assertTrue(started.exists(), "the fixture Agent did not start")
+            process.send_signal(signal.SIGTERM)
+            output, _ = process.communicate(timeout=60)
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait()
+        self.assertEqual(process.returncode, 143, output)
+        self.assertEqual((self.ci / "current").resolve(), previous)
+        record = self.unfinished()
+        self.assertEqual(record["failure"], "interrupted")
+        self.assertEqual(record["resume"], f"specula run --ci-dir={self.ci} --run-id={self.latest().name}")
+
+    def test_publication_failure_after_the_agent_finishes_is_not_resumable(self) -> None:
+        self.initialize()
+        previous = (self.ci / "current").resolve()
+        self.change_source("publication failure\n")
+        script = (
+            "import sys\nfrom unittest.mock import patch\n"
+            f"sys.path.insert(0, {str(self.root / 'src')!r})\n"
+            "from specula import pipelinelib\n"
+            "with patch('specula.ci_store.CIStore.publish', side_effect=OSError('injected storage failure')):\n"
+            "    raise SystemExit(pipelinelib.main(sys.argv[1:]))\n"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", script, f"--ci-dir={self.ci}", "--incremental", "--agent=fake"],
+            cwd=self.work,
+            env={key: value for key, value in os.environ.items() if key not in fixtures._VOLATILE},
+            capture_output=True,
+            text=True,
+            timeout=90,
+        )
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("CI state was not updated: injected storage failure", result.stdout)
+        self.assertEqual((self.ci / "current").resolve(), previous)
+        record = self.unfinished()
+        self.assertEqual((record["exit_code"], record["failure"], record["resume"]), (1, "error", None))
 
     def test_dry_run_does_not_publish_or_instrument(self) -> None:
         result = self.run_ci("--ci-init", "--dry-run", f"--artifact={self.source}", "footest")

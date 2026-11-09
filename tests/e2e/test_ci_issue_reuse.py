@@ -103,7 +103,7 @@ class IssueReuseCLI(unittest.TestCase):
         rejected = fixture.run_ci("--incremental", "--agent=fake", "--transient-resumes=0")
         self.assertNotEqual(rejected.returncode, 0)
         self.assertEqual((fixture.ci / "current/model").resolve(), current)
-        self.assertFalse((fixture.latest() / "ci-result.json").exists())
+        fixture.unfinished()
         work = fixture.latest() / "footest/.specula-output"
         self.assertFalse((work / persistent_findings.RECEIPTS / "MC-1.json").exists())
         self.assertFalse((work / "spec/issue-input/MC-1.json").exists())

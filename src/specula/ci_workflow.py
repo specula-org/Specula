@@ -7,12 +7,15 @@ import os
 import re
 import shlex
 import shutil
+import signal
 import stat
 import sys
 from pathlib import Path
 from typing import Any
 
-from specula import ci_init, ci_result, ci_verdict, persistent_findings, resumelib
+from specula import ci_init, ci_result, ci_verdict, persistent_findings, quota, resumelib
+from specula.adapters.utils.policy import POLICY_BLOCKED_RC
+from specula.adapters.utils.transient import AUTH_REFRESH_FAILURE_RC, TRANSIENT_FAILURE_RC
 from specula.ci_identity import check_key
 from specula.ci_inheritance import register_candidate
 from specula.ci_store import CIError, CIStore, freeze_source, git, read_json, write_json
@@ -22,6 +25,36 @@ from specula.pipelinelib import Pipeline, _valid_run_id
 from specula.snapshotlib import load_sources
 
 INCREMENTAL_PHASE_OPTIONS = frozenset({"--legacy-confirm", "--max-repair-rounds"})
+
+PROVIDER_FAILURES = {
+    quota.RATE_LIMIT_RC: "rate_limit",
+    TRANSIENT_FAILURE_RC: "temporary",
+    AUTH_REFRESH_FAILURE_RC: "credentials",
+    POLICY_BLOCKED_RC: "policy",
+}
+INTERRUPTED_EXIT_CODES = frozenset(128 + signum for signum in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM))
+
+
+def failure_result(run_id: str, exit_code: int, *, candidate: bool, resume: str | None) -> dict[str, Any]:
+    reason = PROVIDER_FAILURES.get(exit_code)
+    if reason is not None:
+        failure = "provider"
+    elif exit_code in INTERRUPTED_EXIT_CODES:
+        failure = "interrupted"
+    else:
+        failure = "incomplete" if resume is not None else "error"
+    result: dict[str, Any] = {
+        "run_id": run_id,
+        "complete": False,
+        "candidate": candidate,
+        "exit_code": exit_code,
+        "failure": failure,
+    }
+    if reason is not None:
+        result["reason"] = reason
+    result["resume"] = resume
+    return result
+
 
 INCREMENTAL_USAGE = """
 Incremental Specula CI: one update conversation with parallel bug confirmation.
@@ -469,19 +502,47 @@ class CIPipeline(Pipeline):
         assert self.store is not None
         return self.store.current_token() is not None
 
+    def _resume_command(self) -> tuple[str, str] | None:
+        resume = f"specula run --ci-dir={shlex.quote(str(self.ci_dir))} --run-id={self.run_id}"
+        if self.run_dir is not None and resumelib.active_entries(self.run_dir):
+            return "the conversation", resume
+        if self._can_resume_ci_post_confirmation():
+            return "post-confirmation processing", resume
+        return None
+
+    def _record_failure(self, exit_code: int, resume: tuple[str, str] | None) -> None:
+        if self.run_dir is None:
+            return
+        record = failure_result(self.run_id, exit_code, candidate=self.candidate, resume=resume[1] if resume else None)
+        for path in (self.run_dir / "ci-result.json", self.receipt):
+            if path is None:
+                continue
+            with contextlib.suppress(OSError, ValueError, CIError):
+                if read_json(path).get("complete") is True:
+                    continue
+            with contextlib.suppress(OSError):
+                write_json(path, record)
+
     def finalize_ci_run(self, exit_code: int) -> tuple[str | None, int]:
         if self.dry_run:
             return None, exit_code
-        resume = f"specula run --ci-dir={shlex.quote(str(self.ci_dir))} --run-id={self.run_id}"
         if exit_code:
-            if self.run_dir is not None and resumelib.active_entries(self.run_dir):
-                return f"Current CI model unchanged. To resume the conversation: {resume}", exit_code
-            if self._can_resume_ci_post_confirmation():
-                return f"Current CI model unchanged. To resume post-confirmation processing: {resume}", exit_code
+            resume = self._resume_command()
+            self._record_failure(exit_code, resume)
+            if resume is not None:
+                return f"Current CI model unchanged. To resume {resume[0]}: {resume[1]}", exit_code
             return (
                 "Current CI model unchanged. No unfinished conversation is available; fix the error and start a new run.",
                 exit_code,
             )
+        try:
+            return self._publish_completed_run()
+        except Exception:
+            with contextlib.suppress(Exception):
+                self._record_failure(1, self._resume_command())
+            raise
+
+    def _publish_completed_run(self) -> tuple[str, int]:
         if self.inputs is None or self.store is None or self.run_dir is None:
             raise CIError("no frozen CI inputs; current model unchanged")
         source = self.store.path(self.inputs["source"])
