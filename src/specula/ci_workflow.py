@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from specula import ci_init, ci_result, ci_verdict, persistent_findings, quota, resumelib
+from specula import ci_init, ci_result, ci_verdict, persistent_findings, quota, resource_summary, resumelib
 from specula.adapters.utils.policy import POLICY_BLOCKED_RC
 from specula.adapters.utils.transient import AUTH_REFRESH_FAILURE_RC, TRANSIENT_FAILURE_RC
 from specula.ci_identity import check_key
@@ -35,7 +35,14 @@ PROVIDER_FAILURES = {
 INTERRUPTED_EXIT_CODES = frozenset(128 + signum for signum in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM))
 
 
-def failure_result(run_id: str, exit_code: int, *, candidate: bool, resume: str | None) -> dict[str, Any]:
+def failure_result(
+    run_id: str,
+    exit_code: int,
+    *,
+    candidate: bool,
+    resume: str | None,
+    usage: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     reason = PROVIDER_FAILURES.get(exit_code)
     if reason is not None:
         failure = "provider"
@@ -53,6 +60,7 @@ def failure_result(run_id: str, exit_code: int, *, candidate: bool, resume: str 
     if reason is not None:
         result["reason"] = reason
     result["resume"] = resume
+    result["usage"] = usage
     return result
 
 
@@ -510,10 +518,26 @@ class CIPipeline(Pipeline):
             return "post-confirmation processing", resume
         return None
 
+    def _usage(self) -> dict[str, Any] | None:
+        # Read the durable state so a resumed run reports its cumulative usage.
+        with contextlib.suppress(Exception):
+            names = self.extract_names()
+            if self.run_dir is not None and len(names) == 1:
+                usage = resource_summary.read_usage(Path(self.get_work_dir(names[0])), names[0])
+                if usage is not None:
+                    return usage.to_object()
+        return None
+
     def _record_failure(self, exit_code: int, resume: tuple[str, str] | None) -> None:
         if self.run_dir is None:
             return
-        record = failure_result(self.run_id, exit_code, candidate=self.candidate, resume=resume[1] if resume else None)
+        record = failure_result(
+            self.run_id,
+            exit_code,
+            candidate=self.candidate,
+            resume=resume[1] if resume else None,
+            usage=self._usage(),
+        )
         for path in (self.run_dir / "ci-result.json", self.receipt):
             if path is None:
                 continue
@@ -576,6 +600,7 @@ class CIPipeline(Pipeline):
             "verdict": verdict,
             "candidate": self.candidate,
             "snapshot": token,
+            "usage": self._usage(),
         }
         write_json(self.run_dir / "ci-result.json", result)
         if self.receipt is not None:

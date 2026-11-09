@@ -312,6 +312,27 @@ class IncrementalCLI(unittest.TestCase):
         self.assertAlmostEqual(state["phases"]["incremental"]["cost_usd"], 0.02)
         self.assertAlmostEqual(state["phases"]["phase4a"]["cost_usd"], 0.06)
 
+    def test_result_and_summary_count_confirmation_usage(self) -> None:
+        self.initialize()
+        self.change_source("new candidates\n")
+        config = self.confirmation_fixture()
+        result = self.run_ci("--incremental", f"--agent-config={config}", "--max-parallel=2")
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        work = self.latest() / "footest/.specula-output"
+        phases = json.loads((work / ".resource-summary-state.json").read_text())["phases"]
+        self.assertGreater(phases["phase4a"]["cost_usd"], 0)
+        spent = phases["incremental"]["cost_usd"] + phases["phase4a"]["cost_usd"]
+        summary = (work / "summary.md").read_text()
+        self.assertRegex(summary, r"\| Phase 4a \| \d+s \| [^|]+ \| \$0\.\d\d \|")
+        self.assertRegex(summary, rf"\| \*\*Total\*\* \| \d+s \| [^|]+ \| \${spent:.2f} \|")
+        usage = json.loads((self.latest() / "ci-result.json").read_text())["usage"]
+        self.assertEqual(list(usage["phases"]), ["incremental", "phase4a"])
+        self.assertAlmostEqual(usage["cost_usd"], spent)
+        self.assertEqual(
+            usage["total_tokens"], phases["incremental"]["total_tokens"] + phases["phase4a"]["total_tokens"]
+        )
+        self.assertIs(usage["complete"], True)
+
     def test_confirmation_failure_resumes_workers_before_main_and_reuses_history_next_run(self) -> None:
         self.initialize()
         self.change_source("new candidates\n")
@@ -970,6 +991,10 @@ class IncrementalCLI(unittest.TestCase):
 
     def test_initialization_then_single_agent_incremental_update(self) -> None:
         self.initialize()
+        initialized = json.loads((self.latest() / "ci-result.json").read_text())
+        self.assertEqual(
+            list(initialized["usage"]["phases"]), ["phase1", "phase2", "phase2_5", "phase3", "phase4a", "phase4b"]
+        )
         old = (self.ci / "current").resolve()
         self.change_source("updated\n")
         result = self.run_ci("--incremental", "--agent=fake")
@@ -989,6 +1014,15 @@ class IncrementalCLI(unittest.TestCase):
         self.assertEqual(usage["phases"]["incremental"]["total_tokens"], 150)
         self.assertEqual(usage["phases"]["incremental"]["cost_usd"], 0.01)
         self.assertTrue(usage["run_complete"])
+        recorded = json.loads((self.latest() / "ci-result.json").read_text())["usage"]
+        self.assertEqual(
+            recorded["phases"]["incremental"]["runtime_seconds"], usage["phases"]["incremental"]["runtime_seconds"]
+        )
+        self.assertEqual(
+            {key: recorded[key] for key in ("complete", "total_tokens", "cached_input_tokens", "cost_usd")},
+            {"complete": True, "total_tokens": 150, "cached_input_tokens": 50, "cost_usd": 0.01},
+        )
+        self.assertEqual(list(recorded["phases"]), ["incremental"])
 
     def test_repair_can_finish_without_an_intermediate_ci_report(self) -> None:
         self.initialize()
@@ -1030,7 +1064,13 @@ class IncrementalCLI(unittest.TestCase):
         work = run / "footest/.specula-output"
         self.assertFalse((work / "ci-report.md").exists())
         self.assertEqual((work / "spec/base.tla").read_text(), "unfinished edit\n")
-        self.assertEqual(self.unfinished(run)["failure"], "incomplete")
+        failed = self.unfinished(run)
+        self.assertEqual(failed["failure"], "incomplete")
+        # The crashed attempt wrote no usage sidecar: its runtime counts, its tokens and cost are unknown.
+        self.assertIs(failed["usage"]["complete"], False)
+        self.assertGreater(failed["usage"]["runtime_seconds"], 0)
+        self.assertIsNone(failed["usage"]["total_tokens"])
+        self.assertIsNone(failed["usage"]["cost_usd"])
         original_diff = (run / "source.diff").read_bytes()
         self.change_source("version C\n")
         flag.unlink()
@@ -1046,6 +1086,12 @@ class IncrementalCLI(unittest.TestCase):
         usage = json.loads((run / "footest/.specula-output/.resource-summary-state.json").read_text())
         self.assertEqual(usage["phases"]["incremental"]["total_tokens"], 150)
         self.assertTrue(usage["phases"]["incremental"]["usage_incomplete"])
+        recorded = json.loads((run / "ci-result.json").read_text())
+        self.assertIs(recorded["complete"], True)
+        # Both attempts count, and the unmeasured first attempt keeps the total partial.
+        self.assertGreater(recorded["usage"]["runtime_seconds"], failed["usage"]["runtime_seconds"])
+        self.assertEqual((recorded["usage"]["total_tokens"], recorded["usage"]["cost_usd"]), (150, 0.01))
+        self.assertIs(recorded["usage"]["complete"], False)
 
     def test_candidate_resume_cannot_update_the_current_model(self) -> None:
         self.initialize()
@@ -1162,6 +1208,7 @@ class IncrementalCLI(unittest.TestCase):
         self.assertEqual(Path(str(self.adapter) + ".phases").read_text(), phases)
         record = self.unfinished()
         self.assertEqual((record["exit_code"], record["failure"], record["resume"]), (1, "error", None))
+        self.assertIsNone(record["usage"])
 
     def test_terminated_run_records_an_interruption(self) -> None:
         self.initialize()
@@ -1205,6 +1252,11 @@ class IncrementalCLI(unittest.TestCase):
         record = self.unfinished()
         self.assertEqual(record["failure"], "interrupted")
         self.assertEqual(record["resume"], f"specula run --ci-dir={self.ci} --run-id={self.latest().name}")
+        # The terminated Agent never finished its record, so nothing is reported as measured.
+        self.assertEqual(
+            {key: record["usage"][key] for key in ("complete", "runtime_seconds", "total_tokens", "cost_usd")},
+            {"complete": False, "runtime_seconds": None, "total_tokens": None, "cost_usd": None},
+        )
 
     def test_publication_failure_after_the_agent_finishes_is_not_resumable(self) -> None:
         self.initialize()

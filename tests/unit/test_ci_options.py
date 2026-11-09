@@ -233,3 +233,9 @@ class FailureResult(unittest.TestCase):
                     {key: record[key] for key in ("run_id", "complete", "candidate", "exit_code", "resume")},
                     {"run_id": "r1", "complete": False, "candidate": True, "exit_code": code, "resume": saved},
                 )
+                self.assertIsNone(record["usage"])
+
+    def test_failure_records_the_usage_spent_before_stopping(self) -> None:
+        usage = {"complete": True, "runtime_seconds": 3.0, "cost_usd": 0.02}
+        record = failure_result("r1", 75, candidate=False, resume=None, usage=usage)
+        self.assertEqual(record["usage"], usage)

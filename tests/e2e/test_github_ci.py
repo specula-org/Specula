@@ -108,16 +108,20 @@ class GitHubEvents(unittest.TestCase):
     def test_pr_result_is_inherited_after_squash_without_another_agent(self) -> None:
         self.prepare_pr()
         previous = (self.ci / "current").resolve()
-        checked, _ = self.open_pr()
+        checked, pr_reports = self.open_pr()
         self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
         self.assertEqual(self.calls(), 1)
         self.assertEqual((self.ci / "current").resolve(), previous)
+        self.assertRegex(
+            (pr_reports / "summary.md").read_text(), r"\| candidate checked \| PASS \| [^|]+ \| \d+s, \$0\.01 \|"
+        )
         merged = self.squash()
         pushed, reports = self.push()
         self.assertEqual(pushed.returncode, 0, pushed.stdout + pushed.stderr)
         self.assertEqual(self.calls(), 1)
         self.assertEqual(CIStore(self.ci).current()["source_commit"], merged)
-        self.assertIn("inherited PR result", (reports / "summary.md").read_text())
+        # The inherited row launched no Agent, so it does not repeat the PR check's cost.
+        self.assertRegex((reports / "summary.md").read_text(), r"\| inherited PR result \| PASS \| [^|]+ \| - \|")
         self.assertTrue(list(reports.glob("*/summary.md")))
         self.assertFalse(list(reports.rglob("*.resume.json")))
 
@@ -348,15 +352,23 @@ class GitHubEvents(unittest.TestCase):
         )
         summary = (reports / "summary.md").read_text()
         self.assertIn("| failed (provider: rate_limit) | - |", summary)
+        # The rate-limited Agent reported no token usage, so only its runtime is known.
+        self.assertRegex(summary, rf"\| failed \(provider: rate_limit\) \| - \| {run.name} \| \d+s \(incomplete\) \|")
         self.assertIn(f"<code>{resume}</code>", summary)
         exported = json.loads((reports / run.name / "ci-result.json").read_text())
         self.assertEqual((exported["complete"], exported["failure"]), (False, "provider"))
+        self.assertIs(exported["usage"]["complete"], False)
+        self.assertGreater(exported["usage"]["runtime_seconds"], 0)
+        self.assertIsNone(exported["usage"]["cost_usd"])
 
         result, reports = self.push()
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(self.calls(), 1)
         summary = (reports / "summary.md").read_text()
         self.assertIn("already attempted (failed) (provider: rate_limit)", summary)
+        self.assertRegex(
+            summary, rf"\| already attempted \(failed\) \(provider: rate_limit\) \| - \| {run.name} \| - \|"
+        )
         self.assertIn(f"<code>{resume}</code>", summary)
 
         # A manual resume on the runner changes the outcome without a new attempt record.
@@ -377,7 +389,13 @@ class GitHubEvents(unittest.TestCase):
         run = self.fixture.latest()
         exported = json.loads((reports / run.name / "ci-result.json").read_text())
         self.assertEqual((exported["complete"], exported["verdict"]), (True, "PASS"))
-        self.assertNotIn("Resume an unfinished check", (reports / "summary.md").read_text())
+        self.assertEqual(
+            {key: exported["usage"][key] for key in ("complete", "total_tokens", "cached_input_tokens", "cost_usd")},
+            {"complete": True, "total_tokens": 150, "cached_input_tokens": 50, "cost_usd": 0.01},
+        )
+        summary = (reports / "summary.md").read_text()
+        self.assertRegex(summary, rf"\| checked \| PASS \| {run.name} \| \d+s, \$0\.01 \|")
+        self.assertNotIn("Resume an unfinished check", summary)
 
     def test_failure_is_not_retried_by_schedule_but_manual_force_can_rerun(self) -> None:
         self.fixture.change_source("B\n")
