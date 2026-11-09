@@ -22,6 +22,10 @@ PHASES = frozenset(
         "review",
     }
 )
+# Route keys that only --orchestration=single-session reads; phased runs reject them.
+SINGLE_SESSION_ONLY_PHASES = frozenset({"main"})
+# Phased routes whose work one single-session main session performs.
+MAIN_SESSION_PHASES = ("analyze", "specgen", "harness", "validate", "repair")
 _TOP_LEVEL_FIELDS = frozenset({"version", "default_profile", "profiles", "phases"})
 _PROFILE_FIELDS = frozenset({"agent", "model", "effort"})
 
@@ -52,6 +56,34 @@ class AgentRouting:
         if profile is None:
             return self.default
         return self.profiles[profile]
+
+    def _main_session(self) -> tuple[AgentSelection, list[str]]:
+        explicit = self.phases.get("main")
+        if explicit is not None:
+            main = self.profiles[explicit]
+            routes = [phase for phase in MAIN_SESSION_PHASES if phase in self.phases]
+        else:
+            main = self.resolve("analyze")
+            # An unlisted repair route follows validate, exactly as in phased runs.
+            routes = [phase for phase in MAIN_SESSION_PHASES if phase != "repair" or phase in self.phases]
+        differing = [
+            phase for phase in routes if self.resolve(phase, fallback="validate" if phase == "repair" else None) != main
+        ]
+        return main, differing
+
+    def main_selection(self) -> AgentSelection:
+        """Selection for the single-session main session (analysis through repair)."""
+        main, differing = self._main_session()
+        if differing:
+            raise AgentConfigError(
+                f"agent config routes {', '.join(differing)} to a different profile than the main session; "
+                "one single-session main session uses a single profile"
+            )
+        return main
+
+    def main_session_differences(self) -> list[str]:
+        """Phased routes that one single-session main session cannot honor."""
+        return self._main_session()[1]
 
 
 def _as_object(value: object, location: str) -> dict[str, object]:
@@ -128,7 +160,7 @@ def load_agent_routing(path: Path) -> AgentRouting:
     raw_phases = _as_object(raw_phases_value, "agent config field 'phases'")
     phases: dict[str, str] = {}
     for phase, raw_profile_name in raw_phases.items():
-        if phase not in PHASES:
+        if phase not in PHASES and phase not in SINGLE_SESSION_ONLY_PHASES:
             raise AgentConfigError(f"agent config contains unknown phase '{phase}'")
         if not isinstance(raw_profile_name, str):
             raise AgentConfigError(f"phase '{phase}' must reference a profile by name")

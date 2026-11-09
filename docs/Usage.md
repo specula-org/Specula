@@ -305,7 +305,7 @@ specula run --agent-config=/abs/path/hybrid-agents.json ...
 
 Unmapped phases use `default_profile`. `repair` inherits `validate`, and reviews inherit the phase they review unless either is mapped explicitly.
 
-Valid phase keys are `analyze`, `specgen`, `harness`, `validate`, `confirm`, `repair`, `classify`, and `review`.
+Valid phase keys are `analyze`, `specgen`, `harness`, `validate`, `confirm`, `repair`, `classify`, and `review`. With `--orchestration=single-session`, `main` selects the profile of the single session that runs Phases 1-3; `analyze`, `specgen`, `harness`, `validate`, and `repair` must then all resolve to that profile.
 
 With `--incremental`, `default_profile` selects the main Agent and `phases.confirm` optionally selects the confirmation Agent. Other phase overrides are not supported. Confirmation uses the one-shot workflow, with up to 4 concurrent tasks by default (`--max-parallel=N`); `--confirm-debate` enables debate, which is off by default. The main Agent waits for confirmation and then continues the same conversation.
 
@@ -491,6 +491,7 @@ specula run [options] "name|owner/repository|language|reference"
 | `--skip-analysis`, `--skip-specgen`, `--skip-harness` | Reuse earlier outputs |
 | `--skip-validate`, `--skip-confirmation`, `--skip-classification` | Reuse later outputs |
 | `--confirm-debate` | Add the adversarial confirmation debate in parallel Phase 4 mode |
+| `--orchestration=MODE` | `phased` (default) runs one agent session per step; `single-session` (experimental) runs analysis through validation and repairs in one agent session per target, with confirmation and classification still in separate sessions. With `--skip-analysis`, the main session starts at spec generation from existing Phase 1 outputs. Single-session runs also pin a short block of hard rules into every prompt and give agents a working-notes area, unless `SPECULA_RULES` or `SPECULA_NOTES` is set. `single-session` does not support `--byom`, `--ci-init`, `--confirm-first`, `--findings-from`, `--enable-reviews`, `--no-isolate`, `--skip-specgen`, `--skip-harness`, `--skip-validate`, or an `--agent-config` that routes `analyze`, `specgen`, `harness`, `validate`, or `repair` to a different profile than the main session |
 | `--skip-repair-loop` | Disable the confirmation back-edge repair loop |
 | `--max-repair-rounds=N` | Set the global repair-loop round cap (default `10`; `0` means unlimited) |
 | `--skip-analysis`, `--skip-specgen`, `--skip-harness` | Reuse early-phase outputs |

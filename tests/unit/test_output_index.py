@@ -184,6 +184,66 @@ class TestTargetIndex(OutputIndexCase):
         for machine_file in ("findings.json", "candidates.json", "verdict.json"):
             self.assertNotIn(machine_file, rendered)
 
+    def test_single_session_targets_omit_absent_advisory_documents(self) -> None:
+        work_dir = self.root / "run" / "demo" / ".specula-output"
+        for relative in ("modeling-brief.md", "spec/bug-report.md", "spec/instrumentation-spec.md"):
+            self.write(work_dir, relative)
+        phased = oi.render_target_index("demo", work_dir)
+        self.assertIn("| 2 | Analysis report: Not available |", phased)
+        self.assertIn("Validation changelog: Not available", phased)
+
+        self.write(work_dir, ".context-control/main-state.json", "{}\n")
+        with mock.patch.dict(os.environ, {"SPECULA_STRICT_OUTPUTS": ""}):
+            tolerant = oi.render_target_index("demo", work_dir)
+        table = tolerant.split("|---:|---|---|\n", 1)[1].split("\n\n", 1)[0]
+        self.assertEqual(
+            table,
+            "| 1 | [Modeling brief](modeling-brief.md) | System model, Scenarios, and proposed invariants |\n"
+            "| 2 | [Instrumentation map](spec/instrumentation-spec.md) | How the analysis was translated into the model |\n"
+            "| 3 | [Model-checking report](spec/bug-report.md) | Candidate findings from model checking |\n",
+        )
+        self.assertNotIn("Not available", table)
+        (work_dir / "spec/bug-report.md").unlink()  # a missing required document is still shown as missing
+        with mock.patch.dict(os.environ, {"SPECULA_STRICT_OUTPUTS": ""}):
+            self.assertIn("| 3 | Model-checking report: Not available |", oi.render_target_index("demo", work_dir))
+        with mock.patch.dict(os.environ, {"SPECULA_STRICT_OUTPUTS": "on"}):
+            self.assertIn("| 2 | Analysis report: Not available |", oi.render_target_index("demo", work_dir))
+
+    def test_working_notes_index_is_listed_under_technical_details_only_when_present(self) -> None:
+        work_dir = self.root / ".specula-output"
+        self.write(work_dir, "notes/build-recipe.md")
+        with mock.patch.dict(os.environ, {"SPECULA_NOTES": "on"}):
+            without_index = oi.render_target_index("demo", work_dir)
+        self.assertNotIn("## Technical Details", without_index)
+        self.assertNotIn("notes/", without_index)
+
+        self.write(work_dir, "notes/INDEX.md", "- build-recipe.md — how to build\n")
+        self.write(work_dir, "spec/repair-ledger.md")
+        with mock.patch.dict(os.environ, {"SPECULA_NOTES": ""}):
+            self.assertNotIn("Working notes", oi.render_target_index("demo", work_dir))  # notes off: as before
+        with mock.patch.dict(os.environ, {"SPECULA_NOTES": "on"}):
+            rendered = oi.render_target_index("demo", work_dir)
+        technical = rendered.split("## Technical Details", 1)[1]
+        self.assertIn("- Working notes: [INDEX.md](notes/INDEX.md)", technical)
+        self.assertLess(technical.index("Repair history"), technical.index("Working notes"))
+        # The index is the entry point; individual notes are not enumerated.
+        self.assertNotIn("build-recipe.md", rendered)
+
+    def test_symlinked_working_notes_are_not_listed(self) -> None:
+        outside = self.root / "outside"
+        self.write(outside, "INDEX.md")
+        linked_file = self.root / "file" / ".specula-output"
+        (linked_file / "notes").mkdir(parents=True)
+        (linked_file / "notes" / "INDEX.md").symlink_to(outside / "INDEX.md")
+        linked_dir = self.root / "dir" / ".specula-output"
+        linked_dir.mkdir(parents=True)
+        (linked_dir / "notes").symlink_to(outside, target_is_directory=True)
+        for work_dir in (linked_file, linked_dir):
+            with self.subTest(work_dir=work_dir), mock.patch.dict(os.environ, {"SPECULA_NOTES": "on"}):
+                rendered = oi.render_target_index("demo", work_dir)
+                self.assertNotIn("Working notes", rendered)
+                self.assertNotIn("## Technical Details", rendered)
+
     def test_confirmation_rows_are_sorted_partial_and_match_reproductions_by_finding(self) -> None:
         work_dir = self.root / ".specula-output"
         self.write(work_dir, "confirmation/MC-2/investigation.md")
