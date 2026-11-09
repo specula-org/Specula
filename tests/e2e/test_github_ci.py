@@ -327,7 +327,7 @@ class GitHubEvents(unittest.TestCase):
 
     def test_failed_check_reports_its_failure_category_and_resume_command(self) -> None:
         self.fixture.change_source("B\n")
-        self.fixture.interrupt_incremental((75,))
+        self.fixture.interrupt_incremental((75, 9))
         result, reports = self.push()
         self.assertEqual(result.returncode, 75, result.stdout + result.stderr)
         run = self.fixture.latest()
@@ -357,6 +357,17 @@ class GitHubEvents(unittest.TestCase):
         self.assertEqual(self.calls(), 1)
         summary = (reports / "summary.md").read_text()
         self.assertIn("already attempted (failed) (provider: rate_limit)", summary)
+        self.assertIn(f"<code>{resume}</code>", summary)
+
+        # A manual resume on the runner changes the outcome without a new attempt record.
+        resumed = self.fixture.run_ci(f"--run-id={run.name}")
+        self.assertEqual(resumed.returncode, 9, resumed.stdout + resumed.stderr)
+        result, reports = self.push()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.calls(), 2)
+        summary = (reports / "summary.md").read_text()
+        self.assertIn("already attempted (failed) (incomplete) |", summary)
+        self.assertNotIn("rate_limit", summary)
         self.assertIn(f"<code>{resume}</code>", summary)
 
     def test_completed_check_exports_its_result_record(self) -> None:

@@ -497,8 +497,8 @@ class CIPipeline(Pipeline):
                     raise CIError("incremental conversation yielded without a confirmation request") from exc
 
     def _ci_initialization_complete(self) -> bool:
-        # Initialization starts without a current model. A verdict or receipt
-        # can precede publication; only advancing current closes recovery.
+        # Initialization starts without a current model. A verdict can precede
+        # publication; only advancing current closes recovery.
         assert self.store is not None
         return self.store.current_token() is not None
 
@@ -565,6 +565,11 @@ class CIPipeline(Pipeline):
         publication["check_key"] = check_key(self, publication["guidance"])
         current = self.store.publish(self.run_dir, work, publication, advance=False)
         token = current.relative_to(self.store.root).as_posix()
+        if not self.candidate:
+            current = self.store.advance(token)
+        else:
+            register_candidate(self.store, token)
+        # Report completion only after the result is published.
         result = {
             "run_id": self.run_id,
             "complete": True,
@@ -575,10 +580,6 @@ class CIPipeline(Pipeline):
         write_json(self.run_dir / "ci-result.json", result)
         if self.receipt is not None:
             write_json(self.receipt, result)
-        if not self.candidate:
-            current = self.store.advance(token)
-        else:
-            register_candidate(self.store, token)
         if self.resource_summary is not None:
             with contextlib.suppress(OSError, ValueError):
                 self.resource_summary.complete_run([name])

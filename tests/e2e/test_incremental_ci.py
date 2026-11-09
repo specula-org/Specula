@@ -166,12 +166,15 @@ class IncrementalCLI(unittest.TestCase):
         self.assertEqual(Path(f"{self.adapter}.phases").read_text().splitlines(), after)
         self.assertEqual((run / "run.json").read_bytes(), metadata)
 
-    def test_initialization_can_resume_after_receipt_before_publication(self) -> None:
+    def test_initialization_can_resume_after_publication_failure(self) -> None:
         failed = self._fail_initialization("specula.ci_store.CIStore.advance")
         self.assertEqual(failed.returncode, 1, failed.stdout + failed.stderr)
         self.assertIn("injected finalization failure", failed.stdout)
         run = self.latest()
-        self.assertTrue(json.loads((run / "ci-result.json").read_text())["complete"])
+        record = self.unfinished(run)
+        self.assertEqual(
+            (record["failure"], record["resume"]), ("incomplete", f"specula run --ci-dir={self.ci} --run-id={run.name}")
+        )
         self.assertIsNone(CIStore(self.ci).current_token())
         self.assertEqual(list((run / ".specula-resume/active").glob("*.json")), [])
 
@@ -1207,26 +1210,28 @@ class IncrementalCLI(unittest.TestCase):
         self.initialize()
         previous = (self.ci / "current").resolve()
         self.change_source("publication failure\n")
-        script = (
-            "import sys\nfrom unittest.mock import patch\n"
-            f"sys.path.insert(0, {str(self.root / 'src')!r})\n"
-            "from specula import pipelinelib\n"
-            "with patch('specula.ci_store.CIStore.publish', side_effect=OSError('injected storage failure')):\n"
-            "    raise SystemExit(pipelinelib.main(sys.argv[1:]))\n"
-        )
-        result = subprocess.run(
-            [sys.executable, "-c", script, f"--ci-dir={self.ci}", "--incremental", "--agent=fake"],
-            cwd=self.work,
-            env={key: value for key, value in os.environ.items() if key not in fixtures._VOLATILE},
-            capture_output=True,
-            text=True,
-            timeout=90,
-        )
-        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertIn("CI state was not updated: injected storage failure", result.stdout)
-        self.assertEqual((self.ci / "current").resolve(), previous)
-        record = self.unfinished()
-        self.assertEqual((record["exit_code"], record["failure"], record["resume"]), (1, "error", None))
+        for fault in ("publish", "advance"):
+            with self.subTest(fault=fault):
+                script = (
+                    "import sys\nfrom unittest.mock import patch\n"
+                    f"sys.path.insert(0, {str(self.root / 'src')!r})\n"
+                    "from specula import pipelinelib\n"
+                    f"with patch('specula.ci_store.CIStore.{fault}', side_effect=OSError('injected storage failure')):\n"
+                    "    raise SystemExit(pipelinelib.main(sys.argv[1:]))\n"
+                )
+                result = subprocess.run(
+                    [sys.executable, "-c", script, f"--ci-dir={self.ci}", "--incremental", "--agent=fake"],
+                    cwd=self.work,
+                    env={key: value for key, value in os.environ.items() if key not in fixtures._VOLATILE},
+                    capture_output=True,
+                    text=True,
+                    timeout=90,
+                )
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn("CI state was not updated: injected storage failure", result.stdout)
+                self.assertEqual((self.ci / "current").resolve(), previous)
+                record = self.unfinished()
+                self.assertEqual((record["exit_code"], record["failure"], record["resume"]), (1, "error", None))
 
     def test_dry_run_does_not_publish_or_instrument(self) -> None:
         result = self.run_ci("--ci-init", "--dry-run", f"--artifact={self.source}", "footest")

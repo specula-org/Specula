@@ -238,6 +238,20 @@ class GitHubCI:
         receipt = self.directory / "receipts" / f"{request}.json"
         return code, read_json(receipt) if receipt.is_file() else {}
 
+    def _latest_outcome(self, row: dict[str, Any]) -> dict[str, Any]:
+        # A manual resume updates the run's result record, not this attempt.
+        run_id = row.get("run_id")
+        if not isinstance(run_id, str) or not _valid_run_id(run_id):
+            return row
+        try:
+            latest = read_json(self.store.path(f"runs/{run_id}/ci-result.json"))
+        except (OSError, ValueError, CIError):
+            return row
+        row = {key: value for key, value in row.items() if key not in ("failure", "reason", "resume")}
+        if latest.get("complete") is False and latest.get("run_id") == run_id:
+            row.update({key: latest[key] for key in ("failure", "reason", "resume") if key in latest})
+        return row
+
     def check(self, event: Event, commit: str, *, candidate: bool, force: bool = False) -> int:
         current = self.store.current()
         configuration = self.configuration(current)
@@ -278,7 +292,9 @@ class GitHubCI:
         if attempt_path.exists() and not force:
             previous = read_json(attempt_path)
             if previous.get("complete") is not True:
-                self.rows.append({**previous, "status": f"already attempted ({previous['status']})"})
+                self.rows.append(
+                    self._latest_outcome({**previous, "status": f"already attempted ({previous['status']})"})
+                )
                 return 1
             if previous.get("verdict") in ("PASS", "WARNING", "FAIL"):
                 self.rows.append({**previous, "status": f"already attempted ({previous['status']})"})
