@@ -98,6 +98,18 @@ class OneShotFindings(unittest.TestCase):
         self.assertFalse((first_run / "ci-input.json").exists())
         self.assertFalse((first / "ci-verdict.json").exists())
 
+        # Restarting only Phase 4 of the finished run reuses its verdicts.
+        skip_to_confirmation = ["--skip-analysis", "--skip-specgen", "--skip-harness", "--skip-validate"]
+        result = fixture.helper.run_cli(
+            fixture.root,
+            [*args[:-1], *skip_to_confirmation, f"--run-id={first_run.name}", "--fresh-context", args[-1]],
+            cwd=fixture.work,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("[MC-1] cached REPRODUCED", result.stdout)
+        self.assertEqual(adapter.with_suffix(".confirmation-count").read_text(), "x")
+        self.assertEqual(findings.load(first, "MC-1"), original)
+
         adapter.with_suffix(".reuse").touch()
         fixture.change_source("BUG\naccept reply\nEND\nlogging v2\n")
         result = fixture.helper.run_cli(fixture.root, [*args, f"--findings-from={first}"], cwd=fixture.work)
