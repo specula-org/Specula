@@ -325,6 +325,49 @@ class GitHubEvents(unittest.TestCase):
         self.assertEqual((self.ci / "current").resolve(), latest)
         self.assertEqual(self.calls(), 2)
 
+    def test_failed_check_reports_its_failure_category_and_resume_command(self) -> None:
+        self.fixture.change_source("B\n")
+        self.fixture.interrupt_incremental((75,))
+        result, reports = self.push()
+        self.assertEqual(result.returncode, 75, result.stdout + result.stderr)
+        run = self.fixture.latest()
+        resume = f"specula run --ci-dir={self.ci} --run-id={run.name}"
+        attempts = list((self.ci / ".github-ci/attempts").glob("*.json"))
+        self.assertEqual(len(attempts), 1)
+        attempt = json.loads(attempts[0].read_text())
+        self.assertEqual(
+            {key: attempt[key] for key in ("status", "complete", "exit_code", "failure", "reason", "resume")},
+            {
+                "status": "failed",
+                "complete": False,
+                "exit_code": 75,
+                "failure": "provider",
+                "reason": "rate_limit",
+                "resume": resume,
+            },
+        )
+        summary = (reports / "summary.md").read_text()
+        self.assertIn("| failed (provider: rate_limit) | - |", summary)
+        self.assertIn(f"<code>{resume}</code>", summary)
+        exported = json.loads((reports / run.name / "ci-result.json").read_text())
+        self.assertEqual((exported["complete"], exported["failure"]), (False, "provider"))
+
+        result, reports = self.push()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.calls(), 1)
+        summary = (reports / "summary.md").read_text()
+        self.assertIn("already attempted (failed) (provider: rate_limit)", summary)
+        self.assertIn(f"<code>{resume}</code>", summary)
+
+    def test_completed_check_exports_its_result_record(self) -> None:
+        self.fixture.change_source("B\n")
+        result, reports = self.push()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        run = self.fixture.latest()
+        exported = json.loads((reports / run.name / "ci-result.json").read_text())
+        self.assertEqual((exported["complete"], exported["verdict"]), (True, "PASS"))
+        self.assertNotIn("Resume an unfinished check", (reports / "summary.md").read_text())
+
     def test_failure_is_not_retried_by_schedule_but_manual_force_can_rerun(self) -> None:
         self.fixture.change_source("B\n")
         previous = (self.ci / "current").resolve()

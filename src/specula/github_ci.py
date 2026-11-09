@@ -26,7 +26,7 @@ from specula.adapters.utils.run_lock import CI_EVENT_LOCK_FD_ENV
 from specula.ci_identity import check_key
 from specula.ci_inheritance import candidate_for, inherit, matches_source, result_key
 from specula.ci_store import CIError, CIStore, git, read_json, write_json
-from specula.ci_workflow import CIPipeline
+from specula.ci_workflow import INTERRUPTED_EXIT_CODES, CIPipeline
 from specula.pipelinelib import Pipeline, _valid_run_id
 
 
@@ -310,9 +310,11 @@ class GitHubCI:
             raise CIError("incremental command did not return a completed result receipt")
         else:
             result["status"] = "failed"
+            if receipt.get("complete") is False and receipt.get("exit_code") == code:
+                result.update({key: receipt[key] for key in ("failure", "reason", "resume") if key in receipt})
         write_json(attempt_path, result)
         self.rows.append(result)
-        if code in {129, 130, 143}:
+        if code in INTERRUPTED_EXIT_CODES:
             raise CIError("CI execution was interrupted; remaining updates were not started")
         return code
 
@@ -382,10 +384,16 @@ class GitHubCI:
     def report(self, error: str | None = None) -> None:
         self.reports.mkdir(parents=True, exist_ok=False)
         lines = ["# Specula CI", "", "| Source commit | Result | Verdict | Specula run |", "|---|---|---|---|"]
+        resumes: list[str] = []
         for row in self.rows:
+            status = str(row["status"])
+            if row.get("failure"):
+                status += f" ({row['failure']}{': ' + str(row['reason']) if row.get('reason') else ''})"
             lines.append(
-                f"| {html.escape(str(row['commit']))} | {html.escape(str(row['status']))} | {html.escape(str(row.get('verdict') or '-'))} | {html.escape(str(row.get('run_id') or '-'))} |"
+                f"| {html.escape(str(row['commit']))} | {html.escape(status)} | {html.escape(str(row.get('verdict') or '-'))} | {html.escape(str(row.get('run_id') or '-'))} |"
             )
+            if row.get("resume"):
+                resumes.append(f"- {html.escape(str(row['commit']))}: <code>{html.escape(str(row['resume']))}</code>")
             if row.get("verdict") == "WARNING" and os.environ.get("GITHUB_ACTIONS") == "true":
                 print("::warning::Specula found masked defects; see the CI report for their safeguards and evidence.")
             run_id = row.get("run_id")
@@ -411,9 +419,11 @@ class GitHubCI:
                     path = destination / relative
                     path.parent.mkdir(exist_ok=True)
                     shutil.copy2(work / relative, path)
-            for filename in ("source.diff", "model.diff"):
+            for filename in ("source.diff", "model.diff", "ci-result.json"):
                 if ci_init._regular_file(run, filename):
                     shutil.copy2(run / filename, destination / filename)
+        if resumes:
+            lines += ["", "Resume an unfinished check on the runner with:", "", *resumes]
         if error:
             lines += ["", f"Error: {html.escape(error)}"]
         lines += [
