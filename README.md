@@ -164,35 +164,35 @@ Specula is used by researchers and engineers at organizations including:
 <p align="center">
   <a href="https://www.google.com"><img src="docs/logos/google.png" height="37" alt="Google"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
   <a href="https://www.microsoft.com"><img src="docs/logos/microsoft.png" height="28" alt="Microsoft"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <a href="https://www.amazon.com"><img src="docs/logos/amazon.png#gh-light-mode-only" height="35" alt="Amazon"><img src="docs/logos/amazon-dark.png#gh-dark-mode-only" height="35" alt="Amazon"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <a href="https://www.nvidia.com"><img src="docs/logos/nvidia.png#gh-light-mode-only" height="25" alt="NVIDIA"><img src="docs/logos/nvidia-dark.png#gh-dark-mode-only" height="25" alt="NVIDIA"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://www.amazon.com#gh-light-mode-only"><img src="docs/logos/amazon.png" height="35" alt="Amazon"></a><a href="https://www.amazon.com#gh-dark-mode-only"><img src="docs/logos/amazon-dark.png" height="35" alt="Amazon"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://www.nvidia.com#gh-light-mode-only"><img src="docs/logos/nvidia.png" height="25" alt="NVIDIA"></a><a href="https://www.nvidia.com#gh-dark-mode-only"><img src="docs/logos/nvidia-dark.png" height="25" alt="NVIDIA"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
   <a href="https://www.oracle.com"><img src="docs/logos/oracle.png" height="16" alt="Oracle"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <a href="https://www.huawei.com"><img src="docs/logos/huawei.png#gh-light-mode-only" height="48" alt="Huawei"><img src="docs/logos/huawei-dark.png#gh-dark-mode-only" height="48" alt="Huawei"></a>
+  <a href="https://www.huawei.com#gh-light-mode-only"><img src="docs/logos/huawei.png" height="48" alt="Huawei"></a><a href="https://www.huawei.com#gh-dark-mode-only"><img src="docs/logos/huawei-dark.png" height="48" alt="Huawei"></a>
 </p>
 
 <p align="center">
-  <a href="https://www.alibabagroup.com"><img src="docs/logos/alibaba.png#gh-light-mode-only" height="20" alt="Alibaba Group"><img src="docs/logos/alibaba-dark.png#gh-dark-mode-only" height="20" alt="Alibaba Group"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <a href="https://www.antgroup.com"><img src="docs/logos/ant-group.png#gh-light-mode-only" height="43" alt="Ant Group"><img src="docs/logos/ant-group-dark.png#gh-dark-mode-only" height="43" alt="Ant Group"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <a href="https://www.mongodb.com"><img src="docs/logos/mongodb.png#gh-light-mode-only" height="32" alt="MongoDB"><img src="docs/logos/mongodb-dark.png#gh-dark-mode-only" height="32" alt="MongoDB"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <a href="https://www.datadoghq.com"><img src="docs/logos/datadog.png#gh-light-mode-only" height="31" alt="Datadog"><img src="docs/logos/datadog-dark.png#gh-dark-mode-only" height="31" alt="Datadog"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://www.alibabagroup.com#gh-light-mode-only"><img src="docs/logos/alibaba.png" height="20" alt="Alibaba Group"></a><a href="https://www.alibabagroup.com#gh-dark-mode-only"><img src="docs/logos/alibaba-dark.png" height="20" alt="Alibaba Group"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://www.antgroup.com#gh-light-mode-only"><img src="docs/logos/ant-group.png" height="43" alt="Ant Group"></a><a href="https://www.antgroup.com#gh-dark-mode-only"><img src="docs/logos/ant-group-dark.png" height="43" alt="Ant Group"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://www.mongodb.com#gh-light-mode-only"><img src="docs/logos/mongodb.png" height="32" alt="MongoDB"></a><a href="https://www.mongodb.com#gh-dark-mode-only"><img src="docs/logos/mongodb-dark.png" height="32" alt="MongoDB"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://www.datadoghq.com#gh-light-mode-only"><img src="docs/logos/datadog.png" height="31" alt="Datadog"></a><a href="https://www.datadoghq.com#gh-dark-mode-only"><img src="docs/logos/datadog-dark.png" height="31" alt="Datadog"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
   <a href="https://www.cloudera.com"><img src="docs/logos/cloudera.png" height="16" alt="Cloudera"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
   <a href="https://shopee.com"><img src="docs/logos/shopee.png" height="48" alt="Shopee"></a>
 </p>
 
 <p align="center">
   <a href="https://milvus.io"><img src="docs/logos/milvus.png" height="29" alt="Milvus"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <a href="https://ozone.apache.org"><img src="docs/logos/ozone.png#gh-light-mode-only" height="25" alt="Apache Ozone"><img src="docs/logos/ozone-dark.png#gh-dark-mode-only" height="25" alt="Apache Ozone"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <a href="https://ratis.apache.org"><img src="docs/logos/ratis.png#gh-light-mode-only" height="27" alt="Apache Ratis"><img src="docs/logos/ratis-dark.png#gh-dark-mode-only" height="27" alt="Apache Ratis"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://ozone.apache.org#gh-light-mode-only"><img src="docs/logos/ozone.png" height="25" alt="Apache Ozone"></a><a href="https://ozone.apache.org#gh-dark-mode-only"><img src="docs/logos/ozone-dark.png" height="25" alt="Apache Ozone"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://ratis.apache.org#gh-light-mode-only"><img src="docs/logos/ratis.png" height="27" alt="Apache Ratis"></a><a href="https://ratis.apache.org#gh-dark-mode-only"><img src="docs/logos/ratis-dark.png" height="27" alt="Apache Ratis"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
   <a href="https://asterinas.github.io"><img src="docs/logos/asterinas.png" height="31" alt="Asterinas"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
   <a href="https://sregym.com"><img src="docs/logos/sregym.png" height="31" alt="SREGym"></a>
 </p>
 
 <p align="center">
-  <a href="https://www.berkeley.edu"><img src="docs/logos/berkeley.png#gh-light-mode-only" height="35" alt="UC Berkeley"><img src="docs/logos/berkeley-dark.png#gh-dark-mode-only" height="35" alt="UC Berkeley"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <a href="https://illinois.edu"><img src="docs/logos/uiuc.png#gh-light-mode-only" height="32" alt="University of Illinois Urbana-Champaign"><img src="docs/logos/uiuc-dark.png#gh-dark-mode-only" height="32" alt="University of Illinois Urbana-Champaign"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <a href="https://www.purdue.edu"><img src="docs/logos/purdue.png#gh-light-mode-only" height="36" alt="Purdue University"><img src="docs/logos/purdue-dark.png#gh-dark-mode-only" height="36" alt="Purdue University"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <a href="https://www.nyu.edu"><img src="docs/logos/nyu.png#gh-light-mode-only" height="38" alt="New York University"><img src="docs/logos/nyu-dark.png#gh-dark-mode-only" height="38" alt="New York University"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <a href="https://www.virginia.edu"><img src="docs/logos/uva.png#gh-light-mode-only" height="36" alt="University of Virginia"><img src="docs/logos/uva-dark.png#gh-dark-mode-only" height="36" alt="University of Virginia"></a>
+  <a href="https://www.berkeley.edu#gh-light-mode-only"><img src="docs/logos/berkeley.png" height="35" alt="UC Berkeley"></a><a href="https://www.berkeley.edu#gh-dark-mode-only"><img src="docs/logos/berkeley-dark.png" height="35" alt="UC Berkeley"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://illinois.edu#gh-light-mode-only"><img src="docs/logos/uiuc.png" height="32" alt="University of Illinois Urbana-Champaign"></a><a href="https://illinois.edu#gh-dark-mode-only"><img src="docs/logos/uiuc-dark.png" height="32" alt="University of Illinois Urbana-Champaign"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://www.purdue.edu#gh-light-mode-only"><img src="docs/logos/purdue.png" height="36" alt="Purdue University"></a><a href="https://www.purdue.edu#gh-dark-mode-only"><img src="docs/logos/purdue-dark.png" height="36" alt="Purdue University"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://www.nyu.edu#gh-light-mode-only"><img src="docs/logos/nyu.png" height="38" alt="New York University"></a><a href="https://www.nyu.edu#gh-dark-mode-only"><img src="docs/logos/nyu-dark.png" height="38" alt="New York University"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://www.virginia.edu#gh-light-mode-only"><img src="docs/logos/uva.png" height="36" alt="University of Virginia"></a><a href="https://www.virginia.edu#gh-dark-mode-only"><img src="docs/logos/uva-dark.png" height="36" alt="University of Virginia"></a>
 </p>
 
 ## Acknowledgement
