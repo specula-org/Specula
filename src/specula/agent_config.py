@@ -20,9 +20,10 @@ PHASES = frozenset(
         "repair",
         "classify",
         "review",
-        "main",
     }
 )
+# Route keys that only --orchestration=continuous reads; phased runs reject them.
+CONTINUOUS_ONLY_PHASES = frozenset({"main"})
 # Phased routes whose work one continuous main session performs.
 MAIN_SESSION_PHASES = ("analyze", "specgen", "harness", "validate", "repair")
 _TOP_LEVEL_FIELDS = frozenset({"version", "default_profile", "profiles", "phases"})
@@ -159,7 +160,7 @@ def load_agent_routing(path: Path) -> AgentRouting:
     raw_phases = _as_object(raw_phases_value, "agent config field 'phases'")
     phases: dict[str, str] = {}
     for phase, raw_profile_name in raw_phases.items():
-        if phase not in PHASES:
+        if phase not in PHASES and phase not in CONTINUOUS_ONLY_PHASES:
             raise AgentConfigError(f"agent config contains unknown phase '{phase}'")
         if not isinstance(raw_profile_name, str):
             raise AgentConfigError(f"phase '{phase}' must reference a profile by name")
