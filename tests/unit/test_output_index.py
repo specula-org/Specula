@@ -184,7 +184,7 @@ class TestTargetIndex(OutputIndexCase):
         for machine_file in ("findings.json", "candidates.json", "verdict.json"):
             self.assertNotIn(machine_file, rendered)
 
-    def test_continuous_targets_omit_absent_advisory_documents(self) -> None:
+    def test_single_session_targets_omit_absent_advisory_documents(self) -> None:
         work_dir = self.root / "run" / "demo" / ".specula-output"
         for relative in ("modeling-brief.md", "spec/bug-report.md", "spec/instrumentation-spec.md"):
             self.write(work_dir, relative)

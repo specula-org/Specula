@@ -1,7 +1,7 @@
-"""Fault injection for continuous orchestration with real process signals.
+"""Fault injection for single-session orchestration with real process signals.
 
 Each test runs the real ``specula run`` controller with the deterministic
-continuous fixture adapter, holds a process at a named fault point (a marker
+single-session fixture adapter, holds a process at a named fault point (a marker
 the fixture or ``fixtures/faults/controller.py`` publishes), delivers a real
 SIGKILL or SIGTERM, and attaches with ``specula run --run-id`` to check the
 recovery invariants of the S2 robustness matrix. No model or agent CLI runs.
@@ -37,11 +37,11 @@ FAULTS = FIXTURES / "faults"
 TIMEOUT = 120.0
 
 
-def continuous_args(args: tuple[str, ...] | list[str]) -> list[str]:
-    """Select continuous orchestration (opt-in) unless the test chose a mode itself."""
+def single_session_args(args: tuple[str, ...] | list[str]) -> list[str]:
+    """Select single-session orchestration (opt-in) unless the test chose a mode itself."""
     if any(arg.startswith("--orchestration") for arg in args):
         return list(args)
-    return ["--orchestration=continuous", *args]
+    return ["--orchestration=single-session", *args]
 
 
 def _ppid(pid: str) -> int | None:
@@ -76,7 +76,7 @@ def alive(pid: int) -> bool:
     return stat.rsplit(")", 1)[1].split()[0] != "Z"
 
 
-class ContinuousFaults(unittest.TestCase):
+class SingleSessionFaults(unittest.TestCase):
     def setUp(self) -> None:
         self.helper = fixtures.CliE2E()
         self.addCleanup(self.helper.doCleanups)
@@ -101,12 +101,12 @@ class ContinuousFaults(unittest.TestCase):
         subprocess.run(["git", "-C", str(self.source), "add", "."], check=True)
         subprocess.run(["git", "-C", str(self.source), "commit", "-qm", "initial"], check=True)
         self.adapters = self.root / "scripts/launch/adapters"
-        shutil.copyfile(FIXTURES / "continuous_adapter.py", self.adapters / "continuous_adapter.py")
+        shutil.copyfile(FIXTURES / "single_session_adapter.py", self.adapters / "single_session_adapter.py")
         for name in ("fake", "claude-code"):
             script = self.adapters / f"{name}.sh"
             script.write_text(
                 f'#!/bin/sh\nFIXTURE_ADAPTER={name} exec "{sys.executable}" '
-                f'"{self.adapters / "continuous_adapter.py"}" "$@"\n'
+                f'"{self.adapters / "single_session_adapter.py"}" "$@"\n'
             )
             script.chmod(0o755)
         infra = self.root / "scripts/infra"
@@ -142,7 +142,7 @@ class ContinuousFaults(unittest.TestCase):
             extra["FAULT_QUOTA"] = "1"
         with output.open("wb") as stream:
             process = subprocess.Popen(
-                [*command, f"--artifact={self.source}", *continuous_args(args)],
+                [*command, f"--artifact={self.source}", *single_session_args(args)],
                 cwd=self.work,
                 env=self.environment(extra),
                 stdout=stream,
@@ -159,7 +159,7 @@ class ContinuousFaults(unittest.TestCase):
                 str(self.root / "src/specula/cli.py"),
                 "run",
                 f"--run-id={self.run_dir().name}",
-                *continuous_args(args),
+                *single_session_args(args),
             ],
             cwd=self.work,
             env=self.environment(),
@@ -478,7 +478,7 @@ class ContinuousFaults(unittest.TestCase):
         self.assertEqual(self.request()["session_id"], "main-footest-1")
 
     def test_crash_after_the_yield_dispatches_the_pending_request_once(self) -> None:
-        self.check_yield_kill("specula.continuous:ContinuousRun._dispatch", "pending")
+        self.check_yield_kill("specula.single_session:SingleSessionRun._dispatch", "pending")
 
     def test_crash_after_dispatch_is_recorded_confirms_once(self) -> None:
         self.check_yield_kill("specula.pipelinelib:Pipeline.run_phase4_confirmation_for", "confirming")
@@ -661,10 +661,10 @@ class ContinuousFaults(unittest.TestCase):
         self.assertEqual(len(archived), 1)
 
     def test_fresh_context_after_a_crash_after_the_yield_ignores_the_old_request(self) -> None:
-        run, _ = self.start("--agent=fake", "footest", faults="specula.continuous:ContinuousRun._dispatch")
-        self.reached("ContinuousRun._dispatch", run)
+        run, _ = self.start("--agent=fake", "footest", faults="specula.single_session:SingleSessionRun._dispatch")
+        self.reached("SingleSessionRun._dispatch", run)
         self.crash(run)
-        (self.adapters / "release-ContinuousRun._dispatch").touch()
+        (self.adapters / "release-SingleSessionRun._dispatch").touch()
         fresh = self.attach("--fresh-context")
         self.assert_fresh_session(fresh, ("CR-1",))
         archived = list(self.target().glob(".context-control/abandoned/*/confirmation.json"))

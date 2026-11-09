@@ -457,7 +457,7 @@ run_codex() {
   cmd+=(codex exec --dangerously-bypass-approvals-and-sandbox --output-last-message "$last_message_file")
   # Keep one large tool result from jumping past Codex's auto-compaction point.
   cmd+=(-c "tool_output_token_limit=10000")
-  # Continuous phases (specula.context_control.CONTINUOUS_PHASES) get the context tools.
+  # Context-control phases (specula.context_control.CONTEXT_CONTROL_PHASES) get the context tools.
   if [[ ( "${SPECULA_PHASE:-}" == "incremental" || "${SPECULA_PHASE:-}" == "main" ) && -n "${SPECULA_CONTEXT_CODEX_CONFIG:-}" ]]; then
     cmd+=(-c "mcp_servers.specula_context=$SPECULA_CONTEXT_CODEX_CONFIG")
   fi

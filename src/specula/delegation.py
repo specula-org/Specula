@@ -1,7 +1,7 @@
-"""Delegation guidance for the continuous main session.
+"""Delegation guidance for the single-session main session.
 
-One continuous session performs every Phase 1-3 stage. The stage skills'
-parallelization guidance applies as written; ``prompts/continuous/delegation.md`` adds the
+One session performs every Phase 1-3 stage. The stage skills'
+parallelization guidance applies as written; ``prompts/single-session/delegation.md`` adds the
 main-session rules on top: shared artifacts stay with the main agent, each
 subagent records its verified results in its own notes file as it goes (so a
 missing or blocked final reply loses nothing), and the main agent re-covers any
@@ -41,7 +41,7 @@ def delegation_section(work_dir: Path) -> str:
     Subagent notes files live in the working-notes directory whether or not the
     notes section itself is on: they carry delegated results, not working memory.
     """
-    return "\n" + render("continuous/delegation", notes_dir=str(notes_dir(work_dir))) if enabled() else ""
+    return "\n" + render("single-session/delegation", notes_dir=str(notes_dir(work_dir))) if enabled() else ""
 
 
 def delegation_pointer() -> str:

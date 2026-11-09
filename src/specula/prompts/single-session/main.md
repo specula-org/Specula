@@ -1,6 +1,6 @@
 # Specula Main Session: {{name}}
 
-You are running the Specula modeling workflow for this system in one continuous session: {{session_stages}}. Specula then confirms your findings in separate clean contexts and classifies the confirmed results; you do not do that work.
+You are running the Specula modeling workflow for this system in one session: {{session_stages}}. Specula then confirms your findings in separate clean contexts and classifies the confirmed results; you do not do that work.
 
 - **Name**: {{name}}
 - **GitHub**: {{github}}

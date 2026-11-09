@@ -226,7 +226,7 @@ def render_target_index(name: str, work_dir: Path, *, pipeline_log: Path | None 
         "| Step | Document | What it contains |",
         "|---:|---|---|",
     ]
-    # A continuous main session (unless SPECULA_STRICT_OUTPUTS=on) writes the
+    # A single-session main session (unless SPECULA_STRICT_OUTPUTS=on) writes the
     # advisory documents only when useful: omit absent ones, not "Not available".
     optional = not output_contract.strict() and _is_file_under(work_dir, work_dir / output_contract.MAIN_STATE_FILE)
     steps = (

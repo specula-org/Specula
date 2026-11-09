@@ -17,8 +17,8 @@ TOOL_NAME = "request_context_compaction"
 CONFIRMATION_REQUEST = ".context-control/confirmation.json"
 # Phase keys whose launcher runs one native conversation through context_runner
 # (agent-requested compaction and the confirmation yield). ``incremental`` is the
-# CI update workflow; ``main`` is the continuous one-shot main session.
-CONTINUOUS_PHASES = frozenset({"incremental", "main"})
+# CI update workflow; ``main`` is the main session of single-session orchestration.
+CONTEXT_CONTROL_PHASES = frozenset({"incremental", "main"})
 REPAIR_SNAPSHOT = "spec/.repair-phase3-snapshot.json"
 CONFIRMATION_YIELD_RC = 73
 CONFIRMATION_TOOL = "request_bug_confirmation"
@@ -46,7 +46,7 @@ def write_json(path: Path, value: Any) -> None:
 
 
 def _unconsumed_repairs(root: Path) -> list[str]:
-    """Repair requests a continuous main session was resumed to handle but has not consumed."""
+    """Repair requests a single-session main session was resumed to handle but has not consumed."""
     try:
         snapshot = json.loads((root / REPAIR_SNAPSHOT).read_text())
     except FileNotFoundError:
@@ -94,9 +94,9 @@ def _request(action: str, handoff_path: str | None = None) -> dict[str, str]:
     token = os.environ.get(TOKEN_ENV)
     work = os.environ.get("SPECULA_WORK_DIR")
     phase = os.environ.get("SPECULA_PHASE")
-    if phase not in CONTINUOUS_PHASES or not raw or not token or not work:
+    if phase not in CONTEXT_CONTROL_PHASES or not raw or not token or not work:
         raise ValueError(
-            "Workflow requests are available only inside an incremental CI run or a continuous Specula main session."
+            "Workflow requests are available only inside an incremental CI run or a single-session Specula main session."
         )
     root = Path(work).resolve()
     document: dict[str, str] = {"token": token}

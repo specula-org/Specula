@@ -1,4 +1,4 @@
-"""Continuous orchestration: one native main session per target for Phases 1-3.
+"""Single-session orchestration: one native main session per target for Phases 1-3.
 
 The main session (phase key ``main``) performs analysis, spec generation,
 harness generation, and validation in one native conversation. With
@@ -82,10 +82,10 @@ if TYPE_CHECKING:
     from specula.pipelinelib import Pipeline
 
 PHASE_KEY = "main"
-# Prompt additions that are off by default and on for continuous runs unless
+# Prompt additions that are off by default and on for single-session runs unless
 # the variable is set: the pinned hard rules and the working-notes area.
 PROMPT_DEFAULTS = (RULES_ENV, NOTES_ENV)
-LAUNCHER = "launch_continuous.sh"
+LAUNCHER = "launch_single_session.sh"
 STATE_FILE = output_contract.MAIN_STATE_FILE
 ABANDONED_DIR = ".context-control/abandoned"
 ABANDONING_FILE = ".context-control/abandoning.json"  # a --fresh-context abandonment in progress
@@ -103,8 +103,8 @@ SESSION_STAGES = {
 }
 
 
-class ContinuousError(RuntimeError):
-    """Persisted continuous state is inconsistent; refuse to guess."""
+class SingleSessionError(RuntimeError):
+    """Persisted single-session state is inconsistent; refuse to guess."""
 
 
 def _guidance_file(work: Path) -> Path | None:
@@ -167,7 +167,7 @@ def _log(message: str) -> None:
 
 
 def apply_prompt_defaults() -> None:
-    """Turn on the continuous prompt additions for this process and its children unless set.
+    """Turn on the single-session prompt additions for this process and its children unless set.
 
     An exported-but-empty variable counts as unset, as with the other Specula switches.
     """
@@ -207,7 +207,7 @@ class MainState:
     @classmethod
     def from_object(cls, value: object, target: str) -> MainState:
         if not isinstance(value, dict) or value.get("version") != 1 or value.get("target") != target:
-            raise ContinuousError(f"invalid continuous state for {target}")
+            raise SingleSessionError(f"invalid single-session state for {target}")
         stage = value.get("stage")
         repair_round = value.get("repair_round")
         session_id = value.get("session_id")
@@ -230,7 +230,7 @@ class MainState:
             or analysis not in ANALYSIS_MODES
             or not isinstance(history, list)
         ):
-            raise ContinuousError(f"invalid continuous state for {target}")
+            raise SingleSessionError(f"invalid single-session state for {target}")
         return cls(
             stage=str(stage),
             repair_round=repair_round,
@@ -254,7 +254,7 @@ def load_state(work: Path, target: str) -> MainState | None:
     except FileNotFoundError:
         return None
     except (OSError, ValueError) as exc:
-        raise ContinuousError(f"cannot read continuous state {path}: {exc}") from exc
+        raise SingleSessionError(f"cannot read single-session state {path}: {exc}") from exc
     return MainState.from_object(raw, target)
 
 
@@ -272,14 +272,14 @@ def load_request(work: Path) -> dict[str, Any] | None:
     except FileNotFoundError:
         return None
     except (OSError, ValueError) as exc:
-        raise ContinuousError(f"cannot read confirmation request {path}: {exc}") from exc
+        raise SingleSessionError(f"cannot read confirmation request {path}: {exc}") from exc
     if (
         not isinstance(raw, dict)
         or raw.get("status") not in REQUEST_STATUSES
         or not isinstance(raw.get("session_id"), str)
         or not raw["session_id"]
     ):
-        raise ContinuousError(f"invalid confirmation request {path}")
+        raise SingleSessionError(f"invalid confirmation request {path}")
     return raw
 
 
@@ -296,7 +296,7 @@ def native_session(work: Path) -> str | None:
     except FileNotFoundError:
         return None
     except (OSError, ValueError) as exc:
-        raise ContinuousError(f"cannot read native session state {path}: {exc}") from exc
+        raise SingleSessionError(f"cannot read native session state {path}: {exc}") from exc
     session = raw.get("session_id") if isinstance(raw, dict) else None
     return session if isinstance(session, str) and session else None
 
@@ -325,7 +325,7 @@ def has_unfinished_work(pipeline: Pipeline) -> bool:
     for name in pipeline.extract_names():
         try:
             state = load_state(Path(pipeline.get_work_dir(name)), name)
-        except ContinuousError as exc:
+        except SingleSessionError as exc:
             raise resumelib.ResumeError(str(exc)) from exc
         if state is not None and state.stage != "complete":
             return True
@@ -435,17 +435,17 @@ These are the earlier session's results, not yours. Read `notes/INDEX.md` first 
 # ── the main-session launcher phase ────────────────────────────────────────
 
 
-class ContinuousPhase(Phase):
+class SingleSessionPhase(Phase):
     key = PHASE_KEY
-    title = "Specula — Continuous Main Session"
+    title = "Specula — Single-Session Main Session"
     usage = r"""
-Continuous main session: one agent per target performs code analysis, spec
+Single-session orchestration: one agent per target performs code analysis, spec
 generation, harness generation, and validation in a single native conversation,
 then hands its findings to the controller for confirmation. Started by
 `specula run`; not a standalone phase.
 
 Usage:
-  launch_continuous.sh [options] "name|github|lang|reference" [...]
+  launch_single_session.sh [options] "name|github|lang|reference" [...]
 
 Options:
   --dry-run           Print commands without executing
@@ -466,7 +466,7 @@ Options:
         "ERROR: Some repositories are missing. Use --artifact=<path> or place repos under <name>/artifact/<repo>/."
     )
     check_ok_msg = "All repos OK."
-    yield_message = "Main session yielded to the continuous controller."
+    yield_message = "Main session yielded to the single-session controller."
     # Retry budgets are per controller step (initial pass, each repair round,
     # rejection resume, or attach); retries within one step still accumulate.
     carry_retry_budgets = False
@@ -485,7 +485,7 @@ Options:
             work = ws.work_dir(name)
             try:
                 analysis = self._analysis_mode(work, name)
-            except ContinuousError as exc:
+            except SingleSessionError as exc:
                 print(f"  INVALID  {name} — {exc}")
                 ok = False
                 continue
@@ -511,16 +511,16 @@ Options:
         work = ws.work_dir(name)
         analysis = self._analysis_mode(work, name)
         if analysis == "existing":
-            analysis_stage = render("continuous/analysis-existing", work_dir=str(work))
+            analysis_stage = render("single-session/analysis-existing", work_dir=str(work))
         else:
-            analysis_stage = render("continuous/analysis", analysis_skill=prompt_skill_ids("code-analysis"))
+            analysis_stage = render("single-session/analysis", analysis_skill=prompt_skill_ids("code-analysis"))
         contract = render(
-            "continuous/outputs-strict" if output_contract.strict() else "continuous/outputs",
+            "single-session/outputs-strict" if output_contract.strict() else "single-session/outputs",
             work_dir=str(work),
             spec_dir=str(work / "spec"),
         )
         prompt = render(
-            "continuous/main",
+            "single-session/main",
             session_stages=SESSION_STAGES[analysis],
             analysis_stage=analysis_stage.rstrip("\n"),
             output_contract=contract.rstrip("\n"),
@@ -633,7 +633,7 @@ def _confirmation_environment() -> Iterator[None]:
             os.environ[CONFIRMATION_ENV] = previous
 
 
-class ContinuousRun:
+class SingleSessionRun:
     """Drive every target's main session through confirmation and repair."""
 
     def __init__(self, pipeline: Pipeline) -> None:
@@ -649,11 +649,11 @@ class ContinuousRun:
         p = self.p
         p.print_run_header()
         if p.skip_analysis:
-            print("Orchestration: continuous (one main session per target for spec generation through validation,")
+            print("Orchestration: single-session (one main session per target for spec generation through validation,")
             print("               from existing code-analysis outputs; confirmation and classification run in")
             print("               separate clean contexts)")
         else:
-            print("Orchestration: continuous (one main session per target for analysis through validation;")
+            print("Orchestration: single-session (one main session per target for analysis through validation;")
             print("               confirmation and classification run in separate clean contexts)")
         if output_contract.strict():
             print(f"Outputs:       every phase output is required ({output_contract.STRICT_ENV}=on)")
@@ -664,7 +664,7 @@ class ContinuousRun:
             _log(f"ERROR: no target name parsed from '{p.targets[0]}', aborting")
             raise SystemExit(1)
         if p.run_dir is None:
-            _log("ERROR: continuous orchestration requires an isolated run directory")
+            _log("ERROR: single-session orchestration requires an isolated run directory")
             raise SystemExit(1)
         p.stage_guidance(names)
         p.prepare_source_snapshots(names)
@@ -676,7 +676,7 @@ class ContinuousRun:
         else:
             try:
                 self._drive()
-            except (ContinuousError, resumelib.ResumeError) as exc:
+            except (SingleSessionError, resumelib.ResumeError) as exc:
                 _log(f"ERROR: {exc}")
                 return 1
         classified = not p.dry_run and all(self._load(name).stage in ("classified", "complete") for name in names)
@@ -743,11 +743,8 @@ class ContinuousRun:
         if repair_round:
             return f"REPAIR ROUND {repair_round}: MAIN SESSION (resumed with confirmation results)"
         if existing_analysis:
-            return (
-                "MAIN SESSION: spec → harness → validation from existing code analysis "
-                "(one continuous session per target)"
-            )
-        return "MAIN SESSION: analysis → spec → harness → validation (one continuous session per target)"
+            return "MAIN SESSION: spec → harness → validation from existing code analysis (one session per target)"
+        return "MAIN SESSION: analysis → spec → harness → validation (one session per target)"
 
     def _repair_loop_banner(self) -> None:
         cap = int(self.p.max_repair_rounds)
@@ -760,7 +757,7 @@ class ContinuousRun:
     def _load(self, name: str) -> MainState:
         state = load_state(self.work(name), name)
         if state is None:
-            raise ContinuousError(f"{name}: missing continuous state")
+            raise SingleSessionError(f"{name}: missing single-session state")
         return state
 
     def _save(self, name: str, state: MainState, event: str) -> None:
@@ -793,7 +790,7 @@ class ContinuousRun:
                     and state.stage == "main"
                     and not state.repair_round
                 ):
-                    raise ContinuousError(
+                    raise SingleSessionError(
                         f"{name}: --skip-analysis does not apply to this run: its main session performs code "
                         "analysis and has not handed off yet. Resume without --skip-analysis, or pass "
                         "--fresh-context to start a new main session from the existing analysis outputs"
@@ -801,7 +798,7 @@ class ContinuousRun:
         for name in new:
             work = self.work(name)
             if load_request(work) is not None:
-                raise ContinuousError(f"{name}: confirmation request exists without controller state")
+                raise SingleSessionError(f"{name}: confirmation request exists without controller state")
             self._save(name, MainState(analysis=analysis), "start")
         p.reconcile_deferred_state()
         dangling = {name for name in self.names if self._dangling_commit(name)}
@@ -815,7 +812,7 @@ class ContinuousRun:
         missing = [name for name in names if not has_existing_analysis(self.work(name))]
         if missing:
             listed = ", ".join(f"{name} ({self.work(name) / 'modeling-brief.md'})" for name in missing)
-            raise ContinuousError(
+            raise SingleSessionError(
                 "--skip-analysis starts the main session from existing code-analysis outputs, but "
                 f"modeling-brief.md is missing or empty for {listed}. Run code analysis first, or place its "
                 "outputs in the target's output directory"
@@ -835,7 +832,7 @@ class ContinuousRun:
             if path.is_file():
                 try:
                     return True, MainState.from_object(json.loads(path.read_text()), name).analysis
-                except (OSError, ValueError, ContinuousError):
+                except (OSError, ValueError, SingleSessionError):
                     return True, "session"
         return False, "session"
 
@@ -862,7 +859,7 @@ class ContinuousRun:
         p = self.p
         if p.skip_confirmation or p.skip_repair_loop:
             disabled = "--skip-confirmation" if p.skip_confirmation else "--skip-repair-loop"
-            raise ContinuousError(
+            raise SingleSessionError(
                 f"cannot use {disabled} while a committed repair result is pending; "
                 "resume once without that flag so its exact findings can be reconciled"
             )
@@ -896,7 +893,7 @@ class ContinuousRun:
                 marker.parent.mkdir(parents=True, exist_ok=True)
                 write_json(marker, {"stamp": stamp})
             except (OSError, ValueError, KeyError, TypeError) as exc:
-                raise ContinuousError(f"{name}: invalid fresh-context marker {marker}: {exc}") from exc
+                raise SingleSessionError(f"{name}: invalid fresh-context marker {marker}: {exc}") from exc
             archive = work / ABANDONED_DIR / stamp
             for relative in (STATE_FILE, CONFIRMATION_REQUEST):
                 source = work / relative
@@ -937,17 +934,17 @@ class ContinuousRun:
         request = load_request(work)
         if request is None:
             if state.stage == "confirm":
-                raise ContinuousError(f"{name}: controller state expects a confirmation request that is missing")
+                raise SingleSessionError(f"{name}: controller state expects a confirmation request that is missing")
             return state
         session = request["session_id"]
         native = native_session(work)
         if native is not None and native != session:
-            raise ContinuousError(
+            raise SingleSessionError(
                 f"{name}: confirmation request belongs to native session {session}, but the main conversation "
                 f"is {native}; pass --fresh-context to start over"
             )
         if state.session_id is not None and state.session_id != session:
-            raise ContinuousError(
+            raise SingleSessionError(
                 f"{name}: confirmation request belongs to another main conversation; pass --fresh-context to start over"
             )
         status = request["status"]
@@ -1003,11 +1000,11 @@ class ContinuousRun:
             if exc.code != CONFIRMATION_YIELD_RC:
                 raise
         else:
-            raise ContinuousError("main session launcher returned without a controller handoff")
+            raise SingleSessionError("main session launcher returned without a controller handoff")
         for name in names:
             request = load_request(self.work(name))
             if request is None or request["status"] != "pending":
-                raise ContinuousError(f"{name}: main session yielded without a pending confirmation request")
+                raise SingleSessionError(f"{name}: main session yielded without a pending confirmation request")
 
     def _confirm(self, names: list[str], states: dict[str, MainState]) -> None:
         requests = {name: load_request(self.work(name)) for name in names}
@@ -1026,8 +1023,8 @@ class ContinuousRun:
         except output_contract.SanyUnavailable as exc:
             raise self._sany_error(exc) from exc
 
-    def _sany_error(self, exc: Exception) -> ContinuousError:
-        return ContinuousError(
+    def _sany_error(self, exc: Exception) -> SingleSessionError:
+        return SingleSessionError(
             f"cannot check the confirmation handoff: {exc}. Make SANY available, then rerun with "
             f"--run-id={self.p.run_id} to check the same handoff again (no agent work is lost)"
         )
@@ -1138,10 +1135,10 @@ class ContinuousRun:
         commit = p.load_repair_phase3_commit(name)
         if commit is None:
             if loaded is None:
-                raise ContinuousError(f"{name}: repair round {repair_round} has no durable repair snapshot")
+                raise SingleSessionError(f"{name}: repair round {repair_round} has no durable repair snapshot")
             snapshot, snapshot_round, _token = loaded
             if snapshot_round != repair_round:
-                raise ContinuousError(
+                raise SingleSessionError(
                     f"{name}: repair snapshot is for round {snapshot_round}, not round {repair_round}"
                 )
             unfinished = [path for path in snapshot if rr_status(path) != "CONSUMED"]
@@ -1160,7 +1157,7 @@ class ContinuousRun:
             commit = p.load_repair_phase3_commit(name)
             assert commit is not None
         elif int(commit["repair_round"]) != repair_round:
-            raise ContinuousError(f"{name}: committed repair result is for another round")
+            raise SingleSessionError(f"{name}: committed repair result is for another round")
         if loaded is not None:
             p.clear_repair_phase3_snapshot(name)
         self._finish_reservation(name)
@@ -1261,11 +1258,11 @@ class ContinuousRun:
         assert request is not None
         token = request.get("commit_token")
         if not isinstance(token, str) or re.fullmatch(r"[0-9a-f]{32}", token) is None:
-            raise ContinuousError(f"{name}: scoped confirmation request has no valid commit token")
+            raise SingleSessionError(f"{name}: scoped confirmation request has no valid commit token")
         commit = p.load_repair_phase3_commit(name)
         if commit is not None:
             if commit["commit_token"] != token:
-                raise ContinuousError(f"{name}: committed repair result does not match its confirmation request")
+                raise SingleSessionError(f"{name}: committed repair result does not match its confirmation request")
             with p.resource_phase("phase4a", [name]), _confirmation_environment():
                 p.process_pending_repair_results({name})
         # A missing commit proof with a matching dispatch record means the
@@ -1291,7 +1288,7 @@ class ContinuousRun:
         for name in names:
             request = load_request(self.work(name))
             if request is None or request["status"] != "completed":
-                raise ContinuousError(f"{name}: confirmation did not complete")
+                raise SingleSessionError(f"{name}: confirmation did not complete")
             if p.skip_confirmation or p.skip_repair_loop or not self._open_requests(name):
                 continue
             needing.append(name)
@@ -1350,7 +1347,7 @@ class ContinuousRun:
             if existing is None:
                 p.persist_open_repair_snapshot(name, p.snapshot_open_repair_requests(name), round_)
             elif existing[1] != round_:
-                raise ContinuousError(f"{name}: an unfinished repair snapshot belongs to round {existing[1]}")
+                raise SingleSessionError(f"{name}: an unfinished repair snapshot belongs to round {existing[1]}")
             state = self._load(name)
             state.stage = "main"
             state.repair_round = round_

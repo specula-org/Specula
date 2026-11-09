@@ -69,7 +69,7 @@ PHASES = (
 PHASE_BY_KEY = {phase.key: phase for phase in PHASES}
 INCREMENTAL_PHASE = PhaseDefinition("incremental", "Incremental workflow", ("incremental.usage.json",))
 PHASE_BY_KEY[INCREMENTAL_PHASE.key] = INCREMENTAL_PHASE
-# Continuous orchestration runs Phases 1-3 and their repairs in one main session.
+# Single-session orchestration runs Phases 1-3 and their repairs in one main session.
 MAIN_PHASE = PhaseDefinition("main", "Main session (Phases 1-3)", ("main.usage.json",))
 PHASE_BY_KEY[MAIN_PHASE.key] = MAIN_PHASE
 

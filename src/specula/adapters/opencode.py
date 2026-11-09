@@ -187,7 +187,7 @@ def main(argv: list[str]) -> int:
         command += ["--variant", options.effort]
     child_env = os.environ.copy()
     context_config = child_env.get("SPECULA_CONTEXT_MCP_JSON")
-    # Continuous phases (specula.context_control.CONTINUOUS_PHASES) get the context tools.
+    # Context-control phases (specula.context_control.CONTEXT_CONTROL_PHASES) get the context tools.
     if child_env.get("SPECULA_PHASE") in {"incremental", "main"} and context_config:
         # Newer OpenCode releases renamed the non-interactive approval flag.
         try:

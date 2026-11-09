@@ -1,6 +1,6 @@
 """Continue one native conversation across compactions and confirmation handoffs.
 
-Used by the incremental CI workflow and by the continuous main session.
+Used by the incremental CI workflow and by the single-session main session.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from specula.adapters.utils.usage import UsageTotals, accumulate_usage
 from specula.context_control import (
     CONFIRMATION_REQUEST,
     CONFIRMATION_YIELD_RC,
-    CONTINUOUS_PHASES,
+    CONTEXT_CONTROL_PHASES,
     MCP_ENV,
     PYTHON_ENV,
     REQUEST_ENV,
@@ -151,7 +151,7 @@ def _live_jobs(work: Path) -> list[str]:
 
 def _continue_prompt(phase: str, status: str, handoff: str, work: Path) -> str:
     if phase == "main":
-        from specula.continuous import compaction_continue_prompt
+        from specula.single_session import compaction_continue_prompt
 
         return compaction_continue_prompt(status, handoff, work)
     return with_rules(
@@ -166,7 +166,7 @@ def _continue_prompt(phase: str, status: str, handoff: str, work: Path) -> str:
 def run(adapter: Path, arguments: list[str]) -> int:
     options = dict(arg[2:].split("=", 1) for arg in arguments if arg.startswith("--") and "=" in arg)
     phase = os.environ.get("SPECULA_PHASE", "")
-    if phase not in CONTINUOUS_PHASES:
+    if phase not in CONTEXT_CONTROL_PHASES:
         return subprocess.call([str(adapter), *arguments], pass_fds=inherited_run_lock_fds())
     python = ROOT / "tools/context_control/.venv/bin/python"
     mcp_available = python.is_file()
@@ -185,7 +185,7 @@ def run(adapter: Path, arguments: list[str]) -> int:
         if phase == "main":
             # Every end of a main-session turn is a handoff that must be bound
             # to its native session here; never run it unsupervised.
-            print(f"ERROR: continuous main session requires the context controller ({exc}).", flush=True)
+            print(f"ERROR: single-session orchestration requires the context controller ({exc}).", flush=True)
             return 1
         print(f"WARNING: context tool unavailable ({exc}); continuing without compaction.", flush=True)
         return subprocess.call([str(adapter), *arguments], pass_fds=inherited_run_lock_fds())

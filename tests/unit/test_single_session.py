@@ -1,4 +1,4 @@
-"""Continuous orchestration: mode selection, durable state, prompts, and handoffs."""
+"""Single-session orchestration: mode selection, durable state, prompts, and handoffs."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ import pytest
 
 from specula import context_control as control
 from specula import context_runner as runner
-from specula import continuous, delegation, output_contract, resumelib, rules, stop_gate
+from specula import delegation, output_contract, resumelib, rules, single_session, stop_gate
 from specula import pipelinelib as pl
 from specula.agent_config import AgentConfigError, AgentSelection, load_agent_routing
 from specula.notes import NOTES_ENV, notes_section
@@ -55,32 +55,32 @@ def parse(argv: list[str]) -> tuple[pl.Pipeline, int | None, str]:
 # ── mode selection ──────────────────────────────────────────────────────────
 
 
-def test_phased_is_the_cli_default_and_continuous_is_opt_in() -> None:
+def test_phased_is_the_cli_default_and_single_session_is_opt_in() -> None:
     default, rc, _ = parse(["t|g|l|r"])
     assert rc is None and default.orchestration == "phased"
     phased, rc, _ = parse(["--orchestration=phased", "t|g|l|r"])
     assert rc is None and phased.orchestration == "phased"
-    continuous_run, rc, _ = parse(["--orchestration=continuous", "t|g|l|r"])
-    assert rc is None and continuous_run.orchestration == "continuous"
-    for argv in (["--orchestration=serial", "t"], ["--orchestration=phased", "--orchestration=continuous", "t"]):
+    single_session_run, rc, _ = parse(["--orchestration=single-session", "t|g|l|r"])
+    assert rc is None and single_session_run.orchestration == "single-session"
+    for argv in (["--orchestration=serial", "t"], ["--orchestration=phased", "--orchestration=single-session", "t"]):
         _, rc, err = parse(argv)
         assert rc == 1 and "--orchestration requires one value" in err
     assert pl.Pipeline().orchestration == "phased"  # embedders opt in explicitly
 
 
-def test_continuous_turns_on_rules_and_notes_unless_set(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_single_session_turns_on_rules_and_notes_unless_set(monkeypatch: pytest.MonkeyPatch) -> None:
     parse(["t|g|l|r"])
     assert rules.RULES_ENV not in os.environ and NOTES_ENV not in os.environ
     assert not rules.enabled() and not notes_section(Path("/w"), first=False)
     phased = parse(["--orchestration=phased", "t|g|l|r"])[0]._resume_configuration_document()
     assert "rules" not in phased and "notes" not in phased  # identical to runs from before the toggles
-    continuous_run, _, _ = parse(["--orchestration=continuous", "t|g|l|r"])
+    single_session_run, _, _ = parse(["--orchestration=single-session", "t|g|l|r"])
     assert os.environ[rules.RULES_ENV] == "on" and os.environ[NOTES_ENV] == "on"
-    document = continuous_run._resume_configuration_document()
+    document = single_session_run._resume_configuration_document()
     assert (document["rules"], document["notes"]) == (True, True)
     monkeypatch.setenv(rules.RULES_ENV, "off")
     monkeypatch.setenv(NOTES_ENV, "")  # exported but empty: unset, as for the other switches
-    parse(["--orchestration=continuous", "t|g|l|r"])
+    parse(["--orchestration=single-session", "t|g|l|r"])
     assert os.environ[rules.RULES_ENV] == "off" and os.environ[NOTES_ENV] == "on"
 
 
@@ -97,24 +97,24 @@ def test_continuous_turns_on_rules_and_notes_unless_set(monkeypatch: pytest.Monk
         "--ci-init",
     ],
 )
-def test_unsupported_options_stay_phased_and_reject_continuous(flag: str) -> None:
+def test_unsupported_options_stay_phased_and_reject_single_session(flag: str) -> None:
     default, rc, _ = parse([flag, "t|g|l|r"])
     assert rc is None and default.orchestration == "phased"
-    _, rc, err = parse(["--orchestration=continuous", flag, "t|g|l|r"])
+    _, rc, err = parse(["--orchestration=single-session", flag, "t|g|l|r"])
     assert rc == 1
-    assert f"--orchestration=continuous does not support {flag}" in err
+    assert f"--orchestration=single-session does not support {flag}" in err
     assert "--orchestration=phased" in err
 
 
-def test_skip_analysis_starts_continuous_from_existing_analysis() -> None:
+def test_skip_analysis_starts_single_session_from_existing_analysis() -> None:
     # The main session then starts at spec generation; only the analysis stage can be skipped.
-    pipeline, rc, err = parse(["--orchestration=continuous", "--skip-analysis", "t|g|l|r"])
+    pipeline, rc, err = parse(["--orchestration=single-session", "--skip-analysis", "t|g|l|r"])
     assert rc is None, err
-    assert pipeline.orchestration == "continuous" and pipeline.skip_analysis
+    assert pipeline.orchestration == "single-session" and pipeline.skip_analysis
     phased, rc, err = parse(["--skip-analysis", "t|g|l|r"])
     assert rc is None, err
     assert phased.orchestration == "phased" and phased.skip_analysis
-    _, rc, err = parse(["--orchestration=continuous", "--skip-analysis", "--skip-specgen", "t|g|l|r"])
+    _, rc, err = parse(["--orchestration=single-session", "--skip-analysis", "--skip-specgen", "t|g|l|r"])
     assert rc == 1 and "does not support --skip-specgen" in err and "--skip-analysis" not in err
 
 
@@ -126,7 +126,7 @@ def test_path_options_stay_phased(tmp_path: Path) -> None:
     for flag in (f"--byom={model}", f"--findings-from={prior}"):
         default, rc, _ = parse([flag, "t|g|l|r"])
         assert rc is None and default.orchestration == "phased"
-        _, rc, err = parse(["--orchestration=continuous", flag, "t|g|l|r"])
+        _, rc, err = parse(["--orchestration=single-session", flag, "t|g|l|r"])
         assert rc == 1 and "does not support" in err
 
 
@@ -172,20 +172,20 @@ def test_phased_rejects_a_main_route(tmp_path: Path) -> None:
     config = write_config(tmp_path / "agents.json", {"main": "main"})
     for argv in ([f"--agent-config={config}", "t|g|l|r"], ["--orchestration=phased", f"--agent-config={config}", "t"]):
         _, rc, err = parse(argv)
-        assert rc == 1 and "phases.main applies only to --orchestration=continuous" in err
-    pipeline, rc, err = parse(["--orchestration=continuous", f"--agent-config={config}", "t|g|l|r"])
+        assert rc == 1 and "phases.main applies only to --orchestration=single-session" in err
+    pipeline, rc, err = parse(["--orchestration=single-session", f"--agent-config={config}", "t|g|l|r"])
     assert rc is None, err
 
 
-def test_agent_config_conflict_stays_phased_or_rejects_continuous(tmp_path: Path) -> None:
+def test_agent_config_conflict_stays_phased_or_rejects_single_session(tmp_path: Path) -> None:
     config = write_config(tmp_path / "agents.json", {"analyze": "main", "validate": "check"})
     default, rc, _ = parse([f"--agent-config={config}", "t|g|l|r"])
     assert rc is None and default.orchestration == "phased"
-    _, rc, err = parse(["--orchestration=continuous", f"--agent-config={config}", "t|g|l|r"])
+    _, rc, err = parse(["--orchestration=single-session", f"--agent-config={config}", "t|g|l|r"])
     assert rc == 1 and "--agent-config routing" in err
     good = write_config(tmp_path / "good.json", {"main": "main", "confirm": "check", "classify": "base"})
-    pipeline, rc, _ = parse(["--orchestration=continuous", f"--agent-config={good}", "t|g|l|r"])
-    assert rc is None and pipeline.orchestration == "continuous"
+    pipeline, rc, _ = parse(["--orchestration=single-session", f"--agent-config={good}", "t|g|l|r"])
+    assert rc is None and pipeline.orchestration == "single-session"
     assert set(pipeline._route_specs()) == {"main", "confirm", "classify"}
     assert pipeline._agent_selection("main") == AgentSelection("codex", "main-model")
     assert pipeline._agent_selection("confirm") == AgentSelection("claude-code", "check-model")
@@ -197,7 +197,7 @@ def test_incremental_keeps_its_own_path() -> None:
     pipeline = CIPipeline()
     pipeline.incremental = True
     assert pipeline._resolve_orchestration() is None and pipeline.orchestration == "phased"
-    pipeline._orchestration_requested = "continuous"
+    pipeline._orchestration_requested = "single-session"
     assert pipeline._resolve_orchestration() == "--orchestration does not apply to --incremental"
 
 
@@ -205,10 +205,10 @@ def test_incremental_keeps_its_own_path() -> None:
 
 
 def test_resume_configuration_records_and_restores_the_mode() -> None:
-    continuous_run, _, _ = parse(["--orchestration=continuous", "t|g|l|r"])
-    document = continuous_run._resume_configuration_document()
-    assert document["orchestration"] == "continuous"
-    # Version 2 makes releases without continuous orchestration refuse to resume the run.
+    single_session_run, _, _ = parse(["--orchestration=single-session", "t|g|l|r"])
+    document = single_session_run._resume_configuration_document()
+    assert document["orchestration"] == "single-session"
+    # Version 2 makes releases without single-session orchestration refuse to resume the run.
     assert document["version"] == 2
     phased_run, _, _ = parse(["--orchestration=phased", "t|g|l|r"])
     phased_document = phased_run._resume_configuration_document()
@@ -218,20 +218,20 @@ def test_resume_configuration_records_and_restores_the_mode() -> None:
 
     attach, _, _ = parse(["--run-id=x"])
     attach._restore_resume_configuration(document)
-    assert attach.orchestration == "continuous"
+    assert attach.orchestration == "single-session"
     legacy, _, _ = parse(["--run-id=x"])
     legacy._restore_resume_configuration(phased_run._resume_configuration_document())
     assert legacy.orchestration == "phased"
 
     explicit, _, _ = parse(["--run-id=x", "--orchestration=phased"])
-    with pytest.raises(resumelib.ResumeError, match="uses continuous orchestration"):
+    with pytest.raises(resumelib.ResumeError, match="uses single-session orchestration"):
         explicit._restore_resume_configuration(document)
-    switched, _, _ = parse(["--run-id=x", "--orchestration=continuous"])
+    switched, _, _ = parse(["--run-id=x", "--orchestration=single-session"])
     with pytest.raises(resumelib.ResumeError, match="uses phased orchestration"):
         switched._restore_resume_configuration(phased_run._resume_configuration_document(), allow_overrides=True)
     skipped, _, _ = parse(["--run-id=x", "--skip-analysis"])
     skipped._restore_resume_configuration(document)  # the controller checks it against the durable state
-    assert skipped.orchestration == "continuous" and skipped.skip_analysis
+    assert skipped.orchestration == "single-session" and skipped.skip_analysis
     skipped, _, _ = parse(["--run-id=x", "--skip-specgen"])
     with pytest.raises(resumelib.ResumeError, match="does not support --skip-specgen"):
         skipped._restore_resume_configuration(document)
@@ -241,7 +241,7 @@ def test_resume_configuration_records_and_restores_the_mode() -> None:
 
 
 def test_prompt_toggles_are_stored_at_creation_and_restored_on_attach(monkeypatch: pytest.MonkeyPatch) -> None:
-    created, _, _ = parse(["--orchestration=continuous", "t|g|l|r"])
+    created, _, _ = parse(["--orchestration=single-session", "t|g|l|r"])
     document = created._resume_configuration_document()
     assert (document["rules"], document["notes"]) == (True, True)
     monkeypatch.setenv(rules.RULES_ENV, "off")
@@ -273,16 +273,16 @@ def test_prompt_toggles_are_stored_at_creation_and_restored_on_attach(monkeypatc
         parse(["--run-id=x"])[0]._restore_resume_configuration(dict(document, rules="yes"))
 
 
-def test_strict_outputs_are_stored_for_continuous_runs_and_restored_on_attach(
+def test_strict_outputs_are_stored_for_single_session_runs_and_restored_on_attach(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv(output_contract.STRICT_ENV, "on")
-    document = parse(["--orchestration=continuous", "t|g|l|r"])[0]._resume_configuration_document()
+    document = parse(["--orchestration=single-session", "t|g|l|r"])[0]._resume_configuration_document()
     assert document["strict_outputs"] is True
     phased = parse(["--orchestration=phased", "t|g|l|r"])[0]._resume_configuration_document()
     assert "strict_outputs" not in phased  # no effect there, so phased configurations stay unchanged
     monkeypatch.setenv(output_contract.STRICT_ENV, "off")
-    default = parse(["--orchestration=continuous", "t|g|l|r"])[0]._resume_configuration_document()
+    default = parse(["--orchestration=single-session", "t|g|l|r"])[0]._resume_configuration_document()
     assert "strict_outputs" not in default
 
     attach, _, _ = parse(["--run-id=x"])
@@ -307,13 +307,13 @@ def test_strict_outputs_are_stored_for_continuous_runs_and_restored_on_attach(
         parse(["--run-id=x"])[0]._restore_resume_configuration(dict(document, strict_outputs="on"))
 
 
-def test_delegation_is_stored_for_continuous_runs_and_restored_on_attach(monkeypatch: pytest.MonkeyPatch) -> None:
-    document = parse(["--orchestration=continuous", "t|g|l|r"])[0]._resume_configuration_document()
+def test_delegation_is_stored_for_single_session_runs_and_restored_on_attach(monkeypatch: pytest.MonkeyPatch) -> None:
+    document = parse(["--orchestration=single-session", "t|g|l|r"])[0]._resume_configuration_document()
     assert document["delegation"] is True  # on by default
     phased = parse(["--orchestration=phased", "t|g|l|r"])[0]._resume_configuration_document()
     assert "delegation" not in phased  # phased configurations stay unchanged
     monkeypatch.setenv(delegation.DELEGATION_ENV, "no")
-    off = parse(["--orchestration=continuous", "t|g|l|r"])[0]._resume_configuration_document()
+    off = parse(["--orchestration=single-session", "t|g|l|r"])[0]._resume_configuration_document()
     assert "delegation" not in off
 
     attach, _, _ = parse(["--run-id=x"])
@@ -324,7 +324,7 @@ def test_delegation_is_stored_for_continuous_runs_and_restored_on_attach(monkeyp
         "current off so its main session keeps the same instructions"
     ]
     older, _, _ = parse(["--run-id=x"])
-    older._restore_resume_configuration(off)  # also continuous runs from before the guidance
+    older._restore_resume_configuration(off)  # also single-session runs from before the guidance
     assert not delegation.enabled() and len(older.resume_notices) == 1
 
     phased_attach, _, _ = parse(["--run-id=x"])
@@ -336,7 +336,7 @@ def test_delegation_is_stored_for_continuous_runs_and_restored_on_attach(monkeyp
 
 def test_routed_resume_configuration_uses_main_routes(tmp_path: Path) -> None:
     config = write_config(tmp_path / "agents.json", {"main": "main", "confirm": "check"})
-    pipeline, _, _ = parse(["--orchestration=continuous", f"--agent-config={config}", "t|g|l|r"])
+    pipeline, _, _ = parse(["--orchestration=single-session", f"--agent-config={config}", "t|g|l|r"])
     document = pipeline._resume_configuration_document()
     assert set(document["routes"]) == {"main", "confirm", "classify"}
     attach, _, _ = parse(["--run-id=x"])
@@ -345,52 +345,52 @@ def test_routed_resume_configuration_uses_main_routes(tmp_path: Path) -> None:
     assert attach._agent_selection("classify").model == "base-model"
 
 
-def test_resume_phase_positions_continuous_attach() -> None:
-    assert continuous.resume_phase({"main"}) == "main"
-    assert continuous.resume_phase({"main", "bug_confirmation"}) == "main"
-    assert continuous.resume_phase({"bug_confirmation"}) == "bug_confirmation"
-    assert continuous.resume_phase({"bug_classification"}) == "bug_classification"
+def test_resume_phase_positions_single_session_attach() -> None:
+    assert single_session.resume_phase({"main"}) == "main"
+    assert single_session.resume_phase({"main", "bug_confirmation"}) == "main"
+    assert single_session.resume_phase({"bug_confirmation"}) == "bug_confirmation"
+    assert single_session.resume_phase({"bug_classification"}) == "bug_classification"
     with pytest.raises(resumelib.ResumeError):
-        continuous.resume_phase({"main", "bug_classification"})
+        single_session.resume_phase({"main", "bug_classification"})
 
 
 # ── durable state ────────────────────────────────────────────────────────────
 
 
 def test_state_round_trip_and_fail_closed(tmp_path: Path) -> None:
-    assert continuous.load_state(tmp_path, "t") is None
-    state = continuous.MainState(stage="confirm", repair_round=2, session_id="s-1")
-    continuous.save_state(tmp_path, "t", state, "yield")
-    loaded = continuous.load_state(tmp_path, "t")
+    assert single_session.load_state(tmp_path, "t") is None
+    state = single_session.MainState(stage="confirm", repair_round=2, session_id="s-1")
+    single_session.save_state(tmp_path, "t", state, "yield")
+    loaded = single_session.load_state(tmp_path, "t")
     assert loaded is not None
     assert (loaded.stage, loaded.repair_round, loaded.session_id) == ("confirm", 2, "s-1")
     assert loaded.history[-1]["event"] == "yield"
-    with pytest.raises(continuous.ContinuousError):
-        continuous.load_state(tmp_path, "other-target")
-    path = continuous.state_path(tmp_path)
+    with pytest.raises(single_session.SingleSessionError):
+        single_session.load_state(tmp_path, "other-target")
+    path = single_session.state_path(tmp_path)
     for broken in ("{", json.dumps({**json.loads(path.read_text()), "stage": "running"})):
         path.write_text(broken)
-        with pytest.raises(continuous.ContinuousError):
-            continuous.load_state(tmp_path, "t")
+        with pytest.raises(single_session.SingleSessionError):
+            single_session.load_state(tmp_path, "t")
     request = tmp_path / control.CONFIRMATION_REQUEST
     request.write_text(json.dumps({"session_id": "", "status": "pending"}))
-    with pytest.raises(continuous.ContinuousError):
-        continuous.load_request(tmp_path)
+    with pytest.raises(single_session.SingleSessionError):
+        single_session.load_request(tmp_path)
 
 
 def test_state_records_the_analysis_mode(tmp_path: Path) -> None:
-    continuous.save_state(tmp_path, "t", continuous.MainState(analysis="existing"), "start")
-    loaded = continuous.load_state(tmp_path, "t")
+    single_session.save_state(tmp_path, "t", single_session.MainState(analysis="existing"), "start")
+    loaded = single_session.load_state(tmp_path, "t")
     assert loaded is not None and loaded.analysis == "existing"
-    path = continuous.state_path(tmp_path)
+    path = single_session.state_path(tmp_path)
     document = json.loads(path.read_text())
     assert document["analysis"] == "existing"
     path.write_text(json.dumps({key: value for key, value in document.items() if key != "analysis"}))
-    older = continuous.load_state(tmp_path, "t")  # states written before the field existed
+    older = single_session.load_state(tmp_path, "t")  # states written before the field existed
     assert older is not None and older.analysis == "session"
     path.write_text(json.dumps({**document, "analysis": "skipped"}))
-    with pytest.raises(continuous.ContinuousError):
-        continuous.load_state(tmp_path, "t")
+    with pytest.raises(single_session.SingleSessionError):
+        single_session.load_state(tmp_path, "t")
 
 
 # ── the main-session phase ───────────────────────────────────────────────────
@@ -405,7 +405,7 @@ def run_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[t
     source.mkdir()
     monkeypatch.setenv("SPECULA_RUN_DIR", str(run))
     monkeypatch.setenv(resumelib.INVOCATION_ENV, "a" * 32)
-    continuous.apply_prompt_defaults()  # as a continuous run's pipeline does
+    single_session.apply_prompt_defaults()  # as a single-session run's pipeline does
     ws = Workspace(["t|org/t|Go|Raft"], artifact=str(source), run_dir=run)
     work = ws.work_dir("t")
     work.mkdir(parents=True)
@@ -413,7 +413,7 @@ def run_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[t
 
 
 def seed_active_main(ws: Workspace, work: Path, *, resumable: bool) -> None:
-    phase = continuous.ContinuousPhase()
+    phase = single_session.SingleSessionPhase()
     files = phase.agent_files(ws, "t")
     resumelib.prepare_turn(
         ("phase", "main", "t"),
@@ -439,12 +439,12 @@ def seed_repair_round(work: Path, round_: int = 1) -> None:
     (work / control.REPAIR_SNAPSHOT).write_text(
         json.dumps({"version": 2, "round": round_, "commit_token": "0" * 32, "requests": {"RR-001.md": "..."}})
     )
-    continuous.save_state(work, "t", continuous.MainState(repair_round=round_, session_id="s-1"), "repair")
+    single_session.save_state(work, "t", single_session.MainState(repair_round=round_, session_id="s-1"), "repair")
 
 
 def test_first_launch_uses_the_full_prompt_with_phase_output_contract(run_workspace: tuple[Workspace, Path]) -> None:
     ws, work = run_workspace
-    prompt = continuous.ContinuousPhase().build_prompt(ws, "t|org/t|Go|Raft")
+    prompt = single_session.SingleSessionPhase().build_prompt(ws, "t|org/t|Go|Raft")
     assert prompt.startswith("# Specula Main Session: t")
     for expected in (
         "code-analysis",
@@ -467,12 +467,12 @@ def test_strict_outputs_restore_the_full_prompt_contract(
     run_workspace: tuple[Workspace, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     ws, work = run_workspace
-    default = continuous.ContinuousPhase().build_prompt(ws, "t|org/t|Go|Raft")
+    default = single_session.SingleSessionPhase().build_prompt(ws, "t|org/t|Go|Raft")
     assert "### Required" in default and "### Recommended" in default
     assert "Only the set of files is relaxed" in default
     assert default.index(f"{work}/spec/instrumentation-spec.md") > default.index("### Recommended")
     monkeypatch.setenv(output_contract.STRICT_ENV, "on")
-    strict = continuous.ContinuousPhase().build_prompt(ws, "t|org/t|Go|Raft")
+    strict = single_session.SingleSessionPhase().build_prompt(ws, "t|org/t|Go|Raft")
     assert "### Recommended" not in strict and "Every output below is required" in strict
     assert "Only the set of files is relaxed" not in strict
     for prompt in (default, strict):
@@ -490,7 +490,7 @@ FOLLOW_EXACTLY = (
 
 def test_main_prompt_keeps_skill_methodology_and_allows_probes(run_workspace: tuple[Workspace, Path]) -> None:
     ws, work = run_workspace
-    prompt = continuous.ContinuousPhase().build_prompt(ws, "t|org/t|Go|Raft")
+    prompt = single_session.SingleSessionPhase().build_prompt(ws, "t|org/t|Go|Raft")
     workflow = prompt[prompt.index("## Workflow") : prompt.index("## Output")]
     assert "read it in full when you reach that stage" in workflow and FOLLOW_EXACTLY in workflow
     # Only formal confirmation is reserved; hypothesis probes are expected.
@@ -506,9 +506,9 @@ def test_main_prompt_keeps_skill_methodology_and_allows_probes(run_workspace: tu
 
 def test_main_prompt_from_existing_analysis_starts_at_spec_generation(run_workspace: tuple[Workspace, Path]) -> None:
     ws, work = run_workspace
-    phase = continuous.ContinuousPhase()
+    phase = single_session.SingleSessionPhase()
     default = phase.build_prompt(ws, "t|org/t|Go|Raft")
-    continuous.save_state(work, "t", continuous.MainState(analysis="existing"), "start")
+    single_session.save_state(work, "t", single_session.MainState(analysis="existing"), "start")
     prompt = phase.build_prompt(ws, "t|org/t|Go|Raft")
     workflow = prompt[prompt.index("## Workflow") : prompt.index("## Output")]
     # Stages 2-4 keep the skills binding at full depth; Stage 1 reads the existing results.
@@ -519,7 +519,7 @@ def test_main_prompt_from_existing_analysis_starts_at_spec_generation(run_worksp
     assert "Do not redo the analysis or rewrite these files" in workflow
     assert "**code-analysis**" not in prompt and "**code-analysis**" in default
     assert "starting from a completed code analysis" in prompt
-    assert "one continuous session: code analysis," not in prompt
+    assert "one session: code analysis," not in prompt
     for kept in ("2. **Spec generation**", "3. **Harness generation**", "4. **Validation and bug hunting**"):
         assert kept in workflow
 
@@ -536,36 +536,36 @@ def test_main_launcher_requires_the_brief_of_an_existing_analysis(
     run_workspace: tuple[Workspace, Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
     ws, work = run_workspace
-    phase = continuous.ContinuousPhase()
-    continuous.save_state(work, "t", continuous.MainState(analysis="existing"), "start")
+    phase = single_session.SingleSessionPhase()
+    single_session.save_state(work, "t", single_session.MainState(analysis="existing"), "start")
     assert not phase.check(ws, ["t"])
     assert "MISSING  t — modeling-brief.md" in capsys.readouterr().out
     assert phase.check_fail_msg == "ERROR: Missing prerequisites. Run code analysis first."
     (work / "modeling-brief.md").write_text("\n")
-    assert not continuous.ContinuousPhase().check(ws, ["t"])  # an empty brief is no analysis
+    assert not single_session.SingleSessionPhase().check(ws, ["t"])  # an empty brief is no analysis
     (work / "modeling-brief.md").write_text("# Brief\n")
-    assert continuous.ContinuousPhase().check(ws, ["t"])
+    assert single_session.SingleSessionPhase().check(ws, ["t"])
     (work / "modeling-brief.md").unlink()
-    continuous.save_state(work, "t", continuous.MainState(), "start")
-    assert continuous.ContinuousPhase().check(ws, ["t"])  # the session performs the analysis itself
+    single_session.save_state(work, "t", single_session.MainState(), "start")
+    assert single_session.SingleSessionPhase().check(ws, ["t"])  # the session performs the analysis itself
 
 
 def test_main_prompt_carries_the_delegation_guidance_once(
     run_workspace: tuple[Workspace, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     ws, work = run_workspace
-    phase = continuous.ContinuousPhase()
+    phase = single_session.SingleSessionPhase()
     section = delegation.delegation_section(work).strip("\n")
     first = phase.build_prompt(ws, "t|org/t|Go|Raft")
     assert first.count("## Parallel Subagents") == 1 and section in first
     assert first.index(section) > first.index("## If You Cannot Finish")
-    compacted = continuous.compaction_continue_prompt("completed", str(work / "handoff.md"), work)
+    compacted = single_session.compaction_continue_prompt("completed", str(work / "handoff.md"), work)
     assert compacted.count(delegation.POINTER) == 1 and "## Parallel Subagents" not in compacted
 
     # A fresh-context restart is a new session: it gets the full guidance once.
     (work / "spec").mkdir()
     (work / "modeling-brief.md").write_text("brief")
-    continuous.save_state(work, "t", continuous.MainState(context="fresh"), "fresh-context")
+    single_session.save_state(work, "t", single_session.MainState(context="fresh"), "fresh-context")
     restarted = phase.build_prompt(ws, "t|org/t|Go|Raft")
     assert "## Continue From Existing Work" in restarted and restarted.count("## Parallel Subagents") == 1
     # A resumed session already has it.
@@ -574,10 +574,10 @@ def test_main_prompt_carries_the_delegation_guidance_once(
     assert "Parallel Subagents" not in phase.build_prompt(ws, "t|org/t|Go|Raft")
 
     monkeypatch.setenv(delegation.DELEGATION_ENV, "off")
-    (work / continuous.STATE_FILE).unlink()
+    (work / single_session.STATE_FILE).unlink()
     off = phase.build_prompt(ws, "t|org/t|Go|Raft")
     assert "Parallel Subagents" not in off and "sub-<topic>.md" not in off
-    compacted_off = continuous.compaction_continue_prompt("completed", str(work / "handoff.md"), work)
+    compacted_off = single_session.compaction_continue_prompt("completed", str(work / "handoff.md"), work)
     assert compacted_off == compacted.replace(f"\n\n{delegation.POINTER}\n", "\n")
 
 
@@ -595,8 +595,8 @@ def test_repair_resume_sends_only_the_continuation(
         assert work_dir == work
         return "HOOKED " + text
 
-    monkeypatch.setattr(continuous, "_continuation_prompt", hook)
-    prompt = continuous.ContinuousPhase().build_prompt(ws, "t|org/t|Go|Raft")
+    monkeypatch.setattr(single_session, "_continuation_prompt", hook)
+    prompt = single_session.SingleSessionPhase().build_prompt(ws, "t|org/t|Go|Raft")
     assert prompt.startswith("HOOKED ## Repair Round 1")
     assert "RR-001" in prompt and "CONSUMED" in prompt
     assert "# Specula Main Session" not in prompt
@@ -607,17 +607,17 @@ def test_unresumable_repair_restarts_with_full_prompt_and_context(run_workspace:
     ws, work = run_workspace
     seed_active_main(ws, work, resumable=False)
     seed_repair_round(work)
-    prompt = strip_rules(continuous.ContinuousPhase().build_prompt(ws, "t|org/t|Go|Raft"))
+    prompt = strip_rules(single_session.SingleSessionPhase().build_prompt(ws, "t|org/t|Go|Raft"))
     assert prompt.startswith("# Specula Main Session: t")
     assert "## Repair Round 1" in prompt
     # A new session did not request that batch and is not "this same session".
     assert "This session takes over that repair" in prompt
     assert "batch you requested" not in prompt and "Continue this same session" not in prompt
-    state = continuous.load_state(work, "t")
+    state = single_session.load_state(work, "t")
     assert state is not None
     state.rejection = "Fixture reason."
-    continuous.save_state(work, "t", state, "rejected")
-    prompt = strip_rules(continuous.ContinuousPhase().build_prompt(ws, "t|org/t|Go|Raft"))
+    single_session.save_state(work, "t", state, "rejected")
+    prompt = strip_rules(single_session.SingleSessionPhase().build_prompt(ws, "t|org/t|Go|Raft"))
     assert "after the last handoff of an earlier main session" in prompt and "your last handoff" not in prompt
 
 
@@ -626,8 +626,8 @@ def test_fresh_context_lists_existing_work(run_workspace: tuple[Workspace, Path]
     (work / "spec").mkdir()
     (work / "modeling-brief.md").write_text("brief")
     (work / "spec/base.tla").write_text("model")
-    continuous.save_state(work, "t", continuous.MainState(context="fresh"), "fresh-context")
-    prompt = continuous.ContinuousPhase().build_prompt(ws, "t|org/t|Go|Raft")
+    single_session.save_state(work, "t", single_session.MainState(context="fresh"), "fresh-context")
+    prompt = single_session.SingleSessionPhase().build_prompt(ws, "t|org/t|Go|Raft")
     assert "## Continue From Existing Work" in prompt
     assert f"`{work / 'modeling-brief.md'}`" in prompt and f"`{work / 'spec/base.tla'}`" in prompt
     assert "not results of this session" in prompt
@@ -638,11 +638,11 @@ def test_manual_resume_extra_carries_rejection_and_repair(
 ) -> None:
     ws, work = run_workspace
     seed_repair_round(work)
-    state = continuous.load_state(work, "t")
+    state = single_session.load_state(work, "t")
     assert state is not None
     state.rejection = "Repair requests handed to this session were not consumed: RR-001=OPEN."
-    continuous.save_state(work, "t", state, "rejected")
-    extra = continuous.ContinuousPhase()._manual_prompt_extra(ws, "t")
+    single_session.save_state(work, "t", state, "rejected")
+    extra = single_session.SingleSessionPhase()._manual_prompt_extra(ws, "t")
     assert "Confirmation Request Not Accepted" in extra and "RR-001=OPEN" in extra
     assert "## Repair Round 1" in extra
 
@@ -651,7 +651,7 @@ def test_a_main_session_that_simply_succeeds_is_not_accepted(run_workspace: tupl
     ws, _work = run_workspace
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
-        failures = continuous.ContinuousPhase().finalize_outputs(ws, ["t"], adapter=Path("fake"), dry_run=False)
+        failures = single_session.SingleSessionPhase().finalize_outputs(ws, ["t"], adapter=Path("fake"), dry_run=False)
     assert failures == [("t", 1)] and "without a controller handoff" in out.getvalue()
 
 
@@ -693,7 +693,7 @@ def test_main_confirmation_request_requires_consumed_repairs(monkeypatch: pytest
     rr.write_text(rr.read_text().replace("OPEN", "CONSUMED"))
     assert control.request_confirmation()["status"] == "requested"
     monkeypatch.setenv("SPECULA_PHASE", "spec_validation")
-    with pytest.raises(ValueError, match="continuous Specula main session"):
+    with pytest.raises(ValueError, match="single-session Specula main session"):
         control.request_confirmation()
 
 
@@ -893,7 +893,9 @@ def test_runner_compacts_main_then_records_explicit_confirmation(
     work = configure_request(monkeypatch, tmp_path)
     monkeypatch.setattr(runner, "ROOT", tmp_path)
     monkeypatch.setattr(
-        continuous, "_continuation_prompt", lambda text, *, work_dir=None, notes=False, delegation=False: "HOOK " + text
+        single_session,
+        "_continuation_prompt",
+        lambda text, *, work_dir=None, notes=False, delegation=False: "HOOK " + text,
     )
     tool = tmp_path / "tools/context_control"
     (tool / ".venv/bin").mkdir(parents=True)
@@ -950,13 +952,13 @@ def test_continuations_pin_rules_exactly_once(run_workspace: tuple[Workspace, Pa
     ws, work = run_workspace
     seed_active_main(ws, work, resumable=True)
     seed_repair_round(work)
-    phase = continuous.ContinuousPhase()
+    phase = single_session.SingleSessionPhase()
     built = phase.build_prompt(ws, "t|org/t|Go|Raft")
     # phaselib's generic launch path wraps again; the block must not repeat.
     launched = _retry_prompt(built, "fresh", resumable=True)
     assert launched == built
     assert strip_rules(launched).startswith("## Repair Round 1")
-    compaction = continuous.compaction_continue_prompt("completed", str(work / "handoff.md"), work)
+    compaction = single_session.compaction_continue_prompt("completed", str(work / "handoff.md"), work)
     body = strip_rules(compaction)
     assert body.startswith("Continue the same Specula main session")
     assert "## Working Notes" in body and "Earlier phases may have left notes" in body
@@ -965,13 +967,13 @@ def test_continuations_pin_rules_exactly_once(run_workspace: tuple[Workspace, Pa
 
 def test_main_prompt_opens_notes_and_fresh_context_continues_them(run_workspace: tuple[Workspace, Path]) -> None:
     ws, work = run_workspace
-    phase = continuous.ContinuousPhase()
+    phase = single_session.SingleSessionPhase()
     first = phase.build_prompt(ws, "t|org/t|Go|Raft")
     assert first.count("## Working Notes") == 1
     assert "Start notes whenever something is worth keeping" in first
     assert first.index("## If You Cannot Finish") < first.index("## Working Notes")
     (work / "modeling-brief.md").write_text("brief")
-    continuous.save_state(work, "t", continuous.MainState(context="fresh"), "fresh-context")
+    single_session.save_state(work, "t", single_session.MainState(context="fresh"), "fresh-context")
     fresh = strip_rules(phase.build_prompt(ws, "t|org/t|Go|Raft"))
     assert fresh.count("## Working Notes") == 1
     assert "Earlier phases may have left notes" in fresh
@@ -984,10 +986,10 @@ def test_rules_and_notes_off_leave_continuations_bare(
     ws, work = run_workspace
     monkeypatch.setenv(rules.RULES_ENV, "off")
     monkeypatch.setenv(NOTES_ENV, "off")
-    prompt = continuous.ContinuousPhase().build_prompt(ws, "t|org/t|Go|Raft")
+    prompt = single_session.SingleSessionPhase().build_prompt(ws, "t|org/t|Go|Raft")
     assert prompt.startswith("# Specula Main Session: t")
     assert "## Working Notes" not in prompt and rules.RULES_TITLE not in prompt
-    compaction = continuous.compaction_continue_prompt("failed", "h.md", work)
+    compaction = single_session.compaction_continue_prompt("failed", "h.md", work)
     assert compaction.startswith("Continue the same Specula main session") and "Working Notes" not in compaction
 
 
@@ -1018,19 +1020,19 @@ def test_has_unfinished_work(tmp_path: Path) -> None:
     pipeline.targets = ["t|g|l|r"]
     pipeline.run_dir = tmp_path
     work = Path(pipeline.get_work_dir("t"))
-    assert not continuous.has_unfinished_work(pipeline)
-    continuous.save_state(work, "t", continuous.MainState(stage="closed"), "closed")
-    assert continuous.has_unfinished_work(pipeline)
-    continuous.save_state(work, "t", continuous.MainState(stage="complete"), "complete")
-    assert not continuous.has_unfinished_work(pipeline)
+    assert not single_session.has_unfinished_work(pipeline)
+    single_session.save_state(work, "t", single_session.MainState(stage="closed"), "closed")
+    assert single_session.has_unfinished_work(pipeline)
+    single_session.save_state(work, "t", single_session.MainState(stage="complete"), "complete")
+    assert not single_session.has_unfinished_work(pipeline)
 
 
-# ── adapters wire the context tools for every continuous phase ──────────────
+# ── adapters wire the context tools for every context-control phase ──────────────
 
 
 @pytest.mark.parametrize("phase", ["main", "incremental", "spec_validation"])
 @pytest.mark.parametrize("agent", ["claude-code", "codex", "copilot-cli", "opencode", "pi"])
-def test_adapters_expose_context_tools_to_continuous_phases(tmp_path: Path, phase: str, agent: str) -> None:
+def test_adapters_expose_context_tools_to_single_session_phases(tmp_path: Path, phase: str, agent: str) -> None:
     import test_adapters as adapters
 
     work = tmp_path / "work"
@@ -1079,16 +1081,16 @@ def test_adapters_expose_context_tools_to_continuous_phases(tmp_path: Path, phas
         assert (extension in argv) is wired
 
 
-def test_pi_extension_accepts_every_continuous_phase() -> None:
+def test_pi_extension_accepts_every_single_session_phase() -> None:
     source = (Path(runner.ROOT) / "tools/context_control/pi-extension.js").read_text()
-    for phase in control.CONTINUOUS_PHASES:
+    for phase in control.CONTEXT_CONTROL_PHASES:
         assert f'"{phase}"' in source
 
 
 # ── repair-round reservation ────────────────────────────────────────────────
 
 
-def two_target_run(tmp_path: Path) -> tuple[pl.Pipeline, continuous.ContinuousRun]:
+def two_target_run(tmp_path: Path) -> tuple[pl.Pipeline, single_session.SingleSessionRun]:
     from test_pipelinelib import make_rr
 
     pipeline = pl.Pipeline()
@@ -1098,9 +1100,11 @@ def two_target_run(tmp_path: Path) -> tuple[pl.Pipeline, continuous.ContinuousRu
         work = Path(pipeline.get_work_dir(name))
         (work / "spec/repair-requests").mkdir(parents=True)
         make_rr(work / "spec/repair-requests", "RR-002", "OPEN")
-        continuous.save_state(work, name, continuous.MainState(stage="confirm", session_id=f"s-{name}"), "yield")
+        single_session.save_state(
+            work, name, single_session.MainState(stage="confirm", session_id=f"s-{name}"), "yield"
+        )
         control.write_json(work / control.CONFIRMATION_REQUEST, {"session_id": f"s-{name}", "status": "completed"})
-    return pipeline, continuous.ContinuousRun(pipeline)
+    return pipeline, single_session.SingleSessionRun(pipeline)
 
 
 def test_a_target_joins_each_repair_round_once(tmp_path: Path) -> None:
@@ -1125,7 +1129,7 @@ def test_an_interrupted_reservation_is_finished_before_any_main_session(tmp_path
     run._save("A", a, "repair-round-1")  # the crash hit before B's state was saved
     launched: list[tuple[str, int]] = []
 
-    def stop(names: list[str], states: dict[str, continuous.MainState]) -> None:
+    def stop(names: list[str], states: dict[str, single_session.MainState]) -> None:
         launched.extend((name, states[name].repair_round) for name in names)
         raise SystemExit(0)
 
@@ -1137,7 +1141,7 @@ def test_an_interrupted_reservation_is_finished_before_any_main_session(tmp_path
     assert pipeline.load_repair_loop_state() == (1, ["A", "B"])
 
 
-def skip_analysis_run(tmp_path: Path, *, fresh: bool = False) -> tuple[pl.Pipeline, continuous.ContinuousRun]:
+def skip_analysis_run(tmp_path: Path, *, fresh: bool = False) -> tuple[pl.Pipeline, single_session.SingleSessionRun]:
     pipeline = pl.Pipeline()
     pipeline.targets = ["A|g|l|r", "B|g|l|r"]
     pipeline.run_dir = tmp_path
@@ -1145,7 +1149,7 @@ def skip_analysis_run(tmp_path: Path, *, fresh: bool = False) -> tuple[pl.Pipeli
     pipeline.fresh_context = fresh
     for name in ("A", "B"):
         Path(pipeline.get_work_dir(name)).mkdir(parents=True)
-    return pipeline, continuous.ContinuousRun(pipeline)
+    return pipeline, single_session.SingleSessionRun(pipeline)
 
 
 def seed_analysis(pipeline: pl.Pipeline, name: str) -> Path:
@@ -1158,9 +1162,9 @@ def seed_analysis(pipeline: pl.Pipeline, name: str) -> Path:
 def test_start_from_existing_analysis_requires_every_brief_before_any_state(tmp_path: Path) -> None:
     pipeline, run = skip_analysis_run(tmp_path)
     seed_analysis(pipeline, "A")
-    with pytest.raises(continuous.ContinuousError, match=r"modeling-brief.md is missing or empty for B \("):
+    with pytest.raises(single_session.SingleSessionError, match=r"modeling-brief.md is missing or empty for B \("):
         run._start()
-    assert continuous.load_state(run.work("A"), "A") is None
+    assert single_session.load_state(run.work("A"), "A") is None
     seed_analysis(pipeline, "B")
     with contextlib.redirect_stdout(io.StringIO()):
         run._start()
@@ -1178,12 +1182,14 @@ def test_skip_analysis_cannot_retarget_a_session_that_performs_the_analysis(tmp_
     pipeline, run = skip_analysis_run(tmp_path)
     for name in ("A", "B"):
         seed_analysis(pipeline, name)
-        continuous.save_state(run.work(name), name, continuous.MainState(), "start")
-    with pytest.raises(continuous.ContinuousError, match="A: --skip-analysis does not apply to this run"):
+        single_session.save_state(run.work(name), name, single_session.MainState(), "start")
+    with pytest.raises(single_session.SingleSessionError, match="A: --skip-analysis does not apply to this run"):
         run._start()
     # After its handoff the analysis is done; the flag no longer matters.
     for name in ("A", "B"):
-        continuous.save_state(run.work(name), name, continuous.MainState(stage="confirm", session_id="s"), "yield")
+        single_session.save_state(
+            run.work(name), name, single_session.MainState(stage="confirm", session_id="s"), "yield"
+        )
         control.write_json(run.work(name) / control.CONFIRMATION_REQUEST, {"session_id": "s", "status": "pending"})
     with contextlib.redirect_stdout(io.StringIO()):
         run._start()
@@ -1193,9 +1199,9 @@ def test_skip_analysis_cannot_retarget_a_session_that_performs_the_analysis(tmp_
 def test_fresh_context_from_existing_analysis(tmp_path: Path) -> None:
     # Seeded Phase 1 outputs only: nothing is abandoned, so the session starts original.
     pipeline, run = skip_analysis_run(tmp_path, fresh=True)
-    with pytest.raises(continuous.ContinuousError, match="missing or empty for A"):
+    with pytest.raises(single_session.SingleSessionError, match="missing or empty for A"):
         run._start()
-    assert not (run.work("A") / continuous.ABANDONING_FILE).exists()
+    assert not (run.work("A") / single_session.ABANDONING_FILE).exists()
     for name in ("A", "B"):
         seed_analysis(pipeline, name)
     with contextlib.redirect_stdout(io.StringIO()):
@@ -1210,7 +1216,7 @@ def test_fresh_context_from_existing_analysis(tmp_path: Path) -> None:
     assert [(run._load(n).analysis, run._load(n).context) for n in ("A", "B")] == [("existing", "fresh")] * 2
     # A run whose session performed the analysis stays that way unless the flag asks otherwise.
     for name in ("A", "B"):
-        continuous.save_state(run.work(name), name, continuous.MainState(), "start")
+        single_session.save_state(run.work(name), name, single_session.MainState(), "start")
     with contextlib.redirect_stdout(io.StringIO()):
         run._start()
     assert run._load("A").analysis == "session" and run._load("A").context == "fresh"
@@ -1241,30 +1247,33 @@ def test_start_finishes_only_a_dangling_repair_commit(tmp_path: Path, monkeypatc
 
     monkeypatch.setattr(pipeline, "process_pending_repair_results", process)
     monkeypatch.setattr(pipeline, "resource_phase", lambda *_args, **_kwargs: contextlib.nullcontext())
-    run = continuous.ContinuousRun(pipeline)
+    run = single_session.SingleSessionRun(pipeline)
     request = work / control.CONFIRMATION_REQUEST
     bound = [
-        (continuous.MainState(stage="confirm", repair_round=1, session_id="s"), {"status": "pending"}),
-        (continuous.MainState(repair_round=1, rejection="r"), {"status": "rejected"}),
+        (single_session.MainState(stage="confirm", repair_round=1, session_id="s"), {"status": "pending"}),
+        (single_session.MainState(repair_round=1, rejection="r"), {"status": "rejected"}),
         (
-            continuous.MainState(stage="confirm", repair_round=1, session_id="s"),
+            single_session.MainState(stage="confirm", repair_round=1, session_id="s"),
             {"status": "confirming", "kind": "scoped", "commit_token": token},
         ),
     ]
     for state, document in bound:  # the current handoff dispatches (or refuses) these itself
-        continuous.save_state(work, "t", state, "seed")
+        single_session.save_state(work, "t", state, "seed")
         control.write_json(request, {"session_id": "s", **document})
         with contextlib.redirect_stdout(io.StringIO()):
             run._start()
         assert processed == []
     # A fresh session (round 0, no request) must not inherit the abandoned session's proof.
     request.unlink()
-    continuous.save_state(work, "t", continuous.MainState(context="fresh"), "fresh-context")
+    single_session.save_state(work, "t", single_session.MainState(context="fresh"), "fresh-context")
     with contextlib.redirect_stdout(io.StringIO()):
         run._start()
     assert processed == [{"t"}]
     pipeline.skip_repair_loop = True
-    with contextlib.redirect_stdout(io.StringIO()), pytest.raises(continuous.ContinuousError, match="skip-repair-loop"):
+    with (
+        contextlib.redirect_stdout(io.StringIO()),
+        pytest.raises(single_session.SingleSessionError, match="skip-repair-loop"),
+    ):
         run._start()
 
 
@@ -1272,7 +1281,7 @@ def test_continuations_point_to_the_staged_guidance(run_workspace: tuple[Workspa
     ws, work = run_workspace
     seed_active_main(ws, work, resumable=True)
     seed_repair_round(work)
-    phase = continuous.ContinuousPhase()
+    phase = single_session.SingleSessionPhase()
     pointer = "remain in effect; reread them before continuing"
     assert pointer not in phase.build_prompt(ws, "t|org/t|Go|Raft")  # no guidance staged
     (work / ".prompt-extra.initial.md").write_text("")  # frozen without guidance
@@ -1281,20 +1290,20 @@ def test_continuations_point_to_the_staged_guidance(run_workspace: tuple[Workspa
     staged = str(work / ".prompt-extra.initial.md")
     for prompt in (
         phase.build_prompt(ws, "t|org/t|Go|Raft"),  # repair continuation
-        continuous.compaction_continue_prompt("completed", str(work / "handoff.md"), work),
+        single_session.compaction_continue_prompt("completed", str(work / "handoff.md"), work),
     ):
         assert prompt.count(pointer) == 1 and staged in prompt
     # A prompt that inlines the guidance does not point to it again.
-    restarted = continuous._continuation_prompt("x\n## Target-Specific Instructions\n\ny\n", work_dir=work)
+    restarted = single_session._continuation_prompt("x\n## Target-Specific Instructions\n\ny\n", work_dir=work)
     assert pointer not in restarted
-    template = (Path(continuous.__file__).parent / "prompts/continuous/main.md").read_text()
+    template = (Path(single_session.__file__).parent / "prompts/single-session/main.md").read_text()
     assert "check the work against the Target-Specific Instructions" in template
 
 
 # ── handoff checks ──────────────────────────────────────────────────────────
 
 
-def handoff_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[continuous.ContinuousRun, Path]:
+def handoff_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[single_session.SingleSessionRun, Path]:
     """A one-target controller whose required outputs exist; SANY rejects modules marked SANY-ERROR."""
     source = tmp_path / "source"
     source.mkdir()
@@ -1317,12 +1326,12 @@ def handoff_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[contin
 
     monkeypatch.setattr(output_contract, "sany_tools", lambda: ("java", []))
     monkeypatch.setattr(output_contract, "sany_problem", sany)
-    return continuous.ContinuousRun(pipeline), work
+    return single_session.SingleSessionRun(pipeline), work
 
 
 def test_handoff_requires_only_the_required_outputs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     run, work = handoff_run(tmp_path, monkeypatch)
-    state = continuous.MainState(stage="confirm", session_id="s")
+    state = single_session.MainState(stage="confirm", session_id="s")
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
         assert run._handoff_error("t", state) is None
@@ -1361,15 +1370,15 @@ def test_a_handoff_without_traces_is_accepted_with_a_recorded_limit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     run, work = handoff_run(tmp_path, monkeypatch)
-    state = continuous.MainState(stage="confirm", session_id="s")
-    continuous.save_state(work, "t", state, "yield")
+    state = single_session.MainState(stage="confirm", session_id="s")
+    single_session.save_state(work, "t", state, "yield")
     control.write_json(work / control.CONFIRMATION_REQUEST, {"session_id": "s", "status": "pending"})
     (work / "traces/t.ndjson").unlink()
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
         assert run._handoff_error("t", state) is None
     assert f"WARN  t: {output_contract.TRACES_LIMIT}" in out.getvalue()
-    request = continuous.load_request(work)
+    request = single_session.load_request(work)
     assert request is not None and request["validation_limits"] == [output_contract.TRACES_LIMIT]
 
     published: list[tuple[str, list[str]]] = []
@@ -1379,7 +1388,7 @@ def test_a_handoff_without_traces_is_accepted_with_a_recorded_limit(
     (work / "traces/t.ndjson").write_text("{}\n")  # a later handoff with traces clears it
     with contextlib.redirect_stdout(out):
         assert run._handoff_error("t", state) is None
-    request = continuous.load_request(work)
+    request = single_session.load_request(work)
     assert request is not None and request["validation_limits"] == []
 
 
@@ -1387,27 +1396,27 @@ def test_missing_sany_stops_before_any_handoff_is_accepted_or_rejected(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     run, work = handoff_run(tmp_path, monkeypatch)
-    state = continuous.MainState(stage="confirm", session_id="s")
-    continuous.save_state(work, "t", state, "yield")
+    state = single_session.MainState(stage="confirm", session_id="s")
+    single_session.save_state(work, "t", state, "yield")
     control.write_json(work / control.CONFIRMATION_REQUEST, {"session_id": "s", "status": "pending"})
 
     def unavailable() -> tuple[str, list[Path]]:
         raise output_contract.SanyUnavailable("java was not found on PATH")
 
     monkeypatch.setattr(output_contract, "sany_tools", unavailable)
-    with pytest.raises(continuous.ContinuousError) as raised:
+    with pytest.raises(single_session.SingleSessionError) as raised:
         run._dispatch(["t"], {"t": state})
     assert str(raised.value) == (
         "cannot check the confirmation handoff: java was not found on PATH. Make SANY available, then rerun with "
         "--run-id=run-1 to check the same handoff again (no agent work is lost)"
     )
-    request = continuous.load_request(work)
+    request = single_session.load_request(work)
     assert request is not None and request["status"] == "pending"
-    saved = continuous.load_state(work, "t")
+    saved = single_session.load_state(work, "t")
     assert saved is not None and saved.rejection is None and saved.auto_resumes == 0
 
 
-def test_summary_judges_a_continuous_run_by_its_required_outputs(
+def test_summary_judges_a_single_session_run_by_its_required_outputs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     run, work = handoff_run(tmp_path, monkeypatch)
@@ -1420,7 +1429,7 @@ def test_summary_judges_a_continuous_run_by_its_required_outputs(
         assert pipeline.run_dir is not None
         return (pipeline.run_dir / "pipeline-summary.md").read_text()
 
-    tolerant = summary("continuous")
+    tolerant = summary("single-session")
     assert "- **Phase 2 (Spec Gen)**: OK (5/5 required files, base: 1 lines)" in tolerant
     assert "- **Phase 2.5 (Harness)**: OK (traces: 1)" in tolerant
     assert "- **Phase 3 (Validation)**: bug-report.md written (1 lines)" in tolerant
@@ -1430,16 +1439,16 @@ def test_summary_judges_a_continuous_run_by_its_required_outputs(
     phased = summary("phased")  # the phased hand-off files are still reported there
     assert "- **Phase 2 (Spec Gen)**: INCOMPLETE (3/4 files)" in phased
     assert "- **Phase 3 (Validation)**: SKIPPED" in phased
-    monkeypatch.setenv(output_contract.STRICT_ENV, "on")  # strict continuous runs report like phased ones
+    monkeypatch.setenv(output_contract.STRICT_ENV, "on")  # strict single-session runs report like phased ones
 
     def body(text: str) -> list[str]:
         return [line for line in text.splitlines() if not line.startswith("Generated:")]
 
-    assert body(summary("continuous")) == body(phased)
+    assert body(summary("single-session")) == body(phased)
 
     monkeypatch.delenv(output_contract.STRICT_ENV)
     (work / "spec/MC.cfg").unlink()
     (work / "spec/bug-report.md").unlink()
-    broken = summary("continuous")
+    broken = summary("single-session")
     assert "- **Phase 2 (Spec Gen)**: INCOMPLETE (4/5 required files)" in broken
     assert "- **Phase 3 (Validation)**: MISSING (no bug-report.md)" in broken

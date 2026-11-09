@@ -1,4 +1,4 @@
-"""Continuous orchestration through the real CLI with a deterministic adapter.
+"""Single-session orchestration through the real CLI with a deterministic adapter.
 
 The fixture performs no semantic verification and never calls a model. It
 drives the real launcher, context runner, confirmation dispatcher, repair-loop
@@ -22,17 +22,17 @@ import test_cli_pipeline as fixtures
 from specula.phaselib import _MANUAL_SESSION_RESUME_PROMPT
 from specula.rules import RULES_SEPARATOR, RULES_TITLE
 
-FIXTURE = Path(__file__).parent / "fixtures/continuous_adapter.py"
+FIXTURE = Path(__file__).parent / "fixtures/single_session_adapter.py"
 
 
-def continuous_args(args: tuple[str, ...] | list[str]) -> list[str]:
-    """Select continuous orchestration (opt-in) unless the test chose a mode itself."""
+def single_session_args(args: tuple[str, ...] | list[str]) -> list[str]:
+    """Select single-session orchestration (opt-in) unless the test chose a mode itself."""
     if any(arg.startswith("--orchestration") for arg in args):
         return list(args)
-    return ["--orchestration=continuous", *args]
+    return ["--orchestration=single-session", *args]
 
 
-class ContinuousCLI(unittest.TestCase):
+class SingleSessionCLI(unittest.TestCase):
     def setUp(self) -> None:
         self.helper = fixtures.CliE2E()
         self.addCleanup(self.helper.doCleanups)
@@ -57,13 +57,13 @@ class ContinuousCLI(unittest.TestCase):
         subprocess.run(["git", "-C", str(self.source), "add", "."], check=True)
         subprocess.run(["git", "-C", str(self.source), "commit", "-qm", "initial"], check=True)
         self.adapters = self.root / "scripts/launch/adapters"
-        shutil.copyfile(FIXTURE, self.adapters / "continuous_adapter.py")
+        shutil.copyfile(FIXTURE, self.adapters / "single_session_adapter.py")
         self.install("fake")
 
     def install(self, name: str) -> None:
         script = self.adapters / f"{name}.sh"
         script.write_text(
-            f'#!/bin/sh\nFIXTURE_ADAPTER={name} exec "{sys.executable}" "{self.adapters / "continuous_adapter.py"}" "$@"\n'
+            f'#!/bin/sh\nFIXTURE_ADAPTER={name} exec "{sys.executable}" "{self.adapters / "single_session_adapter.py"}" "$@"\n'
         )
         script.chmod(0o755)
 
@@ -74,7 +74,7 @@ class ContinuousCLI(unittest.TestCase):
 
     def run_cli(self, *args: str) -> subprocess.CompletedProcess[str]:
         return self.helper.run_cli(
-            self.root, ["run", f"--artifact={self.source}", *continuous_args(args)], cwd=self.work
+            self.root, ["run", f"--artifact={self.source}", *single_session_args(args)], cwd=self.work
         )
 
     def run_dir(self) -> Path:
@@ -132,10 +132,10 @@ class ContinuousCLI(unittest.TestCase):
         self.assertNotIn("spec_validation", phases)
         self.assertEqual(self.request(run)["session_id"], "main-footest-1")
         meta = json.loads((run / "run.json").read_text())
-        self.assertEqual(meta["orchestration"], "continuous")
-        self.assertEqual(meta["resume_configuration"]["orchestration"], "continuous")
+        self.assertEqual(meta["orchestration"], "single-session")
+        self.assertEqual(meta["resume_configuration"]["orchestration"], "single-session")
         self.assertIn("MAIN SESSION: analysis", result.stdout)
-        self.assertIn("Orchestration: continuous", result.stdout)
+        self.assertIn("Orchestration: single-session", result.stdout)
         self.assertEqual(self.prompt(1).count("## Parallel Subagents"), 1)
         self.assertIs(
             json.loads((run / ".specula-resume/config.json").read_text())["configuration"]["delegation"], True
@@ -442,13 +442,18 @@ class ContinuousCLI(unittest.TestCase):
             "import sys\nfrom unittest.mock import patch\n"
             f"sys.path.insert(0, {str(self.root / 'src')!r})\n"
             "from specula import pipelinelib\n"
-            "with patch('specula.continuous.ContinuousRun._dispatch', side_effect=SystemExit(143)):\n"
+            "with patch('specula.single_session.SingleSessionRun._dispatch', side_effect=SystemExit(143)):\n"
             "    raise SystemExit(pipelinelib.main(sys.argv[1:]))\n"
         )
         env = {key: value for key, value in os.environ.items() if key not in fixtures._VOLATILE}
         env["HOME"] = str(self.work)
         stopped = subprocess.run(
-            [sys.executable, "-c", script, *continuous_args(["--agent=fake", f"--artifact={self.source}", "footest"])],
+            [
+                sys.executable,
+                "-c",
+                script,
+                *single_session_args(["--agent=fake", f"--artifact={self.source}", "footest"]),
+            ],
             cwd=self.work,
             env=env,
             capture_output=True,
@@ -478,7 +483,12 @@ class ContinuousCLI(unittest.TestCase):
         env = {key: value for key, value in os.environ.items() if key not in fixtures._VOLATILE}
         env["HOME"] = str(self.work)
         stopped = subprocess.run(
-            [sys.executable, "-c", script, *continuous_args(["--agent=fake", f"--artifact={self.source}", "footest"])],
+            [
+                sys.executable,
+                "-c",
+                script,
+                *single_session_args(["--agent=fake", f"--artifact={self.source}", "footest"]),
+            ],
             cwd=self.work,
             env=env,
             capture_output=True,
@@ -519,7 +529,7 @@ class ContinuousCLI(unittest.TestCase):
         run = self.run_dir()
         rejected = self.run_cli(f"--run-id={run.name}", "--orchestration=phased")
         self.assertEqual(rejected.returncode, 1)
-        self.assertIn("this run uses continuous orchestration", rejected.stderr)
+        self.assertIn("this run uses single-session orchestration", rejected.stderr)
         skipped = self.run_cli(f"--run-id={run.name}", "--skip-specgen")
         self.assertEqual(skipped.returncode, 1)
         self.assertIn("does not support --skip-specgen", skipped.stderr)
@@ -535,7 +545,9 @@ class ContinuousCLI(unittest.TestCase):
             self.root,
             [
                 "run",
-                *continuous_args(["--agent=fake", "--max-parallel=2", "footest|o/f|Go|Raft", "bartest|o/b|Go|Raft"]),
+                *single_session_args(
+                    ["--agent=fake", "--max-parallel=2", "footest|o/f|Go|Raft", "bartest|o/b|Go|Raft"]
+                ),
             ],
             cwd=self.work,
         )
@@ -549,7 +561,9 @@ class ContinuousCLI(unittest.TestCase):
             self.root,
             [
                 "run",
-                *continuous_args(["--agent=fake", "--max-parallel=2", "footest|o/f|Go|Raft", "bartest|o/b|Go|Raft"]),
+                *single_session_args(
+                    ["--agent=fake", "--max-parallel=2", "footest|o/f|Go|Raft", "bartest|o/b|Go|Raft"]
+                ),
             ],
             cwd=self.work,
         )
@@ -569,24 +583,24 @@ class ContinuousCLI(unittest.TestCase):
         self.assertFalse((run / "footest/.specula-output/confirmed-bugs.md").exists())
 
     def test_unsupported_options_fail_before_storage_and_the_default_stays_phased(self) -> None:
-        explicit = self.run_cli("--orchestration=continuous", "--skip-specgen", "--dry-run", "footest")
+        explicit = self.run_cli("--orchestration=single-session", "--skip-specgen", "--dry-run", "footest")
         self.assertEqual(explicit.returncode, 1)
-        self.assertIn("--orchestration=continuous does not support --skip-specgen", explicit.stderr)
+        self.assertIn("--orchestration=single-session does not support --skip-specgen", explicit.stderr)
         self.assertFalse((self.root / "runs").exists())
         default = self.helper.run_cli(
             self.root, ["run", f"--artifact={self.source}", "--skip-specgen", "--dry-run", "footest"], cwd=self.work
         )
         self.assertEqual(default.returncode, 0, default.stderr)
         self.assertNotIn("Orchestration:", default.stdout)
-        self.assertNotIn("launch_continuous.sh", default.stdout)
+        self.assertNotIn("launch_single_session.sh", default.stdout)
         self.assertIn("launch_harness_generation.sh", default.stdout)
         self.assertNotIn("launch_spec_generation.sh", default.stdout)
-        # --skip-analysis keeps continuous orchestration; a dry run, like the phased one, checks no outputs.
+        # --skip-analysis keeps single-session orchestration; a dry run, like the phased one, checks no outputs.
         dry = self.run_cli("--skip-analysis", "--dry-run", "footest")
         self.assertEqual(dry.returncode, 0, dry.stdout + dry.stderr)
-        self.assertIn("Orchestration: continuous (one main session per target for spec generation", dry.stdout)
+        self.assertIn("Orchestration: single-session (one main session per target for spec generation", dry.stdout)
         self.assertIn("MAIN SESSION: spec → harness → validation from existing code analysis", dry.stdout)
-        self.assertIn("launch_continuous.sh", dry.stdout)
+        self.assertIn("launch_single_session.sh", dry.stdout)
 
     # ── starting from existing analysis ──
     def seed_analysis(self, run_id: str, target: str = "footest") -> Path:
@@ -604,7 +618,7 @@ class ContinuousCLI(unittest.TestCase):
         self.assertEqual(failed.returncode, 9, failed.stdout + failed.stderr)
         run = self.run_dir()
         self.assertEqual(run.name, "shared")
-        self.assertIn("Orchestration: continuous (one main session per target for spec generation", failed.stdout)
+        self.assertIn("Orchestration: single-session (one main session per target for spec generation", failed.stdout)
         self.assertIn("MAIN SESSION: spec → harness → validation from existing code analysis", failed.stdout)
         state = self.state(run)
         self.assertEqual((state["analysis"], state["context"]), ("existing", "original"))
@@ -661,7 +675,7 @@ class ContinuousCLI(unittest.TestCase):
         result = self.run_cli(f"--agent-config={config}", "--dry-run", "footest")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         lines = result.stdout.splitlines()
-        main = next(line for line in lines if "launch_continuous.sh" in line)
+        main = next(line for line in lines if "launch_single_session.sh" in line)
         confirm = next(line for line in lines if "launch_bug_confirmation.sh" in line)
         classify = next(line for line in lines if "launch_bug_classification.sh" in line)
         self.assertIn("--model=main-model", main)

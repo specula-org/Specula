@@ -1,6 +1,6 @@
-"""Output contract of a continuous main session.
+"""Output contract of a single-session main session.
 
-In continuous orchestration one agent session writes every Phase 1-3 output,
+In single-session orchestration one agent session writes every Phase 1-3 output,
 so the confirmation handoff requires only what Specula's code or a later agent
 reads as input. The other files the stage skills describe are recommendations:
 the agent writes them when they help it or a later reader. Phased
@@ -50,7 +50,7 @@ from pathlib import Path
 STRICT_ENV = "SPECULA_STRICT_OUTPUTS"
 _OFF_VALUES = frozenset({"0", "false", "no", "off"})
 
-# The continuous controller's per-target state; only continuous runs have it.
+# The single-session controller's per-target state; only single-session runs have it.
 MAIN_STATE_FILE = ".context-control/main-state.json"
 
 SPEC_FILES = ("spec/base.tla", "spec/MC.tla", "spec/MC.cfg", "spec/Trace.tla", "spec/Trace.cfg")
@@ -63,7 +63,7 @@ REQUIRED_FILES = (
     "spec/bug-report.md",
     "spec/findings.json",
 )
-# Files the stage skills describe that no consumer reads in continuous mode.
+# Files the stage skills describe that no consumer reads in single-session mode.
 ADVISORY_FILES = (
     "analysis-report.md",
     "spec/base.cfg",

@@ -1,4 +1,4 @@
-"""Deterministic continuous-orchestration adapter: real dispatch, never an LLM.
+"""Deterministic single-session orchestration adapter: real dispatch, never an LLM.
 
 Behavior switches are files next to this script:
   repair          the first main pass reports MC-1, which confirmation hands back
@@ -8,7 +8,7 @@ Behavior switches are files next to this script:
   unconsumed-once ... only on the first repair turn
   blocked         the first pass writes spec/BLOCKED.md instead of its deliverables
   fail-confirm    the CR-1 worker fails once
-  minimal         the first pass writes only the outputs continuous mode requires
+  minimal         the first pass writes only the outputs single-session mode requires
   sany-error      the first pass writes a Trace.tla that the fake SANY rejects
   no-traces       the first pass collects no traces (the harness cannot run)
   fix-on-rejection  when the confirmation tool or a resumed main call reports
@@ -16,7 +16,7 @@ Behavior switches are files next to this script:
                   (after a tool refusal: in the same turn, then request again)
   tool-no-sany    the confirmation tool runs without SANY (java off PATH)
 
-Fault-injection switches (tests/e2e/test_continuous_faults.py):
+Fault-injection switches (tests/e2e/test_single_session_faults.py):
   block-POINT     at POINT, publish reached-POINT.json (pid, pgid, session) and
                   wait for release-POINT; POINT is main-N (main call N, after
                   its analysis or repair work), worker-ID, consolidate, classify

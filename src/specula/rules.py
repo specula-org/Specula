@@ -8,7 +8,7 @@ launcher writes and, where the agent CLI supports it, in its system prompt.
 
 Off by default, so prompts and adapter arguments are exactly what they were
 before rule pinning. ``SPECULA_RULES=on`` (also ``1``/``true``/``yes``) enables
-it; continuous orchestration turns it on unless the variable is set.
+it; single-session orchestration turns it on unless the variable is set.
 
 Keep ``rules.md`` short and free of process-name tokens (for example the model
 checker's class name or ``java``): some adapters pass the text in the CLI's

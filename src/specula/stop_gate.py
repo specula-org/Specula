@@ -346,7 +346,7 @@ def _live_pid_files(work_dir: Path) -> tuple[list[tuple[Path, int]], bool]:
 def _compaction_pending(last_message: str | None = None) -> bool:
     """True while this invocation's controller holds a context-compaction request.
 
-    A continuous main session yields mid-workflow, before its final deliverable
+    A single-session main session yields mid-workflow, before its final deliverable
     exists, so the controller can compact the same native conversation. That
     pause is not phase completion; background jobs are still checked, and the
     deliverable contract applies again to every later stop. When the hook

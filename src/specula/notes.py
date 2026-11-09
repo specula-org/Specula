@@ -9,7 +9,7 @@ workers get the read-only ``prompts/optional/notes-worker.md``).
 
 Off by default, so prompts are exactly what they were before the notes area
 existed. ``SPECULA_NOTES=on`` (also ``1``/``true``/``yes``) enables every
-section; continuous orchestration turns it on unless the variable is set.
+section; single-session orchestration turns it on unless the variable is set.
 """
 
 from __future__ import annotations

@@ -22,9 +22,9 @@ PHASES = frozenset(
         "review",
     }
 )
-# Route keys that only --orchestration=continuous reads; phased runs reject them.
-CONTINUOUS_ONLY_PHASES = frozenset({"main"})
-# Phased routes whose work one continuous main session performs.
+# Route keys that only --orchestration=single-session reads; phased runs reject them.
+SINGLE_SESSION_ONLY_PHASES = frozenset({"main"})
+# Phased routes whose work one single-session main session performs.
 MAIN_SESSION_PHASES = ("analyze", "specgen", "harness", "validate", "repair")
 _TOP_LEVEL_FIELDS = frozenset({"version", "default_profile", "profiles", "phases"})
 _PROFILE_FIELDS = frozenset({"agent", "model", "effort"})
@@ -72,17 +72,17 @@ class AgentRouting:
         return main, differing
 
     def main_selection(self) -> AgentSelection:
-        """Selection for the continuous main session (analysis through repair)."""
+        """Selection for the single-session main session (analysis through repair)."""
         main, differing = self._main_session()
         if differing:
             raise AgentConfigError(
                 f"agent config routes {', '.join(differing)} to a different profile than the main session; "
-                "one continuous main session uses a single profile"
+                "one single-session main session uses a single profile"
             )
         return main
 
     def main_session_differences(self) -> list[str]:
-        """Phased routes that one continuous main session cannot honor."""
+        """Phased routes that one single-session main session cannot honor."""
         return self._main_session()[1]
 
 
@@ -160,7 +160,7 @@ def load_agent_routing(path: Path) -> AgentRouting:
     raw_phases = _as_object(raw_phases_value, "agent config field 'phases'")
     phases: dict[str, str] = {}
     for phase, raw_profile_name in raw_phases.items():
-        if phase not in PHASES and phase not in CONTINUOUS_ONLY_PHASES:
+        if phase not in PHASES and phase not in SINGLE_SESSION_ONLY_PHASES:
             raise AgentConfigError(f"agent config contains unknown phase '{phase}'")
         if not isinstance(raw_profile_name, str):
             raise AgentConfigError(f"phase '{phase}' must reference a profile by name")

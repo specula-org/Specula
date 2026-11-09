@@ -148,11 +148,11 @@ Options:
   --confirm-debate       Phase 4a: add the adversarial Challenger debate (parallel mode; default off)
   --max-repair-rounds=N  Global repair-loop round cap; unresolved requests are then filed under deferred/ (default: 10; 0 = unlimited)
   --enable-reviews        Enable review steps (disabled by default)
-  --orchestration=MODE   phased (default): one agent session per phase. continuous (experimental): one
+  --orchestration=MODE   phased (default): one agent session per phase. single-session (experimental): one
                          main agent session per target performs analysis through validation and repairs,
                          while confirmation and classification keep separate clean contexts; with
                          --skip-analysis it starts at spec generation from the existing Phase 1 outputs.
-                         Continuous runs also pin the hard rules and add the working-notes area unless
+                         Single-session runs also pin the hard rules and add the working-notes area unless
                          SPECULA_RULES/SPECULA_NOTES are set, and reject options they do not support yet
   --max-parallel=N       Hard limit for concurrent agents. When omitted, ordinary phases run 1 target
                          agent at a time and per-finding bug confirmation runs up to 4 at a time
@@ -206,10 +206,10 @@ Output navigation (default isolated layout):
 """
 
 DIVIDER = "════════════════════════════════════════════════════════════"
-ORCHESTRATION_MODES = ("continuous", "phased")
-# Switches of the continuous main session kept in a run's resume configuration:
+ORCHESTRATION_MODES = ("single-session", "phased")
+# Switches of the single-session main session kept in a run's resume configuration:
 # (stored key, environment variable, current value, notice label).
-CONTINUOUS_TOGGLES = (
+SINGLE_SESSION_TOGGLES = (
     ("strict_outputs", output_contract.STRICT_ENV, output_contract.strict, "strict outputs"),
     ("delegation", delegation.DELEGATION_ENV, delegation.enabled, "delegation guidance"),
 )
@@ -389,8 +389,8 @@ class Pipeline:
         self._repair_loop_targets: list[str] = []
         self.skip_reviews = True
         self._enable_reviews_given = False
-        # Phased unless --orchestration=continuous is requested (parse_args)
-        # or restored from a continuous run's configuration.
+        # Phased unless --orchestration=single-session is requested (parse_args)
+        # or restored from a single-session run's configuration.
         self.orchestration = "phased"
         self._orchestration_requested: str | None = None
         # Attach notes logged inside pipeline.log (e.g. restored prompt toggles).
@@ -502,7 +502,7 @@ class Pipeline:
             elif arg.startswith("--orchestration="):
                 mode = arg.split("=", 1)[1]
                 if mode not in ORCHESTRATION_MODES or self._orchestration_requested is not None:
-                    print("ERROR: --orchestration requires one value: continuous or phased", file=sys.stderr)
+                    print("ERROR: --orchestration requires one value: single-session or phased", file=sys.stderr)
                     return 1
                 self._orchestration_requested = mode
             elif arg == "--isolate":
@@ -741,8 +741,8 @@ class Pipeline:
             return 1
         return None
 
-    def _continuous_conflicts(self) -> list[str]:
-        """Options the continuous main session does not support yet.
+    def _single_session_conflicts(self) -> list[str]:
+        """Options the single-session main session does not support yet.
 
         ``--skip-analysis`` is supported: the main session then starts at spec
         generation from the Phase 1 outputs already in each target's output
@@ -769,27 +769,27 @@ class Pipeline:
         return conflicts
 
     def _resolve_orchestration(self) -> str | None:
-        """Phased unless continuous is requested; continuous rejects options it does not support."""
+        """Phased unless single-session is requested; single-session rejects options it does not support."""
         requested = self._orchestration_requested
         if getattr(self, "incremental", False):
-            # The incremental CI workflow is already one continuous conversation.
+            # The incremental CI workflow already runs as one conversation.
             self.orchestration = "phased"
             return None if requested is None else "--orchestration does not apply to --incremental"
-        if requested != "continuous":
+        if requested != "single-session":
             self.orchestration = "phased"
             if self.agent_routing is not None and "main" in self.agent_routing.phases:
-                return "--agent-config phases.main applies only to --orchestration=continuous"
+                return "--agent-config phases.main applies only to --orchestration=single-session"
             return None
-        conflicts = self._continuous_conflicts()
+        conflicts = self._single_session_conflicts()
         if conflicts:
-            return f"--orchestration=continuous does not support {'; '.join(conflicts)} yet; use --orchestration=phased"
-        self.orchestration = "continuous"
-        self._apply_continuous_prompt_defaults()
+            return f"--orchestration=single-session does not support {'; '.join(conflicts)} yet; use --orchestration=phased"
+        self.orchestration = "single-session"
+        self._apply_single_session_prompt_defaults()
         return None
 
     @staticmethod
-    def _apply_continuous_prompt_defaults() -> None:
-        from specula.continuous import apply_prompt_defaults
+    def _apply_single_session_prompt_defaults() -> None:
+        from specula.single_session import apply_prompt_defaults
 
         apply_prompt_defaults()
 
@@ -1012,7 +1012,7 @@ class Pipeline:
                 raise SnapshotError(f"run storage must be outside the source tree: {source}")
 
     def _route_specs(self) -> dict[str, tuple[str, str | None]]:
-        if self.orchestration == "continuous":
+        if self.orchestration == "single-session":
             return {"main": ("main", None), "confirm": ("confirm", None), "classify": ("classify", None)}
         return {
             "analyze": ("analyze", None),
@@ -1067,9 +1067,9 @@ class Pipeline:
         default = self._resumable_selection(self._agent_selection())
         routes = self._resumable_routes()
         return {
-            # Continuous runs use version 2, so Specula releases without continuous
+            # Single-session runs use version 2, so Specula releases without single-session
             # orchestration refuse to resume them instead of continuing them as phased.
-            "version": 2 if self.orchestration == "continuous" else 1,
+            "version": 2 if self.orchestration == "single-session" else 1,
             "default": self._selection_document(default),
             "routes": (
                 {name: self._selection_document(selection) for name, selection in routes.items()}
@@ -1093,18 +1093,18 @@ class Pipeline:
             "guidance": str(self.guidance_path) if self.guidance_path is not None else None,
             **({"ci_init": True} if self.ci_init else {}),
             **({"confirm_first": self.confirm_first} if self.confirm_first else {}),
-            **({"orchestration": self.orchestration} if self.orchestration == "continuous" else {}),
+            **({"orchestration": self.orchestration} if self.orchestration == "single-session" else {}),
             # Prompt toggles change every prompt and confirmation-cache digest,
             # so a run keeps the values it was created with. Absent = off, which
             # is also how runs from before these features behave.
             **({"rules": True} if rules.enabled() else {}),
             **({"notes": True} if notes.enabled() else {}),
-            # Continuous-only switches (the strict output contract, the
+            # Single-session-only switches (the strict output contract, the
             # delegation guidance) have no effect on phased runs, so only
-            # continuous runs record them.
+            # single-session runs record them.
             **(
-                {key: True for key, _variable, enabled, _label in CONTINUOUS_TOGGLES if enabled()}
-                if self.orchestration == "continuous"
+                {key: True for key, _variable, enabled, _label in SINGLE_SESSION_TOGGLES if enabled()}
+                if self.orchestration == "single-session"
                 else {}
             ),
         }
@@ -1124,9 +1124,9 @@ class Pipeline:
                     f"{variable}: this run was created with {key} {'on' if stored else 'off'}; "
                     f"keeping that instead of the current {'on' if current else 'off'} so resumed prompts match"
                 )
-        if self.orchestration != "continuous":
-            return  # the continuous-only switches do not apply to phased runs
-        for key, variable, enabled, label in CONTINUOUS_TOGGLES:
+        if self.orchestration != "single-session":
+            return  # the single-session-only switches do not apply to phased runs
+        for key, variable, enabled, label in SINGLE_SESSION_TOGGLES:
             stored = raw.get(key, False)
             if not isinstance(stored, bool):
                 raise resumelib.ResumeError(f"invalid stored {key} setting")
@@ -1140,7 +1140,7 @@ class Pipeline:
                 )
 
     def _restore_orchestration(self, raw: dict[str, Any]) -> None:
-        # Runs created before continuous orchestration have no field: phased.
+        # Runs created before single-session orchestration have no field: phased.
         stored = raw.get("orchestration", "phased")
         if stored not in ORCHESTRATION_MODES:
             raise resumelib.ResumeError("invalid stored orchestration mode")
@@ -1148,15 +1148,15 @@ class Pipeline:
         if requested is not None and requested != stored:
             raise resumelib.ResumeError(f"this run uses {stored} orchestration; start a new run to use {requested}")
         self.orchestration = stored
-        if stored == "continuous":
-            self._apply_continuous_prompt_defaults()
+        if stored == "single-session":
+            self._apply_single_session_prompt_defaults()
 
     def _restore_resume_configuration(self, raw: dict[str, Any], *, allow_overrides: bool = False) -> None:
         if raw.get("version") not in (1, 2):
             raise resumelib.ResumeError(
                 "this run was created without manual conversation checkpoints; pass --fresh-context to continue"
             )
-        if raw.get("version") == 2 and raw.get("orchestration") != "continuous":
+        if raw.get("version") == 2 and raw.get("orchestration") != "single-session":
             raise resumelib.ResumeError("invalid stored orchestration mode")
         self._restore_orchestration(raw)
         self._restore_prompt_toggles(raw, allow_overrides=allow_overrides)
@@ -1402,17 +1402,17 @@ class Pipeline:
                 raise resumelib.ResumeError(f"this run's artifact is unavailable: {stored_artifact}")
             self.artifact = artifact
             self._artifact_given = True
-        if self.orchestration == "continuous":
-            conflicts = self._continuous_conflicts()
+        if self.orchestration == "single-session":
+            conflicts = self._single_session_conflicts()
             if conflicts:
                 raise resumelib.ResumeError(
-                    f"this run uses continuous orchestration, which does not support {'; '.join(conflicts)}"
+                    f"this run uses single-session orchestration, which does not support {'; '.join(conflicts)}"
                 )
 
     def _resume_phase(self, active: list[dict[str, Any]]) -> str:
         phases = {str(entry.get("phase")) for entry in active}
-        if self.orchestration == "continuous":
-            from specula.continuous import resume_phase
+        if self.orchestration == "single-session":
+            from specula.single_session import resume_phase
 
             return resume_phase(phases)
         if len(phases) != 1:
@@ -1425,8 +1425,8 @@ class Pipeline:
         phase = self._manual_resume_phase
         if phase is None:
             return
-        if self.orchestration == "continuous":
-            # The continuous controller positions each target from its own
+        if self.orchestration == "single-session":
+            # The single-session controller positions each target from its own
             # durable lifecycle state, not from phase skip flags.
             return
         controlling_skip: tuple[str, str] | None = {
@@ -1680,8 +1680,8 @@ class Pipeline:
                     if metadata.get("ci_init", False) != self.ci_init:
                         raise resumelib.ResumeError("CI initialization mode disagrees with run metadata")
                     active = resumelib.active_entries(self.run_dir)
-                    if not active and self.orchestration == "continuous":
-                        from specula.continuous import has_unfinished_work
+                    if not active and self.orchestration == "single-session":
+                        from specula.single_session import has_unfinished_work
 
                         if not has_unfinished_work(self):
                             raise resumelib.ResumeError(
@@ -1933,7 +1933,7 @@ class Pipeline:
             "resume_configuration": resume_configuration,
             **({"ci_init": True} if self.ci_init else {}),
             **({"confirm_first": self.confirm_first} if self.confirm_first else {}),
-            **({"orchestration": self.orchestration} if self.orchestration == "continuous" else {}),
+            **({"orchestration": self.orchestration} if self.orchestration == "single-session" else {}),
         }
         if self.agent_routing is not None:
             assert self.agent_config_path is not None
@@ -3984,8 +3984,8 @@ class Pipeline:
         return moved
 
     # ── final summary ──
-    def _continuous_summary_lines(self, work_dir: Path) -> list[str]:
-        """Phase 2-3 lines of a continuous run, judged by its required outputs only."""
+    def _single_session_summary_lines(self, work_dir: Path) -> list[str]:
+        """Phase 2-3 lines of a single-session run, judged by its required outputs only."""
         spec_dir = work_dir / "spec"
         required = output_contract.SPEC_FILES
         present = sum((work_dir / relative).is_file() for relative in required)
@@ -4035,9 +4035,9 @@ class Pipeline:
             pwd = str(_logical_cwd())  # bash $PWD, matching get_work_dir and the tee log dir
             summary_file = Path(pwd) / ".specula-output" / "pipeline-summary.md"
         summary_file.parent.mkdir(parents=True, exist_ok=True)
-        # A continuous main session need not write the advisory files the
+        # A single-session main session need not write the advisory files the
         # phased hand-offs require, so their absence is not reported here.
-        advisory = self.orchestration == "continuous" and not output_contract.strict()
+        advisory = self.orchestration == "single-session" and not output_contract.strict()
         out: list[str] = []
         out += ["# Specula Pipeline Summary", "", f"Generated: {_date_iseconds()}", "", "## Systems Processed", ""]
 
@@ -4062,7 +4062,7 @@ class Pipeline:
             if self.confirm_first == "only":
                 out.append("- **Phases 2–3 (Modeling)**: not part of this run (--confirm-first=only)")
             elif advisory:
-                out += self._continuous_summary_lines(work_dir)
+                out += self._single_session_summary_lines(work_dir)
             else:
                 spec_count = sum(
                     (spec_dir / f).is_file() for f in ("base.tla", "MC.tla", "Trace.tla", "instrumentation-spec.md")
@@ -4237,10 +4237,10 @@ class Pipeline:
 
     # ── main (runs inside the tee) ──
     def main(self) -> int:
-        if self.orchestration == "continuous":
-            from specula.continuous import ContinuousRun
+        if self.orchestration == "single-session":
+            from specula.single_session import SingleSessionRun
 
-            return ContinuousRun(self).main()
+            return SingleSessionRun(self).main()
         self.print_run_header()
 
         self.validate_agent_adapter()
