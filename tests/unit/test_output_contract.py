@@ -243,7 +243,7 @@ def test_real_sany_accepts_a_module_and_rejects_parse_and_semantic_errors(tmp_pa
 
 
 def _sections(strict: bool) -> tuple[str, str]:
-    text = render("continuous-outputs-strict" if strict else "continuous-outputs", work_dir="/W", spec_dir="/W/spec")
+    text = render("continuous/outputs-strict" if strict else "continuous/outputs", work_dir="/W", spec_dir="/W/spec")
     required, _, recommended = text.partition("### Recommended")
     return required, recommended
 

@@ -511,16 +511,16 @@ Options:
         work = ws.work_dir(name)
         analysis = self._analysis_mode(work, name)
         if analysis == "existing":
-            analysis_stage = render("continuous-analysis-existing", work_dir=str(work))
+            analysis_stage = render("continuous/analysis-existing", work_dir=str(work))
         else:
-            analysis_stage = render("continuous-analysis", analysis_skill=prompt_skill_ids("code-analysis"))
+            analysis_stage = render("continuous/analysis", analysis_skill=prompt_skill_ids("code-analysis"))
         contract = render(
-            "continuous-outputs-strict" if output_contract.strict() else "continuous-outputs",
+            "continuous/outputs-strict" if output_contract.strict() else "continuous/outputs",
             work_dir=str(work),
             spec_dir=str(work / "spec"),
         )
         prompt = render(
-            "continuous",
+            "continuous/main",
             session_stages=SESSION_STAGES[analysis],
             analysis_stage=analysis_stage.rstrip("\n"),
             output_contract=contract.rstrip("\n"),

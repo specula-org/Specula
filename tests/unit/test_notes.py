@@ -65,7 +65,7 @@ class TestNotesSection(NotesCase):
             self.assertIn(topic, text)
 
     def test_fragment_stays_short_because_it_is_injected_into_many_prompts(self) -> None:
-        for template in ("notes.md", "notes-worker.md"):
+        for template in ("optional/notes.md", "optional/notes-worker.md"):
             with self.subTest(template=template):
                 lines = (PROMPTS_DIR / template).read_text().splitlines()
                 self.assertLessEqual(len(lines), 20)
@@ -112,7 +112,7 @@ class TestWorkerNotesSection(NotesCase):
 
     def test_identity_is_the_path_free_template(self) -> None:
         identity = notes.worker_notes_identity()
-        self.assertEqual(identity, (PROMPTS_DIR / "notes-worker.md").read_text())
+        self.assertEqual(identity, (PROMPTS_DIR / "optional/notes-worker.md").read_text())
         self.assertIn("{{finding_dir}}", identity)
         self.assertNotIn(str(WORK), identity)
 

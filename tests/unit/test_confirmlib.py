@@ -3339,7 +3339,7 @@ class TestPromptExtraAndLog(ConfirmCase):
             self.assertNotIn("Working Notes", off)
             self.assertEqual(on.replace(section, "", 1), off)
         self.assertNotEqual(on_fingerprint, off_fingerprint)
-        self.assertEqual(identities[0]["notes"], (P.PROMPTS_DIR / "notes-worker.md").read_text())
+        self.assertEqual(identities[0]["notes"], (P.PROMPTS_DIR / "optional/notes-worker.md").read_text())
         # Off omits the key entirely, so fingerprints saved before notes existed stay valid.
         self.assertNotIn("notes", identities[1])
         self.assertEqual({key: value for key, value in identities[0].items() if key != "notes"}, identities[1])
@@ -3368,7 +3368,7 @@ class TestPromptExtraAndLog(ConfirmCase):
 
         self.assertNotEqual(on_fingerprint, off_fingerprint)
         # The template text, never a rendered path-bearing prompt.
-        self.assertEqual(identities[0]["rules"], (P.PROMPTS_DIR / "rules.md").read_text())
+        self.assertEqual(identities[0]["rules"], (P.PROMPTS_DIR / "optional/rules.md").read_text())
         # Off omits the key entirely, so fingerprints saved before rule pinning stay valid.
         self.assertNotIn("rules", identities[1])
         self.assertEqual({key: value for key, value in identities[0].items() if key != "rules"}, identities[1])

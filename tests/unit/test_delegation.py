@@ -22,7 +22,7 @@ def test_guidance_is_on_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     assert delegation.enabled()
     section = delegation.delegation_section(WORK)
     assert section.startswith("\n## Parallel Subagents\n")
-    assert section == "\n" + render("delegation", notes_dir="/W/notes")
+    assert section == "\n" + render("continuous/delegation", notes_dir="/W/notes")
     assert "`/W/notes/sub-<topic>.md`" in section and "{{" not in section
     assert delegation.delegation_pointer() == delegation.POINTER
     for value in ("on", "1", "yes", "anything"):
@@ -43,7 +43,7 @@ def test_subagent_notes_path_does_not_depend_on_the_notes_section(monkeypatch: p
 
 
 def test_guidance_is_short_and_covers_when_to_delegate_and_when_not() -> None:
-    text = (PROMPTS_DIR / "delegation.md").read_text()
+    text = (PROMPTS_DIR / "continuous/delegation.md").read_text()
     assert len(text.splitlines()) <= 20 and set(re.findall(r"\{\{(\w+)\}\}", text)) == {"notes_dir"}
     for expected in (
         "The skills' parallelization guidance applies as written",

@@ -1287,7 +1287,7 @@ def test_continuations_point_to_the_staged_guidance(run_workspace: tuple[Workspa
     # A prompt that inlines the guidance does not point to it again.
     restarted = continuous._continuation_prompt("x\n## Target-Specific Instructions\n\ny\n", work_dir=work)
     assert pointer not in restarted
-    template = (Path(continuous.__file__).parent / "prompts/continuous.md").read_text()
+    template = (Path(continuous.__file__).parent / "prompts/continuous/main.md").read_text()
     assert "check the work against the Target-Specific Instructions" in template
 
 

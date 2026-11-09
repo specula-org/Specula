@@ -1,4 +1,4 @@
-"""Tests for the pinned hard-rules block (specula.rules, prompts/rules.md)."""
+"""Tests for the pinned hard-rules block (specula.rules, prompts/optional/rules.md)."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from unittest import mock
 from specula import rules
 from specula.prompts import PROMPTS_DIR
 
-RULES_MD = PROMPTS_DIR / "rules.md"
+RULES_MD = PROMPTS_DIR / "optional/rules.md"
 
 
 class RulesText(unittest.TestCase):

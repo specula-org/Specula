@@ -2,7 +2,7 @@
 
 Long sessions lose instructions to context compaction, and continuation prompts
 (transient/policy/manual resume) carry none of the original phase prompt. The
-rules in ``prompts/rules.md`` are the few skill requirements whose violation
+rules in ``prompts/optional/rules.md`` are the few skill requirements whose violation
 invalidates a run's results; they are restated at the start of every prompt the
 launcher writes and, where the agent CLI supports it, in its system prompt.
 
@@ -23,6 +23,7 @@ import os
 from specula.prompts import PROMPTS_DIR
 
 RULES_ENV = "SPECULA_RULES"
+RULES_TEMPLATE = "optional/rules.md"
 RULES_TITLE = "# Specula hard rules"
 RULES_SEPARATOR = "\n---\n\n"
 _ON_VALUES = frozenset({"1", "true", "yes", "on"})
@@ -37,7 +38,7 @@ def rules_block() -> str:
     """The titled rules block, or ``""`` when rule pinning is off."""
     if not enabled():
         return ""
-    body = (PROMPTS_DIR / "rules.md").read_text(encoding="utf-8").strip()
+    body = (PROMPTS_DIR / RULES_TEMPLATE).read_text(encoding="utf-8").strip()
     return f"{RULES_TITLE}\n\n{body}\n"
 
 
@@ -49,7 +50,7 @@ def rules_identity() -> str:
     """
     if not enabled():
         return ""
-    return (PROMPTS_DIR / "rules.md").read_text(encoding="utf-8")
+    return (PROMPTS_DIR / RULES_TEMPLATE).read_text(encoding="utf-8")
 
 
 def with_rules(prompt: str) -> str:

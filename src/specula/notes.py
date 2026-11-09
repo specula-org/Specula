@@ -4,8 +4,8 @@ Agents may keep working notes under ``<work_dir>/notes/``, listed one line per
 entry in ``notes/INDEX.md``. The notes are optional working memory: no phase
 gates on them and no pipeline code consumes them; the output index only links
 ``INDEX.md`` when it exists. This module renders the prompt section that tells
-each agent about the area (``prompts/notes.md``; per-finding confirmation
-workers get the read-only ``prompts/notes-worker.md``).
+each agent about the area (``prompts/optional/notes.md``; per-finding confirmation
+workers get the read-only ``prompts/optional/notes-worker.md``).
 
 Off by default, so prompts are exactly what they were before the notes area
 existed. ``SPECULA_NOTES=on`` (also ``1``/``true``/``yes``) enables every
@@ -22,7 +22,8 @@ from specula.prompts import PROMPTS_DIR, render
 NOTES_ENV = "SPECULA_NOTES"
 NOTES_DIRNAME = "notes"
 INDEX_FILENAME = "INDEX.md"
-WORKER_TEMPLATE = "notes-worker"
+NOTES_TEMPLATE = "optional/notes"
+WORKER_TEMPLATE = "optional/notes-worker"
 _ENABLED = frozenset({"1", "true", "yes", "on"})
 
 # Phase 1 opens the area. A prior attempt in the same workspace may have left
@@ -61,7 +62,7 @@ def notes_section(work_dir: Path, *, first: bool) -> str:
     if not enabled():
         return ""
     return "\n" + render(
-        "notes",
+        NOTES_TEMPLATE,
         notes_dir=str(notes_dir(work_dir)),
         start=_START_FIRST if first else _START_LATER,
     )
