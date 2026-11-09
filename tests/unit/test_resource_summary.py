@@ -21,6 +21,7 @@ from specula.resource_summary import (
     RunDetails,
     _confirmation_finding_statuses,
     invalidate_summary,
+    read_usage,
 )
 
 
@@ -1449,6 +1450,99 @@ class TestUsageParsingAndRendering(ResourceSummaryCase):
         self.assertIn("| Current attempt source commit | alpha-head |", alpha)
         self.assertIn("| Original source commit | beta-head |", beta)
         self.assertIn("| Current attempt source commit | beta-head |", beta)
+
+
+class TestIncrementalUsage(ResourceSummaryCase):
+    def record(
+        self, phase: str, invocation_id: str, relative: str, *, seconds: float, tokens: int, cost: float
+    ) -> None:
+        recorder = self.recorder(phase, invocation_id)
+        with mock.patch("specula.resource_summary.time.monotonic", side_effect=[0.0, seconds]):
+            recorder.start_target("demo", self.work_dir)
+            recorder.note_agent(self.work_dir, self.work_dir / relative)
+            self.write_json(
+                self.work_dir, relative, _normalized(session=None, tokens=tokens, cached=tokens // 2, cost=cost)
+            )
+            recorder.finish_target("demo")
+
+    def incremental_run(self) -> ResourceSummaryTracker:
+        tracker = self.tracker()
+        tracker.initialize(resume=False)
+        self.record("incremental", "1" * 32, "incremental.usage.json", seconds=3.0, tokens=200, cost=0.02)
+        tracker.capture_invocation("incremental", ["demo"], "1" * 32)
+        return tracker
+
+    def test_incremental_summary_counts_ci_confirmation(self) -> None:
+        tracker = self.incremental_run()
+        self.record("phase4a", "2" * 32, "bug-confirmation.usage.json", seconds=2.0, tokens=400, cost=0.04)
+        tracker.capture_invocation("phase4a", ["demo"], "2" * 32)
+        tracker.complete_run()
+
+        text = self.summary(self.work_dir)
+        self.assertIn("| Incremental workflow | 3s | 200 total (100 cached) | $0.02 |", text)
+        self.assertIn("| Phase 4a | 2s | 400 total (200 cached) | $0.04 |", text)
+        self.assertIn("| **Total** | 5s | 600 total (300 cached) | $0.06 |", text)
+
+    def test_incremental_summary_without_confirmation_has_no_confirmation_row(self) -> None:
+        tracker = self.incremental_run()
+        tracker.complete_run()
+
+        text = self.summary(self.work_dir)
+        self.assertNotIn("Phase 4a", text)
+        self.assertIn("| **Total** | 3s | 200 total (100 cached) | $0.02 |", text)
+
+    def test_interrupted_ci_confirmation_is_listed_as_unmeasured(self) -> None:
+        tracker = self.incremental_run()
+        with mock.patch("specula.resource_summary.time.monotonic", return_value=0.0):
+            self.recorder("phase4a", "2" * 32).start_target("demo", self.work_dir)
+        tracker.capture_invocation("phase4a", ["demo"], "2" * 32)
+        tracker.complete_run()
+
+        text = self.summary(self.work_dir)
+        self.assertIn("| Phase 4a | - | - | - |", text)
+        self.assertIn("| **Total (incomplete)** | 3s | 200 total (100 cached) | $0.02 |", text)
+
+    def test_read_usage_reports_unobserved_values_as_null(self) -> None:
+        tracker = self.incremental_run()
+        with mock.patch("specula.resource_summary.time.monotonic", return_value=0.0):
+            self.recorder("phase4a", "2" * 32).start_target("demo", self.work_dir)
+        tracker.capture_invocation("phase4a", ["demo"], "2" * 32)
+
+        usage = read_usage(self.work_dir, "demo")
+        assert usage is not None
+        self.assertEqual(
+            usage.to_object(),
+            {
+                "complete": False,
+                "runtime_seconds": 3.0,
+                "total_tokens": 200,
+                "cached_input_tokens": 100,
+                "cost_usd": 0.02,
+                "phases": {
+                    "incremental": {
+                        "complete": True,
+                        "runtime_seconds": 3.0,
+                        "total_tokens": 200,
+                        "cached_input_tokens": 100,
+                        "cost_usd": 0.02,
+                    },
+                    "phase4a": {
+                        "complete": False,
+                        "runtime_seconds": None,
+                        "total_tokens": None,
+                        "cached_input_tokens": None,
+                        "cost_usd": None,
+                    },
+                },
+            },
+        )
+
+    def test_read_usage_ignores_missing_foreign_or_corrupt_state(self) -> None:
+        self.assertIsNone(read_usage(self.work_dir, "demo"))
+        self.incremental_run()
+        self.assertIsNone(read_usage(self.work_dir, "other"))
+        (self.work_dir / STATE_FILENAME).write_text("{not json")
+        self.assertIsNone(read_usage(self.work_dir, "demo"))
 
 
 class TestSafety(ResourceSummaryCase):

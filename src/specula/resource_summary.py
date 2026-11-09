@@ -938,57 +938,25 @@ def render_summary(
         "| Phase | Runtime | Tokens | Estimated cost |",
         "|---|---:|---:|---:|",
     ]
-    total_runtime = 0.0
-    total_runtime_observed = False
-    total_tokens = 0
-    total_cached = 0
-    total_tokens_observed = False
-    total_cost = 0.0
-    total_cost_observed = False
-    incomplete = not state.run_complete or state.history_incomplete
-    incremental = state.phases.get("incremental")
-    main = state.phases.get(MAIN_PHASE.key)
-    definitions: tuple[PhaseDefinition, ...] = PHASES
-    if incremental is not None and (incremental.runtime_observed or incremental.tokens_observed):
-        definitions = (INCREMENTAL_PHASE,)
-    elif main is not None and (main.runtime_observed or main.tokens_observed):
-        definitions = (MAIN_PHASE, PHASE_BY_KEY["phase4a"], PHASE_BY_KEY["phase4b"])
-    for definition in definitions:
-        phase = state.phases.get(definition.key, PhaseState())
-        runtime_available = phase.runtime_observed and not phase.runtime_incomplete
-        runtime = _format_runtime(phase.runtime_seconds) if runtime_available else "-"
+    totals = usage_totals(state)
+    for row in totals.phases:
+        runtime = _format_runtime(row.runtime_seconds) if row.runtime_seconds is not None else "-"
         tokens = (
-            f"{_format_count(phase.total_tokens)} total ({_format_count(phase.cached_input_tokens)} cached)"
-            if phase.tokens_observed
+            f"{_format_count(row.total_tokens)} total ({_format_count(row.cached_input_tokens or 0)} cached)"
+            if row.total_tokens is not None
             else "-"
         )
-        cost = _format_cost(phase.cost_usd) if phase.cost_observed else "-"
-        lines.append(f"| {definition.label} | {runtime} | {tokens} | {cost} |")
-        if runtime_available:
-            total_runtime = math.fsum((total_runtime, phase.runtime_seconds))
-            total_runtime_observed = True
-        if phase.tokens_observed:
-            total_tokens += phase.total_tokens
-            total_cached += phase.cached_input_tokens
-            total_tokens_observed = True
-        if phase.cost_observed:
-            total_cost = math.fsum((total_cost, phase.cost_usd))
-            total_cost_observed = True
-        incomplete = incomplete or any(
-            (
-                not phase.runtime_observed,
-                not phase.tokens_observed,
-                not phase.cost_observed,
-                phase.runtime_incomplete,
-                phase.usage_incomplete,
-            )
-        )
+        cost = _format_cost(row.cost_usd) if row.cost_usd is not None else "-"
+        lines.append(f"| {row.label} | {runtime} | {tokens} | {cost} |")
+    incomplete = not state.run_complete or not totals.complete
     total_label = "**Total (incomplete)**" if incomplete else "**Total**"
-    runtime_total = _format_runtime(total_runtime) if total_runtime_observed else "-"
+    runtime_total = _format_runtime(totals.runtime_seconds) if totals.runtime_seconds is not None else "-"
     token_total = (
-        f"{_format_count(total_tokens)} total ({_format_count(total_cached)} cached)" if total_tokens_observed else "-"
+        f"{_format_count(totals.total_tokens)} total ({_format_count(totals.cached_input_tokens or 0)} cached)"
+        if totals.total_tokens is not None
+        else "-"
     )
-    cost_total = _format_cost(total_cost) if total_cost_observed else "-"
+    cost_total = _format_cost(totals.cost_usd) if totals.cost_usd is not None else "-"
     lines += [
         f"| {total_label} | {runtime_total} | {token_total} | {cost_total} |",
         "",
@@ -1000,6 +968,137 @@ def render_summary(
         "",
     ]
     return "\n".join(lines)
+
+
+@dataclass(frozen=True)
+class PhaseUsage:
+    key: str
+    label: str
+    runtime_seconds: float | None
+    total_tokens: int | None
+    cached_input_tokens: int | None
+    cost_usd: float | None
+    complete: bool
+
+
+@dataclass(frozen=True)
+class RunUsage:
+    phases: tuple[PhaseUsage, ...]
+    runtime_seconds: float | None
+    total_tokens: int | None
+    cached_input_tokens: int | None
+    cost_usd: float | None
+    complete: bool
+
+    def to_object(self) -> dict[str, object]:
+        return {
+            "complete": self.complete,
+            "runtime_seconds": self.runtime_seconds,
+            "total_tokens": self.total_tokens,
+            "cached_input_tokens": self.cached_input_tokens,
+            "cost_usd": self.cost_usd,
+            "phases": {
+                phase.key: {
+                    "complete": phase.complete,
+                    "runtime_seconds": phase.runtime_seconds,
+                    "total_tokens": phase.total_tokens,
+                    "cached_input_tokens": phase.cached_input_tokens,
+                    "cost_usd": phase.cost_usd,
+                }
+                for phase in self.phases
+            },
+        }
+
+
+def _phase_recorded(phase: PhaseState | None) -> bool:
+    return phase is not None and any(
+        (
+            phase.runtime_observed,
+            phase.runtime_incomplete,
+            phase.tokens_observed,
+            phase.cost_observed,
+            phase.usage_incomplete,
+        )
+    )
+
+
+def _usage_definitions(state: TargetState) -> tuple[PhaseDefinition, ...]:
+    incremental = state.phases.get("incremental")
+    main = state.phases.get(MAIN_PHASE.key)
+    if incremental is not None and (incremental.runtime_observed or incremental.tokens_observed):
+        # Incremental CI confirms candidates in Phase 4a outside the main conversation.
+        confirmation = PHASE_BY_KEY["phase4a"]
+        if _phase_recorded(state.phases.get(confirmation.key)):
+            return (INCREMENTAL_PHASE, confirmation)
+        return (INCREMENTAL_PHASE,)
+    if main is not None and (main.runtime_observed or main.tokens_observed):
+        return (MAIN_PHASE, PHASE_BY_KEY["phase4a"], PHASE_BY_KEY["phase4b"])
+    return PHASES
+
+
+def usage_totals(state: TargetState) -> RunUsage:
+    """Per-phase and total usage; unobserved values are None, never zero."""
+    phases: list[PhaseUsage] = []
+    runtime = 0.0
+    runtime_observed = False
+    tokens = 0
+    cached = 0
+    tokens_observed = False
+    cost = 0.0
+    cost_observed = False
+    complete = not state.history_incomplete
+    for definition in _usage_definitions(state):
+        phase = state.phases.get(definition.key, PhaseState())
+        runtime_available = phase.runtime_observed and not phase.runtime_incomplete
+        phase_complete = not any(
+            (
+                not phase.runtime_observed,
+                not phase.tokens_observed,
+                not phase.cost_observed,
+                phase.runtime_incomplete,
+                phase.usage_incomplete,
+            )
+        )
+        phases.append(
+            PhaseUsage(
+                key=definition.key,
+                label=definition.label,
+                runtime_seconds=phase.runtime_seconds if runtime_available else None,
+                total_tokens=phase.total_tokens if phase.tokens_observed else None,
+                cached_input_tokens=phase.cached_input_tokens if phase.tokens_observed else None,
+                cost_usd=phase.cost_usd if phase.cost_observed else None,
+                complete=phase_complete,
+            )
+        )
+        if runtime_available:
+            runtime = math.fsum((runtime, phase.runtime_seconds))
+            runtime_observed = True
+        if phase.tokens_observed:
+            tokens += phase.total_tokens
+            cached += phase.cached_input_tokens
+            tokens_observed = True
+        if phase.cost_observed:
+            cost = math.fsum((cost, phase.cost_usd))
+            cost_observed = True
+        complete = complete and phase_complete
+    return RunUsage(
+        phases=tuple(phases),
+        runtime_seconds=runtime if runtime_observed else None,
+        total_tokens=tokens if tokens_observed else None,
+        cached_input_tokens=cached if tokens_observed else None,
+        cost_usd=cost if cost_observed else None,
+        complete=complete,
+    )
+
+
+def read_usage(work_dir: Path, target: str) -> RunUsage | None:
+    """Usage recorded in a target's durable resource state, or None when there is none."""
+    try:
+        document: object = json.loads(_read_safe_file(work_dir, work_dir / STATE_FILENAME))
+    except (OSError, UnicodeError, ValueError):
+        return None
+    state = TargetState.from_object(document, target)
+    return usage_totals(state) if state is not None else None
 
 
 def _findings_summary(state: TargetState, work_dir: Path | None, enabled: bool) -> str | None:

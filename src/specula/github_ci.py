@@ -7,6 +7,7 @@ import contextlib
 import fcntl
 import html
 import json
+import math
 import os
 import re
 import secrets
@@ -28,6 +29,7 @@ from specula.ci_inheritance import candidate_for, inherit, matches_source, resul
 from specula.ci_store import CIError, CIStore, git, read_json, write_json
 from specula.ci_workflow import INTERRUPTED_EXIT_CODES, CIPipeline
 from specula.pipelinelib import Pipeline, _valid_run_id
+from specula.resource_summary import _format_cost, _format_runtime
 
 
 def sha(value: object) -> str:
@@ -304,6 +306,7 @@ class GitHubCI:
         write_json(attempt_path, result)
         code, receipt = self._invoke(candidate=candidate)
         result.update({"run_id": receipt.get("run_id"), "exit_code": code})
+        usage = None
         if code in {0, ci_verdict.BUG_EXIT_CODE} and receipt.get("complete") is True:
             if receipt.get("candidate") is not candidate:
                 raise CIError("incremental command did not return a completed result receipt")
@@ -322,14 +325,17 @@ class GitHubCI:
                     "verdict": snapshot["verdict"],
                 }
             )
+            usage = receipt.get("usage")
         elif code == 0:
             raise CIError("incremental command did not return a completed result receipt")
         else:
             result["status"] = "failed"
             if receipt.get("complete") is False and receipt.get("exit_code") == code:
                 result.update({key: receipt[key] for key in ("failure", "reason", "resume") if key in receipt})
+                usage = receipt.get("usage")
         write_json(attempt_path, result)
-        self.rows.append(result)
+        # Only a row that launched the Agent in this workflow run shows usage.
+        self.rows.append({**result, "usage": usage})
         if code in INTERRUPTED_EXIT_CODES:
             raise CIError("CI execution was interrupted; remaining updates were not started")
         return code
@@ -399,14 +405,19 @@ class GitHubCI:
 
     def report(self, error: str | None = None) -> None:
         self.reports.mkdir(parents=True, exist_ok=False)
-        lines = ["# Specula CI", "", "| Source commit | Result | Verdict | Specula run |", "|---|---|---|---|"]
+        lines = [
+            "# Specula CI",
+            "",
+            "| Source commit | Result | Verdict | Specula run | Usage |",
+            "|---|---|---|---|---|",
+        ]
         resumes: list[str] = []
         for row in self.rows:
             status = str(row["status"])
             if row.get("failure"):
                 status += f" ({row['failure']}{': ' + str(row['reason']) if row.get('reason') else ''})"
             lines.append(
-                f"| {html.escape(str(row['commit']))} | {html.escape(status)} | {html.escape(str(row.get('verdict') or '-'))} | {html.escape(str(row.get('run_id') or '-'))} |"
+                f"| {html.escape(str(row['commit']))} | {html.escape(status)} | {html.escape(str(row.get('verdict') or '-'))} | {html.escape(str(row.get('run_id') or '-'))} | {_usage_cell(row.get('usage'))} |"
             )
             if row.get("resume"):
                 resumes.append(f"- {html.escape(str(row['commit']))}: <code>{html.escape(str(row['resume']))}</code>")
@@ -445,7 +456,7 @@ class GitHubCI:
         lines += [
             "",
             "Each update checks the cumulative diff to its target, not every intermediate version separately.",
-            "Reused/inherited rows launch no additional Agent; their usage summaries belong to the original run.",
+            "Usage is the runtime and estimated cost of an Agent run started by this workflow; other rows show `-`.",
             "FAIL means confirmed bugs (REPRODUCED or ENV_LIMITED); WARNING means masked findings only.",
             "",
         ]
@@ -455,6 +466,20 @@ class GitHubCI:
         if summary:
             with Path(summary).open("a") as stream:
                 stream.write(content)
+
+
+def _usage_cell(usage: object) -> str:
+    if not isinstance(usage, dict):
+        return "-"
+    parts = [
+        render(value)
+        for value, render in ((usage.get("runtime_seconds"), _format_runtime), (usage.get("cost_usd"), _format_cost))
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value >= 0
+    ]
+    if not parts:
+        return "-"
+    text = ", ".join(parts)
+    return text if usage.get("complete") is True else f"{text} (incomplete)"
 
 
 def main(argv: list[str] | None = None) -> int:
