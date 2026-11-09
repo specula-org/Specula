@@ -14,8 +14,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote_from_bytes
 
-from specula import confirm_first
+from specula import confirm_first, output_contract
 from specula.ci_init import BASELINE_FILENAME
+from specula.notes import INDEX_FILENAME as NOTES_INDEX_FILENAME
+from specula.notes import enabled as notes_enabled
+from specula.notes import index_path
 
 INDEX_FILENAME = "index.md"
 BYOM_REPORT_FILENAME = "byom-modification-report.md"
@@ -222,28 +225,36 @@ def render_target_index(name: str, work_dir: Path, *, pipeline_log: Path | None 
         "",
         "| Step | Document | What it contains |",
         "|---:|---|---|",
-        (
-            f"| 1 | {_document('Modeling brief', work_dir / 'modeling-brief.md', work_dir)} "
-            "| System model, Scenarios, and proposed invariants |"
-        ),
-        (
-            f"| 2 | {_document('Analysis report', work_dir / 'analysis-report.md', work_dir)} "
-            "| Detailed source-code investigation |"
-        ),
-        (
-            f"| 3 | {_document('Spec coverage', spec_dir / 'brief-coverage.md', work_dir)} · "
-            f"{_document('Instrumentation map', spec_dir / 'instrumentation-spec.md', work_dir)} "
-            "| How the analysis was translated into the model |"
-        ),
-        (
-            f"| 4 | {_document('Validation changelog', spec_dir / 'changelog.md', work_dir)} "
-            "| Model corrections and validation history |"
-        ),
-        (
-            f"| 5 | {_document('Model-checking report', spec_dir / 'bug-report.md', work_dir)} "
-            "| Candidate findings from model checking |"
-        ),
     ]
+    # A single-session main session (unless SPECULA_STRICT_OUTPUTS=on) writes the
+    # advisory documents only when useful: omit absent ones, not "Not available".
+    optional = not output_contract.strict() and _is_file_under(work_dir, work_dir / output_contract.MAIN_STATE_FILE)
+    steps = (
+        (
+            (("Modeling brief", work_dir / "modeling-brief.md", False),),
+            "System model, Scenarios, and proposed invariants",
+        ),
+        ((("Analysis report", work_dir / "analysis-report.md", True),), "Detailed source-code investigation"),
+        (
+            (
+                ("Spec coverage", spec_dir / "brief-coverage.md", True),
+                ("Instrumentation map", spec_dir / "instrumentation-spec.md", True),
+            ),
+            "How the analysis was translated into the model",
+        ),
+        ((("Validation changelog", spec_dir / "changelog.md", True),), "Model corrections and validation history"),
+        ((("Model-checking report", spec_dir / "bug-report.md", False),), "Candidate findings from model checking"),
+    )
+    step = 0
+    for documents, description in steps:
+        shown = [
+            _document(label, path, work_dir)
+            for label, path, advisory in documents
+            if not (optional and advisory and not _is_file_under(work_dir, path))
+        ]
+        if shown:
+            step += 1
+            lines.append(f"| {step} | {' · '.join(shown)} | {description} |")
 
     confirmation_rows = _confirmation_rows(work_dir)
     if confirmation_rows:
@@ -270,6 +281,9 @@ def render_target_index(name: str, work_dir: Path, *, pipeline_log: Path | None 
     repair_ledger = spec_dir / "repair-ledger.md"
     if _is_file_under(work_dir, repair_ledger):
         technical.append(f"- Repair history: {_link('repair-ledger.md', repair_ledger, work_dir)}")
+    notes_index = index_path(work_dir)
+    if notes_enabled() and _is_file_under(work_dir, notes_index):
+        technical.append(f"- Working notes: {_link(NOTES_INDEX_FILENAME, notes_index, work_dir)}")
     if technical:
         lines += ["", "## Technical Details", "", *technical]
 

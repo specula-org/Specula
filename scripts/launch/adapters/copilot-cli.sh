@@ -22,6 +22,8 @@
 #                          --reasoning-effort (requires Copilot CLI 1.0.4+)
 #   --log output.log       Log file path (required)
 #   --resume-state PATH    Persist/resume the exact native Copilot session
+#   --system-prompt-file F Load F as Copilot custom instructions (an AGENTS.md
+#                          in a private COPILOT_CUSTOM_INSTRUCTIONS_DIRS entry)
 #   --background           Run in background, print PID to stdout (default: foreground)
 #   --help                 Show this help
 
@@ -35,6 +37,8 @@ EFFORT=""
 LOG_FILE=""
 RESUME_STATE=""
 RESUME_STATE_SET=false
+system_prompt_file=""
+system_prompt_file_set=false
 BACKGROUND=false
 POLICY_BLOCKED_RC=76  # Keep in sync with src/specula/adapters/utils/policy.py.
 PLAIN_POLICY_DIAGNOSTIC_RC=77  # Internal event-stream candidate; never returned to the runner.
@@ -53,6 +57,7 @@ for arg in "$@"; do
     --effort=*)      EFFORT="${arg#*=}" ;;
     --log=*)         LOG_FILE="${arg#*=}" ;;
     --resume-state=*) RESUME_STATE="${arg#*=}"; RESUME_STATE_SET=true ;;
+    --system-prompt-file=*) system_prompt_file="${arg#*=}"; system_prompt_file_set=true ;;
     --background)    BACKGROUND=true ;;
     --help|-h)
       sed -n '2,/^$/{ s/^# //; s/^#//; p }' "$0"
@@ -87,6 +92,16 @@ fi
 
 if [[ "$RESUME_STATE_SET" == true && -z "$RESUME_STATE" ]]; then
   echo "copilot-cli adapter: --resume-state requires a path" >&2
+  exit 1
+fi
+
+if [[ "$system_prompt_file_set" == true && -z "$system_prompt_file" ]]; then
+  echo "copilot-cli adapter: --system-prompt-file requires a path" >&2
+  exit 1
+fi
+
+if [[ -n "$system_prompt_file" && ! -f "$system_prompt_file" ]]; then
+  echo "copilot-cli adapter: system prompt file not found: $system_prompt_file" >&2
   exit 1
 fi
 
@@ -166,7 +181,8 @@ fi
 # Keep the scripting channel free of version-specific stats footers. Provider
 # diagnostics still go to stderr, which is captured below for policy recovery.
 CMD=(copilot -p "$PROMPT" --allow-all --autopilot --silent)
-if [[ "${SPECULA_PHASE:-}" == "incremental" && -n "${SPECULA_CONTEXT_MCP_JSON:-}" ]]; then
+# Context-control phases (specula.context_control.CONTEXT_CONTROL_PHASES) get the context tools.
+if [[ ( "${SPECULA_PHASE:-}" == "incremental" || "${SPECULA_PHASE:-}" == "main" ) && -n "${SPECULA_CONTEXT_MCP_JSON:-}" ]]; then
   CMD+=(--additional-mcp-config "$SPECULA_CONTEXT_MCP_JSON")
 elif [[ -n "${SPECULA_TLC_TOOL_JSON:-}" ]]; then
   CMD+=(--additional-mcp-config "$SPECULA_TLC_TOOL_JSON")
@@ -209,6 +225,7 @@ fi
 ACTIVITY_LOG="${SPECULA_ACTIVITY_LOG:-}"
 TEMP_ACTIVITY_LOG=""
 USAGE_SESSION_FILE=""
+system_prompt_dir=""
 cleanup_temporary_files() {
   if [[ -n "$TEMP_ACTIVITY_LOG" ]]; then
     rm -f -- "$TEMP_ACTIVITY_LOG"
@@ -216,8 +233,30 @@ cleanup_temporary_files() {
   if [[ -n "$USAGE_SESSION_FILE" ]]; then
     rm -f -- "$USAGE_SESSION_FILE"
   fi
+  if [[ -n "$system_prompt_dir" ]]; then
+    rm -rf -- "$system_prompt_dir"
+  fi
 }
 trap cleanup_temporary_files EXIT
+
+# ── System prompt ──
+#
+# Copilot CLI has no system-prompt flag. Its documented
+# COPILOT_CUSTOM_INSTRUCTIONS_DIRS (comma-separated; see `copilot help
+# environment`) adds directories whose AGENTS.md is loaded as custom
+# instructions, which Copilot renders into the system prompt of every session,
+# including --resume, so they survive compaction. The file is staged as
+# AGENTS.md in a private directory appended to any inherited list. Staging
+# failures only lose the system-prompt copy: the rules still lead the prompt.
+if [[ -n "$system_prompt_file" ]]; then
+  if system_prompt_dir="$(mktemp -d "${TMPDIR:-/tmp}/specula-copilot-rules-XXXXXX")" \
+     && [[ "$system_prompt_dir" != *,* ]] \
+     && cp -- "$system_prompt_file" "$system_prompt_dir/AGENTS.md"; then
+    export COPILOT_CUSTOM_INSTRUCTIONS_DIRS="${COPILOT_CUSTOM_INSTRUCTIONS_DIRS:+$COPILOT_CUSTOM_INSTRUCTIONS_DIRS,}$system_prompt_dir"
+  else
+    echo "copilot-cli adapter: system prompt not staged; continuing without it" >&2
+  fi
+fi
 if [[ -n "$RESUME_STATE" && -z "$ACTIVITY_LOG" ]]; then
   if ! TEMP_ACTIVITY_LOG="$(mktemp "${TMPDIR:-/tmp}/specula-copilot-activity-XXXXXX.jsonl")"; then
     echo "copilot-cli adapter: unable to create temporary activity log for session capture" >&2

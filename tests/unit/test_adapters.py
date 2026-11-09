@@ -137,6 +137,8 @@ _VOLATILE = (
     "CODEX_FEATURES_EXIT",
     "ADAPTER_EXIT_CODE",
     "COPILOT_HELP_TEXT",
+    "COPILOT_CUSTOM_INSTRUCTIONS_DIRS",
+    "ADAPTER_INSTRUCTIONS_FILE",
     "ADAPTER_PI_SESSION_FIXTURE",
     "ADAPTER_PROVIDER_PID_FILE",
     "ADAPTER_READY_FILE",
@@ -192,6 +194,24 @@ class AdapterCase(unittest.TestCase):
                 'if [[ "${1:-}" == "--help" ]]; then',
                 '  printf "%s\\n" "${COPILOT_HELP_TEXT:-}"',
                 "  exit 0",
+                "fi",
+                # System-prompt staging: the instruction dirs Copilot sees, plus
+                # a copy of the last dir's AGENTS.md (it is removed on exit).
+                'if [[ -n "${ADAPTER_INSTRUCTIONS_FILE:-}" ]]; then',
+                '  printf "%s\\n" "${COPILOT_CUSTOM_INSTRUCTIONS_DIRS-<unset>}" > "$ADAPTER_INSTRUCTIONS_FILE"',
+                '  last="${COPILOT_CUSTOM_INSTRUCTIONS_DIRS##*,}"',
+                '  if [[ -f "$last/AGENTS.md" ]]; then cp "$last/AGENTS.md" "$ADAPTER_INSTRUCTIONS_FILE.copy"; fi',
+                "fi",
+            ]
+        if name == "opencode":
+            lines += [
+                # System-prompt staging: copy the last config `instructions` file
+                # while it exists (the adapter removes it after the CLI exits).
+                'if [[ -n "${ADAPTER_INSTRUCTIONS_FILE:-}" ]]; then',
+                '  python3 -I -c "import json, os, shutil, sys; '
+                "c = json.loads(os.environ.get('OPENCODE_CONFIG_CONTENT') or '{}'); "
+                "p = (c.get('instructions') or [None])[-1]; "
+                'p and shutil.copyfile(p, sys.argv[1])" "$ADAPTER_INSTRUCTIONS_FILE.copy"',
                 "fi",
             ]
         if name == "codex":
@@ -6094,6 +6114,242 @@ class CopilotAdapter(AdapterCase):
         r = self.invoke(["--help"])
         self.assertEqual(r["returncode"], 0)
         self.assertIn("Adapter: copilot-cli", r["stdout"])
+
+
+class SystemPromptFileAdapters(AdapterCase):
+    """``--system-prompt-file=FILE``: each adapter puts FILE into its CLI's real
+    system/developer prompt mechanism on fresh and native-resume invocations,
+    and rejects a missing file before launching the CLI."""
+
+    TEXT = 'Rules: keep "evidence" separate.\n\\ backslash, tab\tand ünïcode — ok\n'
+
+    def system_file(self, base: Path) -> Path:
+        path = base / "rules.system.md"
+        path.write_text(self.TEXT, encoding="utf-8")
+        return path
+
+    def run_in(self, base: Path, cmd: list[str], flags: list[str], **kwargs: Any) -> AdapterRun:
+        """run_adapter in a reused sandbox, never reporting a previous run's argv."""
+        (base / "argv.txt").unlink(missing_ok=True)
+        return self.run_adapter(
+            cmd, [self.with_prompt_file(base), f"--log={base}/out.log", *flags], run_dir=base, **kwargs
+        )
+
+    def assert_rejected(self, run: AdapterRun, adapter: str, message: str) -> None:
+        self.assertEqual(run["returncode"], 1, run["stderr"])
+        self.assertIn(f"{adapter} adapter: {message}", run["stderr"])
+        self.assertEqual(run["argv"], [])  # the CLI was never launched
+
+    # ── claude-code: --append-system-prompt-file ──
+    def run_claude(self, base: Path, flags: list[str]) -> AdapterRun:
+        fixture = json.dumps({"type": "result", **CLAUDE_JSON, "session_id": "claude-session"})
+        return self.run_in(
+            base, [sys.executable, str(CLAUDE_PY)], flags, fake_name="claude", fixture_text=fixture, record_extra=True
+        )
+
+    def test_claude_appends_file_to_system_prompt_on_fresh_and_resumed_sessions(self) -> None:
+        base = self.sandbox()
+        system = self.system_file(base)
+        flags = [f"--resume-state={base / 'resume.json'}", "--system-prompt-file=rules.system.md"]
+        for phase in ("fresh", "resumed"):
+            with self.subTest(phase=phase):
+                run = self.run_claude(base, flags)
+                self.assertEqual(run["returncode"], 0, run["stderr"])
+                self.assertEqual(run["argv"].count("--append-system-prompt-file"), 1)
+                self.assertEqual(run["argv"][run["argv"].index("--append-system-prompt-file") + 1], str(system))
+                self.assertEqual("--resume" in run["argv"], phase == "resumed")
+                self.assertNotIn(self.TEXT.splitlines()[0], run["argv"])  # a path, never the text
+
+    def test_claude_without_flag_keeps_legacy_argv(self) -> None:
+        base = self.sandbox()
+        run = self.run_claude(base, [])
+        self.assertEqual(run["returncode"], 0, run["stderr"])
+        self.assertNotIn("--append-system-prompt-file", run["argv"])
+
+    def test_claude_rejects_missing_or_empty_file(self) -> None:
+        base = self.sandbox()
+        missing = self.run_claude(base, [f"--system-prompt-file={base / 'absent.md'}"])
+        self.assert_rejected(missing, "claude-code", "system prompt file not found")
+        empty = self.run_claude(base, ["--system-prompt-file="])
+        self.assert_rejected(empty, "claude-code", "--system-prompt-file requires a path")
+
+    # ── codex: -c developer_instructions=<TOML string> ──
+    def run_codex(self, base: Path, flags: list[str], env_extra: dict[str, str] | None = None) -> AdapterRun:
+        fixture = "\n".join(
+            [
+                json.dumps({"type": "thread.started", "thread_id": "019f0000-0000-7000-8000-000000000009"}),
+                json.dumps({"type": "turn.completed", "usage": {}}),
+            ]
+        )
+        return self.run_in(
+            base,
+            ["bash", str(CODEX_SH)],
+            ["--max-turns=0", *flags],
+            fake_name="codex",
+            fixture_text=fixture,
+            record_extra=True,
+            env_extra={"TMPDIR": str(base), **(env_extra or {})},
+        )
+
+    def developer_instructions(self, argv: list[str]) -> list[str]:
+        prefix = "developer_instructions="
+        return [arg.removeprefix(prefix) for arg in argv if arg.startswith(prefix)]
+
+    def test_codex_passes_file_text_as_developer_instructions_on_fresh_and_resumed_sessions(self) -> None:
+        base = self.sandbox()
+        system = self.system_file(base)
+        flags = [f"--resume-state={base / 'resume.json'}", f"--system-prompt-file={system}"]
+        for phase in ("fresh", "resumed"):
+            with self.subTest(phase=phase):
+                run = self.run_codex(base, flags)
+                self.assertEqual(run["returncode"], 0, run["stderr"])
+                values = self.developer_instructions(run["argv"])
+                self.assertEqual(len(values), 1)
+                # A JSON string literal is a valid TOML basic string with the same value.
+                self.assertTrue(values[0].startswith('"') and values[0].endswith('"'))
+                self.assertEqual(json.loads(values[0]), self.TEXT)
+                override = run["argv"].index(f"developer_instructions={values[0]}")
+                self.assertEqual(run["argv"][override - 1], "-c")
+                if phase == "resumed":
+                    self.assertLess(override, run["argv"].index("resume"))
+                else:
+                    self.assertNotIn("resume", run["argv"])
+                self.assertEqual(run["stdin"], "the prompt")
+
+    def test_codex_keeps_user_developer_instructions(self) -> None:
+        base = self.sandbox()
+        codex_home = base / "codex-home"
+        codex_home.mkdir()
+        (codex_home / "config.toml").write_text('model = "x"\n  developer_instructions = "mine"\n')
+        run = self.run_codex(
+            base, [f"--system-prompt-file={self.system_file(base)}"], env_extra={"CODEX_HOME": str(codex_home)}
+        )
+        self.assertEqual(run["returncode"], 0, run["stderr"])
+        self.assertEqual(self.developer_instructions(run["argv"]), [])
+        self.assertIn("sets developer_instructions; leaving it in place", run["stderr"])
+
+    def test_codex_without_flag_keeps_legacy_argv_and_rejects_missing_file(self) -> None:
+        base = self.sandbox()
+        run = self.run_codex(base, [])
+        self.assertEqual(run["returncode"], 0, run["stderr"])
+        self.assertEqual(self.developer_instructions(run["argv"]), [])
+        missing = self.run_codex(base, [f"--system-prompt-file={base / 'absent.md'}"])
+        self.assert_rejected(missing, "codex", "system prompt file not found")
+        empty = self.run_codex(base, ["--system-prompt-file="])
+        self.assert_rejected(empty, "codex", "--system-prompt-file requires a path")
+
+    # ── copilot-cli: AGENTS.md in a private COPILOT_CUSTOM_INSTRUCTIONS_DIRS entry ──
+    def run_copilot(self, base: Path, flags: list[str], env_extra: dict[str, str] | None = None) -> AdapterRun:
+        env = {
+            "COPILOT_HELP_TEXT": "--autopilot",
+            "TMPDIR": str(base),
+            "ADAPTER_INSTRUCTIONS_FILE": str(base / "instructions"),
+            **(env_extra or {}),
+        }
+        return self.run_in(
+            base, ["bash", str(COPILOT_SH)], flags, fake_name="copilot", fixture_text="copilot ran\n", env_extra=env
+        )
+
+    def test_copilot_loads_file_as_custom_instructions_and_keeps_inherited_dirs(self) -> None:
+        base = self.sandbox()
+        run = self.run_copilot(
+            base,
+            [f"--system-prompt-file={self.system_file(base)}"],
+            env_extra={"COPILOT_CUSTOM_INSTRUCTIONS_DIRS": "/x"},
+        )
+        self.assertEqual(run["returncode"], 0, run["stderr"])
+        self.assertEqual(run["argv"], ["-p", "the prompt", "--allow-all", "--autopilot", "--silent"])
+        dirs = (base / "instructions").read_text().strip().split(",")
+        self.assertEqual(dirs[0], "/x")
+        self.assertEqual(len(dirs), 2)
+        self.assertTrue(Path(dirs[1]).name.startswith("specula-copilot-rules-"))
+        self.assertEqual((base / "instructions.copy").read_text(encoding="utf-8"), self.TEXT)
+        self.assertFalse(Path(dirs[1]).exists())  # private staging removed on exit
+
+    def test_copilot_without_flag_leaves_instruction_dirs_alone_and_rejects_missing_file(self) -> None:
+        base = self.sandbox()
+        run = self.run_copilot(base, [])
+        self.assertEqual(run["returncode"], 0, run["stderr"])
+        self.assertEqual((base / "instructions").read_text().strip(), "<unset>")
+        missing = self.run_copilot(base, [f"--system-prompt-file={base / 'absent.md'}"])
+        self.assert_rejected(missing, "copilot-cli", "system prompt file not found")
+
+    # ── opencode: config `instructions` via OPENCODE_CONFIG_CONTENT ──
+    def run_opencode(self, base: Path, flags: list[str], env_extra: dict[str, str] | None = None) -> AdapterRun:
+        return self.run_in(
+            base,
+            [str(OPENCODE_SH)],
+            flags,
+            fake_name="opencode",
+            fixture_text=OpenCodeAdapter.FIXTURE,
+            record_extra=True,
+            env_extra={
+                "TMPDIR": str(base),
+                "ADAPTER_INSTRUCTIONS_FILE": str(base / "instructions"),
+                **(env_extra or {}),
+            },
+        )
+
+    def test_opencode_adds_file_to_instructions_and_keeps_native_config(self) -> None:
+        base = self.sandbox()
+        native = {"instructions": ["NOTES.md"], "theme": "dark"}
+        run = self.run_opencode(
+            base,
+            [f"--system-prompt-file={self.system_file(base)}"],
+            env_extra={"OPENCODE_CONFIG_CONTENT": json.dumps(native)},
+        )
+        self.assertEqual(run["returncode"], 0, run["stderr"])
+        config = json.loads(run["opencode_config"])
+        self.assertEqual(config["theme"], "dark")
+        self.assertEqual(config["instructions"][0], "NOTES.md")
+        self.assertEqual(len(config["instructions"]), 2)
+        staged = Path(config["instructions"][1])
+        self.assertEqual(staged.name, "specula-rules.md")
+        self.assertEqual((base / "instructions.copy").read_text(encoding="utf-8"), self.TEXT)
+        self.assertFalse(staged.parent.exists())  # private staging removed on exit
+
+    def test_opencode_leaves_invalid_native_config_for_opencode_to_report(self) -> None:
+        base = self.sandbox()
+        run = self.run_opencode(
+            base,
+            [f"--system-prompt-file={self.system_file(base)}"],
+            env_extra={"OPENCODE_CONFIG_CONTENT": "{not json"},
+        )
+        self.assertEqual(run["opencode_config"], "{not json")
+
+    def test_opencode_without_flag_keeps_config_and_rejects_missing_file(self) -> None:
+        base = self.sandbox()
+        run = self.run_opencode(base, [])
+        self.assertEqual(run["returncode"], 0, run["stderr"])
+        self.assertEqual(run["opencode_config"], "")
+        missing = self.run_opencode(base, [f"--system-prompt-file={base / 'absent.md'}"])
+        self.assert_rejected(missing, "opencode", "system prompt file not found")
+
+    # ── pi: --append-system-prompt <path> ──
+    def run_pi(self, base: Path, flags: list[str]) -> AdapterRun:
+        return self.run_in(base, [str(PI_SH)], flags, fake_name="pi", fixture_text=PiAdapter.FIXTURE, record_extra=True)
+
+    def test_pi_appends_file_to_system_prompt_on_fresh_and_resumed_sessions(self) -> None:
+        base = self.sandbox()
+        system = self.system_file(base)
+        flags = [f"--resume-state={base / 'resume.json'}", "--system-prompt-file=rules.system.md"]
+        for phase in ("fresh", "resumed"):
+            with self.subTest(phase=phase):
+                run = self.run_pi(base, flags)
+                self.assertEqual(run["returncode"], 0, run["stderr"])
+                self.assertEqual(run["argv"].count("--append-system-prompt"), 1)
+                self.assertEqual(run["argv"][run["argv"].index("--append-system-prompt") + 1], str(system))
+                self.assertEqual("--session" in run["argv"], phase == "resumed")
+
+    def test_pi_without_flag_keeps_legacy_argv_and_rejects_missing_file(self) -> None:
+        base = self.sandbox()
+        run = self.run_pi(base, [])
+        self.assertEqual(run["returncode"], 0, run["stderr"])
+        self.assertNotIn("--append-system-prompt", run["argv"])
+        missing = self.run_pi(base, [f"--system-prompt-file={base / 'absent.md'}"])
+        self.assert_rejected(missing, "pi", "system prompt file not found")
+        empty = self.run_pi(base, ["--system-prompt-file="])
+        self.assert_rejected(empty, "pi", "--system-prompt-file requires a path")
 
 
 if __name__ == "__main__":

@@ -42,6 +42,9 @@ class AdapterOptions:
     model: str
     effort: str
     resume_state: Path | None
+    # Absolute path from --system-prompt-file; each adapter maps it to its
+    # CLI's own system-prompt mechanism.
+    system_prompt_file: Path | None = None
 
     def cleanup(self) -> None:
         if self.temporary_prompt:
@@ -63,6 +66,7 @@ def parse_options(
     model: str | None = None
     effort: str | None = None
     resume_state: str | None = None
+    system_prompt_file: str | None = None
 
     for arg in argv:
         if arg.startswith("--prompt="):
@@ -77,6 +81,8 @@ def parse_options(
             effort = arg.removeprefix("--effort=")
         elif arg.startswith("--resume-state="):
             resume_state = arg.removeprefix("--resume-state=")
+        elif arg.startswith("--system-prompt-file="):
+            system_prompt_file = arg.removeprefix("--system-prompt-file=")
         elif arg.startswith("--max-turns=") or arg.startswith("--claude-alias=") or arg == "--background":
             pass
         else:
@@ -95,6 +101,13 @@ def parse_options(
         raise AdapterArgumentError(adapter_name, "--log is required")
     if resume_state == "":
         raise AdapterArgumentError(adapter_name, "--resume-state requires a path")
+    if system_prompt_file == "":
+        raise AdapterArgumentError(adapter_name, "--system-prompt-file requires a path")
+    system_prompt_path: Path | None = None
+    if system_prompt_file is not None:
+        system_prompt_path = Path(system_prompt_file).resolve()
+        if not system_prompt_path.is_file():
+            raise AdapterArgumentError(adapter_name, f"system prompt file not found: {system_prompt_file}")
 
     if prompt_file:
         prompt_path = Path(prompt_file).resolve()
@@ -124,6 +137,7 @@ def parse_options(
         # Do not resolve this path: resume.py deliberately uses lstat so a
         # symlink state file is rejected rather than silently following it.
         resume_state=Path(resume_state) if resume_state is not None else None,
+        system_prompt_file=system_prompt_path,
     )
 
 

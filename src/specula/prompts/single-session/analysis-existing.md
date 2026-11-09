@@ -1,0 +1,1 @@
+1. **Code analysis**: already complete. Read `{{work_dir}}/modeling-brief.md` and `{{work_dir}}/analysis-report.md` in full, and the files under `{{work_dir}}/analysis/` that they cite: they are this session's code-analysis results. Do not redo the analysis or rewrite these files; reread the source as needed while you model. Begin with Spec generation.

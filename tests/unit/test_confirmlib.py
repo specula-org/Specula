@@ -27,7 +27,7 @@ from typing import Any
 from unittest import mock
 
 from specula import confirmlib as C
-from specula import persistent_findings, resumelib
+from specula import notes, persistent_findings, resumelib, rules
 from specula import phaselib as PhaseLib
 from specula import pipelinelib as PL
 from specula import prompts as P
@@ -173,6 +173,9 @@ with (capture / "calls").open("a") as calls:
     calls.write(stem + "\\n")
 with (capture / (stem + ".prompts")).open("a") as prompts:
     prompts.write(prompt.read_text() + "\\n<end>\\n")
+with (capture / (stem + ".system")).open("a") as system:
+    pinned = args.get("system-prompt-file")
+    system.write((Path(pinned).read_text() if pinned else "<none>") + "\\n<end>\\n")
 repro = work / "repro" / f"test_bug{fdir.name}_case.sh"
 proposal = json.loads(os.environ["ISSUE_PROPOSAL"])
 proposal["id"] = fdir.name
@@ -436,6 +439,38 @@ class TestIssueProposal(ConfirmCase):
                 sessions = (self.root / "turn01_A-issue.sessions").read_text().splitlines()
                 self.assertEqual({line.split()[0] for line in sessions}, {"session-MC-1-turn01_A"})
                 self.assertTrue(json.loads((self.fdir / "issue.json").read_text())["title"] == "Fixture defect")
+
+    def test_correction_turn_and_its_replays_pin_the_rules_once(self) -> None:
+        for rc, retries, setting in (
+            (74, "transient_resumes", None),
+            (76, "policy_retries", None),
+            (74, "transient_resumes", "off"),
+        ):
+            with self.subTest(rc=rc, rules=setting):
+                shutil.rmtree(self.fdir, ignore_errors=True)
+                for path in self.root.glob("turn01_A*"):
+                    path.unlink()
+                (self.root / "calls").unlink(missing_ok=True)
+                with (
+                    self.env(ISSUE_FIX="fail-once", ISSUE_FAIL_RC=str(rc)),
+                    mock.patch.dict(os.environ),
+                    mock.patch.object(PhaseLib, "_transient_resume_delay", return_value=0),
+                ):
+                    os.environ.pop(rules.RULES_ENV, None)
+                    if setting is not None:
+                        os.environ[rules.RULES_ENV] = setting
+                    block = rules.rules_block()
+                    self.assertEqual(C.run_parallel_confirmation(self.issue_cfg(**{retries: 1})), 0)
+                self.assertEqual(self.calls(), ["turn01_A", "turn01_A-issue", "turn01_A-issue"])
+                prompts = (self.root / "turn01_A-issue.prompts").read_text().split("\n<end>\n")[:2]
+                systems = (self.root / "turn01_A-issue.system").read_text().split("\n<end>\n")[:2]
+                prefix = block + rules.RULES_SEPARATOR if block else ""
+                for prompt in prompts:
+                    self.assertTrue(prompt.startswith(prefix + "# Fix the persistent issue proposal for MC-1"))
+                    self.assertEqual(prompt.count(rules.RULES_TITLE), 1 if block else 0)
+                    # A metadata-only continuation of the worker session gets no notes section.
+                    self.assertNotIn("Working Notes", prompt)
+                self.assertEqual(systems, [block or "<none>"] * 2)
 
     def test_rate_limited_correction_restores_a_deleted_repro_directory(self) -> None:
         cfg = self.issue_cfg()
@@ -1214,6 +1249,8 @@ class TestDriver(ConfirmCase):
         self.assertNotIn("--resume", first_argv)
         self.assertEqual(resumed_argv[resumed_argv.index("--resume") + 1], session_id)
         self.assertEqual((root / "stdin-2.md").read_text().strip(), PhaseLib._POLICY_SESSION_RESUME_PROMPT)
+        for argv in (first_argv, resumed_argv):
+            self.assertEqual("--append-system-prompt-file" in argv, bool(rules.rules_block()))
         report = (ws.work_dir("T") / "confirmed-bugs.md").read_text()
         self.assertNotIn("INCOMPLETE", report)
         self.assertIn("FALSE POSITIVE", report)
@@ -3241,6 +3278,101 @@ class TestPromptExtraAndLog(ConfirmCase):
         cfg = self.cfg(ws, "T", prompt_extra="\n## Target-Specific Instructions\n\nCHECK THE FOO RACE")
         f = C.Finding({"id": "MC-1", "title": "t", "summary": "s"}, ws.work_dir("T") / "confirmation" / "MC-1")
         self.assertIn("CHECK THE FOO RACE", C.prompt_reproduce(cfg, f, "/repo"))
+
+    def _isolate_notes_env(self) -> None:
+        patcher = mock.patch.dict(os.environ)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        os.environ[notes.NOTES_ENV] = "on"
+
+    def test_finding_turns_read_shared_notes_but_write_only_their_finding_dir(self) -> None:
+        self._isolate_notes_env()
+        ws = self.seed("T", [])
+        extra = "\n## Target-Specific Instructions\n\nCHECK THE FOO RACE"
+        cfg = self.cfg(ws, "T", prompt_extra=extra)
+        f = self.finding(ws, "T")
+        section = notes.worker_notes_section(ws.work_dir("T").absolute(), f.fdir.absolute())
+        self.assertIn(str(f.fdir.absolute()), section)
+        self.assertIn("Do not edit the shared notes", section)
+        for prompt in (
+            C.prompt_reproduce(cfg, f, "/repo"),
+            C.prompt_challenge(cfg, f, "/repo", "/debate.md"),
+            C.prompt_defend(cfg, f, "/repo", "/debate.md"),
+        ):
+            self.assertEqual(prompt.count("## Working Notes"), 1)
+            self.assertTrue(prompt.endswith(section + extra))
+        # A focused draft correction redoes no investigation and gets no notes.
+        retry = C.prompt_repair_draft_retry(cfg, f, "/repo", "warn", Path("/prev.log"))
+        self.assertNotIn("Working Notes", retry)
+        self.assertNotIn("Working Notes", C.prompt_issue_fix(cfg, f, "REPRODUCED", "title too long"))
+
+    def test_notes_off_restores_worker_prompts_and_verdict_fingerprint(self) -> None:
+        self._isolate_notes_env()
+        ws = self.seed("T", [])
+        cfg = self.cfg(ws, "T")
+        f = self.finding(ws, "T")
+        identities: list[dict[str, Any]] = []
+        real_digest = C._digest
+
+        def capture(value: Any) -> str:
+            if isinstance(value, dict) and "prompts" in value:
+                identities.append(value)
+            return real_digest(value)
+
+        def worker_prompts() -> list[str]:
+            return [
+                C.prompt_reproduce(cfg, f, "/repo"),
+                C.prompt_challenge(cfg, f, "/repo", "/debate.md"),
+                C.prompt_defend(cfg, f, "/repo", "/debate.md"),
+            ]
+
+        on_prompts = worker_prompts()
+        section = notes.worker_notes_section(ws.work_dir("T").absolute(), f.fdir.absolute())
+        with mock.patch.object(C, "_digest", side_effect=capture):
+            on_fingerprint = C._verdict_fingerprint(cfg, f)
+        os.environ[notes.NOTES_ENV] = "off"
+        off_prompts = worker_prompts()
+        with mock.patch.object(C, "_digest", side_effect=capture):
+            off_fingerprint = C._verdict_fingerprint(cfg, f)
+
+        for on, off in zip(on_prompts, off_prompts, strict=True):
+            self.assertNotIn("Working Notes", off)
+            self.assertEqual(on.replace(section, "", 1), off)
+        self.assertNotEqual(on_fingerprint, off_fingerprint)
+        self.assertEqual(identities[0]["notes"], (P.PROMPTS_DIR / "optional/notes-worker.md").read_text())
+        # Off omits the key entirely, so fingerprints saved before notes existed stay valid.
+        self.assertNotIn("notes", identities[1])
+        self.assertEqual({key: value for key, value in identities[0].items() if key != "notes"}, identities[1])
+
+    def test_rules_off_restores_verdict_fingerprint(self) -> None:
+        patcher = mock.patch.dict(os.environ)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        os.environ[rules.RULES_ENV] = "on"
+        ws = self.seed("T", [])
+        cfg = self.cfg(ws, "T")
+        f = self.finding(ws, "T")
+        identities: list[dict[str, Any]] = []
+        real_digest = C._digest
+
+        def capture(value: Any) -> str:
+            if isinstance(value, dict) and "prompts" in value:
+                identities.append(value)
+            return real_digest(value)
+
+        with mock.patch.object(C, "_digest", side_effect=capture):
+            on_fingerprint = C._verdict_fingerprint(cfg, f)
+        os.environ[rules.RULES_ENV] = "off"
+        with mock.patch.object(C, "_digest", side_effect=capture):
+            off_fingerprint = C._verdict_fingerprint(cfg, f)
+
+        self.assertNotEqual(on_fingerprint, off_fingerprint)
+        # The template text, never a rendered path-bearing prompt.
+        self.assertEqual(identities[0]["rules"], (P.PROMPTS_DIR / "optional/rules.md").read_text())
+        # Off omits the key entirely, so fingerprints saved before rule pinning stay valid.
+        self.assertNotIn("rules", identities[1])
+        self.assertEqual({key: value for key, value in identities[0].items() if key != "rules"}, identities[1])
+        self.assertTrue(all("issue-fix.md" in identity["prompts"] for identity in identities))
 
     def test_parallel_prompts_assign_rr_queue_only_to_dispatcher(self) -> None:
         ws = self.seed("T", [])

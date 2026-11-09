@@ -42,7 +42,8 @@ import specula.progress as progress
 from specula import quota, resumelib, tlc_tasks
 from specula.adapters.utils.policy import POLICY_BLOCKED_RC
 from specula.adapters.utils.transient import AUTH_REFRESH_FAILURE_RC, TRANSIENT_FAILURE_RC
-from specula.context_control import CONFIRMATION_YIELD_RC
+from specula.context_control import CONFIRMATION_YIELD_RC, CONTEXT_CONTROL_PHASES
+from specula.notes import notes_section
 from specula.output_index import BYOM_REPORT_FILENAME, PIPELINE_LOG_ENV, is_safe_target_name, write_target_index
 from specula.prompts import render
 from specula.resource_summary import (
@@ -54,6 +55,7 @@ from specula.resource_summary import (
     invalidate_summary,
     publish_findings_summary,
 )
+from specula.rules import rules_block, with_rules
 from specula.skill_refs import materialize_skill_refs, prompt_skill_ids
 from specula.snapshotlib import (
     SNAPSHOT_MODE_ENV,
@@ -284,6 +286,16 @@ def _transient_failure_label(rc: int) -> str:
 
 
 def _retry_prompt(original: str, reason: str, *, resumable: bool, manual_extra: str = "") -> str:
+    """The exact prompt an invocation sends: fresh, replayed, or a continuation.
+
+    Every launcher (phase agents, reviews, blocking confirmation turns) writes
+    its prompt file through here, so the pinned rules block (specula.rules) is
+    prepended exactly once to every fresh, replayed, and continuation prompt.
+    """
+    return with_rules(_select_retry_prompt(original, reason, resumable=resumable, manual_extra=manual_extra))
+
+
+def _select_retry_prompt(original: str, reason: str, *, resumable: bool, manual_extra: str = "") -> str:
     if not resumable:
         return _policy_recovery_prompt(original) if reason == "policy" else original
     if reason == "policy":
@@ -293,6 +305,27 @@ def _retry_prompt(original: str, reason: str, *, resumable: bool, manual_extra: 
     if reason in {"rate_limit", "transient"}:
         return _SESSION_RESUME_PROMPT
     return original
+
+
+def _system_prompt_path(prompt_file: Path) -> Path:
+    """Sidecar holding the pinned rules for the adapter's system prompt."""
+    return prompt_file.with_name(f"{prompt_file.stem}.system{prompt_file.suffix}")
+
+
+def _system_prompt_argv(prompt_file: Path) -> list[str]:
+    """Write the rules beside ``prompt_file`` and return the adapter flag.
+
+    The flag is repeated on every invocation of a logical turn, including
+    native-session resumes, so adapters whose CLI rebuilds its system prompt
+    after compaction keep the rules. ``SPECULA_RULES=off`` writes nothing and
+    returns no flag, leaving the adapter argv exactly as before rule pinning.
+    """
+    block = rules_block()
+    if not block:
+        return []
+    path = _system_prompt_path(prompt_file)
+    path.write_text(block)
+    return [f"--system-prompt-file={path}"]
 
 
 # bash pathname expansion (`for d in .../*/`) orders by the locale collating
@@ -592,6 +625,11 @@ class Phase:
     artifact_rejection_message: str | None = None
     dry_prompt_flag = "--prompt"  # bug_classification's dry-run line shows --prompt-file
     next_phase_key: str | None = None  # consumer whose existing check() validates this handoff
+    yield_message = "Incremental conversation yielded to bug confirmation."  # context-control phases only
+    # Whether a relaunch of an unfinished conversation (a CI confirmation
+    # handoff or a manual attach) keeps the retry budgets it already spent.
+    # The single-session main session budgets each controller step instead.
+    carry_retry_budgets = True
     progress_config = progress.ProgressConfig()
     # Tri-state tuning values set in run(): None = unspecified, "" = explicit
     # reset to the adapter/CLI default, non-empty = explicit override.
@@ -1254,8 +1292,8 @@ class Phase:
                     _refresh_target_indexes(ws, names)
                 raise
 
-        if self.key == "incremental" and failures and all(rc == CONFIRMATION_YIELD_RC for _, rc in failures):
-            print("Incremental conversation yielded to bug confirmation.")
+        if self.key in CONTEXT_CONTROL_PHASES and failures and all(rc == CONFIRMATION_YIELD_RC for _, rc in failures):
+            print(self.yield_message)
             return CONFIRMATION_YIELD_RC
 
         integrity_failures = self.audit_output_integrity(
@@ -1507,7 +1545,7 @@ class Phase:
             )
         archived_attempts: dict[Path, Path] = {}
         if not dry_run:
-            if claim.manual or claim.attempt > 1:
+            if (claim.manual or claim.attempt > 1) and self.carry_retry_budgets:
                 # A CI confirmation handoff re-enters this launcher while the
                 # same logical conversation and its spent budgets stay active.
                 attempt = max(attempt, claim.rate_limit_attempt)
@@ -1553,6 +1591,7 @@ class Phase:
             )
             print(f"  Prompt saved: {files['prompt']}")
             return None
+        system_prompt_args = _system_prompt_argv(files["prompt"])
         # Generic stop-gate interface (src/specula/stop_gate.py): tell the
         # adapter which phase this agent runs and where its work dir is, so
         # hook-capable adapters arm the completion gate. Per-launch env copy,
@@ -1586,6 +1625,7 @@ class Phase:
         # files as well when they live in the workspace.
         runtime_files = (
             files["prompt"],
+            _system_prompt_path(files["prompt"]),
             files["pid"],
             files["log"],
             _last_message_path(files["log"]),
@@ -1620,9 +1660,10 @@ class Phase:
                 *_model_effort_argv(adapter, self._model, self._effort),
                 f"--log={files['log']}",
                 f"--resume-state={resume_state}",
+                *system_prompt_args,
                 "--background",
             ]
-            if self.key == "incremental":
+            if self.key in CONTEXT_CONTROL_PHASES:
                 command = [sys.executable, str(SCRIPT_DIR / "context_runner.py"), *command]
             tlc_tasks.prepare_environment(env, files["log"], SPECULA_ROOT)
             proc = subprocess.Popen(
@@ -1821,6 +1862,7 @@ def run_agent_blocking(
         *_model_effort_argv(adapter, model, effort),
         f"--log={log_file}",
         f"--resume-state={resume_state}",
+        *_system_prompt_argv(prompt_file),
     ]
     state = policy_state if policy_state is not None else PolicyRetryState()
     claim = resumelib.ResumeClaim(attempt=1, manual=False, resumable=False)
@@ -2066,6 +2108,7 @@ Write your outputs to:
 - `{work_dir}/modeling-brief.md` — The primary deliverable (handoff to Spec Generation)
 - `{work_dir}/analysis-report.md` — Detailed audit trail of all findings
 """
+        prompt += notes_section(work_dir, first=True)
         return self._with_extra(ws, name, prompt)
 
     def summarize(self, ws: Workspace, names: list[str]) -> None:
@@ -2174,6 +2217,7 @@ Use the installed Specula skill {prompt_skill_ids("byom")}. Read it in full and 
 
 Combine those artifacts with the target-specific instructions below. Reuse supplied work, perform the focused Scenario supplement, and leave the ordinary Phase 2 outputs ready for the harness phase.
 """
+            prompt += notes_section(wd, first=False)
             return self._with_extra(ws, name, prompt)
         prompt = f"""# TLA+ Spec Generation Task
 
@@ -2206,6 +2250,7 @@ Expected files:
 - `{spec_dir}/Trace.cfg` — Trace validation config
 - `{spec_dir}/instrumentation-spec.md` — Instrumentation mapping
 """
+        prompt += notes_section(wd, first=False)
         return self._with_extra(ws, name, prompt)
 
     def summarize(self, ws: Workspace, names: list[str]) -> None:
@@ -2334,6 +2379,7 @@ Use the installed Specula skill {prompt_skill_ids("byom")}. Read it in full and 
 
 Combine those artifacts with the target-specific instructions below. Reuse supplied instrumentation, harnesses, and traces; fill only what is missing or unusable; then leave the ordinary Phase 2.5 outputs ready for validation.
 """
+            prompt += notes_section(wd, first=False)
             return self._with_extra(ws, name, prompt)
         prompt = f"""# Trace Harness Generation Task: {name}
 
@@ -2364,6 +2410,7 @@ Expected outputs:
 - `{wd}/harness/INSTRUMENTATION.md` — Guide for Phase 3 agent to adjust instrumentation
 - `{wd}/traces/*.ndjson` — Trace files from test runs
 """
+        prompt += notes_section(wd, first=False)
         return self._with_extra(ws, name, prompt)
 
     def summarize(self, ws: Workspace, names: list[str]) -> None:
@@ -2479,7 +2526,7 @@ Do everything the skill specifies. Do not add, relax, or override any step here.
 """
         byom_path = _byom_path()
         if byom_path is None:
-            return prompt
+            return prompt + notes_section(wd, first=False)
         prompt += f"""
 ## BYOM Modification Report
 
@@ -2491,6 +2538,7 @@ After completing and validating the normal Phase 4b outputs, use the installed S
 
 Compare the supplied artifacts with the final workspace, explain what was reused, modified, or added and why, and state any uncertain correspondence. Do not modify verification artifacts while writing this report.
 """
+        prompt += notes_section(wd, first=False)
         return prompt + self._read_prompt_extra(ws, name)
 
     def prepare_fresh_outputs(self, ws: Workspace, name: str) -> None:
@@ -2778,6 +2826,7 @@ Use the installed Specula skill {prompt_skill_ids("validation-workflow")}. Read 
 
 Do everything the skill specifies. Do not add, relax, or override any step here. Harness and traces already exist from Phase 2.5 under `{wd}/traces/` and `{wd}/harness/`; the skill's Phase 0 covers verifying and (if needed) regenerating them.
 """
+        prompt += notes_section(wd, first=False)
         return self._with_extra(ws, name, prompt)
 
     def summarize(self, ws: Workspace, names: list[str]) -> None:
@@ -3215,6 +3264,7 @@ Prerequisites:
             report=str(wd / "confirmed-bugs.md"),
             bug_confirmation_skill=prompt_skill_ids("bug-confirmation"),
         )
+        prompt += notes_section(wd, first=False)
         return self._with_extra(ws, name, prompt)
 
     def summarize(self, ws: Workspace, names: list[str]) -> None:
@@ -3592,6 +3642,7 @@ Output:
             manual_extra=self._manual_prompt_extra(ws, name) if claim.manual else "",
         )
         prompt_file.write_text(prompt)
+        system_prompt_args = _system_prompt_argv(prompt_file)
         with contextlib.suppress(OSError):
             activity_log.unlink()
         env = os.environ.copy()
@@ -3613,6 +3664,7 @@ Output:
         for path in (
             log_file,
             pid_file,
+            _system_prompt_path(prompt_file),
             _last_message_path(log_file),
             activity_log,
             log_file.with_suffix(".raw.json"),
@@ -3646,6 +3698,7 @@ Output:
                     *_model_effort_argv(adapter, self._model, self._effort),
                     f"--log={log_file}",
                     f"--resume-state={resume_state}",
+                    *system_prompt_args,
                     "--background",
                 ],
                 env=env,
@@ -3857,6 +3910,11 @@ def main(argv: list[str]) -> int:
         from specula.ci_phase import IncrementalPhase
 
         PHASES["incremental"] = IncrementalPhase()
+    elif argv and argv[0] == "main":
+        from specula.single_session import SingleSessionPhase, apply_prompt_defaults
+
+        apply_prompt_defaults()
+        PHASES["main"] = SingleSessionPhase()
     if not argv or argv[0] not in PHASES:
         print(f"usage: phaselib.py <phase> [options] <target>...\nphases: {', '.join(PHASES)}", file=sys.stderr)
         return 2

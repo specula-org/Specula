@@ -9,6 +9,8 @@ Options:
   --model=NAME          Provider/model (default: PI_MODEL)
   --log=FILE            Log file path (required)
   --resume-state=PATH   Persist/resume the exact native Pi session
+  --system-prompt-file=FILE
+                        Append FILE to Pi's system prompt (--append-system-prompt)
   --background          Accepted; caller handles backgrounding
   --help                Show this help
 """
@@ -64,7 +66,8 @@ def main(argv: list[str]) -> int:
     command = ["pi", "--print", "--mode", "json"]
     if os.environ.get("SPECULA_TLC_TOOL_EXTENSION"):
         command += ["--extension", os.environ["SPECULA_TLC_TOOL_EXTENSION"]]
-    if os.environ.get("SPECULA_PHASE") == "incremental" and os.environ.get("SPECULA_CONTEXT_REQUEST"):
+    # Context-control phases (specula.context_control.CONTEXT_CONTROL_PHASES) get the context tools.
+    if os.environ.get("SPECULA_PHASE") in {"incremental", "main"} and os.environ.get("SPECULA_CONTEXT_REQUEST"):
         command += ["--extension", str(Path(__file__).resolve().parents[3] / "tools/context_control/pi-extension.js")]
     if options.resume_state is None:
         # Preserve the standalone adapter's historical ephemeral behavior.
@@ -78,6 +81,11 @@ def main(argv: list[str]) -> int:
         command += ["--model", options.model]
     if options.effort:
         command += ["--thinking", options.effort]
+    if options.system_prompt_file is not None:
+        # Pi's documented `--append-system-prompt <text|path>` appends an existing
+        # file's contents. Pi rebuilds its system prompt on every launch, including
+        # `--session` resumes, so passing it each time keeps the rules after compaction.
+        command += ["--append-system-prompt", str(options.system_prompt_file)]
     return run_json_cli("pi", command, options)
 
 
