@@ -55,7 +55,7 @@ from specula.phaselib import (
 )
 from specula.prompts import render
 from specula.rules import rules_identity
-from specula.skill_refs import prompt_skill_ids
+from specula.skill_refs import prompt_skill_ids, stable_skill_refs
 from specula.snapshotlib import SNAPSHOT_MODE_ENV, clean_git_environment
 
 SKILLS = SPECULA_ROOT / "skills"
@@ -880,6 +880,11 @@ def prompt_repair_draft_retry(
 # ── one debate turn (blocking, via the shared phaselib primitive) ────────────
 
 
+def _turn_prompt_digest(prompt: str) -> str:
+    """Identify a turn prompt the same way in every process, so an attach can reuse it."""
+    return hashlib.sha256(stable_skill_refs(prompt).encode()).hexdigest()
+
+
 def run_turn(
     cfg: ConfirmConfig,
     f: Finding,
@@ -904,7 +909,7 @@ def run_turn(
         return ("REPRODUCED" if role == "A" and turn_no == 1 else None), ""
     turn_key = (turn_no, role)
     resume_logical = ("confirm", cfg.name, "finding", f.id, str(turn_no), role)
-    prompt_digest = hashlib.sha256(prompt.encode()).hexdigest()
+    prompt_digest = _turn_prompt_digest(prompt)
     turn_cwd = str(Path(cwd).absolute()) if cwd is not None else None
     if lease is not None:
         completed = lease.completed_turns.get(turn_key)
@@ -968,7 +973,7 @@ def _accept_turn(
     result_path = _turn_result_file(cfg, f, turn_no, role, text)
     digest = hashlib.sha256(result_path.read_bytes()).hexdigest()
     lease.completed_turns[(turn_no, role)] = _CompletedTurn(
-        hashlib.sha256(prompt.encode()).hexdigest(),
+        _turn_prompt_digest(prompt),
         turn_cwd,
         verdict,
         text,

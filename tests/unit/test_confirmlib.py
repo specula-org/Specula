@@ -98,6 +98,20 @@ def _scripted_policy_adapter(root: Path, returncodes: list[int]) -> tuple[Path, 
     return adapter, count
 
 
+def _start_new_process(test: unittest.TestCase) -> None:
+    """Give later prompts another skill-reference marker, as a real attach in a new process has."""
+    from specula import skill_refs
+
+    prefix = "<!-- specula-skill:" + "f" * 32 + ":"
+    patcher = mock.patch.multiple(
+        skill_refs,
+        _SKILL_REF_PREFIX=prefix,
+        _SKILL_REF=re.compile(rf"{re.escape(prefix)}([a-z0-9]+(?:-[a-z0-9]+)*) -->"),
+    )
+    patcher.start()
+    test.addCleanup(patcher.stop)
+
+
 def _git_repo(path: Path) -> Path:
     path.mkdir()
     subprocess.run(["git", "init", "-q", str(path)], check=True)
@@ -531,6 +545,7 @@ class TestIssueProposal(ConfirmCase):
             os.environ.pop(resumelib.FRESH_ENV, None)
             self.assertNotEqual(first(self.issue_cfg()), 0)
             os.environ[resumelib.INVOCATION_ENV] = "invocation-2"
+            _start_new_process(self)
             os.environ[resumelib.MANUAL_ENV] = "1"
             resumed = self.issue_cfg(resume_prompt_extra=guidance)
             self.assertEqual(C.run_parallel_confirmation(resumed), 0)
@@ -1406,6 +1421,7 @@ class TestDriver(ConfirmCase):
             self.assertEqual(cfg._finding_leases, {})
 
             os.environ[resumelib.INVOCATION_ENV] = "invocation-2"
+            _start_new_process(self)
             os.environ[resumelib.MANUAL_ENV] = "1"
             resumed_cfg = C.ConfirmConfig(
                 name="T",
@@ -1536,6 +1552,7 @@ class TestDriver(ConfirmCase):
 
             self.assertEqual(cfg._finding_leases, {})
             os.environ[resumelib.INVOCATION_ENV] = "invocation-2"
+            _start_new_process(self)
             os.environ[resumelib.MANUAL_ENV] = "1"
             resumed_cfg = C.ConfirmConfig(
                 name="T",
@@ -1953,6 +1970,7 @@ class TestDriver(ConfirmCase):
             self.assertEqual([entry["kind"] for entry in resumelib.active_entries(root)], ["consolidate"])
 
             os.environ[resumelib.INVOCATION_ENV] = "invocation-2"
+            _start_new_process(self)
             os.environ[resumelib.MANUAL_ENV] = "1"
             resumed_cfg = self.cfg(ws, "T", adapter=adapter)
             self.assertEqual(C.run_parallel_confirmation(resumed_cfg), 0)
