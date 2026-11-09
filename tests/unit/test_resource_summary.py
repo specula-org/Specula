@@ -21,7 +21,6 @@ from specula.resource_summary import (
     RunDetails,
     _confirmation_finding_statuses,
     invalidate_summary,
-    read_usage,
 )
 
 
@@ -1502,13 +1501,13 @@ class TestIncrementalUsage(ResourceSummaryCase):
         self.assertIn("| Phase 4a | - | - | - |", text)
         self.assertIn("| **Total (incomplete)** | 3s | 200 total (100 cached) | $0.02 |", text)
 
-    def test_read_usage_reports_unobserved_values_as_null(self) -> None:
+    def test_usage_reports_unobserved_values_as_null(self) -> None:
         tracker = self.incremental_run()
         with mock.patch("specula.resource_summary.time.monotonic", return_value=0.0):
             self.recorder("phase4a", "2" * 32).start_target("demo", self.work_dir)
         tracker.capture_invocation("phase4a", ["demo"], "2" * 32)
 
-        usage = read_usage(self.work_dir, "demo")
+        usage = tracker.usage("demo")
         assert usage is not None
         self.assertEqual(
             usage.to_object(),
@@ -1537,12 +1536,49 @@ class TestIncrementalUsage(ResourceSummaryCase):
             },
         )
 
-    def test_read_usage_ignores_missing_foreign_or_corrupt_state(self) -> None:
-        self.assertIsNone(read_usage(self.work_dir, "demo"))
-        self.incremental_run()
-        self.assertIsNone(read_usage(self.work_dir, "other"))
-        (self.work_dir / STATE_FILENAME).write_text("{not json")
-        self.assertIsNone(read_usage(self.work_dir, "demo"))
+    def test_usage_is_none_until_a_phase_records_usage(self) -> None:
+        tracker = self.tracker()
+        tracker.initialize(resume=False)
+        self.assertTrue((self.work_dir / STATE_FILENAME).is_file())
+        self.assertIsNone(tracker.usage("demo"))
+        self.assertIsNone(tracker.usage("other"))
+
+    def test_interrupted_first_conversation_keeps_its_phase_layout(self) -> None:
+        # A killed Agent leaves an active record: recorded, but nothing measured.
+        for phase, label, rows in (
+            ("incremental", "Incremental workflow", ["incremental"]),
+            ("main", "Main session (Phases 1-3)", ["main", "phase4a", "phase4b"]),
+        ):
+            with self.subTest(phase=phase):
+                self.work_dir = self.target_dir(phase)
+                tracker = self.tracker()
+                tracker.initialize(resume=False)
+                with mock.patch("specula.resource_summary.time.monotonic", return_value=0.0):
+                    self.recorder(phase, "1" * 32).start_target("demo", self.work_dir)
+                tracker.capture_invocation(phase, ["demo"], "1" * 32)
+
+                usage = tracker.usage("demo")
+                assert usage is not None
+                recorded = usage.to_object()
+                self.assertEqual(list(cast(dict[str, object], recorded["phases"])), rows)
+                self.assertEqual(
+                    (recorded["complete"], recorded["runtime_seconds"], recorded["cost_usd"]), (False, None, None)
+                )
+                text = self.summary(self.work_dir)
+                self.assertIn(f"| {label} | - | - | - |", text)
+                self.assertNotIn("| Phase 1 |", text)
+
+    def test_usage_keeps_invocations_whose_state_write_failed(self) -> None:
+        tracker = self.incremental_run()
+        self.record("phase4a", "2" * 32, "bug-confirmation.usage.json", seconds=2.0, tokens=400, cost=0.04)
+        with mock.patch("specula.resource_summary._atomic_write", side_effect=OSError("disk full")):
+            tracker.capture_invocation("phase4a", ["demo"], "2" * 32)
+
+        self.assertFalse(self.phase_state(self.state(self.work_dir), "phase4a")["cost_observed"])
+        usage = tracker.usage("demo")
+        assert usage is not None
+        self.assertEqual((usage.total_tokens, usage.complete), (600, True))
+        self.assertAlmostEqual(cast(float, usage.cost_usd), 0.06)
 
 
 class TestSafety(ResourceSummaryCase):

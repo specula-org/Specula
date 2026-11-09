@@ -1257,6 +1257,7 @@ class IncrementalCLI(unittest.TestCase):
             {key: record["usage"][key] for key in ("complete", "runtime_seconds", "total_tokens", "cost_usd")},
             {"complete": False, "runtime_seconds": None, "total_tokens": None, "cost_usd": None},
         )
+        self.assertEqual(list(record["usage"]["phases"]), ["incremental"])
 
     def test_publication_failure_after_the_agent_finishes_is_not_resumable(self) -> None:
         self.initialize()

@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from specula import ci_init, ci_result, ci_verdict, persistent_findings, quota, resource_summary, resumelib
+from specula import ci_init, ci_result, ci_verdict, persistent_findings, quota, resumelib
 from specula.adapters.utils.policy import POLICY_BLOCKED_RC
 from specula.adapters.utils.transient import AUTH_REFRESH_FAILURE_RC, TRANSIENT_FAILURE_RC
 from specula.ci_identity import check_key
@@ -519,11 +519,12 @@ class CIPipeline(Pipeline):
         return None
 
     def _usage(self) -> dict[str, Any] | None:
-        # Read the durable state so a resumed run reports its cumulative usage.
+        # Only this invocation's tracker has every invocation it launched; the
+        # state file can be stale when tracking failed to start or to write.
         with contextlib.suppress(Exception):
             names = self.extract_names()
-            if self.run_dir is not None and len(names) == 1:
-                usage = resource_summary.read_usage(Path(self.get_work_dir(names[0])), names[0])
+            if self.resource_summary is not None and len(names) == 1:
+                usage = self.resource_summary.usage(names[0])
                 if usage is not None:
                     return usage.to_object()
         return None
