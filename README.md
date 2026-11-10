@@ -43,12 +43,12 @@ Browse the [case-study archive](https://github.com/specula-org/specula-case-stud
 ## Recommended Coding Agents
 
 We recommend using the following coding agents, which we actively test:
-* Claude Code with Claude Opus 4.8 or Fable
-* Codex with GPT-5.5 or GPT-5.6-Sol
+* Claude Code with Claude Opus 5.5 or Fable 5.2
+* Codex with GPT-6-Astra or GPT-6.1-Sol
 
-Other strong coding agents may work, but we do not test them regularly during our development. We recently tested Claude Code with GLM-5.2, Kimi 2.7, and DeepSeek V4 (see [Usage Guide](./docs/Usage.md)).
+Other strong coding agents may work, but we do not test them regularly during our development. We recently tested Claude Code with the latest GLM, Kimi, and DeepSeek models (see [Usage Guide](./docs/Usage.md)).
 
-**For GPT-5.6-Sol and Fable**, apply for Trusted Access through [OpenAI](https://chatgpt.com/cyber) and [Anthropic](https://portal.anthropic.com/programs/cvp), respectively. Without the required access, providers may block bug-reproduction requests during confirmation. If you cannot obtain access, use [hybrid configuration](./docs/Usage.md#hybrid-agent-configuration) to select another agent or model for that phase.
+**For the latest OpenAI and Anthropic models**, apply for Trusted Access through [OpenAI](https://chatgpt.com/cyber) and [Anthropic](https://portal.anthropic.com/programs/cvp), respectively. Without the required access, providers may block bug-reproduction requests during confirmation. If you cannot obtain access, use [hybrid configuration](./docs/Usage.md#hybrid-agent-configuration) to select another agent or model for that phase.
 
 ## Setup
 
