@@ -1,0 +1,863 @@
+[
+  {
+    "version": "V01",
+    "id": "advance-raw-True-2-0-Leader-2",
+    "checks": {
+      "nonempty_original_acks": true,
+      "nonempty_migrated_advance": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V01",
+    "id": "advance-raw-True-2-16-Leader-2",
+    "checks": {
+      "nonempty_original_acks": true,
+      "nonempty_migrated_advance": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V01",
+    "id": "advance-v02-raw-heartbeat",
+    "checks": {
+      "nonempty_original_acks": true,
+      "nonempty_migrated_advance": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V01",
+    "id": "advance-v02-raw-readack",
+    "checks": {
+      "nonempty_original_acks": true,
+      "nonempty_migrated_advance": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V01",
+    "id": "auto-outstanding-leave",
+    "checks": {
+      "nonempty_original_acks": true,
+      "nonempty_migrated_advance": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V01",
+    "id": "configuration-leave-commit-bad",
+    "checks": {
+      "nonempty_original_commit_record": true,
+      "expected_candidate": true,
+      "old_exemption_passes": true
+    }
+  },
+  {
+    "version": "V01",
+    "id": "configuration-leave-commit-good",
+    "checks": {
+      "nonempty_original_commit_record": true,
+      "expected_candidate": true,
+      "old_exemption_passes": true
+    }
+  },
+  {
+    "version": "V01",
+    "id": "hup-learner",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V01",
+    "id": "joint-self-quorum-False",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V01",
+    "id": "joint-self-quorum-True",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V01",
+    "id": "pending-v2-retained-obligation-False",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V01",
+    "id": "pending-v2-retained-obligation-True",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V01",
+    "id": "ready-raw-False-2-1-Leader-2",
+    "checks": {
+      "nonempty_original_ready": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V01",
+    "id": "v03-advance-raw-cross-0",
+    "checks": {
+      "nonempty_original_acks": true,
+      "nonempty_migrated_advance": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V01",
+    "id": "v03-advance-raw-cross-17",
+    "checks": {
+      "nonempty_original_acks": true,
+      "nonempty_migrated_advance": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V01",
+    "id": "v03-advance-raw-equal-old-0",
+    "checks": {
+      "nonempty_original_acks": true,
+      "nonempty_migrated_advance": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V01",
+    "id": "v03-advance-raw-zero-cursor-0",
+    "checks": {
+      "nonempty_original_acks": true,
+      "nonempty_migrated_advance": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V01",
+    "id": "v03-prop-batch-joint-add-then-leave",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V01",
+    "id": "v03-prop-batch-simple-leave-then-add",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V01",
+    "id": "v03-prop-joint-0-empty-auto",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V01",
+    "id": "v03-prop-joint-0-empty-explicit",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V01",
+    "id": "v03-prop-joint-0-v2",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V01",
+    "id": "v03-prop-simple-0-empty-auto",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V01",
+    "id": "v03-quota-0-large",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V01",
+    "id": "v03-quota-17-empty",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V01",
+    "id": "v03-quota-17-one-byte",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V01",
+    "id": "vote-learner-MsgVote-grant",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V01",
+    "id": "vote-learner-MsgVote-stale-log",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V01",
+    "id": "vote-voter-MsgVote-grant",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V01",
+    "id": "advance-v02-node-heartbeat",
+    "checks": {
+      "nonempty_original_acks": true,
+      "nonempty_migrated_advance": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V01",
+    "id": "advance-v02-node-readack",
+    "checks": {
+      "nonempty_original_acks": true,
+      "nonempty_migrated_advance": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V01",
+    "id": "ready-node-False-2-1-Leader-2",
+    "checks": {
+      "nonempty_original_ready": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V01",
+    "id": "v03-advance-node-cross-0",
+    "checks": {
+      "nonempty_original_acks": true,
+      "nonempty_migrated_advance": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V01",
+    "id": "v03-advance-node-cross-17",
+    "checks": {
+      "nonempty_original_acks": true,
+      "nonempty_migrated_advance": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V02",
+    "id": "advance-raw-True-2-0-Leader-2",
+    "checks": {
+      "nonempty_original_acks": true,
+      "nonempty_migrated_advance": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V02",
+    "id": "advance-raw-True-2-16-Leader-2",
+    "checks": {
+      "nonempty_original_acks": true,
+      "nonempty_migrated_advance": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V02",
+    "id": "advance-v02-raw-heartbeat",
+    "checks": {
+      "nonempty_original_acks": true,
+      "nonempty_migrated_advance": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V02",
+    "id": "advance-v02-raw-readack",
+    "checks": {
+      "nonempty_original_acks": true,
+      "nonempty_migrated_advance": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V02",
+    "id": "auto-outstanding-leave",
+    "checks": {
+      "nonempty_original_acks": true,
+      "nonempty_migrated_advance": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V02",
+    "id": "configuration-leave-commit-bad",
+    "checks": {
+      "nonempty_original_commit_record": true,
+      "expected_candidate": true,
+      "old_exemption_passes": true
+    }
+  },
+  {
+    "version": "V02",
+    "id": "configuration-leave-commit-good",
+    "checks": {
+      "nonempty_original_commit_record": true,
+      "expected_candidate": true,
+      "old_exemption_passes": true
+    }
+  },
+  {
+    "version": "V02",
+    "id": "hup-learner",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V02",
+    "id": "joint-self-quorum-False",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V02",
+    "id": "joint-self-quorum-True",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V02",
+    "id": "pending-v2-retained-obligation-False",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V02",
+    "id": "pending-v2-retained-obligation-True",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V02",
+    "id": "ready-raw-False-2-1-Leader-2",
+    "checks": {
+      "nonempty_original_ready": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V02",
+    "id": "v03-advance-raw-cross-0",
+    "checks": {
+      "nonempty_original_acks": true,
+      "nonempty_migrated_advance": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V02",
+    "id": "v03-advance-raw-cross-17",
+    "checks": {
+      "nonempty_original_acks": true,
+      "nonempty_migrated_advance": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V02",
+    "id": "v03-advance-raw-equal-old-0",
+    "checks": {
+      "nonempty_original_acks": true,
+      "nonempty_migrated_advance": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V02",
+    "id": "v03-advance-raw-zero-cursor-0",
+    "checks": {
+      "nonempty_original_acks": true,
+      "nonempty_migrated_advance": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V02",
+    "id": "v03-prop-batch-joint-add-then-leave",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V02",
+    "id": "v03-prop-batch-simple-leave-then-add",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V02",
+    "id": "v03-prop-joint-0-empty-auto",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V02",
+    "id": "v03-prop-joint-0-empty-explicit",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V02",
+    "id": "v03-prop-joint-0-v2",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V02",
+    "id": "v03-prop-simple-0-empty-auto",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V02",
+    "id": "v03-quota-0-large",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V02",
+    "id": "v03-quota-17-empty",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V02",
+    "id": "v03-quota-17-one-byte",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V02",
+    "id": "vote-learner-MsgVote-grant",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V02",
+    "id": "vote-learner-MsgVote-stale-log",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V02",
+    "id": "vote-voter-MsgVote-grant",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V02",
+    "id": "advance-v02-node-heartbeat",
+    "checks": {
+      "nonempty_original_acks": true,
+      "nonempty_migrated_advance": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V02",
+    "id": "advance-v02-node-readack",
+    "checks": {
+      "nonempty_original_acks": true,
+      "nonempty_migrated_advance": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V02",
+    "id": "ready-node-False-2-1-Leader-2",
+    "checks": {
+      "nonempty_original_ready": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V02",
+    "id": "v03-advance-node-cross-0",
+    "checks": {
+      "nonempty_original_acks": true,
+      "nonempty_migrated_advance": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V02",
+    "id": "v03-advance-node-cross-17",
+    "checks": {
+      "nonempty_original_acks": true,
+      "nonempty_migrated_advance": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V03",
+    "id": "advance-raw-True-2-0-Leader-2",
+    "checks": {
+      "nonempty_original_acks": true,
+      "nonempty_migrated_advance": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V03",
+    "id": "advance-raw-True-2-16-Leader-2",
+    "checks": {
+      "nonempty_original_acks": true,
+      "nonempty_migrated_advance": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V03",
+    "id": "advance-v02-raw-heartbeat",
+    "checks": {
+      "nonempty_original_acks": true,
+      "nonempty_migrated_advance": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V03",
+    "id": "advance-v02-raw-readack",
+    "checks": {
+      "nonempty_original_acks": true,
+      "nonempty_migrated_advance": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V03",
+    "id": "auto-outstanding-leave",
+    "checks": {
+      "nonempty_original_acks": true,
+      "nonempty_migrated_advance": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V03",
+    "id": "configuration-leave-commit-bad",
+    "checks": {
+      "nonempty_original_commit_record": true,
+      "expected_candidate": true,
+      "old_exemption_passes": true
+    }
+  },
+  {
+    "version": "V03",
+    "id": "configuration-leave-commit-good",
+    "checks": {
+      "nonempty_original_commit_record": true,
+      "expected_candidate": true,
+      "old_exemption_passes": true
+    }
+  },
+  {
+    "version": "V03",
+    "id": "hup-learner",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V03",
+    "id": "joint-self-quorum-False",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V03",
+    "id": "joint-self-quorum-True",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V03",
+    "id": "pending-v2-retained-obligation-False",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V03",
+    "id": "pending-v2-retained-obligation-True",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V03",
+    "id": "ready-raw-False-2-1-Leader-2",
+    "checks": {
+      "nonempty_original_ready": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V03",
+    "id": "v03-advance-raw-cross-0",
+    "checks": {
+      "nonempty_original_acks": true,
+      "nonempty_migrated_advance": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V03",
+    "id": "v03-advance-raw-cross-17",
+    "checks": {
+      "nonempty_original_acks": true,
+      "nonempty_migrated_advance": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V03",
+    "id": "v03-advance-raw-equal-old-0",
+    "checks": {
+      "nonempty_original_acks": true,
+      "nonempty_migrated_advance": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V03",
+    "id": "v03-advance-raw-zero-cursor-0",
+    "checks": {
+      "nonempty_original_acks": true,
+      "nonempty_migrated_advance": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V03",
+    "id": "v03-prop-batch-joint-add-then-leave",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V03",
+    "id": "v03-prop-batch-simple-leave-then-add",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V03",
+    "id": "v03-prop-joint-0-empty-auto",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V03",
+    "id": "v03-prop-joint-0-empty-explicit",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V03",
+    "id": "v03-prop-joint-0-v2",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V03",
+    "id": "v03-prop-simple-0-empty-auto",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V03",
+    "id": "v03-quota-0-large",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V03",
+    "id": "v03-quota-17-empty",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V03",
+    "id": "v03-quota-17-one-byte",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V03",
+    "id": "vote-learner-MsgVote-grant",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V03",
+    "id": "vote-learner-MsgVote-stale-log",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V03",
+    "id": "vote-voter-MsgVote-grant",
+    "checks": {
+      "nonempty_original_quality": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V03",
+    "id": "advance-v02-node-heartbeat",
+    "checks": {
+      "nonempty_original_acks": true,
+      "nonempty_migrated_advance": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V03",
+    "id": "advance-v02-node-readack",
+    "checks": {
+      "nonempty_original_acks": true,
+      "nonempty_migrated_advance": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V03",
+    "id": "ready-node-False-2-1-Leader-2",
+    "checks": {
+      "nonempty_original_ready": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V03",
+    "id": "v03-advance-node-cross-0",
+    "checks": {
+      "nonempty_original_acks": true,
+      "nonempty_migrated_advance": true,
+      "actual_record_equal": true
+    }
+  },
+  {
+    "version": "V03",
+    "id": "v03-advance-node-cross-17",
+    "checks": {
+      "nonempty_original_acks": true,
+      "nonempty_migrated_advance": true,
+      "actual_record_equal": true
+    }
+  }
+]

@@ -1,0 +1,26 @@
+[
+  {
+    "label": "before-ambiguous",
+    "exit_code": 2,
+    "seconds": 10.638153908774257,
+    "counts": {
+      "adapter_error": 1
+    }
+  },
+  {
+    "label": "after-ambiguous",
+    "exit_code": 2,
+    "seconds": 1.0164664592593908,
+    "counts": {
+      "adapter_error": 1
+    }
+  },
+  {
+    "label": "after-deterministic",
+    "exit_code": 0,
+    "seconds": 3.2215354526415467,
+    "counts": {
+      "match": 1
+    }
+  }
+]

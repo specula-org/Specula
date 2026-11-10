@@ -1,0 +1,59 @@
+[
+  {
+    "version": "V01",
+    "command": [
+      "java",
+      "-XX:+UseParallelGC",
+      "-Xmx2G",
+      "-cp",
+      "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+      "tlc2.TLC",
+      "-workers",
+      "1",
+      "-config",
+      "Witnesses.cfg",
+      "Witnesses"
+    ],
+    "cwd": "out/revised-spec/V01",
+    "seconds": 22.421679778024554,
+    "exit_code": 151
+  },
+  {
+    "version": "V02",
+    "command": [
+      "java",
+      "-XX:+UseParallelGC",
+      "-Xmx2G",
+      "-cp",
+      "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+      "tlc2.TLC",
+      "-workers",
+      "1",
+      "-config",
+      "Witnesses.cfg",
+      "Witnesses"
+    ],
+    "cwd": "out/revised-spec/V02",
+    "seconds": 59.38396059721708,
+    "exit_code": 151
+  },
+  {
+    "version": "V03",
+    "command": [
+      "java",
+      "-XX:+UseParallelGC",
+      "-Xmx2G",
+      "-cp",
+      "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+      "tlc2.TLC",
+      "-workers",
+      "1",
+      "-config",
+      "Witnesses.cfg",
+      "Witnesses"
+    ],
+    "cwd": "out/revised-spec/V03",
+    "seconds": 58.07902855426073,
+    "exit_code": 151
+  }
+]

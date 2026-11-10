@@ -1,0 +1,42 @@
+[
+  {
+    "command": [
+      "/usr/bin/java",
+      "-XX:+UseParallelGC",
+      "-Xmx2G",
+      "-cp",
+      "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+      "tlc2.TLC",
+      "-workers",
+      "1",
+      "-metadir",
+      "/workspace/out/evidence/tlc-development/raw/states",
+      "-config",
+      "LocalActions.cfg",
+      "LocalActions"
+    ],
+    "cwd": "/workspace/out/evidence/tlc-development/raw",
+    "duration_seconds": 1.0664722183719277,
+    "exit_code": 0
+  },
+  {
+    "command": [
+      "/usr/bin/java",
+      "-XX:+UseParallelGC",
+      "-Xmx2G",
+      "-cp",
+      "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+      "tlc2.TLC",
+      "-workers",
+      "1",
+      "-metadir",
+      "/workspace/out/evidence/tlc-development/node/states",
+      "-config",
+      "LocalActions.cfg",
+      "LocalActions"
+    ],
+    "cwd": "/workspace/out/evidence/tlc-development/node",
+    "duration_seconds": 1.066324825398624,
+    "exit_code": 0
+  }
+]

@@ -1,0 +1,31 @@
+TLC2 Version 2.20 of Day Month 20?? (rev: ${git.shortRevision})
+Running breadth-first search Model-Checking with fp 72 and seed -6798731935781533037 with 1 worker on 96 cores with 4096MB heap and 64MB offheap memory [pid: 1315] (Linux 6.8.0-1044-azure amd64, Ubuntu 21.0.11 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /workspace/out/runs/diagnostic-normal-v03/C03Progress.tla
+***Parse Error***
+
+  Precedence conflict between ops \land in block line 59, col 5 to line 59, col 6 of module C03Progress and \lor.
+
+Residual stack trace follows:
+ExtendableExpr starting at line 59, column 9.
+ExtendableExpr starting at line 58, column 19.
+Expression starting at line 58, column 19.
+Definition starting at line 58, column 1.
+Module body starting at line 3, column 1.
+
+
+Fatal errors while parsing TLA+ spec in file C03Progress
+
+In module C03Progress
+
+Could not parse module C03Progress from file C03Progress.tla
+*** Errors: 1
+
+In module C03Progress
+
+Could not parse module C03Progress from file C03Progress.tla
+
+
+
+Starting... (2026-09-22 20:28:45)
+Error: Parsing or semantic analysis failed.
+Finished in 00s at (2026-09-22 20:28:45)

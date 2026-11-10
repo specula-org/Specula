@@ -1,0 +1,28 @@
+[
+  {
+    "command": [
+      "timeout",
+      "90s",
+      "/usr/local/go/bin/go",
+      "test",
+      "-run",
+      "^TestActionValidation$",
+      "-count=1",
+      "-v",
+      "."
+    ],
+    "cwd": "/workspace/old/source",
+    "env": {
+      "GOMAXPROCS": "2",
+      "GOTMPDIR": "/workspace/out/tmp",
+      "TMPDIR": "/workspace/out/tmp",
+      "GOCACHE": "/workspace/out/go-cache",
+      "GOPROXY": "off",
+      "CGO_ENABLED": "0",
+      "AV_INPUT": "/workspace/out/cases/binding-probe.json",
+      "AV_OUTPUT": "/workspace/out/evidence/old-binding-initial.jsonl"
+    },
+    "duration_seconds": 9.134895675815642,
+    "exit_code": 1
+  }
+]

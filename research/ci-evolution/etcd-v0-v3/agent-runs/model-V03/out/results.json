@@ -1,0 +1,1085 @@
+{
+  "version_binding": {
+    "old_source": "V02",
+    "new_source": "V03",
+    "inherited_model": "old/spec == initial new/spec"
+  },
+  "run_root": "out/cases/v03-final-03",
+  "claim": "Local action validation only; no global conformance, distributed reachability or real-bug discovery claim",
+  "coverage": {
+    "code": {
+      "total": 479,
+      "by_action": {
+        "proposal": 97,
+        "apply": 70,
+        "hup": 14,
+        "read": 8,
+        "checkquorum": 12,
+        "readack": 2,
+        "ready_raw": 7,
+        "advance_raw": 35,
+        "ready_node": 7,
+        "advance_node": 35,
+        "restore": 14,
+        "restart": 11,
+        "vote": 96,
+        "receive": 10,
+        "apply_then_step": 30,
+        "bootstrap": 3,
+        "bootstrap_hup": 3,
+        "bootstrap_ready": 3,
+        "construct": 8,
+        "callback_node": 8,
+        "propose_then_apply": 6
+      },
+      "statuses": {
+        "ok": 441,
+        "dropped": 19,
+        "panic": 15,
+        "disabled": 4
+      },
+      "node_cases": 50,
+      "disabled": [
+        "v03-ready-node-empty",
+        "v03-advance-node-empty",
+        "v03-callback-legacy-remove-self",
+        "v03-callback-v2-leave-remove-self"
+      ],
+      "panics": [
+        "apply-simple-leave",
+        "apply-joint-add",
+        "apply-joint-demote",
+        "apply-joint-replace",
+        "apply-joint-empty-explicit",
+        "apply-joint-empty-implicit",
+        "apply-joint-zero-id",
+        "apply-joint-remove-self",
+        "apply-joint-remove-transfer",
+        "apply-joint-remove-readd",
+        "apply-last-voter",
+        "v03-empty-log-Leader-apply_then_step",
+        "v03-propose-apply-joint-JointExplicit",
+        "v03-propose-apply-joint-JointImplicit",
+        "v03-config-broadcast-panic-before-transfer"
+      ]
+    },
+    "model": {
+      "total": 174,
+      "by_action": {
+        "readack": 1,
+        "advance_raw": 18,
+        "apply": 33,
+        "hup": 8,
+        "proposal": 27,
+        "checkquorum": 3,
+        "read": 2,
+        "ready_raw": 2,
+        "receive": 3,
+        "restart": 4,
+        "restore": 6,
+        "apply_then_step": 4,
+        "bootstrap": 1,
+        "bootstrap_hup": 1,
+        "construct": 1,
+        "propose_then_apply": 2,
+        "vote": 36,
+        "advance_node": 17,
+        "ready_node": 2,
+        "callback_node": 3
+      },
+      "statuses": {
+        "ok": 149,
+        "panic": 14,
+        "dropped": 8,
+        "disabled": 3
+      },
+      "node_cases": 22,
+      "disabled": [
+        "tlc-v03-advance-node-empty-2-0",
+        "tlc-v03-callback-v2-leave-remove-self",
+        "tlc-v03-ready-node-empty"
+      ],
+      "panics": [
+        "tlc-apply-joint-demote-Auto-1",
+        "tlc-apply-joint-demote-JointExplicit-0",
+        "tlc-apply-joint-demote-JointExplicit-1",
+        "tlc-apply-joint-demote-JointImplicit-0",
+        "tlc-apply-joint-demote-JointImplicit-1",
+        "tlc-apply-simple-demote-Auto-0",
+        "tlc-v03-apply-leave-demote-Leader-JointExplicit-0",
+        "tlc-v03-apply-leave-demote-Leader-JointExplicit-1",
+        "tlc-v03-apply-leave-demote-Leader-JointImplicit-0",
+        "tlc-v03-apply-leave-demote-Leader-JointImplicit-1",
+        "tlc-v03-apply-remove-readd-learner-Leader-Auto-0",
+        "tlc-v03-config-broadcast-panic-before-transfer",
+        "tlc-v03-empty-log-Leader-apply_then_step",
+        "tlc-v03-propose-apply-joint-JointExplicit"
+      ]
+    }
+  },
+  "prior_model_reuse": {
+    "total": 103,
+    "present": 103,
+    "identical_pre_input": 103
+  },
+  "comparisons": {
+    "baseline-code": {
+      "total": 479,
+      "counts": {
+        "match": 355,
+        "behavioral_mismatch": 124
+      }
+    },
+    "baseline-model": {
+      "total": 174,
+      "counts": {
+        "match": 120,
+        "behavioral_mismatch": 54
+      }
+    },
+    "repaired-code": {
+      "total": 479,
+      "counts": {
+        "match": 479
+      }
+    },
+    "repaired-model": {
+      "total": 174,
+      "counts": {
+        "match": 174
+      }
+    },
+    "old-code": {
+      "total": 479,
+      "counts": {
+        "match": 473,
+        "behavioral_mismatch": 6
+      }
+    },
+    "old-model": {
+      "total": 174,
+      "counts": {
+        "match": 168,
+        "behavioral_mismatch": 6
+      }
+    }
+  },
+  "semantic_delta_counts": {
+    "unchanged": 479,
+    "behavior_changed": 174
+  },
+  "disagreement_classes": {
+    "V03 behavior change": 166,
+    "V03 change plus pre-existing model repair": 8,
+    "pre-existing model repair": 4
+  },
+  "behavior_repairs": [
+    {
+      "operator": "ChangeProgress / ApplyConfCore",
+      "evidence": "out/cases/old-v03-code-04/comparison.json",
+      "cases": [
+        "v03-apply-remove-readd-learner-Leader",
+        "v03-apply-remove-readd-learner-Follower"
+      ],
+      "cause": "Inherited model retained a learner Progress across remove/re-add; actual Changer deletes and initializes it."
+    },
+    {
+      "operator": "ProtocolApplyEntry",
+      "evidence": "out/cases/old-callback-02/comparison.json",
+      "case": "v03-callback-v2-leave-remove-self",
+      "cause": "Inherited Node wrapper used entry.target; actual confc disables proposals on member-before/nonmember-after, including V2 leave."
+    },
+    {
+      "operator": "AppendQuotaExceeded / AdvanceCore",
+      "evidence": [
+        "out/cases/old-post-drop/comparison.json",
+        "out/cases/repaired-post-drop-initial/comparison.json"
+      ],
+      "cases": [
+        "v03-advance-after-drop-raw-14",
+        "v03-advance-after-drop-node-14"
+      ],
+      "cause": "Stale DropQuota observation from an intervening rejected proposal was used as a later append return; V02 could update pending incorrectly and the first V03 evolution could report an impossible panic. The actual per-call quota condition now governs behavior; the existing decision observation is preserved."
+    },
+    {
+      "operator": "ApplyConfCore",
+      "evidence": "out/cases/repaired-panic-order-initial/comparison.json",
+      "case": "v03-config-broadcast-panic-before-transfer",
+      "cause": "A configuration-triggered broadcast panic stops execution before transfer cancellation. Inherited model continued to cancel after its fatal result. Preserve the actual partial state (transfer remains 4). This is an injected progress boundary, not distributed reachability evidence."
+    }
+  ],
+  "old_unsupported_inputs": [],
+  "final_pre_input_mapping_disagreements": 0,
+  "commands": [
+    {
+      "label": "baseline-code",
+      "output": "out/cases/v03-final-03/baseline-code",
+      "command": [
+        "/usr/bin/python3",
+        "out/framework/runner.py",
+        "--manifest",
+        "out/framework/targets/etcd/manifest.json",
+        "--cases",
+        "out/cases/code-inputs.json",
+        "--output",
+        "/workspace/out/cases/v03-final-03/baseline-code",
+        "--spec",
+        "new/spec",
+        "--route",
+        "code-to-model"
+      ],
+      "exit_code": 0,
+      "duration_seconds": 11.138291140086949
+    },
+    {
+      "label": "baseline-model",
+      "output": "out/cases/v03-final-03/baseline-model",
+      "command": [
+        "/usr/bin/python3",
+        "out/framework/runner.py",
+        "--manifest",
+        "out/framework/targets/etcd/manifest.json",
+        "--cases",
+        "out/cases/model-seeds.json",
+        "--output",
+        "/workspace/out/cases/v03-final-03/baseline-model",
+        "--spec",
+        "new/spec",
+        "--route",
+        "model-to-code"
+      ],
+      "exit_code": 0,
+      "duration_seconds": 6.829852815717459
+    },
+    {
+      "label": "repaired-code",
+      "output": "out/cases/v03-final-03/repaired-code",
+      "command": [
+        "/usr/bin/python3",
+        "out/framework/runner.py",
+        "--manifest",
+        "out/framework/targets/etcd/manifest.json",
+        "--cases",
+        "out/cases/code-inputs.json",
+        "--output",
+        "/workspace/out/cases/v03-final-03/repaired-code",
+        "--spec",
+        "out/repaired-spec",
+        "--route",
+        "code-to-model"
+      ],
+      "exit_code": 0,
+      "duration_seconds": 11.390257138758898
+    },
+    {
+      "label": "repaired-model",
+      "output": "out/cases/v03-final-03/repaired-model",
+      "command": [
+        "/usr/bin/python3",
+        "out/framework/runner.py",
+        "--manifest",
+        "out/framework/targets/etcd/manifest.json",
+        "--cases",
+        "out/cases/model-seeds.json",
+        "--output",
+        "/workspace/out/cases/v03-final-03/repaired-model",
+        "--spec",
+        "out/repaired-spec",
+        "--route",
+        "model-to-code"
+      ],
+      "exit_code": 0,
+      "duration_seconds": 7.181064400821924
+    },
+    {
+      "label": "old-code",
+      "output": "out/cases/v03-final-03/old-code",
+      "command": [
+        "/usr/bin/python3",
+        "out/framework/runner.py",
+        "--manifest",
+        "out/framework/targets/etcd/manifest-old.json",
+        "--cases",
+        "out/cases/code-inputs.json",
+        "--output",
+        "/workspace/out/cases/v03-final-03/old-code",
+        "--spec",
+        "old/spec",
+        "--route",
+        "code-to-model"
+      ],
+      "exit_code": 0,
+      "duration_seconds": 11.139820063486695
+    },
+    {
+      "label": "old-model",
+      "output": "out/cases/v03-final-03/old-model",
+      "command": [
+        "/usr/bin/python3",
+        "out/framework/runner.py",
+        "--manifest",
+        "out/framework/targets/etcd/manifest-old.json",
+        "--cases",
+        "out/cases/model-seeds.json",
+        "--output",
+        "/workspace/out/cases/v03-final-03/old-model",
+        "--spec",
+        "old/spec",
+        "--route",
+        "model-to-code"
+      ],
+      "exit_code": 0,
+      "duration_seconds": 6.779747249558568
+    }
+  ],
+  "engine_commands": [
+    {
+      "label": "baseline-code",
+      "engine": "implementation",
+      "command": [
+        "timeout",
+        "90s",
+        "/usr/local/go/bin/go",
+        "test",
+        "-run",
+        "^TestActionValidation$",
+        "-count=1",
+        "-v",
+        "."
+      ],
+      "cwd": "/workspace/new/source",
+      "env": {
+        "GOMAXPROCS": "2",
+        "GOTMPDIR": "/workspace/out/tmp",
+        "TMPDIR": "/workspace/out/tmp",
+        "GOCACHE": "/workspace/out/go-cache",
+        "GOPROXY": "off",
+        "CGO_ENABLED": "0",
+        "AV_INPUT": "/workspace/out/cases/code-inputs.json",
+        "AV_OUTPUT": "/workspace/out/cases/v03-final-03/baseline-code/implementation.jsonl"
+      },
+      "duration_seconds": 0.5151410195976496,
+      "exit_code": 0
+    },
+    {
+      "label": "baseline-code",
+      "engine": "model",
+      "command": [
+        "/usr/bin/java",
+        "-XX:+UseParallelGC",
+        "-Xmx2G",
+        "-Djava.io.tmpdir=/workspace/out/tmp",
+        "-cp",
+        "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+        "tlc2.TLC",
+        "-workers",
+        "1",
+        "-metadir",
+        "/workspace/out/cases/v03-final-03/baseline-code/model/raw/states",
+        "-config",
+        "LocalActions.cfg",
+        "LocalActions"
+      ],
+      "cwd": "/workspace/out/cases/v03-final-03/baseline-code/model/raw",
+      "duration_seconds": 6.279711949639022,
+      "exit_code": 0
+    },
+    {
+      "label": "baseline-code",
+      "engine": "model",
+      "command": [
+        "/usr/bin/java",
+        "-XX:+UseParallelGC",
+        "-Xmx2G",
+        "-Djava.io.tmpdir=/workspace/out/tmp",
+        "-cp",
+        "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+        "tlc2.TLC",
+        "-workers",
+        "1",
+        "-metadir",
+        "/workspace/out/cases/v03-final-03/baseline-code/model/node/states",
+        "-config",
+        "LocalActions.cfg",
+        "LocalActions"
+      ],
+      "cwd": "/workspace/out/cases/v03-final-03/baseline-code/model/node",
+      "duration_seconds": 2.9705603644251823,
+      "exit_code": 0
+    },
+    {
+      "label": "baseline-model",
+      "engine": "implementation",
+      "command": [
+        "timeout",
+        "90s",
+        "/usr/local/go/bin/go",
+        "test",
+        "-run",
+        "^TestActionValidation$",
+        "-count=1",
+        "-v",
+        "."
+      ],
+      "cwd": "/workspace/new/source",
+      "env": {
+        "GOMAXPROCS": "2",
+        "GOTMPDIR": "/workspace/out/tmp",
+        "TMPDIR": "/workspace/out/tmp",
+        "GOCACHE": "/workspace/out/go-cache",
+        "GOPROXY": "off",
+        "CGO_ENABLED": "0",
+        "AV_INPUT": "/workspace/out/cases/v03-final-03/baseline-model/generated-cases.json",
+        "AV_OUTPUT": "/workspace/out/cases/v03-final-03/baseline-model/implementation.jsonl"
+      },
+      "duration_seconds": 0.4149511456489563,
+      "exit_code": 0
+    },
+    {
+      "label": "baseline-model",
+      "engine": "model",
+      "command": [
+        "/usr/bin/java",
+        "-XX:+UseParallelGC",
+        "-Xmx2G",
+        "-Djava.io.tmpdir=/workspace/out/tmp",
+        "-cp",
+        "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+        "tlc2.TLC",
+        "-workers",
+        "1",
+        "-metadir",
+        "/workspace/out/cases/v03-final-03/baseline-model/model/raw/states",
+        "-config",
+        "LocalActions.cfg",
+        "LocalActions"
+      ],
+      "cwd": "/workspace/out/cases/v03-final-03/baseline-model/model/raw",
+      "duration_seconds": 3.071571330539882,
+      "exit_code": 0
+    },
+    {
+      "label": "baseline-model",
+      "engine": "model",
+      "command": [
+        "/usr/bin/java",
+        "-XX:+UseParallelGC",
+        "-Xmx2G",
+        "-Djava.io.tmpdir=/workspace/out/tmp",
+        "-cp",
+        "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+        "tlc2.TLC",
+        "-workers",
+        "1",
+        "-metadir",
+        "/workspace/out/cases/v03-final-03/baseline-model/model/node/states",
+        "-config",
+        "LocalActions.cfg",
+        "LocalActions"
+      ],
+      "cwd": "/workspace/out/cases/v03-final-03/baseline-model/model/node",
+      "duration_seconds": 2.7207792680710554,
+      "exit_code": 0
+    },
+    {
+      "label": "repaired-code",
+      "engine": "implementation",
+      "command": [
+        "timeout",
+        "90s",
+        "/usr/local/go/bin/go",
+        "test",
+        "-run",
+        "^TestActionValidation$",
+        "-count=1",
+        "-v",
+        "."
+      ],
+      "cwd": "/workspace/new/source",
+      "env": {
+        "GOMAXPROCS": "2",
+        "GOTMPDIR": "/workspace/out/tmp",
+        "TMPDIR": "/workspace/out/tmp",
+        "GOCACHE": "/workspace/out/go-cache",
+        "GOPROXY": "off",
+        "CGO_ENABLED": "0",
+        "AV_INPUT": "/workspace/out/cases/code-inputs.json",
+        "AV_OUTPUT": "/workspace/out/cases/v03-final-03/repaired-code/implementation.jsonl"
+      },
+      "duration_seconds": 0.5152911972254515,
+      "exit_code": 0
+    },
+    {
+      "label": "repaired-code",
+      "engine": "model",
+      "command": [
+        "/usr/bin/java",
+        "-XX:+UseParallelGC",
+        "-Xmx2G",
+        "-Djava.io.tmpdir=/workspace/out/tmp",
+        "-cp",
+        "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+        "tlc2.TLC",
+        "-workers",
+        "1",
+        "-metadir",
+        "/workspace/out/cases/v03-final-03/repaired-code/model/raw/states",
+        "-config",
+        "LocalActions.cfg",
+        "LocalActions"
+      ],
+      "cwd": "/workspace/out/cases/v03-final-03/repaired-code/model/raw",
+      "duration_seconds": 6.479393043555319,
+      "exit_code": 0
+    },
+    {
+      "label": "repaired-code",
+      "engine": "model",
+      "command": [
+        "/usr/bin/java",
+        "-XX:+UseParallelGC",
+        "-Xmx2G",
+        "-Djava.io.tmpdir=/workspace/out/tmp",
+        "-cp",
+        "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+        "tlc2.TLC",
+        "-workers",
+        "1",
+        "-metadir",
+        "/workspace/out/cases/v03-final-03/repaired-code/model/node/states",
+        "-config",
+        "LocalActions.cfg",
+        "LocalActions"
+      ],
+      "cwd": "/workspace/out/cases/v03-final-03/repaired-code/model/node",
+      "duration_seconds": 3.071009158156812,
+      "exit_code": 0
+    },
+    {
+      "label": "repaired-model",
+      "engine": "implementation",
+      "command": [
+        "timeout",
+        "90s",
+        "/usr/local/go/bin/go",
+        "test",
+        "-run",
+        "^TestActionValidation$",
+        "-count=1",
+        "-v",
+        "."
+      ],
+      "cwd": "/workspace/new/source",
+      "env": {
+        "GOMAXPROCS": "2",
+        "GOTMPDIR": "/workspace/out/tmp",
+        "TMPDIR": "/workspace/out/tmp",
+        "GOCACHE": "/workspace/out/go-cache",
+        "GOPROXY": "off",
+        "CGO_ENABLED": "0",
+        "AV_INPUT": "/workspace/out/cases/v03-final-03/repaired-model/generated-cases.json",
+        "AV_OUTPUT": "/workspace/out/cases/v03-final-03/repaired-model/implementation.jsonl"
+      },
+      "duration_seconds": 0.41498549934476614,
+      "exit_code": 0
+    },
+    {
+      "label": "repaired-model",
+      "engine": "model",
+      "command": [
+        "/usr/bin/java",
+        "-XX:+UseParallelGC",
+        "-Xmx2G",
+        "-Djava.io.tmpdir=/workspace/out/tmp",
+        "-cp",
+        "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+        "tlc2.TLC",
+        "-workers",
+        "1",
+        "-metadir",
+        "/workspace/out/cases/v03-final-03/repaired-model/model/raw/states",
+        "-config",
+        "LocalActions.cfg",
+        "LocalActions"
+      ],
+      "cwd": "/workspace/out/cases/v03-final-03/repaired-model/model/raw",
+      "duration_seconds": 3.17155097424984,
+      "exit_code": 0
+    },
+    {
+      "label": "repaired-model",
+      "engine": "model",
+      "command": [
+        "/usr/bin/java",
+        "-XX:+UseParallelGC",
+        "-Xmx2G",
+        "-Djava.io.tmpdir=/workspace/out/tmp",
+        "-cp",
+        "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+        "tlc2.TLC",
+        "-workers",
+        "1",
+        "-metadir",
+        "/workspace/out/cases/v03-final-03/repaired-model/model/node/states",
+        "-config",
+        "LocalActions.cfg",
+        "LocalActions"
+      ],
+      "cwd": "/workspace/out/cases/v03-final-03/repaired-model/model/node",
+      "duration_seconds": 2.9714256236329675,
+      "exit_code": 0
+    },
+    {
+      "label": "old-code",
+      "engine": "implementation",
+      "command": [
+        "timeout",
+        "90s",
+        "/usr/local/go/bin/go",
+        "test",
+        "-run",
+        "^TestActionValidation$",
+        "-count=1",
+        "-v",
+        "."
+      ],
+      "cwd": "/workspace/old/source",
+      "env": {
+        "GOMAXPROCS": "2",
+        "GOTMPDIR": "/workspace/out/tmp",
+        "TMPDIR": "/workspace/out/tmp",
+        "GOCACHE": "/workspace/out/go-cache",
+        "GOPROXY": "off",
+        "CGO_ENABLED": "0",
+        "AV_INPUT": "/workspace/out/cases/code-inputs.json",
+        "AV_OUTPUT": "/workspace/out/cases/v03-final-03/old-code/implementation.jsonl"
+      },
+      "duration_seconds": 0.5152656622231007,
+      "exit_code": 0
+    },
+    {
+      "label": "old-code",
+      "engine": "model",
+      "command": [
+        "/usr/bin/java",
+        "-XX:+UseParallelGC",
+        "-Xmx2G",
+        "-Djava.io.tmpdir=/workspace/out/tmp",
+        "-cp",
+        "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+        "tlc2.TLC",
+        "-workers",
+        "1",
+        "-metadir",
+        "/workspace/out/cases/v03-final-03/old-code/model/raw/states",
+        "-config",
+        "LocalActions.cfg",
+        "LocalActions"
+      ],
+      "cwd": "/workspace/out/cases/v03-final-03/old-code/model/raw",
+      "duration_seconds": 6.230589461512864,
+      "exit_code": 0
+    },
+    {
+      "label": "old-code",
+      "engine": "model",
+      "command": [
+        "/usr/bin/java",
+        "-XX:+UseParallelGC",
+        "-Xmx2G",
+        "-Djava.io.tmpdir=/workspace/out/tmp",
+        "-cp",
+        "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+        "tlc2.TLC",
+        "-workers",
+        "1",
+        "-metadir",
+        "/workspace/out/cases/v03-final-03/old-code/model/node/states",
+        "-config",
+        "LocalActions.cfg",
+        "LocalActions"
+      ],
+      "cwd": "/workspace/out/cases/v03-final-03/old-code/model/node",
+      "duration_seconds": 3.0210255971178412,
+      "exit_code": 0
+    },
+    {
+      "label": "old-model",
+      "engine": "implementation",
+      "command": [
+        "timeout",
+        "90s",
+        "/usr/local/go/bin/go",
+        "test",
+        "-run",
+        "^TestActionValidation$",
+        "-count=1",
+        "-v",
+        "."
+      ],
+      "cwd": "/workspace/old/source",
+      "env": {
+        "GOMAXPROCS": "2",
+        "GOTMPDIR": "/workspace/out/tmp",
+        "TMPDIR": "/workspace/out/tmp",
+        "GOCACHE": "/workspace/out/go-cache",
+        "GOPROXY": "off",
+        "CGO_ENABLED": "0",
+        "AV_INPUT": "/workspace/out/cases/v03-final-03/old-model/generated-cases.json",
+        "AV_OUTPUT": "/workspace/out/cases/v03-final-03/old-model/implementation.jsonl"
+      },
+      "duration_seconds": 0.41497009340673685,
+      "exit_code": 0
+    },
+    {
+      "label": "old-model",
+      "engine": "model",
+      "command": [
+        "/usr/bin/java",
+        "-XX:+UseParallelGC",
+        "-Xmx2G",
+        "-Djava.io.tmpdir=/workspace/out/tmp",
+        "-cp",
+        "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+        "tlc2.TLC",
+        "-workers",
+        "1",
+        "-metadir",
+        "/workspace/out/cases/v03-final-03/old-model/model/raw/states",
+        "-config",
+        "LocalActions.cfg",
+        "LocalActions"
+      ],
+      "cwd": "/workspace/out/cases/v03-final-03/old-model/model/raw",
+      "duration_seconds": 2.971169021911919,
+      "exit_code": 0
+    },
+    {
+      "label": "old-model",
+      "engine": "model",
+      "command": [
+        "/usr/bin/java",
+        "-XX:+UseParallelGC",
+        "-Xmx2G",
+        "-Djava.io.tmpdir=/workspace/out/tmp",
+        "-cp",
+        "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+        "tlc2.TLC",
+        "-workers",
+        "1",
+        "-metadir",
+        "/workspace/out/cases/v03-final-03/old-model/model/node/states",
+        "-config",
+        "LocalActions.cfg",
+        "LocalActions"
+      ],
+      "cwd": "/workspace/out/cases/v03-final-03/old-model/model/node",
+      "duration_seconds": 2.7709465930238366,
+      "exit_code": 0
+    }
+  ],
+  "verification": [
+    {
+      "name": "generic-tests",
+      "command": [
+        "python3",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "out/framework",
+        "-p",
+        "test_runner.py",
+        "-v"
+      ],
+      "exit_code": 0,
+      "expected_exit": 0,
+      "duration_seconds": 0.06426622625440359
+    },
+    {
+      "name": "valid-input-audit",
+      "command": [
+        "python3",
+        "out/framework/targets/etcd/audit_inputs.py",
+        "out/cases/code-inputs.json",
+        "/workspace/out/cases/v03-final-03/baseline-model/generated-cases.json"
+      ],
+      "exit_code": 0,
+      "expected_exit": 0,
+      "duration_seconds": 0.06418055109679699
+    }
+  ],
+  "syntax_preflight": [
+    {
+      "module": "base",
+      "command": [
+        "timeout",
+        "45s",
+        "/usr/bin/java",
+        "-Xmx1G",
+        "-Djava.io.tmpdir=/workspace/out/tmp",
+        "-cp",
+        "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+        "tla2sany.SANY",
+        "base.tla"
+      ],
+      "duration_seconds": 0.43996421433985233,
+      "exit_code": 0,
+      "semantic_errors": false
+    },
+    {
+      "module": "MC",
+      "command": [
+        "timeout",
+        "45s",
+        "/usr/bin/java",
+        "-Xmx1G",
+        "-Djava.io.tmpdir=/workspace/out/tmp",
+        "-cp",
+        "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+        "tla2sany.SANY",
+        "MC.tla"
+      ],
+      "duration_seconds": 0.44503243919461966,
+      "exit_code": 0,
+      "semantic_errors": false
+    },
+    {
+      "module": "Update",
+      "command": [
+        "timeout",
+        "45s",
+        "/usr/bin/java",
+        "-Xmx1G",
+        "-Djava.io.tmpdir=/workspace/out/tmp",
+        "-cp",
+        "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+        "tla2sany.SANY",
+        "Update.tla"
+      ],
+      "duration_seconds": 0.453200320713222,
+      "exit_code": 0,
+      "semantic_errors": false
+    },
+    {
+      "module": "Trace",
+      "command": [
+        "timeout",
+        "45s",
+        "/usr/bin/java",
+        "-Xmx1G",
+        "-Djava.io.tmpdir=/workspace/out/tmp",
+        "-cp",
+        "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+        "tla2sany.SANY",
+        "Trace.tla"
+      ],
+      "duration_seconds": 0.45269811153411865,
+      "exit_code": 0,
+      "semantic_errors": false
+    }
+  ],
+  "input_integrity": {
+    "checked": 255,
+    "mismatches": {},
+    "added_source_files": [
+      "old/source/action_validation_test.go",
+      "new/source/action_validation_test.go"
+    ],
+    "generic_framework_unchanged": true,
+    "original_assets_identical": true,
+    "predicate_definitions_preserved": true
+  },
+  "evidence": {
+    "disagreements": "out/evidence/disagreements.json",
+    "semantic_deltas": "out/evidence/semantic-deltas.json",
+    "operator_inventory": "out/evidence/operator-inventory.json",
+    "initial_failures": "out/evidence/triage.json",
+    "all_runs": "out/evidence/run-index.json",
+    "original_predicates": "out/repaired-spec/assets/v02"
+  },
+  "standalone_diagnostic_commands": [
+    {
+      "path": "out/evidence/old-binding-initial/commands.json",
+      "records": [
+        {
+          "command": [
+            "timeout",
+            "90s",
+            "/usr/local/go/bin/go",
+            "test",
+            "-run",
+            "^TestActionValidation$",
+            "-count=1",
+            "-v",
+            "."
+          ],
+          "cwd": "/workspace/old/source",
+          "env": {
+            "GOMAXPROCS": "2",
+            "GOTMPDIR": "/workspace/out/tmp",
+            "TMPDIR": "/workspace/out/tmp",
+            "GOCACHE": "/workspace/out/go-cache",
+            "GOPROXY": "off",
+            "CGO_ENABLED": "0",
+            "AV_INPUT": "/workspace/out/cases/binding-probe.json",
+            "AV_OUTPUT": "/workspace/out/evidence/old-binding-initial.jsonl"
+          },
+          "duration_seconds": 9.134895675815642,
+          "exit_code": 1
+        }
+      ]
+    },
+    {
+      "path": "out/preflight/commands.json",
+      "records": [
+        {
+          "module": "base",
+          "command": [
+            "timeout",
+            "45s",
+            "/usr/bin/java",
+            "-Xmx1G",
+            "-Djava.io.tmpdir=/workspace/out/tmp",
+            "-cp",
+            "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+            "tla2sany.SANY",
+            "base.tla"
+          ],
+          "duration_seconds": 0.44958331249654293,
+          "exit_code": 0,
+          "semantic_errors": false
+        },
+        {
+          "module": "MC",
+          "command": [
+            "timeout",
+            "45s",
+            "/usr/bin/java",
+            "-Xmx1G",
+            "-Djava.io.tmpdir=/workspace/out/tmp",
+            "-cp",
+            "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+            "tla2sany.SANY",
+            "MC.tla"
+          ],
+          "duration_seconds": 0.4554633991792798,
+          "exit_code": 0,
+          "semantic_errors": false
+        },
+        {
+          "module": "Update",
+          "command": [
+            "timeout",
+            "45s",
+            "/usr/bin/java",
+            "-Xmx1G",
+            "-Djava.io.tmpdir=/workspace/out/tmp",
+            "-cp",
+            "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+            "tla2sany.SANY",
+            "Update.tla"
+          ],
+          "duration_seconds": 0.4741417979821563,
+          "exit_code": 0,
+          "semantic_errors": true
+        },
+        {
+          "module": "Trace",
+          "command": [
+            "timeout",
+            "45s",
+            "/usr/bin/java",
+            "-Xmx1G",
+            "-Djava.io.tmpdir=/workspace/out/tmp",
+            "-cp",
+            "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+            "tla2sany.SANY",
+            "Trace.tla"
+          ],
+          "duration_seconds": 0.44954961724579334,
+          "exit_code": 0,
+          "semantic_errors": false
+        }
+      ]
+    },
+    {
+      "path": "out/preflight-02/commands.json",
+      "records": [
+        {
+          "module": "base",
+          "command": [
+            "timeout",
+            "45s",
+            "/usr/bin/java",
+            "-Xmx1G",
+            "-Djava.io.tmpdir=/workspace/out/tmp",
+            "-cp",
+            "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+            "tla2sany.SANY",
+            "base.tla"
+          ],
+          "duration_seconds": 0.44482789281755686,
+          "exit_code": 0,
+          "semantic_errors": false
+        },
+        {
+          "module": "MC",
+          "command": [
+            "timeout",
+            "45s",
+            "/usr/bin/java",
+            "-Xmx1G",
+            "-Djava.io.tmpdir=/workspace/out/tmp",
+            "-cp",
+            "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+            "tla2sany.SANY",
+            "MC.tla"
+          ],
+          "duration_seconds": 0.44626632519066334,
+          "exit_code": 0,
+          "semantic_errors": false
+        },
+        {
+          "module": "Update",
+          "command": [
+            "timeout",
+            "45s",
+            "/usr/bin/java",
+            "-Xmx1G",
+            "-Djava.io.tmpdir=/workspace/out/tmp",
+            "-cp",
+            "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+            "tla2sany.SANY",
+            "Update.tla"
+          ],
+          "duration_seconds": 0.47129772510379553,
+          "exit_code": 0,
+          "semantic_errors": false
+        },
+        {
+          "module": "Trace",
+          "command": [
+            "timeout",
+            "45s",
+            "/usr/bin/java",
+            "-Xmx1G",
+            "-Djava.io.tmpdir=/workspace/out/tmp",
+            "-cp",
+            "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+            "tla2sany.SANY",
+            "Trace.tla"
+          ],
+          "duration_seconds": 0.4403882250189781,
+          "exit_code": 0,
+          "semantic_errors": false
+        }
+      ]
+    }
+  ],
+  "prior_source_reuse": {
+    "cases": 239,
+    "version_subset": 21,
+    "unchanged_inputs": true
+  }
+}

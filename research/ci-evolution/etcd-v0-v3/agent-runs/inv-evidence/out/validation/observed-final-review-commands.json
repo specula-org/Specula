@@ -1,0 +1,40 @@
+[
+  {
+    "command": [
+      "python3",
+      "out/framework/runner.py",
+      "--manifest",
+      "out/validation/manifest-V01-observed.json",
+      "--cases",
+      "out/validation/cases.json",
+      "--output",
+      "out/validation/replay-V01-final-review",
+      "--spec",
+      "out/revised-spec/V01",
+      "--route",
+      "code-to-model"
+    ],
+    "duration_seconds": 16.95226633362472,
+    "exit_code": 0,
+    "output": "{\"total\": 44, \"counts\": {\"match\": 44}}\n"
+  },
+  {
+    "command": [
+      "python3",
+      "out/framework/runner.py",
+      "--manifest",
+      "out/validation/manifest-V02-observed.json",
+      "--cases",
+      "out/validation/cases.json",
+      "--output",
+      "out/validation/replay-V02-final-review",
+      "--spec",
+      "out/revised-spec/V02",
+      "--route",
+      "code-to-model"
+    ],
+    "duration_seconds": 19.01875456329435,
+    "exit_code": 0,
+    "output": "{\"total\": 44, \"counts\": {\"match\": 44}}\n"
+  }
+]

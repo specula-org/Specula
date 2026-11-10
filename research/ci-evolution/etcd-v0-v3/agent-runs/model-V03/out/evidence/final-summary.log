@@ -1,0 +1,127 @@
+{
+  "coverage": {
+    "code": {
+      "total": 479,
+      "by_action": {
+        "proposal": 97,
+        "apply": 70,
+        "hup": 14,
+        "read": 8,
+        "checkquorum": 12,
+        "readack": 2,
+        "ready_raw": 7,
+        "advance_raw": 35,
+        "ready_node": 7,
+        "advance_node": 35,
+        "restore": 14,
+        "restart": 11,
+        "vote": 96,
+        "receive": 10,
+        "apply_then_step": 30,
+        "bootstrap": 3,
+        "bootstrap_hup": 3,
+        "bootstrap_ready": 3,
+        "construct": 8,
+        "callback_node": 8,
+        "propose_then_apply": 6
+      },
+      "statuses": {
+        "ok": 441,
+        "dropped": 19,
+        "panic": 15,
+        "disabled": 4
+      },
+      "node_cases": 50,
+      "disabled": [
+        "v03-ready-node-empty",
+        "v03-advance-node-empty",
+        "v03-callback-legacy-remove-self",
+        "v03-callback-v2-leave-remove-self"
+      ],
+      "panics": [
+        "apply-simple-leave",
+        "apply-joint-add",
+        "apply-joint-demote",
+        "apply-joint-replace",
+        "apply-joint-empty-explicit",
+        "apply-joint-empty-implicit",
+        "apply-joint-zero-id",
+        "apply-joint-remove-self",
+        "apply-joint-remove-transfer",
+        "apply-joint-remove-readd",
+        "apply-last-voter",
+        "v03-empty-log-Leader-apply_then_step",
+        "v03-propose-apply-joint-JointExplicit",
+        "v03-propose-apply-joint-JointImplicit",
+        "v03-config-broadcast-panic-before-transfer"
+      ]
+    },
+    "model": {
+      "total": 174,
+      "by_action": {
+        "readack": 1,
+        "advance_raw": 18,
+        "apply": 33,
+        "hup": 8,
+        "proposal": 27,
+        "checkquorum": 3,
+        "read": 2,
+        "ready_raw": 2,
+        "receive": 3,
+        "restart": 4,
+        "restore": 6,
+        "apply_then_step": 4,
+        "bootstrap": 1,
+        "bootstrap_hup": 1,
+        "construct": 1,
+        "propose_then_apply": 2,
+        "vote": 36,
+        "advance_node": 17,
+        "ready_node": 2,
+        "callback_node": 3
+      },
+      "statuses": {
+        "ok": 149,
+        "panic": 14,
+        "dropped": 8,
+        "disabled": 3
+      },
+      "node_cases": 22,
+      "disabled": [
+        "tlc-v03-advance-node-empty-2-0",
+        "tlc-v03-callback-v2-leave-remove-self",
+        "tlc-v03-ready-node-empty"
+      ],
+      "panics": [
+        "tlc-apply-joint-demote-Auto-1",
+        "tlc-apply-joint-demote-JointExplicit-0",
+        "tlc-apply-joint-demote-JointExplicit-1",
+        "tlc-apply-joint-demote-JointImplicit-0",
+        "tlc-apply-joint-demote-JointImplicit-1",
+        "tlc-apply-simple-demote-Auto-0",
+        "tlc-v03-apply-leave-demote-Leader-JointExplicit-0",
+        "tlc-v03-apply-leave-demote-Leader-JointExplicit-1",
+        "tlc-v03-apply-leave-demote-Leader-JointImplicit-0",
+        "tlc-v03-apply-leave-demote-Leader-JointImplicit-1",
+        "tlc-v03-apply-remove-readd-learner-Leader-Auto-0",
+        "tlc-v03-config-broadcast-panic-before-transfer",
+        "tlc-v03-empty-log-Leader-apply_then_step",
+        "tlc-v03-propose-apply-joint-JointExplicit"
+      ]
+    }
+  },
+  "delta_counts": {
+    "unchanged": 479,
+    "behavior_changed": 174
+  },
+  "prior_model_reuse": {
+    "total": 103,
+    "present": 103,
+    "identical_pre_input": 103
+  },
+  "disagreements": {
+    "V03 behavior change": 166,
+    "V03 change plus pre-existing model repair": 8,
+    "pre-existing model repair": 4
+  }
+}

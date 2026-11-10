@@ -1,0 +1,31 @@
+{
+  "name": "focused-deferred-v03",
+  "version": "V03",
+  "module": "C03Progress",
+  "config": "deferred.cfg",
+  "seconds_limit": 600,
+  "elapsed_seconds": 63.762638568878174,
+  "exit_code": 0,
+  "command": [
+    "timeout",
+    "--signal=TERM",
+    "--kill-after=5s",
+    "600s",
+    "java",
+    "-Xmx4g",
+    "-Dtlc2.TLC.progressInterval=10",
+    "-cp",
+    "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+    "tlc2.TLC",
+    "-workers",
+    "1",
+    "-nowarning",
+    "-dumpTrace",
+    "json",
+    "counterexample.json",
+    "-config",
+    "deferred.cfg",
+    "C03Progress"
+  ],
+  "trace": "/workspace/out/joint-autoleave-prefix-inputs.ndjson"
+}

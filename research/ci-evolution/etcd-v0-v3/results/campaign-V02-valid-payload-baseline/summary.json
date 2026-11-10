@@ -1,0 +1,96 @@
+{
+  "version": "V02",
+  "label": "valid-payload-baseline",
+  "directions": {
+    "code-driven": {
+      "cases": 24,
+      "mismatches": []
+    },
+    "model-driven": {
+      "cases": 24,
+      "mismatches": []
+    }
+  },
+  "scope": "local StepHup projection only",
+  "input_hashes": {
+    "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/work/V02/source/raft.go": "42b4a4b2add51cfc0fbe6913e2907a1690ef8d09871608ec011a82e2a3242543",
+    "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/work/V02/spec/base.tla": "0e3e9526fac33b99bf2113c1e95c07536b424860e86d2d06b515f137f6421f5e",
+    "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/framework/run_campaign.py": "7cf23a56d507e0e32c1601cc508c309327314f48950008240db0688cd0673d5e",
+    "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/work/V02/source/action_validation_campaign_test.go": "f8a0676fa96d08c80a61787c89bc12fa5c579aed5377f703b8d11ea417d884fd",
+    "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/work/V02/spec/ActionCampaign.tla": "1bcb6472f3b853a1d777e24e4638c59221008aa06557c98199a2d3ab5f100770"
+  },
+  "receipts": [
+    {
+      "command": [
+        "java",
+        "-Xmx1G",
+        "-cp",
+        "/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/dist/tla2tools.jar:/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/lib/CommunityModules.jar",
+        "tlc2.TLC",
+        "-workers",
+        "1",
+        "-metadir",
+        "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/results/campaign-V02-valid-payload-baseline/code-driven-states",
+        "-config",
+        "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/results/campaign-V02-valid-payload-baseline/code-driven.cfg",
+        "ActionCampaign.tla"
+      ],
+      "cwd": "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/work/V02/spec",
+      "exit_code": 0,
+      "seconds": 1.0667820740491152,
+      "log": "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/results/campaign-V02-valid-payload-baseline/code-driven-model.log"
+    },
+    {
+      "command": [
+        "/usr/local/go/bin/go",
+        "test",
+        "-count=1",
+        "-run",
+        "^TestActionValidationCampaign$",
+        "-timeout",
+        "120s",
+        "."
+      ],
+      "cwd": "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/work/V02/source",
+      "exit_code": 0,
+      "seconds": 0.9663286581635475,
+      "log": "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/results/campaign-V02-valid-payload-baseline/code-driven-code.log"
+    },
+    {
+      "command": [
+        "java",
+        "-Xmx1G",
+        "-cp",
+        "/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/dist/tla2tools.jar:/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/lib/CommunityModules.jar",
+        "tlc2.TLC",
+        "-workers",
+        "1",
+        "-metadir",
+        "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/results/campaign-V02-valid-payload-baseline/model-driven-states",
+        "-config",
+        "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/results/campaign-V02-valid-payload-baseline/model-driven.cfg",
+        "ActionCampaign.tla"
+      ],
+      "cwd": "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/work/V02/spec",
+      "exit_code": 0,
+      "seconds": 1.0663410192355514,
+      "log": "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/results/campaign-V02-valid-payload-baseline/model-driven-model.log"
+    },
+    {
+      "command": [
+        "/usr/local/go/bin/go",
+        "test",
+        "-count=1",
+        "-run",
+        "^TestActionValidationCampaign$",
+        "-timeout",
+        "120s",
+        "."
+      ],
+      "cwd": "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/work/V02/source",
+      "exit_code": 0,
+      "seconds": 0.31481440644711256,
+      "log": "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/results/campaign-V02-valid-payload-baseline/model-driven-code.log"
+    }
+  ]
+}

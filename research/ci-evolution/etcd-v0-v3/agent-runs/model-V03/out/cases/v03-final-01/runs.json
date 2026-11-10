@@ -1,0 +1,122 @@
+[
+  {
+    "label": "baseline-code",
+    "output": "out/cases/v03-final-01/baseline-code",
+    "command": [
+      "/usr/bin/python3",
+      "out/framework/runner.py",
+      "--manifest",
+      "out/framework/targets/etcd/manifest.json",
+      "--cases",
+      "out/cases/code-inputs.json",
+      "--output",
+      "/workspace/out/cases/v03-final-01/baseline-code",
+      "--spec",
+      "new/spec",
+      "--route",
+      "code-to-model"
+    ],
+    "exit_code": 0,
+    "duration_seconds": 11.1402693297714
+  },
+  {
+    "label": "baseline-model",
+    "output": "out/cases/v03-final-01/baseline-model",
+    "command": [
+      "/usr/bin/python3",
+      "out/framework/runner.py",
+      "--manifest",
+      "out/framework/targets/etcd/manifest.json",
+      "--cases",
+      "out/cases/model-seeds.json",
+      "--output",
+      "/workspace/out/cases/v03-final-01/baseline-model",
+      "--spec",
+      "new/spec",
+      "--route",
+      "model-to-code"
+    ],
+    "exit_code": 0,
+    "duration_seconds": 6.880748376250267
+  },
+  {
+    "label": "repaired-code",
+    "output": "out/cases/v03-final-01/repaired-code",
+    "command": [
+      "/usr/bin/python3",
+      "out/framework/runner.py",
+      "--manifest",
+      "out/framework/targets/etcd/manifest.json",
+      "--cases",
+      "out/cases/code-inputs.json",
+      "--output",
+      "/workspace/out/cases/v03-final-01/repaired-code",
+      "--spec",
+      "out/repaired-spec",
+      "--route",
+      "code-to-model"
+    ],
+    "exit_code": 0,
+    "duration_seconds": 11.391585962846875
+  },
+  {
+    "label": "repaired-model",
+    "output": "out/cases/v03-final-01/repaired-model",
+    "command": [
+      "/usr/bin/python3",
+      "out/framework/runner.py",
+      "--manifest",
+      "out/framework/targets/etcd/manifest.json",
+      "--cases",
+      "out/cases/model-seeds.json",
+      "--output",
+      "/workspace/out/cases/v03-final-01/repaired-model",
+      "--spec",
+      "out/repaired-spec",
+      "--route",
+      "model-to-code"
+    ],
+    "exit_code": 0,
+    "duration_seconds": 7.1306838393211365
+  },
+  {
+    "label": "old-code",
+    "output": "out/cases/v03-final-01/old-code",
+    "command": [
+      "/usr/bin/python3",
+      "out/framework/runner.py",
+      "--manifest",
+      "out/framework/targets/etcd/manifest-old.json",
+      "--cases",
+      "out/cases/code-inputs.json",
+      "--output",
+      "/workspace/out/cases/v03-final-01/old-code",
+      "--spec",
+      "old/spec",
+      "--route",
+      "code-to-model"
+    ],
+    "exit_code": 0,
+    "duration_seconds": 11.089540695771575
+  },
+  {
+    "label": "old-model",
+    "output": "out/cases/v03-final-01/old-model",
+    "command": [
+      "/usr/bin/python3",
+      "out/framework/runner.py",
+      "--manifest",
+      "out/framework/targets/etcd/manifest-old.json",
+      "--cases",
+      "out/cases/model-seeds.json",
+      "--output",
+      "/workspace/out/cases/v03-final-01/old-model",
+      "--spec",
+      "old/spec",
+      "--route",
+      "model-to-code"
+    ],
+    "exit_code": 0,
+    "duration_seconds": 6.729618094861507
+  }
+]

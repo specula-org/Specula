@@ -1,0 +1,47 @@
+{
+  "protocol": "action-validation/v1",
+  "route": "model-to-code",
+  "spec": "new/spec",
+  "counts": {},
+  "total": 0,
+  "commands": [
+    {
+      "engine": "model",
+      "command": [
+        "python3",
+        "/workspace/out/framework/adapters/tla/run.py",
+        "--input",
+        "/workspace/out/framework/targets/etcd/model-seeds.json",
+        "--output",
+        "/workspace/out/cases/baseline-model/model.jsonl",
+        "--spec",
+        "/workspace/new/spec",
+        "--work",
+        "/workspace/out/cases/baseline-model/model",
+        "--generate"
+      ],
+      "duration_seconds": 1.0663936221972108,
+      "exit_code": 1
+    },
+    {
+      "engine": "implementation",
+      "command": [
+        "python3",
+        "/workspace/out/framework/adapters/go/run.py",
+        "--input",
+        "/workspace/out/cases/baseline-model/generated-cases.json",
+        "--output",
+        "/workspace/out/cases/baseline-model/implementation.jsonl",
+        "--work",
+        "/workspace/out/cases/baseline-model/implementation"
+      ],
+      "duration_seconds": 0.3147415928542614,
+      "exit_code": 0
+    }
+  ],
+  "results": [],
+  "extra_results": {
+    "implementation": [],
+    "model": []
+  }
+}

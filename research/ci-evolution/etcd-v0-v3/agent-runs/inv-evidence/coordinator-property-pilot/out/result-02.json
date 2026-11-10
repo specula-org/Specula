@@ -1,0 +1,37 @@
+{
+  "comparison_counts": {
+    "match": 4
+  },
+  "scope": "Local mapped source/model transitions with nonempty actual contract observations; no protocol reachability claim.",
+  "first_attempt": "Setup error: module replacement pointed outside sandbox; no behavioral result accepted. Build overlay corrected before fresh replay-02.",
+  "truth": [
+    {
+      "id": "joint-self-quorum-False",
+      "old": false,
+      "candidate": true,
+      "legacy_only_weakening": true,
+      "after_role": "Leader"
+    },
+    {
+      "id": "joint-self-quorum-True",
+      "old": false,
+      "candidate": true,
+      "legacy_only_weakening": true,
+      "after_role": "Leader"
+    },
+    {
+      "id": "pending-v2-retained-obligation-False",
+      "old": false,
+      "candidate": false,
+      "legacy_only_weakening": true,
+      "after_role": "Candidate"
+    },
+    {
+      "id": "pending-v2-retained-obligation-True",
+      "old": false,
+      "candidate": false,
+      "legacy_only_weakening": true,
+      "after_role": "PreCandidate"
+    }
+  ]
+}

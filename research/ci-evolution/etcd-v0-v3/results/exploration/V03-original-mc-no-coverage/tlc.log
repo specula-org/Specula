@@ -1,0 +1,45 @@
+TLC2 Version 2.20 of Day Month 20?? (rev: ${git.shortRevision})
+Running breadth-first search Model-Checking with fp 111 and seed -682593063975923569 with 2 workers on 4 cores with 5461MB heap and 64MB offheap memory [pid: 1606258] (Linux 6.8.0-1044-azure amd64, Ubuntu 21.0.11 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/results/exploration/V03-original-mc-no-coverage/spec/MC.tla
+Parsing file /home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/results/exploration/V03-original-mc-no-coverage/spec/base.tla
+Parsing file /tmp/tlc-17575894835247770786/_JsonTrace.tla (jar:file:/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/dist/tla2tools.jar!/tla2sany/StandardModules/_JsonTrace.tla)
+Parsing file /tmp/tlc-17575894835247770786/_TLCTrace.tla (jar:file:/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/dist/tla2tools.jar!/tla2sany/StandardModules/_TLCTrace.tla)
+Parsing file /tmp/tlc-17575894835247770786/Naturals.tla (jar:file:/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/dist/tla2tools.jar!/tla2sany/StandardModules/Naturals.tla)
+Parsing file /tmp/tlc-17575894835247770786/Integers.tla (jar:file:/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/dist/tla2tools.jar!/tla2sany/StandardModules/Integers.tla)
+Parsing file /tmp/tlc-17575894835247770786/Sequences.tla (jar:file:/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/dist/tla2tools.jar!/tla2sany/StandardModules/Sequences.tla)
+Parsing file /tmp/tlc-17575894835247770786/FiniteSets.tla (jar:file:/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/dist/tla2tools.jar!/tla2sany/StandardModules/FiniteSets.tla)
+Parsing file /tmp/tlc-17575894835247770786/Bags.tla (jar:file:/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/dist/tla2tools.jar!/tla2sany/StandardModules/Bags.tla)
+Parsing file /tmp/tlc-17575894835247770786/TLC.tla (jar:file:/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/dist/tla2tools.jar!/tla2sany/StandardModules/TLC.tla)
+Parsing file /tmp/tlc-17575894835247770786/TLCExt.tla (jar:file:/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/dist/tla2tools.jar!/tla2sany/StandardModules/TLCExt.tla)
+Parsing file /tmp/tlc-17575894835247770786/Json.tla (jar:file:/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/dist/tla2tools.jar!/tla2sany/StandardModules/Json.tla)
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module Bags
+Semantic processing of module base
+Semantic processing of module TLCExt
+Semantic processing of module Json
+Semantic processing of module _JsonTrace
+Semantic processing of module _TLCTrace
+Semantic processing of module MC
+Linting of module base
+Linting of module TLCExt
+Linting of module Json
+Linting of module _JsonTrace
+Linting of module _TLCTrace
+Linting of module MC
+Starting... (2026-09-22 20:15:25)
+Warning: The set /\\Ak\inDOMAINBootPeers:p[BootPeers[k]]=BootPeers[k]/\\An\inServer:/\(n\inJoining)=(p[n]\inJoining)/\(n\inRawNodes)=(p[n]\inRawNodes)/\(n\inPreVoteNodes)=(p[n]\inPreVoteNodes)/\(n\inCheckQuorumNodes)=(p[n]\inCheckQuorumNodes)/\(n\inNoForwardNodes)=(p[n]\inNoForwardNodes) has been defined to be a symmetry set but contains less than two elements.
+(Use the -nowarning option to disable this warning.)
+Computing initial states...
+Computed 2 initial states...
+Computed 4 initial states...
+Computed 8 initial states...
+Computed 16 initial states...
+Computed 32 initial states...
+Computed 64 initial states...
+Finished computing initial states: 81 distinct states generated at 2026-09-22 20:15:25.
+Progress(2) at 2026-09-22 20:15:28: 14,413 states generated (14,413 s/min), 13,980 distinct states found (13,980 ds/min), 13,974 states left on queue.
+Progress(3) at 2026-09-22 20:16:28: 409,656 states generated (395,243 s/min), 382,723 distinct states found (368,743 ds/min), 382,594 states left on queue.

@@ -1,0 +1,715 @@
+--- old/spec/base.tla	2026-09-13 12:11:55.100964558 +0000
++++ new/spec/base.tla	2026-09-13 18:42:28.415404416 +0000
+@@ -2,8 +2,9 @@
+ EXTENDS Naturals, Integers, Sequences, FiniteSets, Bags, TLC
+ 
+ (***************************************************************************
+-Category A. etcd-raft V00 d58d5d159ae1a1f644a10003f2d8b3b807cd0b3a.
+-Source references are relative to ../../source. S1..S6 denote brief scenarios.
++Category A. etcd-raft incremental revision 16c5274b589aa75c634a1a5f2b05cf66aaf37dcc.
++Source references are relative to ../../source. S1..S6 are retained V00
++scenarios; U1..U5 are the incremental scenarios in modeling-brief.md.
+ Core functions below are pure record transformations: one Step/Tick is atomic.
+ Caller completion, transport, application, and Advance are separate actions.
+ Prefix witnesses are ghosts, never consulted by protocol decision guards.
+@@ -50,19 +51,39 @@
+     LET x==CHOOSE y\in xs:TRUE IN <<x>> \o SetSequence(xs\{x})
+ DefaultBootPeers == SetSequence(Server\Joining)
+ EmptyHS == [term |-> 0, vote |-> 0, commit |-> 0]
+-EmptyConfig == [voters |-> {}, learners |-> {}]
+-BootConfig == [voters |-> Server \ Joining, learners |-> {}]
++\* tracker/tracker.go:25-77. voters is the incoming half and outgoing is the
++\* retained old half while joint. learnersNext stages demotions until leave.
++EmptyConfig == [voters |-> {}, outgoing |-> {}, learners |-> {},
++                learnersNext |-> {}, autoLeave |-> FALSE]
++BootConfig == [voters |-> Server \ Joining, outgoing |-> {}, learners |-> {},
++               learnersNext |-> {}, autoLeave |-> FALSE]
+ EmptySnapshot == [index |-> 0, term |-> 0, hist |-> <<>>, config |-> EmptyConfig]
++Change(k,target) == [kind |-> k, target |-> target]
+ Entry(t,i,k,id,target,w,z) ==
+     [term |-> t, index |-> i, kind |-> k, id |-> id, target |-> target,
+-     weight |-> w, encoded |-> z]
++     changes |-> IF k\in {"AddVoter","AddLearner","Remove","Update"}
++                THEN <<Change(k,target)>> ELSE <<>>,
++     transition |-> "Legacy", weight |-> w, encoded |-> z]
++V2Entry(t,i,id,changes,transition,w,z) ==
++    [term |-> t, index |-> i, kind |-> "V2", id |-> id, target |-> 0,
++     changes |-> changes, transition |-> transition, weight |-> w, encoded |-> z]
++RequestEntry(q,id) == IF q.kind="V2"
++    THEN V2Entry(0,0,id,q.changes,q.transition,q.weight,q.encoded)
++    ELSE Entry(0,0,q.kind,id,q.target,q.weight,q.encoded)
+ \* Default abstract weights; Trace overrides these with measured protobuf sizes.
+ BootstrapPayload == 1
+ BootstrapEncoded == 1
+ EmptyEncoded == 1
++\* Empty ConfChangeV2 marshals to a two-byte payload and a ten-byte Entry in
++\* this source revision. Trace domains retain those concrete sizes; compact MC
++\* domains map them to their largest abstract representatives.
++AutoLeaveWeight == IF 2\in PayloadWeights /\ 10\in EncodedWeights
++                   THEN 2 ELSE MaxSet(PayloadWeights)
++AutoLeaveEncoded == IF 10\in EncodedWeights THEN 10 ELSE MaxSet(EncodedWeights)
+ BootLog == [k \in 1..Len(BootPeers) |-> Entry(1,k,"AddVoter",0,BootPeers[k],BootstrapPayload,BootstrapEncoded)]
+-ConfKinds == {"AddVoter","AddLearner","Remove","Update"}
+-Kinds == ConfKinds \cup {"Normal"}
++LegacyConfKinds == {"AddVoter","AddLearner","Remove","Update"}
++ConfKinds == LegacyConfKinds \cup {"V2"}
++Kinds == LegacyConfKinds \cup {"Normal"}
+ RECURSIVE Weight(_), Encoded(_)
+ Weight(es) == IF es = <<>> THEN 0 ELSE Head(es).weight + Weight(Tail(es))
+ Encoded(es) == IF es = <<>> THEN 0 ELSE Head(es).encoded + Encoded(Tail(es))
+@@ -105,15 +126,20 @@
+ UpToDate(r,i,t) == t>Term(r,Last(r)) \/ (t=Term(r,Last(r)) /\ i>=Last(r))
+ HS(r) == [term |-> r.term, vote |-> r.vote, commit |-> r.commit]
+ SS(r) == [role |-> r.role, lead |-> r.lead]
+-Members(r) == r.config.voters \cup r.config.learners
+-Promotable(r) == r.id \in r.config.voters
++\* quorum/joint.go:28-75; tracker/tracker.go:144-187.
++VoterIDs(cfg) == cfg.voters \cup cfg.outgoing
++Members(r) == VoterIDs(r.config) \cup r.config.learners
++Promotable(r) == r.id \in VoterIDs(r.config) /\ r.id \notin r.config.learners
+ \* quorum/majority.go:170-201 includes empty-set win and even-sized loss.
+ Won(voters,yes) == voters={} \/ Cardinality(voters \cap yes)>Cardinality(voters)\div 2
+ Lost(voters,yes,no) == ~Won(voters,yes) /\
+     Cardinality(voters \ no)<=Cardinality(voters)\div 2
++JointWon(cfg,yes) == Won(cfg.voters,yes) /\ Won(cfg.outgoing,yes)
++JointLost(cfg,yes,no) == Lost(cfg.voters,yes,no) \/ Lost(cfg.outgoing,yes,no)
++IsSingleton(cfg) == Cardinality(cfg.voters)=1 /\ cfg.outgoing={}
+ QuorumIndex(r) == IF r.config.voters={} THEN Last(r)+1 ELSE
+-    MaxSet({i \in 0..Last(r): Won(r.config.voters,
+-                          {n \in r.config.voters:r.prs[n].match>=i})})
++    MaxSet({i \in 0..Last(r): JointWon(r.config,
++                          {n \in VoterIDs(r.config):r.prs[n].match>=i})})
+ Fatal(r,reason) == [r EXCEPT !.fatal=reason]
+ \* log.go:199-217; errors are results, not enabling restrictions.
+ CommitTo(r,i) == IF i<=r.commit THEN r
+@@ -125,9 +151,9 @@
+ MaybeCommit(r) == LET i==QuorumIndex(r) IN
+     IF i>r.commit /\ Term(r,i)=r.term THEN
+         [CommitTo(r,i) EXCEPT !.commitUses=@\cup
+-          {[hist |-> Prefix(Hist(r),i), voters |-> r.config.voters,
++          {[hist |-> Prefix(Hist(r),i), config |-> r.config,
+             term |-> r.term, oldCommit |-> r.commit,
+-            matches |-> {n\in r.config.voters:r.prs[n].match>=i}]}] ELSE r
++            matches |-> {n\in VoterIDs(r.config):r.prs[n].match>=i}]}] ELSE r
+ \* log_unstable.go:123-142, log.go:106-114; preserve unstable replacement.
+ AppendLog(r,es) == IF es= <<>> THEN r ELSE
+     IF Head(es).index-1<r.commit THEN Fatal(r,"append below committed") ELSE
+@@ -161,12 +187,12 @@
+     ELSE LET a==AppendLog([r EXCEPT !.quota=@+Weight(es)],fixed)
+              b==[a EXCEPT !.prs[r.id]=MaybeUpdate(@,Last(a),Hist(a))]
+          IN MaybeCommit(b)
+-\* raft.go:693-726. Record the actual election before reset; check it separately.
++\* raft.go:730-764. Record both joint halves at the actual election before reset.
+ BecomeLeader(r,timeout) ==
+     IF r.role="Follower" THEN Fatal(r,"follower to leader")
+     ELSE IF r.id \notin DOMAIN r.prs THEN Fatal(r,"leader missing self progress")
+     ELSE LET win==[node |-> r.id, term |-> r.term, hist |-> Hist(r),
+-                   voters |-> r.config.voters, yes |-> r.yes]
++                   config |-> r.config, yes |-> r.yes]
+              a==[Reset(r,r.term,timeout) EXCEPT !.role="Leader", !.lead=r.id,
+                  !.pendingConf=Last(r), !.wins=@ \cup {win},
+                  !.prs[r.id]=BecomeReplicate(@)]
+@@ -213,7 +239,7 @@
+     IN BroadcastHeartbeat(Send(r,m),peers\{n},ctx)
+ BcastHeartbeat(r,ctx) == BroadcastHeartbeat(r,Members(r)\{r.id},ctx)
+ LastContext(r) == IF r.readQueue= <<>> THEN 0 ELSE r.readQueue[Len(r.readQueue)].id
+-\* raft.go:729-770; campaign warning is deliberately not a promotability guard.
++\* raft.go:766-808; vote requests go to the union of both joint voter halves.
+ BroadcastVotes(r,peers,pre,forced) == IF peers={} THEN r ELSE
+     LET n==CHOOSE x \in peers:TRUE
+         m==[Message(IF pre THEN "MsgPreVote" ELSE "MsgVote",r.id,n,
+@@ -224,14 +250,14 @@
+     IF r.role="Leader" THEN Fatal(r,"leader to candidate") ELSE
+     LET a==[Reset(r,r.term+1,timeout) EXCEPT !.role="Candidate", !.vote=r.id, !.yes={r.id},
+              !.campaigns=@ \cup {[node |-> r.id, learner |-> r.id\in r.config.learners]}]
+-    IN IF Won(a.config.voters,a.yes) THEN BecomeLeader(a,timeout)
+-       ELSE BroadcastVotes(a,a.config.voters\{a.id},FALSE,forced)
++    IN IF JointWon(a.config,a.yes) THEN BecomeLeader(a,timeout)
++       ELSE BroadcastVotes(a,VoterIDs(a.config)\{a.id},FALSE,forced)
+ CampaignPreElection(r,timeout) ==
+     IF r.role="Leader" THEN Fatal(r,"leader to pre-candidate") ELSE
+     LET a==[r EXCEPT !.role="PreCandidate", !.lead=0, !.yes={r.id}, !.no={},
+              !.campaigns=@ \cup {[node |-> r.id, learner |-> r.id\in r.config.learners]}]
+-    IN IF Won(a.config.voters,a.yes) THEN CampaignElection(a,FALSE,timeout)
+-       ELSE BroadcastVotes(a,a.config.voters\{a.id},TRUE,FALSE)
++    IN IF JointWon(a.config,a.yes) THEN CampaignElection(a,FALSE,timeout)
++       ELSE BroadcastVotes(a,VoterIDs(a.config)\{a.id},TRUE,FALSE)
+ \* raft.go:859-883 and log.go:347-359. Do not clamp the Hup scan to First.
+ StepHup(r,timeout) ==
+     IF r.role="Leader" \/ ~Promotable(r) THEN r
+@@ -277,23 +303,28 @@
+ HandleHeartbeat(r,m) == LET a==CommitTo(r,m.commit) IN
+     IF a.fatal#"" THEN a ELSE Send(a,
+        [Message("MsgHeartbeatResp",r.id,m.from,r.term) EXCEPT !.context=m.context])
+-\* raft.go:1327-1393. Full restore is one atomic core operation, not application.
++\* raft.go:1361-1430. Revision 16c5274 checks and rebuilds only ConfState.Nodes
++\* and Learners, dropping NodesJoint/LearnersNext/AutoLeave. Keep that behavior
++\* source-faithful so JointSnapshotRecovery can detect the resulting loss.
++RestoreProjection(cfg) ==
++    [EmptyConfig EXCEPT !.voters=cfg.voters, !.learners=cfg.learners]
+ Restore(r,s,timeout) ==
+     IF s.index<=r.commit THEN r
+     ELSE IF r.role#"Follower" THEN BecomeFollower(r,r.term+1,0,timeout)
+     ELSE IF r.id\notin s.config.voters\cup s.config.learners THEN r
+     ELSE IF Matches(r,s.index,s.term) THEN CommitTo(r,s.index)
+-    ELSE [r EXCEPT !.commit=s.index, !.usnap=s, !.unstable= <<>>, !.uoff=s.index+1,
+-           !.config=s.config, !.cfgHist=s.hist,
++    ELSE LET cfg==RestoreProjection(s.config) IN
++         [r EXCEPT !.commit=s.index, !.usnap=s, !.unstable= <<>>, !.uoff=s.index+1,
++           !.config=cfg, !.cfgHist=s.hist,
+            !.yes={}, !.no={},
+-           !.prs=[n \in s.config.voters\cup s.config.learners |->
++           !.prs=[n \in cfg.voters\cup cfg.learners |->
+                      Progress(IF n=r.id THEN s.index ELSE 0,s.index+1,TRUE)]]
+ HandleSnapshot(r,m,timeout) == LET a==Restore(r,m.snapshot,timeout) IN
+     Send(a,[Message("MsgAppResp",r.id,m.from,a.term) EXCEPT
+             !.index=IF a.usnap=m.snapshot /\ m.snapshot.index>r.commit THEN Last(a) ELSE a.commit,
+             !.witness=Prefix(Hist(a),a.commit)])
+ 
+-\* raft.go:977-988; entry rewriting and pending bookkeeping precede quota check.
++\* raft.go:999-1030; both legacy and V2 entries share pending-conf admission.
+ RECURSIVE RewriteConf(_,_,_)
+ RewriteConf(r,es,k) == IF k>Len(es) THEN [state |-> r, entries |-> es] ELSE
+     IF es[k].kind\notin ConfKinds THEN RewriteConf(r,es,k+1)
+@@ -308,7 +339,7 @@
+     ELSE LET rw==RewriteConf(r,m.entries,1)
+              a==AppendEntry([rw.state EXCEPT !.decision="Accepted"],rw.entries)
+          IN IF a.decision="DropQuota" THEN a ELSE BcastAppend(a)
+-\* raft.go:995-1026, read_only.go:56-75. Context id 0 denotes empty bytes.
++\* raft.go:1032-1064, read_only.go:56-75. Context id 0 denotes empty bytes.
+ ReadRecord(r,m) == [EmptyRead EXCEPT !.id=m.context, !.rid=m.request, !.requester=m.from,
+     !.index=r.commit, !.term=r.term, !.leader=r.id, !.config=r.config,
+     !.acks={r.id}, !.hist=Prefix(Hist(r),r.commit)]
+@@ -317,14 +348,14 @@
+     ELSE Send(r,[Message("MsgReadIndexResp",r.id,rd.requester,r.term) EXCEPT
+           !.index=rd.index, !.context=rd.id, !.request=rd.id, !.read=rd])
+ StepLeaderReadIndex(r,m) ==
+-    IF Cardinality(r.config.voters)=1 THEN
++    IF IsSingleton(r.config) THEN
+         DeliverReadState(r,[ReadRecord(r,m) EXCEPT !.singleton=TRUE,
+             !.confirmConfig=r.config, !.confirmAcks={r.id}, !.confirmTerm=r.term])
+     ELSE IF Term(r,r.commit)#r.term THEN r
+     ELSE LET exists==\E k \in DOMAIN r.readQueue:r.readQueue[k].id=m.context
+              a==IF exists THEN r ELSE [r EXCEPT !.readQueue=Append(@,ReadRecord(r,m))]
+          IN BcastHeartbeat(a,m.context)
+-\* raft.go:1105-1120; a later context releases an entire prefix under CURRENT voters.
++\* raft.go:1137-1158; a later context releases a prefix under CURRENT joint voters.
+ RECURSIVE ReleaseReadPrefix(_,_,_,_,_)
+ ReleaseReadPrefix(r,qs,cfg,acks,t) == IF qs= <<>> THEN r ELSE
+     ReleaseReadPrefix(DeliverReadState(r,[Head(qs) EXCEPT !.confirmConfig=cfg,
+@@ -335,7 +366,7 @@
+     LET k==MinSet(ks)
+         a==[r EXCEPT !.readQueue[k].acks=@\cup {m.from}]
+         acks==a.readQueue[k].acks
+-    IN IF ~Won(a.config.voters,acks) THEN a ELSE
++    IN IF ~JointWon(a.config,acks) THEN a ELSE
+        ReleaseReadPrefix([a EXCEPT !.readQueue=Suffix(@,k+1)],
+                          Prefix(a.readQueue,k),a.config,acks,a.term)
+ \* raft.go:1039-1091; MaybeUpdate always raises Next, even if Match did not change.
+@@ -380,11 +411,11 @@
+          IF b.prs[m.from].match=Last(b)
+          THEN Send(b,Message("MsgTimeoutNow",r.id,m.from,r.term))
+          ELSE MaybeSendAppend(b,m.from,TRUE)
+-\* raft.go:940-961; recently added nodes retain their source-defined activity grace.
++\* raft.go:977-998 and tracker/tracker.go:176-187; active requires both majorities.
+ StepCheckQuorum(r,timeout) ==
+     LET a==IF r.id\in Members(r) THEN [r EXCEPT !.prs[r.id].active=TRUE] ELSE r
+-        active=={n \in a.config.voters:a.prs[n].active}
+-        b==IF Won(a.config.voters,active) THEN a ELSE BecomeFollower(a,a.term,0,timeout)
++        active=={n \in VoterIDs(a.config):a.prs[n].active}
++        b==IF JointWon(a.config,active) THEN a ELSE BecomeFollower(a,a.term,0,timeout)
+     IN [b EXCEPT !.prs=[n \in Members(b) |->
+                          IF n=b.id THEN b.prs[n] ELSE [b.prs[n] EXCEPT !.active=FALSE]]]
+ StepLeader(r,m,timeout) ==
+@@ -410,10 +441,10 @@
+          LET a==IF m.from\in r.yes\cup r.no THEN r
+                 ELSE IF m.reject THEN [r EXCEPT !.no=@\cup {m.from}]
+                 ELSE [r EXCEPT !.yes=@\cup {m.from}]
+-         IN IF Won(a.config.voters,a.yes) THEN
++         IN IF JointWon(a.config,a.yes) THEN
+                 IF a.role="PreCandidate" THEN CampaignElection(a,FALSE,timeout)
+                 ELSE BcastAppend(BecomeLeader(a,timeout))
+-            ELSE IF Lost(a.config.voters,a.yes,a.no) THEN BecomeFollower(a,a.term,0,timeout)
++            ELSE IF JointLost(a.config,a.yes,a.no) THEN BecomeFollower(a,a.term,0,timeout)
+             ELSE a
+       [] OTHER -> r
+ \* raft.go:1233-1287. TimeoutNow intentionally skips the Hup configuration scan.
+@@ -464,30 +495,71 @@
+          IN IF c.role="Leader" /\ c.heartbeat>=HeartbeatTick
+             THEN BcastHeartbeat([c EXCEPT !.heartbeat=0],LastContext(c)) ELSE c
+ 
+-\* raft.go:1403-1452. Cancellation is deterministic over entry identity.
+-ConfigAfter(cfg,e) ==
+-    IF e.kind\notin ConfKinds \/ e.target=0 \/ e.id\in CancelChanges THEN cfg ELSE
+-    CASE e.kind="AddVoter" -> [cfg EXCEPT !.voters=@\cup {e.target}, !.learners=@\{e.target}]
+-      [] e.kind="AddLearner" -> IF e.target\in cfg.voters THEN cfg
+-                                ELSE [cfg EXCEPT !.learners=@\cup {e.target}]
+-      [] e.kind="Remove" -> [cfg EXCEPT !.voters=@\{e.target}, !.learners=@\{e.target}]
++\* confchange/confchange.go:49-152,155-276 and raftpb/confchange.go:69-104.
++\* These pure operators are the independently reviewable joint-config oracle.
++RECURSIVE ApplyChanges(_, _)
++ApplySingle(cfg,ch) ==
++    IF ch.target=0 THEN cfg ELSE
++    CASE ch.kind="AddVoter" ->
++           [cfg EXCEPT !.voters=@\cup {ch.target},
++                       !.learners=@\{ch.target}, !.learnersNext=@\{ch.target}]
++      [] ch.kind="AddLearner" ->
++           IF ch.target\in cfg.learners THEN cfg ELSE
++           LET a==[cfg EXCEPT !.voters=@\{ch.target},
++                              !.learners=@\{ch.target}, !.learnersNext=@\{ch.target}]
++           IN IF ch.target\in cfg.outgoing
++              THEN [a EXCEPT !.learnersNext=@\cup {ch.target}]
++              ELSE [a EXCEPT !.learners=@\cup {ch.target}]
++      [] ch.kind="Remove" ->
++           [cfg EXCEPT !.voters=@\{ch.target},
++                       !.learners=@\{ch.target}, !.learnersNext=@\{ch.target}]
+       [] OTHER -> cfg
++ApplyChanges(cfg,changes) ==
++    IF changes= <<>> THEN cfg ELSE ApplyChanges(ApplySingle(cfg,Head(changes)),Tail(changes))
++IsLeave(e) == e.kind="V2" /\ e.changes= <<>>
++EntersJoint(e) == e.kind="V2" /\ ~IsLeave(e) /\
++                  (e.transition#"Auto" \/ Len(e.changes)>1)
++AutoLeaves(e) == EntersJoint(e) /\ e.transition\in {"Auto","JointImplicit"}
++CanceledEntry(e) == e.kind#"V2" /\ e.id\in CancelChanges
++ConfigCandidate(cfg,e) ==
++    IF e.kind\notin ConfKinds \/ CanceledEntry(e) THEN cfg
++    ELSE IF IsLeave(e) THEN
++        [cfg EXCEPT !.outgoing={}, !.learners=@\cup cfg.learnersNext,
++                    !.learnersNext={}, !.autoLeave=FALSE]
++    ELSE IF EntersJoint(e) THEN
++        ApplyChanges([cfg EXCEPT !.outgoing=cfg.voters,
++                                 !.autoLeave=AutoLeaves(e)],e.changes)
++    ELSE ApplyChanges(cfg,e.changes)
++ConfigWellFormed(cfg) ==
++    /\ cfg.voters#{}
++    /\ cfg.voters\subseteq Server /\ cfg.outgoing\subseteq Server
++    /\ cfg.learners\subseteq Server /\ cfg.learnersNext\subseteq Server
++    /\ cfg.learners\cap VoterIDs(cfg)={}
++    /\ cfg.learnersNext\subseteq cfg.outgoing
++    /\ cfg.learnersNext\cap (cfg.voters\cup cfg.learners)={}
++    /\ (cfg.outgoing={} => cfg.learnersNext={} /\ ~cfg.autoLeave)
++VoterDifference(a,b) == (a\b)\cup(b\a)
++ValidConfigTransition(cfg,e) ==
++    LET after==ConfigCandidate(cfg,e) IN
++    /\ e.kind\in ConfKinds
++    /\ ConfigWellFormed(after)
++    /\ CASE IsLeave(e) -> cfg.outgoing#{}
++          [] EntersJoint(e) -> cfg.outgoing={} /\ cfg.voters#{}
++          [] OTHER -> cfg.outgoing={} /\
++                      Cardinality(VoterDifference(cfg.voters,after.voters))<=1
++ConfigAfter(cfg,e) == IF e.kind\notin ConfKinds THEN cfg ELSE
++    IF ValidConfigTransition(cfg,e) THEN ConfigCandidate(cfg,e) ELSE cfg
+ RECURSIVE ConfigOf(_)
+ ConfigOf(h) == IF h= <<>> THEN EmptyConfig ELSE ConfigAfter(ConfigOf(Prefix(h,Len(h)-1)),h[Len(h)])
+ ApplyConfCore(r,e,timeout) ==
+-    LET canceled==e.target=0 \/ e.id\in CancelChanges \/
+-                    (CancelUnknownRemovals /\ e.kind="Remove" /\ e.target\notin Members(r))
+-        cfg==ConfigAfter(r.config,e)
+-        members==cfg.voters\cup cfg.learners
+-        changed==cfg#r.config
+-        a==IF ~canceled /\ e.kind="Remove" /\ e.target\notin Members(r)
+-           THEN Fatal(r,"remove unknown peer") ELSE
++    LET cfg==ConfigCandidate(r.config,e)
++        members==VoterIDs(cfg)\cup cfg.learners
++        a==IF ~ValidConfigTransition(r.config,e)
++           THEN Fatal(r,"invalid configuration transition") ELSE
+            [r EXCEPT !.config=cfg, !.prs=[n \in members |->
+-              IF n\notin Members(r) THEN Progress(0,Last(r)+1,TRUE)
+-              ELSE IF changed /\ n=e.target /\ e.kind\in {"AddVoter","AddLearner"}
+-                   THEN [r.prs[n] EXCEPT !.active=TRUE] ELSE r.prs[n]]]
+-    IN IF a.fatal#"" \/ r.role#"Leader" \/ r.id\notin cfg.voters \/ cfg.voters={} THEN a ELSE
+-       LET b==IF ~canceled /\ e.kind="Remove" THEN MaybeCommit(a) ELSE a
++              IF n\notin Members(r) THEN Progress(0,Last(r)+1,TRUE) ELSE r.prs[n]]]
++    IN IF a.fatal#"" \/ r.role#"Leader" \/ ~Promotable(a) \/ cfg.voters={} THEN a ELSE
++       LET b==MaybeCommit(a)
+            c==IF b.commit>a.commit THEN BcastAppend(b) ELSE b
+        IN IF c.transfer#0 /\ c.transfer\notin members THEN [c EXCEPT !.transfer=0] ELSE c
+ 
+@@ -523,12 +595,14 @@
+     started |-> {}, done |-> {}, installed |-> {}, published |-> FALSE, queued |-> FALSE]
+ EmptyApp == [hist |-> <<>>, jobs |-> <<>>, reads |-> <<>>, config |-> EmptyConfig]
+ EmptyRequest == [status |-> "Unused", node |-> 0, kind |-> "Normal", target |-> 0,
++    changes |-> <<>>, transition |-> "Legacy",
+     weight |-> 0, encoded |-> 1, parent |-> 0, handoff |-> FALSE,
+     core |-> "", result |-> "", context |-> 0, beforeWrites |-> {}, completed |-> FALSE]
+ EmptyHistory == [wins |-> {}, grants |-> {}, campaigns |-> {}, obligations |-> {},
+     promises |-> {}, applied |-> {}, writes |-> {}, readResults |-> {},
+     acks |-> {}, readyChecks |-> {}, recovery |-> {}, outcomes |-> {},
+-    commitUses |-> {}, snapshots |-> {}, liveOK |-> TRUE, sent |-> {}, lostReads |-> {}, events |-> {}]
++    commitUses |-> {}, snapshots |-> {}, autoLeaveChecks |-> {},
++    liveOK |-> TRUE, sent |-> {}, lostReads |-> {}, events |-> {}]
+ 
+ (***************************************************************************
+ Integrated decision observers: S2/S3/S6. No protocol guard reads quality.
+@@ -574,7 +648,8 @@
+      m\in {x\in DOMAIN a.out:x.type\in {"MsgVote","MsgPreVote"} /\
+             a.out[x]>(IF x\in DOMAIN r.out THEN r.out[x] ELSE 0)}}
+ CampaignObservation(r,a) ==
+-    [node |-> r.id, voters |-> r.config.voters, role |-> r.role, pre |-> r.preVote,
++    [node |-> r.id, voters |-> VoterIDs(r.config), config |-> r.config,
++     role |-> r.role, pre |-> r.preVote,
+      term |-> r.term, applied |-> r.applied, commit |-> r.commit, first |-> First(r), hist |-> Hist(r),
+      trigger |-> "Hup", elapsed |-> r.elapsed, timeout |-> r.timeout,
+      voteRequests |-> CampaignRequests(r,a),
+@@ -589,7 +664,7 @@
+         badSlice==~ignore /\ o.applied+1<o.first
+         pending==\E k\in (o.applied+1)..o.commit:o.hist[k].kind\in ConfKinds
+         blocked==ignore \/ pending \/ badSlice
+-        singleton==Cardinality(o.voters)=1
++        singleton==IsSingleton(o.config)
+         expected==IF blocked \/ singleton THEN {} ELSE
+             {[from |-> o.node,to |-> n,type |-> IF o.pre THEN "MsgPreVote" ELSE "MsgVote",
+               term |-> o.term+1,index |-> Len(o.hist),
+@@ -604,7 +679,7 @@
+                /\ o.afterTerm=o.term+(IF ~o.pre \/ singleton THEN 1 ELSE 0)
+ 
+ TransferObservation(r,target,a) ==
+-    [node |-> r.id, target |-> target, voters |-> r.config.voters, learners |-> r.config.learners,
++    [node |-> r.id, target |-> target, voters |-> VoterIDs(r.config), learners |-> r.config.learners,
+      old |-> r.transfer, after |-> a.transfer, elapsed |-> a.elapsed,
+      caughtUp |-> IF target\in DOMAIN r.prs THEN r.prs[target].match=Len(Hist(r)) ELSE FALSE,
+      responses |-> NewResponses(r,a,{"MsgTimeoutNow"}), term |-> r.term]
+@@ -628,19 +703,17 @@
+ \* Deterministic CancelChanges models the caller's zero-NodeID callback choice.
+ EffectContract(o) ==
+     LET e==o.entry b==o.before q==o.request
+-        cancel==e.target=0 \/ e.id\in CancelChanges
+-        voterAdd==~cancel /\ e.kind="AddVoter"
+-        learnerAdd==~cancel /\ e.kind="AddLearner" /\ e.target\notin b.voters
+-        remove==~cancel /\ e.kind="Remove"
+-        vs==IF voterAdd THEN b.voters\cup {e.target} ELSE IF remove THEN b.voters\{e.target} ELSE b.voters
+-        ls==IF voterAdd \/ remove THEN b.learners\{e.target} ELSE IF learnerAdd THEN b.learners\cup {e.target} ELSE b.learners
+-    IN /\ o.after=[voters |-> vs,learners |-> ls]
++    IN /\ o.after=ConfigAfter(b,e)
+        /\ e.index\in DOMAIN o.committed /\ o.committed[e.index]=e
+-       /\ IF e.id=0 THEN e.kind="AddVoter" /\ e.term=1 /\ e.target\in SeqSet(BootPeers)
+-          ELSE e.id\in RequestId /\ q.handoff /\ q.kind=e.kind /\ q.target=e.target
++       /\ IF e.id=0 /\ e.kind="AddVoter" THEN
++               e.term=1 /\ e.target\in SeqSet(BootPeers)
++          ELSE IF e.id=0 THEN IsLeave(e)
++          ELSE e.id\in RequestId /\ q.handoff /\ q.kind=e.kind /\
++               IF e.kind="V2" THEN q.changes=e.changes /\ q.transition=e.transition
++               ELSE q.target=e.target
+ 
+ ProposalObservation(r,es,a,qs) ==
+-    [node |-> r.id, role |-> r.role, voters |-> r.config.voters, learners |-> r.config.learners,
++    [node |-> r.id, role |-> r.role, voters |-> VoterIDs(r.config), learners |-> r.config.learners,
+      lead |-> r.lead, noForward |-> r.noForward, transfer |-> r.transfer,
+      quota |-> r.quota, pending |-> r.pendingConf, applied |-> r.applied,
+      before |-> Hist(r), entries |-> es, after |-> Hist(a), decision |-> a.decision,
+@@ -666,7 +739,10 @@
+             /\ \A k\in DOMAIN effective:
+                  LET e==o.after[Len(o.before)+k] want==effective[k] IN
+                  /\ e.kind=want.kind /\ e.id=want.id /\ e.target=want.target
+-                 /\ (e.id#0 => e.id\in RequestId /\ o.requests[e.id].kind=e.kind /\ o.requests[e.id].target=e.target)
++                 /\ e.changes=want.changes /\ e.transition=want.transition
++                 /\ (e.id#0 => e.id\in RequestId /\ o.requests[e.id].kind=e.kind /\
++                      IF e.kind="V2" THEN o.requests[e.id].changes=e.changes
++                      ELSE o.requests[e.id].target=e.target)
+           ELSE o.after=o.before
+ 
+ \* Retain the last action's evidence only: no protocol pruning, no unbounded
+@@ -686,7 +762,7 @@
+       [] event="TransferLeader" -> IF raft[p.node].role="Leader" THEN
+             [EmptyQuality EXCEPT !.transfers={TransferObservation(raft[p.node],p.target,raft'[p.node])}] ELSE EmptyQuality
+       [] event="Propose" ->
+-         LET q==requests[p.id] e==Entry(0,0,q.kind,p.id,q.target,q.weight,q.encoded) IN
++         LET q==requests[p.id] e==RequestEntry(q,p.id) IN
+          [EmptyQuality EXCEPT !.proposals={ProposalObservation(raft[p.node],<<e>>,raft'[p.node],requests)}]
+       [] event="ApplyEntry" ->
+          LET e==Head(Head(application[p.node].jobs).entries) IN
+@@ -699,12 +775,14 @@
+ RequestCorrelatedConfigurationEffects == \A o\in quality.effects:EffectContract(o)
+ ProposalConfigurationDecisions == \A o\in quality.proposals:ProposalContract(o)
+ 
+-\* node.go:198-245, rawnode.go:72-116. Constructor bootstrap is atomic.
++\* node.go:213-249, rawnode.go:40-58, bootstrap.go:29-76. NewRawNode is
++\* term-zero and explicit Bootstrap creates term-one configuration entries.
+ InitialRaft(n,timeout) ==
+     LET joining==n\in Joining
+         h==IF joining THEN <<>> ELSE BootLog
+         cfg==IF joining THEN EmptyConfig ELSE BootConfig
+-    IN [id |-> n, alive |-> TRUE, incarnation |-> 0, term |-> 1, vote |-> 0,
++    IN [id |-> n, alive |-> TRUE, incarnation |-> 0,
++        term |-> IF joining THEN 0 ELSE 1, vote |-> 0,
+         role |-> "Follower", lead |-> 0, config |-> cfg, cfgHist |-> h,
+         store |-> Store(<<>>,EmptySnapshot,0,EmptyHS), unstable |-> h, uoff |-> 1,
+         usnap |-> EmptySnapshot, commit |-> Len(h), applied |-> 0,
+@@ -734,7 +812,7 @@
+     {[term |-> rs[n].term, hist |-> Prefix(Hist(rs[n]),rs[n].commit)] :
+      n \in {j \in Server:rs[j].alive /\ rs[j].role="Leader" /\ rs[j].commit>0 /\
+          Term(rs[j],rs[j].commit)=rs[j].term /\ rs[j].config.voters#{} /\
+-         Won(rs[j].config.voters,{p \in rs[j].config.voters:
++         JointWon(rs[j].config,{p \in VoterIDs(rs[j].config):
+                     DiskHas(ds[p],Prefix(Hist(rs[j]),rs[j].commit))})}}
+ Observe(h,rs,ds,event) == [h EXCEPT
+     !.wins=@\cup UNION {rs[n].wins:n\in Server},
+@@ -770,6 +848,7 @@
+ \* node.go:473-509, rawnode.go:143-164. Invocation is not logging or success.
+ ProtocolInvoke(n,id,kind,target,w,z,parent,ctx) ==
+     /\ requests[id].status="Unused"
++    /\ kind\in Kinds\cup {"Read"}
+     /\ (kind="Read" => \A j\in RequestId:
+            requests[j].status#"Unused" /\ requests[j].kind="Read" => requests[j].context#ctx)
+     /\ (kind\in {"AddVoter","AddLearner"} =>
+@@ -779,16 +858,29 @@
+     /\ parent=0 \/ (parent\in RequestId /\ requests[parent].status#"Unused")
+     /\ requests'=[requests EXCEPT ![id]=[EmptyRequest EXCEPT !.status="Invoked",
+         !.node=n, !.kind=kind, !.target=target, !.weight=w, !.encoded=z,
++        !.changes=IF kind\in LegacyConfKinds THEN <<Change(kind,target)>> ELSE <<>>,
+         !.parent=parent, !.context=ctx, !.beforeWrites=history.writes]]
+     /\ UNCHANGED <<raft,disk,ready,application,wire,history>>
++\* node.go:428-442, rawnode.go:94-102; V2 marshaling is distinct but handoff is
++\* the same proposal path. Changes are one atomic ConfChangeV2 payload.
++ProtocolInvokeV2(n,id,changes,transition,w,z,parent) ==
++    /\ requests[id].status="Unused"
++    /\ parent=0 \/ (parent\in RequestId /\ requests[parent].status#"Unused")
++    /\ transition\in {"Auto","JointImplicit","JointExplicit"}
++    /\ \A ch\in SeqSet(changes):ch.kind\in LegacyConfKinds /\ ch.target\in Server\cup{0}
++    /\ requests'=[requests EXCEPT ![id]=[EmptyRequest EXCEPT !.status="Invoked",
++        !.node=n, !.kind="V2", !.changes=changes, !.transition=transition,
++        !.weight=w, !.encoded=z, !.parent=parent, !.context=id,
++        !.beforeWrites=history.writes]]
++    /\ UNCHANGED <<raft,disk,ready,application,wire,history>>
+ \* Handoff and core work are one serialized Node select/RawNode call; result is later.
+ ProtocolPropose(n,id,timeout) ==
+     /\ Live(n) /\ requests[id].status="Invoked" /\ requests[id].node=n
+-    /\ requests[id].kind\in Kinds
++    /\ requests[id].kind\in Kinds\cup {"V2"}
+     /\ n\in RawNodes \/ raft[n].propcEnabled
+     /\ LET q==requests[id]
+            m==[Message("MsgProp",n,n,0) EXCEPT !.request=id,
+-                 !.entries= <<Entry(0,0,q.kind,id,q.target,q.weight,q.encoded)>>]
++                 !.entries= <<RequestEntry(q,id)>>]
+            a==Step([raft[n] EXCEPT !.decision=""],m,timeout)
+            result==IF n\notin RawNodes /\ q.kind\in ConfKinds THEN "Handoff"
+                    ELSE a.decision
+@@ -862,16 +954,21 @@
+     /\ LET r==raft[n] b==NewReady(r) IN
+        /\ ContainsUpdates(b)
+        /\ ready'=[ready EXCEPT ![n]=b]
+-       /\ raft'=[raft EXCEPT ![n]=[r EXCEPT !.out=EmptyBag,
+-            !.quota=Max(0,@-Weight(b.committed)), !.readySeq=b.id,
++       \* rawnode.go:122-150; RawNode.Ready is read-only. node.go:308-320,
++       \* 386-388 accepts only after the Ready is actually delivered.
++       /\ raft'=[raft EXCEPT ![n]=[r EXCEPT
++            !.out=IF n\in RawNodes THEN @ ELSE EmptyBag,
++            !.readySeq=b.id,
+             !.readStates=IF n\in RawNodes THEN @ ELSE <<>>,
+-            !.prevHS=IF n\in RawNodes THEN @ ELSE b.hs,
+             !.prevSS=IF n\in RawNodes THEN @ ELSE b.ss]]
+        /\ application'=[application EXCEPT ![n].reads=@\o b.reads]
+        /\ history'=Observe([history EXCEPT !.readyChecks=@\cup
+               {[from |-> r.applied, first |-> First(r), cursor |-> b.cursor,
+                 entries |-> b.committed, snapshot |-> b.snapshot.index,
+-                commit |-> r.commit]}],raft',disk,"Ready")
++                commit |-> r.commit, raw |-> n\in RawNodes,
++                outBefore |-> r.out, outAfter |-> raft'[n].out,
++                readsBefore |-> r.readStates, readsAfter |-> raft'[n].readStates,
++                quotaBefore |-> r.quota, quotaAfter |-> raft'[n].quota]}],raft',disk,"Ready")
+     /\ UNCHANGED <<disk,requests,wire>>
+ Parts(b) == {"Entries","HS","Snapshot"}
+ Needs(b,part) == CASE part="Entries" -> b.entries# <<>>
+@@ -962,19 +1059,27 @@
+              Append(@,[batch |-> b.id, snapshot |-> b.snapshot, entries |-> b.committed])]
+     /\ ready'=[ready EXCEPT ![n].queued=TRUE]
+     /\ UNCHANGED <<raft,disk,requests,wire,history>>
+-\* log_unstable.go:77-89,111-114: matching captured endpoint only.
++\* rawnode.go:139-191, raft.go:554-592 and log_unstable.go:77-114.
++\* RawNode accepts (clears messages/read states) at Advance; Node accepted when
++\* Ready was sent. Auto-leave is appended after the applied cursor advances.
+ AdvanceCore(r,b,n) ==
+     LET a==AppliedTo(r,b.cursor)
++        leave==V2Entry(0,0,0,<<>>,"Auto",AutoLeaveWeight,AutoLeaveEncoded)
++        auto==a.fatal="" /\ a.config.autoLeave /\ b.cursor>=a.pendingConf /\ a.role="Leader"
++        b0==IF auto THEN AppendEntry(a,<<leave>>) ELSE a
++        b1==IF auto /\ b0.decision="DropQuota" THEN [b0 EXCEPT !.pendingConf=Last(b0)] ELSE b0
+         last==IF b.entries= <<>> THEN MissingEntry(0) ELSE b.entries[Len(b.entries)]
+-        stable==b.entries# <<>> /\ last.index>=r.uoff /\ last.index<=Last(r) /\
+-                 Term(r,last.index)=last.term
+-    IN [a EXCEPT
++        stable==b.entries# <<>> /\ last.index>=b1.uoff /\ last.index<=Last(b1) /\
++                 Term(b1,last.index)=last.term
++    IN [b1 EXCEPT
++        !.out=IF n\in RawNodes THEN EmptyBag ELSE @,
++        !.quota=Max(0,@-Weight(b.committed)),
+         !.unstable=IF stable THEN Suffix(@,last.index+2-r.uoff) ELSE @,
+         !.uoff=IF stable THEN last.index+1 ELSE @,
+         !.usnap=IF b.snapshot.index>0 /\ r.usnap.index=b.snapshot.index THEN EmptySnapshot ELSE @,
+-        !.prevHS=IF n\in RawNodes THEN b.hs ELSE @,
++        !.prevHS=b.hs,
+         !.prevSS=IF n\in RawNodes THEN b.ss ELSE @,
+-        !.readStates=IF n\in RawNodes /\ b.reads# <<>> THEN <<>> ELSE @]
++        !.readStates=IF n\in RawNodes THEN <<>> ELSE @]
+ ProtocolAdvance(n) ==
+     /\ Live(n) /\ ready[n].active /\ Persisted(ready[n])
+     /\ ready[n].installed=Parts(ready[n]) /\ ready[n].published /\ ready[n].queued
+@@ -986,7 +1091,11 @@
+             !.acks=@\cup
+             {[before |-> Hist(r), after |-> Hist(a), oldSnap |-> r.usnap.index,
+               batchSnap |-> b.snapshot.index, afterSnap |-> a.usnap.index,
+-              cursor |-> b.cursor, applied |-> a.applied]}],raft',disk,"Advance")
++              cursor |-> b.cursor, applied |-> a.applied]},
++            !.autoLeaveChecks=@\cup
++            {[eligible |-> r.config.autoLeave /\ b.cursor>=r.pendingConf /\ r.role="Leader",
++              beforeLast |-> Last(r), afterHist |-> Hist(a), pending |-> a.pendingConf,
++              decision |-> a.decision]}],raft',disk,"Advance")
+     /\ ready'=[ready EXCEPT ![n]=EmptyReady]
+     /\ UNCHANGED <<disk,application,requests,wire>>
+ \* Caller snapshot application completes separately from restore/persistence/Advance.
+@@ -1095,11 +1204,13 @@
+     /\ UNCHANGED <<disk,requests,wire>>
+ ProtocolStop(n) ==
+            ProtocolCrash(n)
+-\* newRaft/loadState and rawnode.go:85-114. Raw empty-log inference is preserved.
++\* raft.go:321-382, rawnode.go:40-58. Construction loads stable term/vote but,
++\* in this revision, only the incoming Nodes and Learners ConfState fields.
+ RestartCore(n,timeout) ==
+     LET d==disk[n] h==DiskHist(d)
+         app==IF RecoveryMode="AppliedAdapter" THEN d.savedApp ELSE d.snapshot.hist
+-        cfg==IF RecoveryMode="AppliedAdapter" THEN ConfigOf(app) ELSE d.snapshot.config
++        fullCfg==IF RecoveryMode="AppliedAdapter" THEN ConfigOf(app) ELSE d.snapshot.config
++        cfg==RestoreProjection(fullCfg)
+         baseR==[InitialRaft(n,timeout) EXCEPT !.incarnation=raft[n].incarnation+1,
+           !.term=d.hs.term, !.vote=d.hs.vote, !.config=cfg, !.cfgHist=app,
+           !.store=Store(h,d.snapshot,d.snapshot.index,d.hs), !.unstable= <<>>,
+@@ -1111,10 +1222,7 @@
+              ELSE [baseR EXCEPT !.term=d.hs.term, !.vote=d.hs.vote, !.commit=d.hs.commit]
+         b==IF a.fatal#"" THEN a ELSE AppliedTo(a,Len(app))
+         c==BecomeFollower(b,b.term,0,timeout)
+-        fresh==n\in RawNodes /\ Len(h)=0
+-        e==IF fresh THEN BecomeFollower(c,1,0,timeout) ELSE c
+-    IN [e EXCEPT !.prevHS=IF n\in RawNodes /\ ~fresh THEN HS(e) ELSE EmptyHS,
+-                 !.prevSS=SS(e)]
++    IN [c EXCEPT !.prevHS=HS(c), !.prevSS=SS(c)]
+ ProtocolRestart(n,timeout) ==
+     /\ ~raft[n].alive
+     /\ LET a==RestartCore(n,timeout) d==disk[n]
+@@ -1124,7 +1232,8 @@
+           /\ history'=Observe([history EXCEPT !.recovery=@\cup
+               {[savedTerm |-> d.hs.term, savedVote |-> d.hs.vote, term |-> a.term, vote |-> a.vote,
+                 commit |-> a.commit, hist |-> Hist(a), fatal |-> a.fatal,
+-                diskHist |-> DiskHist(d), app |-> app]}],raft',disk,"Restart")
++                expectedConfig |-> IF RecoveryMode="AppliedAdapter" THEN ConfigOf(app) ELSE d.snapshot.config,
++                config |-> a.config, diskHist |-> DiskHist(d), app |-> app]}],raft',disk,"Restart")
+     /\ UNCHANGED <<disk,ready,requests,wire>>
+ 
+ (***************************************************************************
+@@ -1163,12 +1272,13 @@
+ ConfigurationTransitionSafety == \A c\in history.commitUses:
+     \A k\in (c.oldCommit+1)..Len(c.hist):
+        (c.hist[k].kind\in ConfKinds /\ c.hist[k].id#0) =>
+-             c.voters=ConfigOf(Prefix(c.hist,k-1)).voters
++             c.config=ConfigOf(Prefix(c.hist,k-1))
+ LearnerEligibility == /\ \A x\in history.grants:~x.learner
+                       /\ \A x\in history.campaigns:~x.learner
+ QuorumAccounting ==
+-    /\ \A w\in history.wins:w.voters#{} /\ Won(w.voters,w.yes)
+-    /\ \A c\in history.commitUses:c.voters#{} /\ c.matches\subseteq c.voters /\ Won(c.voters,c.matches)
++    /\ \A w\in history.wins:w.config.voters#{} /\ JointWon(w.config,w.yes)
++    /\ \A c\in history.commitUses:c.config.voters#{} /\
++         c.matches\subseteq VoterIDs(c.config) /\ JointWon(c.config,c.matches)
+ \* raft.go:613 versus 1039-1091: distinguish self's volatile evidence.
+ ReplicationEvidence == \A n\in Server:
+     raft[n].alive /\ raft[n].role="Leader" =>
+@@ -1182,7 +1292,9 @@
+     /\ \A s\in history.snapshots:SnapshotValid(s)
+     /\ \A n\in Server:SnapshotValid(raft[n].usnap) /\ SnapshotValid(disk[n].snapshot)
+ AckPreservation == \A a\in history.acks:
+-    /\ a.before=a.after
++    /\ \/ a.before=a.after
++       \/ /\ Len(a.after)=Len(a.before)+1 /\ Prefix(a.after,Len(a.before))=a.before
++          /\ LET e==a.after[Len(a.after)] IN e.kind="V2" /\ e.changes= <<>>
+     /\ (a.oldSnap#0 /\ a.oldSnap#a.batchSnap => a.afterSnap=a.oldSnap)
+     /\ (a.cursor#0 => a.applied=a.cursor)
+ ReadyAccounting ==
+@@ -1193,6 +1305,34 @@
+              /\ Head(b.entries).index=Max(b.from+1,b.first)
+              /\ b.cursor=b.entries[Len(b.entries)].index
+              /\ \A k\in DOMAIN b.entries:b.entries[k].index=Head(b.entries).index+k-1
++\* rawnode.go:122-150: Ready itself does not accept RawNode state; Node does.
++ReadyOwnership == \A b\in history.readyChecks:
++    /\ b.quotaAfter=b.quotaBefore
++    /\ IF b.raw THEN b.outAfter=b.outBefore /\ b.readsAfter=b.readsBefore
++       ELSE b.outAfter=EmptyBag /\ b.readsAfter= <<>>
++\* raft.go:554-581: every eligible Advance appends leave-joint or records the
++\* quota-retry cursor. This checks the effect, not eventual scheduling.
++AutoLeaveAdvance == \A a\in history.autoLeaveChecks:
++    a.eligible =>
++      \/ /\ Len(a.afterHist)=a.beforeLast+1
++         /\ a.afterHist[Len(a.afterHist)].kind="V2"
++         /\ a.afterHist[Len(a.afterHist)].changes= <<>>
++      \/ /\ a.decision="DropQuota" /\ a.pending=Len(a.afterHist)
++\* tracker.Config shape and the source's persisted ConfState must survive a load.
++JointConfigurationShape == \A n\in Server:
++    LET c==raft[n].config IN
++    \/ c=EmptyConfig
++    \/ /\ c.voters#{}
++       /\ c.learners\cap VoterIDs(c)={}
++       /\ c.learnersNext\subseteq c.outgoing
++       /\ c.learnersNext\cap (c.voters\cup c.learners)={}
++       /\ (c.outgoing={} => c.learnersNext={} /\ ~c.autoLeave)
++JointSnapshotRecovery ==
++    /\ \A x\in history.recovery:
++         x.expectedConfig.outgoing#{} => x.config=x.expectedConfig
++    /\ \A n\in Server:
++         raft[n].alive /\ ConfigOf(raft[n].cfgHist).outgoing#{} =>
++             raft[n].config=ConfigOf(raft[n].cfgHist)
+ \* tracker/inflights.go:43-124: endpoints ordered, quota is not wire cardinality.
+ QuotaIntegrity == \A n\in Server:
+     /\ raft[n].quota>=0
+@@ -1212,9 +1352,9 @@
+ \* Actual completed reads, not ReadState production. Prefix history is a symbolic SM.
+ ReadBasis == \A x\in history.readResults:
+     LET r==x.rd IN
+-    /\ r.leader\in r.confirmConfig.voters
++    /\ r.leader\in VoterIDs(r.confirmConfig)
+     /\ r.confirmConfig.voters#{}
+-    /\ Won(r.confirmConfig.voters,r.confirmAcks)
++    /\ JointWon(r.confirmConfig,r.confirmAcks)
+     /\ r.confirmConfig=ConfigOf(r.hist) \/
+          \E c\in history.applied:r.confirmConfig=ConfigOf(c) /\ Covers(c,r.hist)
+     /\ r.confirmTerm=r.term
+@@ -1234,8 +1374,10 @@
+        /\ raft[n].role\in {"Follower","PreCandidate","Candidate","Leader"}
+        /\ raft[n].term\in Nat /\ raft[n].vote\in Server\cup {0}
+        /\ raft[n].lead\in Server\cup {0} /\ raft[n].commit\in Nat /\ raft[n].applied\in Nat
+-       /\ raft[n].config.voters\subseteq Server /\ raft[n].config.learners\subseteq Server
+-       /\ raft[n].config.voters\cap raft[n].config.learners={}
++       /\ raft[n].config.voters\subseteq Server /\ raft[n].config.outgoing\subseteq Server
++       /\ raft[n].config.learners\subseteq Server /\ raft[n].config.learnersNext\subseteq Server
++       /\ raft[n].config.learners\cap VoterIDs(raft[n].config)={}
++       /\ raft[n].config.learnersNext\subseteq raft[n].config.outgoing
+        /\ DOMAIN raft[n].prs=Members(raft[n])
+        /\ raft[n].uoff>=1
+        /\ \A p\in Members(raft[n]):raft[n].prs[p].mode\in {"Probe","Replicate","Snapshot"}
+@@ -1252,6 +1394,8 @@
+ TickQuiesced(n) == ProtocolTickQuiesced(n) /\ quality'=QualityEvent("TickQuiesced",[unused |-> 0])
+ TransferLeader(n,target,timeout) == ProtocolTransferLeader(n,target,timeout) /\ quality'=QualityEvent("TransferLeader",[node |-> n,target |-> target])
+ Invoke(n,id,kind,target,w,z,parent,ctx) == ProtocolInvoke(n,id,kind,target,w,z,parent,ctx) /\ quality'=QualityEvent("Invoke",[unused |-> 0])
++InvokeV2(n,id,changes,transition,w,z,parent) ==
++    ProtocolInvokeV2(n,id,changes,transition,w,z,parent) /\ quality'=QualityEvent("InvokeV2",[unused |-> 0])
+ Propose(n,id,timeout) == ProtocolPropose(n,id,timeout) /\ quality'=QualityEvent("Propose",[node |-> n,id |-> id])
+ ReadIndex(n,id,timeout) == ProtocolReadIndex(n,id,timeout) /\ quality'=QualityEvent("ReadIndex",[node |-> n,id |-> id])
+ ReturnAPI(id) == ProtocolReturnAPI(id) /\ quality'=QualityEvent("ReturnAPI",[unused |-> 0])
+@@ -1285,9 +1429,17 @@
+ Restart(n,timeout) == ProtocolRestart(n,timeout) /\ quality'=QualityEvent("Restart",[unused |-> 0])
+ 
+ Timeouts == ElectionTick..(2*ElectionTick-1)
+-ClientActions == \E n\in Server,id\in RequestId,kind\in Kinds\cup {"Read"},
+-     target\in Server\cup {0},w\in PayloadWeights,z\in EncodedWeights,parent\in RequestId\cup {0}:
+-     \E ctx\in {id,0}: Invoke(n,id,kind,target,w,z,parent,ctx)
++SingleChangeBatches == {<<Change(k,n)>>:k\in LegacyConfKinds,n\in Server}
++ReplacementBatches == {<<Change("Remove",a),Change("AddVoter",b)>>:a,b\in Server}
++V2Batches == {<<>>}\cup SingleChangeBatches\cup ReplacementBatches
++ClientActions ==
++    \/ \E n\in Server,id\in RequestId,kind\in Kinds\cup {"Read"},
++          target\in Server\cup {0},w\in PayloadWeights,z\in EncodedWeights,parent\in RequestId\cup {0}:
++          \E ctx\in {id,0}: Invoke(n,id,kind,target,w,z,parent,ctx)
++    \/ \E n\in Server,id\in RequestId,changes\in V2Batches,
++          transition\in {"Auto","JointImplicit","JointExplicit"},
++          w\in PayloadWeights,z\in EncodedWeights,parent\in RequestId\cup {0}:
++          InvokeV2(n,id,changes,transition,w,z,parent)
+ ReactiveActions ==
+     \/ \E n\in Server,id\in RequestId,t\in Timeouts:Propose(n,id,t)
+     \/ \E n\in Server,id\in RequestId,t\in Timeouts:ReadIndex(n,id,t)

@@ -1,0 +1,3450 @@
+{
+  "protocol": "action-validation/v1",
+  "route": "model-to-code",
+  "spec": "new/spec",
+  "counts": {
+    "behavioral_mismatch": 28,
+    "match": 22
+  },
+  "total": 50,
+  "commands": [
+    {
+      "engine": "model",
+      "command": [
+        "python3",
+        "out/framework/adapters/tla/run.py",
+        "--input",
+        "/workspace/out/cases/v03-model-seeds.json",
+        "--output",
+        "/workspace/out/cases/baseline-v03-model/model.jsonl",
+        "--spec",
+        "/workspace/new/spec",
+        "--work",
+        "/workspace/out/cases/baseline-v03-model/model",
+        "--generate"
+      ],
+      "duration_seconds": 5.729348387569189,
+      "exit_code": 0
+    },
+    {
+      "engine": "implementation",
+      "command": [
+        "python3",
+        "out/framework/adapters/go/run.py",
+        "--input",
+        "/workspace/out/cases/baseline-v03-model/generated-cases.json",
+        "--output",
+        "/workspace/out/cases/baseline-v03-model/implementation.jsonl",
+        "--work",
+        "/workspace/out/cases/baseline-v03-model/implementation"
+      ],
+      "duration_seconds": 0.41670388262718916,
+      "exit_code": 0
+    }
+  ],
+  "results": [
+    {
+      "id": "tlc-v03-advance-raw-cross-17-0",
+      "action": "advance_raw",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.pending",
+          "left": 0,
+          "right": 2
+        }
+      ]
+    },
+    {
+      "id": "tlc-v03-advance-raw-cross-17-1",
+      "action": "advance_raw",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.pending",
+          "left": 1,
+          "right": 2
+        }
+      ]
+    },
+    {
+      "id": "tlc-v03-advance-raw-cross-17-2",
+      "action": "advance_raw",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.last",
+          "left": 3,
+          "right": 2
+        },
+        {
+          "path": "$.state.log",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 25,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 17
+            },
+            {
+              "changes": [],
+              "encoded": 6,
+              "index": 3,
+              "kind": "V2",
+              "target": 0,
+              "term": 2,
+              "transition": "Auto",
+              "weight": 0
+            }
+          ],
+          "right": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 25,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 17
+            }
+          ]
+        },
+        {
+          "path": "$.state.pending",
+          "left": 3,
+          "right": 2
+        },
+        {
+          "path": "$.state.prs[0].match",
+          "left": 3,
+          "right": 2
+        },
+        {
+          "path": "$.state.prs[0].next",
+          "left": 4,
+          "right": 3
+        },
+        {
+          "path": "$.state.unstable",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 6,
+              "index": 3,
+              "kind": "V2",
+              "target": 0,
+              "term": 2,
+              "transition": "Auto",
+              "weight": 0
+            }
+          ],
+          "right": []
+        }
+      ]
+    },
+    {
+      "id": "tlc-v03-advance-raw-cross-17-3",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-v03-after-demote-self-proposal",
+      "action": "apply_then_step",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-v03-after-new-voter-app-reject",
+      "action": "apply_then_step",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.messages",
+          "left": [
+            {
+              "commit": 2,
+              "context": 0,
+              "entries": [
+                {
+                  "changes": [],
+                  "encoded": 8,
+                  "index": 1,
+                  "kind": "Normal",
+                  "target": 0,
+                  "term": 2,
+                  "transition": "Legacy",
+                  "weight": 0
+                },
+                {
+                  "changes": [],
+                  "encoded": 9,
+                  "index": 2,
+                  "kind": "Normal",
+                  "target": 0,
+                  "term": 2,
+                  "transition": "Legacy",
+                  "weight": 1
+                }
+              ],
+              "forced": false,
+              "fromId": 1,
+              "hint": 0,
+              "index": 0,
+              "logTerm": 0,
+              "reject": false,
+              "snapshot": {
+                "config": {
+                  "autoLeave": false,
+                  "learners": [],
+                  "learnersNext": [],
+                  "outgoing": [],
+                  "voters": []
+                },
+                "index": 0,
+                "term": 0
+              },
+              "term": 2,
+              "to": 4,
+              "type": "MsgApp"
+            },
+            {
+              "commit": 2,
+              "context": 0,
+              "entries": [
+                {
+                  "changes": [],
+                  "encoded": 9,
+                  "index": 2,
+                  "kind": "Normal",
+                  "target": 0,
+                  "term": 2,
+                  "transition": "Legacy",
+                  "weight": 1
+                }
+              ],
+              "forced": false,
+              "fromId": 1,
+              "hint": 0,
+              "index": 1,
+              "logTerm": 2,
+              "reject": false,
+              "snapshot": {
+                "config": {
+                  "autoLeave": false,
+                  "learners": [],
+                  "learnersNext": [],
+                  "outgoing": [],
+                  "voters": []
+                },
+                "index": 0,
+                "term": 0
+              },
+              "term": 2,
+              "to": 4,
+              "type": "MsgApp"
+            }
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.prs[3].next",
+          "left": 1,
+          "right": 3
+        },
+        {
+          "path": "$.state.prs[3].probe",
+          "left": true,
+          "right": false
+        }
+      ]
+    },
+    {
+      "id": "tlc-v03-apply-demote-Leader",
+      "action": "apply",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.transfer",
+          "left": 0,
+          "right": 3
+        }
+      ]
+    },
+    {
+      "id": "tlc-v03-apply-leave-demote-Leader-Auto-0",
+      "action": "apply",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.transfer",
+          "left": 0,
+          "right": 3
+        }
+      ]
+    },
+    {
+      "id": "tlc-v03-apply-leave-demote-Leader-Auto-1",
+      "action": "apply",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.transfer",
+          "left": 0,
+          "right": 3
+        }
+      ]
+    },
+    {
+      "id": "tlc-v03-apply-leave-demote-Leader-JointExplicit-0",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-v03-apply-leave-demote-Leader-JointExplicit-1",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-v03-apply-leave-demote-Leader-JointImplicit-0",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-v03-apply-leave-demote-Leader-JointImplicit-1",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-v03-apply-new-voter-Leader",
+      "action": "apply",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.messages",
+          "left": [
+            {
+              "commit": 2,
+              "context": 0,
+              "entries": [
+                {
+                  "changes": [],
+                  "encoded": 9,
+                  "index": 2,
+                  "kind": "Normal",
+                  "target": 0,
+                  "term": 2,
+                  "transition": "Legacy",
+                  "weight": 1
+                }
+              ],
+              "forced": false,
+              "fromId": 1,
+              "hint": 0,
+              "index": 1,
+              "logTerm": 2,
+              "reject": false,
+              "snapshot": {
+                "config": {
+                  "autoLeave": false,
+                  "learners": [],
+                  "learnersNext": [],
+                  "outgoing": [],
+                  "voters": []
+                },
+                "index": 0,
+                "term": 0
+              },
+              "term": 2,
+              "to": 4,
+              "type": "MsgApp"
+            }
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.prs[3].next",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.prs[3].probe",
+          "left": true,
+          "right": false
+        }
+      ]
+    },
+    {
+      "id": "tlc-v03-bootstrap-123",
+      "action": "bootstrap",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.prs[0].next",
+          "left": 3,
+          "right": 4
+        },
+        {
+          "path": "$.state.prs[1].next",
+          "left": 3,
+          "right": 4
+        },
+        {
+          "path": "$.state.prs[2].next",
+          "left": 3,
+          "right": 4
+        }
+      ]
+    },
+    {
+      "id": "tlc-v03-bootstrap_hup-123",
+      "action": "bootstrap_hup",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.prs[0].next",
+          "left": 3,
+          "right": 4
+        },
+        {
+          "path": "$.state.prs[1].next",
+          "left": 3,
+          "right": 4
+        },
+        {
+          "path": "$.state.prs[2].next",
+          "left": 3,
+          "right": 4
+        }
+      ]
+    },
+    {
+      "id": "tlc-v03-compacted-2-new",
+      "action": "apply",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.prs[3].next",
+          "left": 2,
+          "right": 3
+        }
+      ]
+    },
+    {
+      "id": "tlc-v03-construct-joint-2",
+      "action": "construct",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-v03-probe-existing-next-zero",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-v03-probe-existing-self-probe",
+      "action": "apply",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.messages",
+          "left": [
+            {
+              "commit": 2,
+              "context": 0,
+              "entries": [
+                {
+                  "changes": [],
+                  "encoded": 9,
+                  "index": 2,
+                  "kind": "Normal",
+                  "target": 0,
+                  "term": 2,
+                  "transition": "Legacy",
+                  "weight": 1
+                }
+              ],
+              "forced": false,
+              "fromId": 1,
+              "hint": 0,
+              "index": 1,
+              "logTerm": 2,
+              "reject": false,
+              "snapshot": {
+                "config": {
+                  "autoLeave": false,
+                  "learners": [],
+                  "learnersNext": [],
+                  "outgoing": [],
+                  "voters": []
+                },
+                "index": 0,
+                "term": 0
+              },
+              "term": 2,
+              "to": 1,
+              "type": "MsgApp"
+            }
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.prs[0].probe",
+          "left": true,
+          "right": false
+        }
+      ]
+    },
+    {
+      "id": "tlc-v03-prop-joint-0-empty-explicit-0-0",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-v03-prop-joint-0-empty-explicit-0-15",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-v03-prop-joint-0-empty-explicit-0-16",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-v03-prop-joint-0-empty-explicit-2-0",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-v03-prop-joint-0-empty-explicit-2-15",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-v03-prop-joint-0-empty-explicit-2-16",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-v03-prop-joint-0-v2-0-0",
+      "action": "proposal",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.log[2].changes",
+          "left": [],
+          "right": [
+            {
+              "kind": "AddLearner",
+              "target": 4
+            }
+          ]
+        },
+        {
+          "path": "$.state.log[2].encoded",
+          "left": 6,
+          "right": 16
+        },
+        {
+          "path": "$.state.log[2].kind",
+          "left": "Normal",
+          "right": "V2"
+        },
+        {
+          "path": "$.state.log[2].transition",
+          "left": "Legacy",
+          "right": "Auto"
+        },
+        {
+          "path": "$.state.log[2].weight",
+          "left": 0,
+          "right": 8
+        },
+        {
+          "path": "$.state.messages[0].entries[0].changes",
+          "left": [],
+          "right": [
+            {
+              "kind": "AddLearner",
+              "target": 4
+            }
+          ]
+        },
+        {
+          "path": "$.state.messages[0].entries[0].encoded",
+          "left": 6,
+          "right": 16
+        },
+        {
+          "path": "$.state.messages[0].entries[0].kind",
+          "left": "Normal",
+          "right": "V2"
+        },
+        {
+          "path": "$.state.messages[0].entries[0].transition",
+          "left": "Legacy",
+          "right": "Auto"
+        },
+        {
+          "path": "$.state.messages[0].entries[0].weight",
+          "left": 0,
+          "right": 8
+        },
+        {
+          "path": "$.state.messages[1].entries[0].changes",
+          "left": [],
+          "right": [
+            {
+              "kind": "AddLearner",
+              "target": 4
+            }
+          ]
+        },
+        {
+          "path": "$.state.messages[1].entries[0].encoded",
+          "left": 6,
+          "right": 16
+        },
+        {
+          "path": "$.state.messages[1].entries[0].kind",
+          "left": "Normal",
+          "right": "V2"
+        },
+        {
+          "path": "$.state.messages[1].entries[0].transition",
+          "left": "Legacy",
+          "right": "Auto"
+        },
+        {
+          "path": "$.state.messages[1].entries[0].weight",
+          "left": 0,
+          "right": 8
+        },
+        {
+          "path": "$.state.pending",
+          "left": 0,
+          "right": 3
+        },
+        {
+          "path": "$.state.quota",
+          "left": 0,
+          "right": 8
+        },
+        {
+          "path": "$.state.unstable[0].changes",
+          "left": [],
+          "right": [
+            {
+              "kind": "AddLearner",
+              "target": 4
+            }
+          ]
+        },
+        {
+          "path": "$.state.unstable[0].encoded",
+          "left": 6,
+          "right": 16
+        },
+        {
+          "path": "$.state.unstable[0].kind",
+          "left": "Normal",
+          "right": "V2"
+        },
+        {
+          "path": "$.state.unstable[0].transition",
+          "left": "Legacy",
+          "right": "Auto"
+        },
+        {
+          "path": "$.state.unstable[0].weight",
+          "left": 0,
+          "right": 8
+        }
+      ]
+    },
+    {
+      "id": "tlc-v03-prop-joint-0-v2-0-15",
+      "action": "proposal",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.last",
+          "left": 4,
+          "right": 3
+        },
+        {
+          "path": "$.state.log",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            },
+            {
+              "changes": [],
+              "encoded": 23,
+              "index": 3,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 15
+            },
+            {
+              "changes": [],
+              "encoded": 6,
+              "index": 4,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            }
+          ],
+          "right": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            },
+            {
+              "changes": [],
+              "encoded": 23,
+              "index": 3,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 15
+            }
+          ]
+        },
+        {
+          "path": "$.state.messages",
+          "left": [
+            {
+              "commit": 2,
+              "context": 0,
+              "entries": [
+                {
+                  "changes": [],
+                  "encoded": 6,
+                  "index": 4,
+                  "kind": "Normal",
+                  "target": 0,
+                  "term": 2,
+                  "transition": "Legacy",
+                  "weight": 0
+                }
+              ],
+              "forced": false,
+              "fromId": 1,
+              "hint": 0,
+              "index": 3,
+              "logTerm": 2,
+              "reject": false,
+              "snapshot": {
+                "config": {
+                  "autoLeave": false,
+                  "learners": [],
+                  "learnersNext": [],
+                  "outgoing": [],
+                  "voters": []
+                },
+                "index": 0,
+                "term": 0
+              },
+              "term": 2,
+              "to": 2,
+              "type": "MsgApp"
+            },
+            {
+              "commit": 2,
+              "context": 0,
+              "entries": [
+                {
+                  "changes": [],
+                  "encoded": 6,
+                  "index": 4,
+                  "kind": "Normal",
+                  "target": 0,
+                  "term": 2,
+                  "transition": "Legacy",
+                  "weight": 0
+                }
+              ],
+              "forced": false,
+              "fromId": 1,
+              "hint": 0,
+              "index": 3,
+              "logTerm": 2,
+              "reject": false,
+              "snapshot": {
+                "config": {
+                  "autoLeave": false,
+                  "learners": [],
+                  "learnersNext": [],
+                  "outgoing": [],
+                  "voters": []
+                },
+                "index": 0,
+                "term": 0
+              },
+              "term": 2,
+              "to": 3,
+              "type": "MsgApp"
+            }
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.pending",
+          "left": 0,
+          "right": 4
+        },
+        {
+          "path": "$.state.prs[0].match",
+          "left": 4,
+          "right": 3
+        },
+        {
+          "path": "$.state.prs[0].next",
+          "left": 5,
+          "right": 4
+        },
+        {
+          "path": "$.state.prs[1].probe",
+          "left": true,
+          "right": false
+        },
+        {
+          "path": "$.state.prs[2].probe",
+          "left": true,
+          "right": false
+        },
+        {
+          "path": "$.state.unstable",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 23,
+              "index": 3,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 15
+            },
+            {
+              "changes": [],
+              "encoded": 6,
+              "index": 4,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            }
+          ],
+          "right": [
+            {
+              "changes": [],
+              "encoded": 23,
+              "index": 3,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 15
+            }
+          ]
+        },
+        {
+          "path": "$.status",
+          "left": "ok",
+          "right": "dropped"
+        }
+      ]
+    },
+    {
+      "id": "tlc-v03-prop-joint-0-v2-0-16",
+      "action": "proposal",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.last",
+          "left": 4,
+          "right": 3
+        },
+        {
+          "path": "$.state.log",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            },
+            {
+              "changes": [],
+              "encoded": 24,
+              "index": 3,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 16
+            },
+            {
+              "changes": [],
+              "encoded": 6,
+              "index": 4,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            }
+          ],
+          "right": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            },
+            {
+              "changes": [],
+              "encoded": 24,
+              "index": 3,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 16
+            }
+          ]
+        },
+        {
+          "path": "$.state.messages",
+          "left": [
+            {
+              "commit": 2,
+              "context": 0,
+              "entries": [
+                {
+                  "changes": [],
+                  "encoded": 6,
+                  "index": 4,
+                  "kind": "Normal",
+                  "target": 0,
+                  "term": 2,
+                  "transition": "Legacy",
+                  "weight": 0
+                }
+              ],
+              "forced": false,
+              "fromId": 1,
+              "hint": 0,
+              "index": 3,
+              "logTerm": 2,
+              "reject": false,
+              "snapshot": {
+                "config": {
+                  "autoLeave": false,
+                  "learners": [],
+                  "learnersNext": [],
+                  "outgoing": [],
+                  "voters": []
+                },
+                "index": 0,
+                "term": 0
+              },
+              "term": 2,
+              "to": 2,
+              "type": "MsgApp"
+            },
+            {
+              "commit": 2,
+              "context": 0,
+              "entries": [
+                {
+                  "changes": [],
+                  "encoded": 6,
+                  "index": 4,
+                  "kind": "Normal",
+                  "target": 0,
+                  "term": 2,
+                  "transition": "Legacy",
+                  "weight": 0
+                }
+              ],
+              "forced": false,
+              "fromId": 1,
+              "hint": 0,
+              "index": 3,
+              "logTerm": 2,
+              "reject": false,
+              "snapshot": {
+                "config": {
+                  "autoLeave": false,
+                  "learners": [],
+                  "learnersNext": [],
+                  "outgoing": [],
+                  "voters": []
+                },
+                "index": 0,
+                "term": 0
+              },
+              "term": 2,
+              "to": 3,
+              "type": "MsgApp"
+            }
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.pending",
+          "left": 0,
+          "right": 4
+        },
+        {
+          "path": "$.state.prs[0].match",
+          "left": 4,
+          "right": 3
+        },
+        {
+          "path": "$.state.prs[0].next",
+          "left": 5,
+          "right": 4
+        },
+        {
+          "path": "$.state.prs[1].probe",
+          "left": true,
+          "right": false
+        },
+        {
+          "path": "$.state.prs[2].probe",
+          "left": true,
+          "right": false
+        },
+        {
+          "path": "$.state.unstable",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 24,
+              "index": 3,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 16
+            },
+            {
+              "changes": [],
+              "encoded": 6,
+              "index": 4,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            }
+          ],
+          "right": [
+            {
+              "changes": [],
+              "encoded": 24,
+              "index": 3,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 16
+            }
+          ]
+        },
+        {
+          "path": "$.status",
+          "left": "ok",
+          "right": "dropped"
+        }
+      ]
+    },
+    {
+      "id": "tlc-v03-prop-joint-0-v2-2-0",
+      "action": "proposal",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.log[2].changes",
+          "left": [],
+          "right": [
+            {
+              "kind": "AddLearner",
+              "target": 4
+            }
+          ]
+        },
+        {
+          "path": "$.state.log[2].encoded",
+          "left": 6,
+          "right": 16
+        },
+        {
+          "path": "$.state.log[2].kind",
+          "left": "Normal",
+          "right": "V2"
+        },
+        {
+          "path": "$.state.log[2].transition",
+          "left": "Legacy",
+          "right": "Auto"
+        },
+        {
+          "path": "$.state.log[2].weight",
+          "left": 0,
+          "right": 8
+        },
+        {
+          "path": "$.state.messages[0].entries[0].changes",
+          "left": [],
+          "right": [
+            {
+              "kind": "AddLearner",
+              "target": 4
+            }
+          ]
+        },
+        {
+          "path": "$.state.messages[0].entries[0].encoded",
+          "left": 6,
+          "right": 16
+        },
+        {
+          "path": "$.state.messages[0].entries[0].kind",
+          "left": "Normal",
+          "right": "V2"
+        },
+        {
+          "path": "$.state.messages[0].entries[0].transition",
+          "left": "Legacy",
+          "right": "Auto"
+        },
+        {
+          "path": "$.state.messages[0].entries[0].weight",
+          "left": 0,
+          "right": 8
+        },
+        {
+          "path": "$.state.messages[1].entries[0].changes",
+          "left": [],
+          "right": [
+            {
+              "kind": "AddLearner",
+              "target": 4
+            }
+          ]
+        },
+        {
+          "path": "$.state.messages[1].entries[0].encoded",
+          "left": 6,
+          "right": 16
+        },
+        {
+          "path": "$.state.messages[1].entries[0].kind",
+          "left": "Normal",
+          "right": "V2"
+        },
+        {
+          "path": "$.state.messages[1].entries[0].transition",
+          "left": "Legacy",
+          "right": "Auto"
+        },
+        {
+          "path": "$.state.messages[1].entries[0].weight",
+          "left": 0,
+          "right": 8
+        },
+        {
+          "path": "$.state.pending",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.quota",
+          "left": 0,
+          "right": 8
+        },
+        {
+          "path": "$.state.unstable[0].changes",
+          "left": [],
+          "right": [
+            {
+              "kind": "AddLearner",
+              "target": 4
+            }
+          ]
+        },
+        {
+          "path": "$.state.unstable[0].encoded",
+          "left": 6,
+          "right": 16
+        },
+        {
+          "path": "$.state.unstable[0].kind",
+          "left": "Normal",
+          "right": "V2"
+        },
+        {
+          "path": "$.state.unstable[0].transition",
+          "left": "Legacy",
+          "right": "Auto"
+        },
+        {
+          "path": "$.state.unstable[0].weight",
+          "left": 0,
+          "right": 8
+        }
+      ]
+    },
+    {
+      "id": "tlc-v03-prop-joint-0-v2-2-15",
+      "action": "proposal",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.last",
+          "left": 4,
+          "right": 3
+        },
+        {
+          "path": "$.state.log",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            },
+            {
+              "changes": [],
+              "encoded": 23,
+              "index": 3,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 15
+            },
+            {
+              "changes": [],
+              "encoded": 6,
+              "index": 4,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            }
+          ],
+          "right": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            },
+            {
+              "changes": [],
+              "encoded": 23,
+              "index": 3,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 15
+            }
+          ]
+        },
+        {
+          "path": "$.state.messages",
+          "left": [
+            {
+              "commit": 2,
+              "context": 0,
+              "entries": [
+                {
+                  "changes": [],
+                  "encoded": 6,
+                  "index": 4,
+                  "kind": "Normal",
+                  "target": 0,
+                  "term": 2,
+                  "transition": "Legacy",
+                  "weight": 0
+                }
+              ],
+              "forced": false,
+              "fromId": 1,
+              "hint": 0,
+              "index": 3,
+              "logTerm": 2,
+              "reject": false,
+              "snapshot": {
+                "config": {
+                  "autoLeave": false,
+                  "learners": [],
+                  "learnersNext": [],
+                  "outgoing": [],
+                  "voters": []
+                },
+                "index": 0,
+                "term": 0
+              },
+              "term": 2,
+              "to": 2,
+              "type": "MsgApp"
+            },
+            {
+              "commit": 2,
+              "context": 0,
+              "entries": [
+                {
+                  "changes": [],
+                  "encoded": 6,
+                  "index": 4,
+                  "kind": "Normal",
+                  "target": 0,
+                  "term": 2,
+                  "transition": "Legacy",
+                  "weight": 0
+                }
+              ],
+              "forced": false,
+              "fromId": 1,
+              "hint": 0,
+              "index": 3,
+              "logTerm": 2,
+              "reject": false,
+              "snapshot": {
+                "config": {
+                  "autoLeave": false,
+                  "learners": [],
+                  "learnersNext": [],
+                  "outgoing": [],
+                  "voters": []
+                },
+                "index": 0,
+                "term": 0
+              },
+              "term": 2,
+              "to": 3,
+              "type": "MsgApp"
+            }
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.pending",
+          "left": 2,
+          "right": 4
+        },
+        {
+          "path": "$.state.prs[0].match",
+          "left": 4,
+          "right": 3
+        },
+        {
+          "path": "$.state.prs[0].next",
+          "left": 5,
+          "right": 4
+        },
+        {
+          "path": "$.state.prs[1].probe",
+          "left": true,
+          "right": false
+        },
+        {
+          "path": "$.state.prs[2].probe",
+          "left": true,
+          "right": false
+        },
+        {
+          "path": "$.state.unstable",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 23,
+              "index": 3,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 15
+            },
+            {
+              "changes": [],
+              "encoded": 6,
+              "index": 4,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            }
+          ],
+          "right": [
+            {
+              "changes": [],
+              "encoded": 23,
+              "index": 3,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 15
+            }
+          ]
+        },
+        {
+          "path": "$.status",
+          "left": "ok",
+          "right": "dropped"
+        }
+      ]
+    },
+    {
+      "id": "tlc-v03-prop-joint-0-v2-2-16",
+      "action": "proposal",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.last",
+          "left": 4,
+          "right": 3
+        },
+        {
+          "path": "$.state.log",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            },
+            {
+              "changes": [],
+              "encoded": 24,
+              "index": 3,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 16
+            },
+            {
+              "changes": [],
+              "encoded": 6,
+              "index": 4,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            }
+          ],
+          "right": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            },
+            {
+              "changes": [],
+              "encoded": 24,
+              "index": 3,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 16
+            }
+          ]
+        },
+        {
+          "path": "$.state.messages",
+          "left": [
+            {
+              "commit": 2,
+              "context": 0,
+              "entries": [
+                {
+                  "changes": [],
+                  "encoded": 6,
+                  "index": 4,
+                  "kind": "Normal",
+                  "target": 0,
+                  "term": 2,
+                  "transition": "Legacy",
+                  "weight": 0
+                }
+              ],
+              "forced": false,
+              "fromId": 1,
+              "hint": 0,
+              "index": 3,
+              "logTerm": 2,
+              "reject": false,
+              "snapshot": {
+                "config": {
+                  "autoLeave": false,
+                  "learners": [],
+                  "learnersNext": [],
+                  "outgoing": [],
+                  "voters": []
+                },
+                "index": 0,
+                "term": 0
+              },
+              "term": 2,
+              "to": 2,
+              "type": "MsgApp"
+            },
+            {
+              "commit": 2,
+              "context": 0,
+              "entries": [
+                {
+                  "changes": [],
+                  "encoded": 6,
+                  "index": 4,
+                  "kind": "Normal",
+                  "target": 0,
+                  "term": 2,
+                  "transition": "Legacy",
+                  "weight": 0
+                }
+              ],
+              "forced": false,
+              "fromId": 1,
+              "hint": 0,
+              "index": 3,
+              "logTerm": 2,
+              "reject": false,
+              "snapshot": {
+                "config": {
+                  "autoLeave": false,
+                  "learners": [],
+                  "learnersNext": [],
+                  "outgoing": [],
+                  "voters": []
+                },
+                "index": 0,
+                "term": 0
+              },
+              "term": 2,
+              "to": 3,
+              "type": "MsgApp"
+            }
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.pending",
+          "left": 2,
+          "right": 4
+        },
+        {
+          "path": "$.state.prs[0].match",
+          "left": 4,
+          "right": 3
+        },
+        {
+          "path": "$.state.prs[0].next",
+          "left": 5,
+          "right": 4
+        },
+        {
+          "path": "$.state.prs[1].probe",
+          "left": true,
+          "right": false
+        },
+        {
+          "path": "$.state.prs[2].probe",
+          "left": true,
+          "right": false
+        },
+        {
+          "path": "$.state.unstable",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 24,
+              "index": 3,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 16
+            },
+            {
+              "changes": [],
+              "encoded": 6,
+              "index": 4,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            }
+          ],
+          "right": [
+            {
+              "changes": [],
+              "encoded": 24,
+              "index": 3,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 16
+            }
+          ]
+        },
+        {
+          "path": "$.status",
+          "left": "ok",
+          "right": "dropped"
+        }
+      ]
+    },
+    {
+      "id": "tlc-v03-prop-simple-0-empty-auto-0-0",
+      "action": "proposal",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.log[2].encoded",
+          "left": 6,
+          "right": 10
+        },
+        {
+          "path": "$.state.log[2].kind",
+          "left": "Normal",
+          "right": "V2"
+        },
+        {
+          "path": "$.state.log[2].transition",
+          "left": "Legacy",
+          "right": "Auto"
+        },
+        {
+          "path": "$.state.log[2].weight",
+          "left": 0,
+          "right": 2
+        },
+        {
+          "path": "$.state.messages[0].entries[0].encoded",
+          "left": 6,
+          "right": 10
+        },
+        {
+          "path": "$.state.messages[0].entries[0].kind",
+          "left": "Normal",
+          "right": "V2"
+        },
+        {
+          "path": "$.state.messages[0].entries[0].transition",
+          "left": "Legacy",
+          "right": "Auto"
+        },
+        {
+          "path": "$.state.messages[0].entries[0].weight",
+          "left": 0,
+          "right": 2
+        },
+        {
+          "path": "$.state.messages[1].entries[0].encoded",
+          "left": 6,
+          "right": 10
+        },
+        {
+          "path": "$.state.messages[1].entries[0].kind",
+          "left": "Normal",
+          "right": "V2"
+        },
+        {
+          "path": "$.state.messages[1].entries[0].transition",
+          "left": "Legacy",
+          "right": "Auto"
+        },
+        {
+          "path": "$.state.messages[1].entries[0].weight",
+          "left": 0,
+          "right": 2
+        },
+        {
+          "path": "$.state.pending",
+          "left": 0,
+          "right": 3
+        },
+        {
+          "path": "$.state.quota",
+          "left": 0,
+          "right": 2
+        },
+        {
+          "path": "$.state.unstable[0].encoded",
+          "left": 6,
+          "right": 10
+        },
+        {
+          "path": "$.state.unstable[0].kind",
+          "left": "Normal",
+          "right": "V2"
+        },
+        {
+          "path": "$.state.unstable[0].transition",
+          "left": "Legacy",
+          "right": "Auto"
+        },
+        {
+          "path": "$.state.unstable[0].weight",
+          "left": 0,
+          "right": 2
+        }
+      ]
+    },
+    {
+      "id": "tlc-v03-prop-simple-0-empty-auto-0-15",
+      "action": "proposal",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.last",
+          "left": 4,
+          "right": 3
+        },
+        {
+          "path": "$.state.log",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            },
+            {
+              "changes": [],
+              "encoded": 23,
+              "index": 3,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 15
+            },
+            {
+              "changes": [],
+              "encoded": 6,
+              "index": 4,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            }
+          ],
+          "right": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            },
+            {
+              "changes": [],
+              "encoded": 23,
+              "index": 3,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 15
+            }
+          ]
+        },
+        {
+          "path": "$.state.messages",
+          "left": [
+            {
+              "commit": 2,
+              "context": 0,
+              "entries": [
+                {
+                  "changes": [],
+                  "encoded": 6,
+                  "index": 4,
+                  "kind": "Normal",
+                  "target": 0,
+                  "term": 2,
+                  "transition": "Legacy",
+                  "weight": 0
+                }
+              ],
+              "forced": false,
+              "fromId": 1,
+              "hint": 0,
+              "index": 3,
+              "logTerm": 2,
+              "reject": false,
+              "snapshot": {
+                "config": {
+                  "autoLeave": false,
+                  "learners": [],
+                  "learnersNext": [],
+                  "outgoing": [],
+                  "voters": []
+                },
+                "index": 0,
+                "term": 0
+              },
+              "term": 2,
+              "to": 2,
+              "type": "MsgApp"
+            },
+            {
+              "commit": 2,
+              "context": 0,
+              "entries": [
+                {
+                  "changes": [],
+                  "encoded": 6,
+                  "index": 4,
+                  "kind": "Normal",
+                  "target": 0,
+                  "term": 2,
+                  "transition": "Legacy",
+                  "weight": 0
+                }
+              ],
+              "forced": false,
+              "fromId": 1,
+              "hint": 0,
+              "index": 3,
+              "logTerm": 2,
+              "reject": false,
+              "snapshot": {
+                "config": {
+                  "autoLeave": false,
+                  "learners": [],
+                  "learnersNext": [],
+                  "outgoing": [],
+                  "voters": []
+                },
+                "index": 0,
+                "term": 0
+              },
+              "term": 2,
+              "to": 3,
+              "type": "MsgApp"
+            }
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.pending",
+          "left": 0,
+          "right": 4
+        },
+        {
+          "path": "$.state.prs[0].match",
+          "left": 4,
+          "right": 3
+        },
+        {
+          "path": "$.state.prs[0].next",
+          "left": 5,
+          "right": 4
+        },
+        {
+          "path": "$.state.prs[1].probe",
+          "left": true,
+          "right": false
+        },
+        {
+          "path": "$.state.prs[2].probe",
+          "left": true,
+          "right": false
+        },
+        {
+          "path": "$.state.unstable",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 23,
+              "index": 3,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 15
+            },
+            {
+              "changes": [],
+              "encoded": 6,
+              "index": 4,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            }
+          ],
+          "right": [
+            {
+              "changes": [],
+              "encoded": 23,
+              "index": 3,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 15
+            }
+          ]
+        },
+        {
+          "path": "$.status",
+          "left": "ok",
+          "right": "dropped"
+        }
+      ]
+    },
+    {
+      "id": "tlc-v03-prop-simple-0-empty-auto-0-16",
+      "action": "proposal",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.last",
+          "left": 4,
+          "right": 3
+        },
+        {
+          "path": "$.state.log",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            },
+            {
+              "changes": [],
+              "encoded": 24,
+              "index": 3,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 16
+            },
+            {
+              "changes": [],
+              "encoded": 6,
+              "index": 4,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            }
+          ],
+          "right": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            },
+            {
+              "changes": [],
+              "encoded": 24,
+              "index": 3,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 16
+            }
+          ]
+        },
+        {
+          "path": "$.state.messages",
+          "left": [
+            {
+              "commit": 2,
+              "context": 0,
+              "entries": [
+                {
+                  "changes": [],
+                  "encoded": 6,
+                  "index": 4,
+                  "kind": "Normal",
+                  "target": 0,
+                  "term": 2,
+                  "transition": "Legacy",
+                  "weight": 0
+                }
+              ],
+              "forced": false,
+              "fromId": 1,
+              "hint": 0,
+              "index": 3,
+              "logTerm": 2,
+              "reject": false,
+              "snapshot": {
+                "config": {
+                  "autoLeave": false,
+                  "learners": [],
+                  "learnersNext": [],
+                  "outgoing": [],
+                  "voters": []
+                },
+                "index": 0,
+                "term": 0
+              },
+              "term": 2,
+              "to": 2,
+              "type": "MsgApp"
+            },
+            {
+              "commit": 2,
+              "context": 0,
+              "entries": [
+                {
+                  "changes": [],
+                  "encoded": 6,
+                  "index": 4,
+                  "kind": "Normal",
+                  "target": 0,
+                  "term": 2,
+                  "transition": "Legacy",
+                  "weight": 0
+                }
+              ],
+              "forced": false,
+              "fromId": 1,
+              "hint": 0,
+              "index": 3,
+              "logTerm": 2,
+              "reject": false,
+              "snapshot": {
+                "config": {
+                  "autoLeave": false,
+                  "learners": [],
+                  "learnersNext": [],
+                  "outgoing": [],
+                  "voters": []
+                },
+                "index": 0,
+                "term": 0
+              },
+              "term": 2,
+              "to": 3,
+              "type": "MsgApp"
+            }
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.pending",
+          "left": 0,
+          "right": 4
+        },
+        {
+          "path": "$.state.prs[0].match",
+          "left": 4,
+          "right": 3
+        },
+        {
+          "path": "$.state.prs[0].next",
+          "left": 5,
+          "right": 4
+        },
+        {
+          "path": "$.state.prs[1].probe",
+          "left": true,
+          "right": false
+        },
+        {
+          "path": "$.state.prs[2].probe",
+          "left": true,
+          "right": false
+        },
+        {
+          "path": "$.state.unstable",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 24,
+              "index": 3,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 16
+            },
+            {
+              "changes": [],
+              "encoded": 6,
+              "index": 4,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            }
+          ],
+          "right": [
+            {
+              "changes": [],
+              "encoded": 24,
+              "index": 3,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 16
+            }
+          ]
+        },
+        {
+          "path": "$.status",
+          "left": "ok",
+          "right": "dropped"
+        }
+      ]
+    },
+    {
+      "id": "tlc-v03-prop-simple-0-empty-auto-2-0",
+      "action": "proposal",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.log[2].encoded",
+          "left": 6,
+          "right": 10
+        },
+        {
+          "path": "$.state.log[2].kind",
+          "left": "Normal",
+          "right": "V2"
+        },
+        {
+          "path": "$.state.log[2].transition",
+          "left": "Legacy",
+          "right": "Auto"
+        },
+        {
+          "path": "$.state.log[2].weight",
+          "left": 0,
+          "right": 2
+        },
+        {
+          "path": "$.state.messages[0].entries[0].encoded",
+          "left": 6,
+          "right": 10
+        },
+        {
+          "path": "$.state.messages[0].entries[0].kind",
+          "left": "Normal",
+          "right": "V2"
+        },
+        {
+          "path": "$.state.messages[0].entries[0].transition",
+          "left": "Legacy",
+          "right": "Auto"
+        },
+        {
+          "path": "$.state.messages[0].entries[0].weight",
+          "left": 0,
+          "right": 2
+        },
+        {
+          "path": "$.state.messages[1].entries[0].encoded",
+          "left": 6,
+          "right": 10
+        },
+        {
+          "path": "$.state.messages[1].entries[0].kind",
+          "left": "Normal",
+          "right": "V2"
+        },
+        {
+          "path": "$.state.messages[1].entries[0].transition",
+          "left": "Legacy",
+          "right": "Auto"
+        },
+        {
+          "path": "$.state.messages[1].entries[0].weight",
+          "left": 0,
+          "right": 2
+        },
+        {
+          "path": "$.state.pending",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.quota",
+          "left": 0,
+          "right": 2
+        },
+        {
+          "path": "$.state.unstable[0].encoded",
+          "left": 6,
+          "right": 10
+        },
+        {
+          "path": "$.state.unstable[0].kind",
+          "left": "Normal",
+          "right": "V2"
+        },
+        {
+          "path": "$.state.unstable[0].transition",
+          "left": "Legacy",
+          "right": "Auto"
+        },
+        {
+          "path": "$.state.unstable[0].weight",
+          "left": 0,
+          "right": 2
+        }
+      ]
+    },
+    {
+      "id": "tlc-v03-prop-simple-0-empty-auto-2-15",
+      "action": "proposal",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.last",
+          "left": 4,
+          "right": 3
+        },
+        {
+          "path": "$.state.log",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            },
+            {
+              "changes": [],
+              "encoded": 23,
+              "index": 3,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 15
+            },
+            {
+              "changes": [],
+              "encoded": 6,
+              "index": 4,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            }
+          ],
+          "right": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            },
+            {
+              "changes": [],
+              "encoded": 23,
+              "index": 3,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 15
+            }
+          ]
+        },
+        {
+          "path": "$.state.messages",
+          "left": [
+            {
+              "commit": 2,
+              "context": 0,
+              "entries": [
+                {
+                  "changes": [],
+                  "encoded": 6,
+                  "index": 4,
+                  "kind": "Normal",
+                  "target": 0,
+                  "term": 2,
+                  "transition": "Legacy",
+                  "weight": 0
+                }
+              ],
+              "forced": false,
+              "fromId": 1,
+              "hint": 0,
+              "index": 3,
+              "logTerm": 2,
+              "reject": false,
+              "snapshot": {
+                "config": {
+                  "autoLeave": false,
+                  "learners": [],
+                  "learnersNext": [],
+                  "outgoing": [],
+                  "voters": []
+                },
+                "index": 0,
+                "term": 0
+              },
+              "term": 2,
+              "to": 2,
+              "type": "MsgApp"
+            },
+            {
+              "commit": 2,
+              "context": 0,
+              "entries": [
+                {
+                  "changes": [],
+                  "encoded": 6,
+                  "index": 4,
+                  "kind": "Normal",
+                  "target": 0,
+                  "term": 2,
+                  "transition": "Legacy",
+                  "weight": 0
+                }
+              ],
+              "forced": false,
+              "fromId": 1,
+              "hint": 0,
+              "index": 3,
+              "logTerm": 2,
+              "reject": false,
+              "snapshot": {
+                "config": {
+                  "autoLeave": false,
+                  "learners": [],
+                  "learnersNext": [],
+                  "outgoing": [],
+                  "voters": []
+                },
+                "index": 0,
+                "term": 0
+              },
+              "term": 2,
+              "to": 3,
+              "type": "MsgApp"
+            }
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.pending",
+          "left": 2,
+          "right": 4
+        },
+        {
+          "path": "$.state.prs[0].match",
+          "left": 4,
+          "right": 3
+        },
+        {
+          "path": "$.state.prs[0].next",
+          "left": 5,
+          "right": 4
+        },
+        {
+          "path": "$.state.prs[1].probe",
+          "left": true,
+          "right": false
+        },
+        {
+          "path": "$.state.prs[2].probe",
+          "left": true,
+          "right": false
+        },
+        {
+          "path": "$.state.unstable",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 23,
+              "index": 3,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 15
+            },
+            {
+              "changes": [],
+              "encoded": 6,
+              "index": 4,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            }
+          ],
+          "right": [
+            {
+              "changes": [],
+              "encoded": 23,
+              "index": 3,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 15
+            }
+          ]
+        },
+        {
+          "path": "$.status",
+          "left": "ok",
+          "right": "dropped"
+        }
+      ]
+    },
+    {
+      "id": "tlc-v03-prop-simple-0-empty-auto-2-16",
+      "action": "proposal",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.last",
+          "left": 4,
+          "right": 3
+        },
+        {
+          "path": "$.state.log",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            },
+            {
+              "changes": [],
+              "encoded": 24,
+              "index": 3,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 16
+            },
+            {
+              "changes": [],
+              "encoded": 6,
+              "index": 4,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            }
+          ],
+          "right": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            },
+            {
+              "changes": [],
+              "encoded": 24,
+              "index": 3,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 16
+            }
+          ]
+        },
+        {
+          "path": "$.state.messages",
+          "left": [
+            {
+              "commit": 2,
+              "context": 0,
+              "entries": [
+                {
+                  "changes": [],
+                  "encoded": 6,
+                  "index": 4,
+                  "kind": "Normal",
+                  "target": 0,
+                  "term": 2,
+                  "transition": "Legacy",
+                  "weight": 0
+                }
+              ],
+              "forced": false,
+              "fromId": 1,
+              "hint": 0,
+              "index": 3,
+              "logTerm": 2,
+              "reject": false,
+              "snapshot": {
+                "config": {
+                  "autoLeave": false,
+                  "learners": [],
+                  "learnersNext": [],
+                  "outgoing": [],
+                  "voters": []
+                },
+                "index": 0,
+                "term": 0
+              },
+              "term": 2,
+              "to": 2,
+              "type": "MsgApp"
+            },
+            {
+              "commit": 2,
+              "context": 0,
+              "entries": [
+                {
+                  "changes": [],
+                  "encoded": 6,
+                  "index": 4,
+                  "kind": "Normal",
+                  "target": 0,
+                  "term": 2,
+                  "transition": "Legacy",
+                  "weight": 0
+                }
+              ],
+              "forced": false,
+              "fromId": 1,
+              "hint": 0,
+              "index": 3,
+              "logTerm": 2,
+              "reject": false,
+              "snapshot": {
+                "config": {
+                  "autoLeave": false,
+                  "learners": [],
+                  "learnersNext": [],
+                  "outgoing": [],
+                  "voters": []
+                },
+                "index": 0,
+                "term": 0
+              },
+              "term": 2,
+              "to": 3,
+              "type": "MsgApp"
+            }
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.pending",
+          "left": 2,
+          "right": 4
+        },
+        {
+          "path": "$.state.prs[0].match",
+          "left": 4,
+          "right": 3
+        },
+        {
+          "path": "$.state.prs[0].next",
+          "left": 5,
+          "right": 4
+        },
+        {
+          "path": "$.state.prs[1].probe",
+          "left": true,
+          "right": false
+        },
+        {
+          "path": "$.state.prs[2].probe",
+          "left": true,
+          "right": false
+        },
+        {
+          "path": "$.state.unstable",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 24,
+              "index": 3,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 16
+            },
+            {
+              "changes": [],
+              "encoded": 6,
+              "index": 4,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            }
+          ],
+          "right": [
+            {
+              "changes": [],
+              "encoded": 24,
+              "index": 3,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 16
+            }
+          ]
+        },
+        {
+          "path": "$.status",
+          "left": "ok",
+          "right": "dropped"
+        }
+      ]
+    },
+    {
+      "id": "tlc-v03-quota-17-two-empty-0",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-v03-quota-17-two-empty-16",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-v03-quota-17-two-empty-17",
+      "action": "proposal",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.last",
+          "left": 5,
+          "right": 3
+        },
+        {
+          "path": "$.state.log",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            },
+            {
+              "changes": [],
+              "encoded": 25,
+              "index": 3,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 17
+            },
+            {
+              "changes": [],
+              "encoded": 6,
+              "index": 4,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 6,
+              "index": 5,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            }
+          ],
+          "right": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            },
+            {
+              "changes": [],
+              "encoded": 25,
+              "index": 3,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 17
+            }
+          ]
+        },
+        {
+          "path": "$.state.messages",
+          "left": [
+            {
+              "commit": 2,
+              "context": 0,
+              "entries": [
+                {
+                  "changes": [],
+                  "encoded": 6,
+                  "index": 4,
+                  "kind": "Normal",
+                  "target": 0,
+                  "term": 2,
+                  "transition": "Legacy",
+                  "weight": 0
+                },
+                {
+                  "changes": [],
+                  "encoded": 6,
+                  "index": 5,
+                  "kind": "Normal",
+                  "target": 0,
+                  "term": 2,
+                  "transition": "Legacy",
+                  "weight": 0
+                }
+              ],
+              "forced": false,
+              "fromId": 1,
+              "hint": 0,
+              "index": 3,
+              "logTerm": 2,
+              "reject": false,
+              "snapshot": {
+                "config": {
+                  "autoLeave": false,
+                  "learners": [],
+                  "learnersNext": [],
+                  "outgoing": [],
+                  "voters": []
+                },
+                "index": 0,
+                "term": 0
+              },
+              "term": 2,
+              "to": 2,
+              "type": "MsgApp"
+            },
+            {
+              "commit": 2,
+              "context": 0,
+              "entries": [
+                {
+                  "changes": [],
+                  "encoded": 6,
+                  "index": 4,
+                  "kind": "Normal",
+                  "target": 0,
+                  "term": 2,
+                  "transition": "Legacy",
+                  "weight": 0
+                },
+                {
+                  "changes": [],
+                  "encoded": 6,
+                  "index": 5,
+                  "kind": "Normal",
+                  "target": 0,
+                  "term": 2,
+                  "transition": "Legacy",
+                  "weight": 0
+                }
+              ],
+              "forced": false,
+              "fromId": 1,
+              "hint": 0,
+              "index": 3,
+              "logTerm": 2,
+              "reject": false,
+              "snapshot": {
+                "config": {
+                  "autoLeave": false,
+                  "learners": [],
+                  "learnersNext": [],
+                  "outgoing": [],
+                  "voters": []
+                },
+                "index": 0,
+                "term": 0
+              },
+              "term": 2,
+              "to": 3,
+              "type": "MsgApp"
+            }
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.prs[0].match",
+          "left": 5,
+          "right": 3
+        },
+        {
+          "path": "$.state.prs[0].next",
+          "left": 6,
+          "right": 4
+        },
+        {
+          "path": "$.state.prs[1].probe",
+          "left": true,
+          "right": false
+        },
+        {
+          "path": "$.state.prs[2].probe",
+          "left": true,
+          "right": false
+        },
+        {
+          "path": "$.state.unstable",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 25,
+              "index": 3,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 17
+            },
+            {
+              "changes": [],
+              "encoded": 6,
+              "index": 4,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 6,
+              "index": 5,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            }
+          ],
+          "right": [
+            {
+              "changes": [],
+              "encoded": 25,
+              "index": 3,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 17
+            }
+          ]
+        },
+        {
+          "path": "$.status",
+          "left": "ok",
+          "right": "dropped"
+        }
+      ]
+    },
+    {
+      "id": "tlc-v03-advance-node-empty-0-0",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-v03-advance-node-empty-0-16",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-v03-advance-node-empty-2-0",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-v03-advance-node-empty-2-16",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-v03-advance-node-equal-old-17-0",
+      "action": "advance_node",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.pending",
+          "left": 0,
+          "right": 2
+        }
+      ]
+    },
+    {
+      "id": "tlc-v03-advance-node-equal-old-17-1",
+      "action": "advance_node",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.pending",
+          "left": 1,
+          "right": 2
+        }
+      ]
+    },
+    {
+      "id": "tlc-v03-advance-node-equal-old-17-2",
+      "action": "advance_node",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.last",
+          "left": 3,
+          "right": 2
+        },
+        {
+          "path": "$.state.log",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 25,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 17
+            },
+            {
+              "changes": [],
+              "encoded": 6,
+              "index": 3,
+              "kind": "V2",
+              "target": 0,
+              "term": 2,
+              "transition": "Auto",
+              "weight": 0
+            }
+          ],
+          "right": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 25,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 17
+            }
+          ]
+        },
+        {
+          "path": "$.state.pending",
+          "left": 3,
+          "right": 2
+        },
+        {
+          "path": "$.state.prs[0].match",
+          "left": 3,
+          "right": 2
+        },
+        {
+          "path": "$.state.prs[0].next",
+          "left": 4,
+          "right": 3
+        },
+        {
+          "path": "$.state.unstable",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 6,
+              "index": 3,
+              "kind": "V2",
+              "target": 0,
+              "term": 2,
+              "transition": "Auto",
+              "weight": 0
+            }
+          ],
+          "right": []
+        }
+      ]
+    },
+    {
+      "id": "tlc-v03-advance-node-equal-old-17-3",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-v03-ready-node-empty",
+      "action": "ready_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    }
+  ],
+  "extra_results": {
+    "implementation": [],
+    "model": []
+  }
+}

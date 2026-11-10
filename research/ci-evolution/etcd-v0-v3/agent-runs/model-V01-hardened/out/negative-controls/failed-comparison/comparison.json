@@ -1,0 +1,51 @@
+{
+  "protocol": "action-validation/v1",
+  "route": "code-to-model",
+  "spec": "out/repaired-spec",
+  "counts": {
+    "adapter_error": 1
+  },
+  "total": 1,
+  "commands": [
+    {
+      "engine": "implementation",
+      "command": [
+        "python3",
+        "/workspace/out/framework/adapters/go/run.py",
+        "--input",
+        "/workspace/out/negative-controls/input.json",
+        "--output",
+        "/workspace/out/negative-controls/failed-comparison/implementation.jsonl",
+        "--work",
+        "/workspace/out/negative-controls/failed-comparison/implementation"
+      ],
+      "duration_seconds": 0.31464977376163006,
+      "exit_code": 0
+    },
+    {
+      "engine": "model",
+      "command": [
+        "python3",
+        "/workspace/out/negative-controls/failing_adapter.py",
+        "/workspace/out/negative-controls/failed-comparison/model.jsonl"
+      ],
+      "duration_seconds": 0.03192718978971243,
+      "exit_code": 42
+    }
+  ],
+  "results": [
+    {
+      "id": "hup-Normal-False",
+      "action": "hup",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    }
+  ],
+  "extra_results": {
+    "implementation": [],
+    "model": []
+  }
+}

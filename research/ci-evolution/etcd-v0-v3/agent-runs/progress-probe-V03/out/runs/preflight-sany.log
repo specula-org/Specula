@@ -1,0 +1,18 @@
+
+****** SANY2 Version 2.2 created 08 July 2020
+
+Parsing file /workspace/versions/V03/spec/MC.tla
+
+Fatal errors while parsing TLA+ spec in file versions/V03/spec/MC.tla
+
+In module MC
+
+Cannot find source file for module base imported in module MC.
+*** Errors: 1
+
+In module MC
+
+Cannot find source file for module base imported in module MC.
+
+
+

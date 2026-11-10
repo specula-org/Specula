@@ -1,0 +1,18 @@
+{
+  "command": [
+    "timeout",
+    "180s",
+    "/usr/local/go/bin/go",
+    "test",
+    "-count=1",
+    "-run",
+    "^(TestRawNodeProposeAndConfChange|TestLearnerCanVote|TestRawNodeConsumeReady|TestUncommittedEntryLimit|TestLeaderTransferDemoteNode)$",
+    "-timeout",
+    "120s",
+    "-v",
+    "."
+  ],
+  "exit_code": 0,
+  "seconds": 1.2398025393486023,
+  "interpretation": "historical upstream tests only; not target A/B reproduction and not model validation"
+}

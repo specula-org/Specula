@@ -1,0 +1,31 @@
+{
+  "name": "clocked-leadership-v02",
+  "version": "V02",
+  "module": "C03Clocked",
+  "config": "clocked-leadership-v02.cfg",
+  "seconds_limit": 600,
+  "elapsed_seconds": 171.58328890800476,
+  "exit_code": 0,
+  "command": [
+    "timeout",
+    "--signal=TERM",
+    "--kill-after=5s",
+    "600s",
+    "java",
+    "-Xmx4g",
+    "-Dtlc2.TLC.progressInterval=10",
+    "-cp",
+    "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+    "tlc2.TLC",
+    "-workers",
+    "1",
+    "-nowarning",
+    "-dumpTrace",
+    "json",
+    "counterexample.json",
+    "-config",
+    "clocked-leadership-v02.cfg",
+    "C03Clocked"
+  ],
+  "trace": "/workspace/out/joint-autoleave-prefix-inputs.ndjson"
+}

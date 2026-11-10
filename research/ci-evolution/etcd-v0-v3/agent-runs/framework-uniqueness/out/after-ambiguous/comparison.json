@@ -1,0 +1,58 @@
+{
+  "protocol": "action-validation/v1",
+  "route": "code-to-model",
+  "spec": "new/spec",
+  "counts": {
+    "adapter_error": 1
+  },
+  "total": 1,
+  "commands": [
+    {
+      "engine": "implementation",
+      "command": [
+        "python3",
+        "out/framework/adapters/go/run.py",
+        "--input",
+        "/workspace/cases.json",
+        "--output",
+        "/workspace/out/after-ambiguous/implementation.jsonl",
+        "--work",
+        "/workspace/out/after-ambiguous/implementation"
+      ],
+      "duration_seconds": 0.3646802520379424,
+      "exit_code": 0
+    },
+    {
+      "engine": "model",
+      "command": [
+        "python3",
+        "out/framework/adapters/tla/run.py",
+        "--input",
+        "/workspace/cases.json",
+        "--output",
+        "/workspace/out/after-ambiguous/model.jsonl",
+        "--spec",
+        "/workspace/new/spec",
+        "--work",
+        "/workspace/out/after-ambiguous/model"
+      ],
+      "duration_seconds": 0.5652674175798893,
+      "exit_code": 1
+    }
+  ],
+  "results": [
+    {
+      "id": "joint-self-quorum-False",
+      "action": "hup",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    }
+  ],
+  "extra_results": {
+    "implementation": [],
+    "model": []
+  }
+}

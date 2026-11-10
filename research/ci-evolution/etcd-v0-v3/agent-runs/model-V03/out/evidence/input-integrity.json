@@ -1,0 +1,11 @@
+{
+  "checked": 255,
+  "mismatches": {},
+  "added_source_files": [
+    "old/source/action_validation_test.go",
+    "new/source/action_validation_test.go"
+  ],
+  "generic_framework_unchanged": true,
+  "original_assets_identical": true,
+  "predicate_definitions_preserved": true
+}

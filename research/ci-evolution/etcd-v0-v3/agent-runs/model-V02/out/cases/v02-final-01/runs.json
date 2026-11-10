@@ -1,0 +1,22 @@
+[
+  {
+    "label": "baseline-code",
+    "output": "out/cases/v02-final-01/baseline-code",
+    "command": [
+      "/usr/bin/python3",
+      "out/framework/runner.py",
+      "--manifest",
+      "out/framework/targets/etcd/manifest.json",
+      "--cases",
+      "out/cases/code-inputs.json",
+      "--output",
+      "/workspace/out/cases/v02-final-01/baseline-code",
+      "--spec",
+      "new/spec",
+      "--route",
+      "code-to-model"
+    ],
+    "exit_code": 2,
+    "duration_seconds": 2.319455553777516
+  }
+]

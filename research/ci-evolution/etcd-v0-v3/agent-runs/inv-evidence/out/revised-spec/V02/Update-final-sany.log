@@ -1,0 +1,24 @@
+
+****** SANY2 Version 2.2 created 08 July 2020
+
+Parsing file /workspace/out/revised-spec/V02/Update.tla
+Parsing file /workspace/out/revised-spec/V02/MC.tla
+Parsing file /workspace/out/revised-spec/V02/base.tla
+Parsing file /tmp/tlc-14668412178647418708/Naturals.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Naturals.tla)
+Parsing file /tmp/tlc-14668412178647418708/Integers.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Integers.tla)
+Parsing file /tmp/tlc-14668412178647418708/Sequences.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Sequences.tla)
+Parsing file /tmp/tlc-14668412178647418708/FiniteSets.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/FiniteSets.tla)
+Parsing file /tmp/tlc-14668412178647418708/Bags.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Bags.tla)
+Parsing file /tmp/tlc-14668412178647418708/TLC.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/TLC.tla)
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module Bags
+Semantic processing of module base
+Semantic processing of module MC
+Semantic processing of module Update
+Linting of module base
+Linting of module MC
+Linting of module Update

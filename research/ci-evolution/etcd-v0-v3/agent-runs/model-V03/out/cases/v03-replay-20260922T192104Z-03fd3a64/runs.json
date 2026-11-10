@@ -1,0 +1,122 @@
+[
+  {
+    "label": "baseline-code",
+    "output": "out/cases/v03-replay-20260922T192104Z-03fd3a64/baseline-code",
+    "command": [
+      "/usr/bin/python3",
+      "out/framework/runner.py",
+      "--manifest",
+      "out/framework/targets/etcd/manifest.json",
+      "--cases",
+      "out/cases/code-inputs.json",
+      "--output",
+      "/workspace/out/cases/v03-replay-20260922T192104Z-03fd3a64/baseline-code",
+      "--spec",
+      "new/spec",
+      "--route",
+      "code-to-model"
+    ],
+    "exit_code": 0,
+    "duration_seconds": 11.039905139245093
+  },
+  {
+    "label": "baseline-model",
+    "output": "out/cases/v03-replay-20260922T192104Z-03fd3a64/baseline-model",
+    "command": [
+      "/usr/bin/python3",
+      "out/framework/runner.py",
+      "--manifest",
+      "out/framework/targets/etcd/manifest.json",
+      "--cases",
+      "out/cases/model-seeds.json",
+      "--output",
+      "/workspace/out/cases/v03-replay-20260922T192104Z-03fd3a64/baseline-model",
+      "--spec",
+      "new/spec",
+      "--route",
+      "model-to-code"
+    ],
+    "exit_code": 0,
+    "duration_seconds": 6.828924622386694
+  },
+  {
+    "label": "repaired-code",
+    "output": "out/cases/v03-replay-20260922T192104Z-03fd3a64/repaired-code",
+    "command": [
+      "/usr/bin/python3",
+      "out/framework/runner.py",
+      "--manifest",
+      "out/framework/targets/etcd/manifest.json",
+      "--cases",
+      "out/cases/code-inputs.json",
+      "--output",
+      "/workspace/out/cases/v03-replay-20260922T192104Z-03fd3a64/repaired-code",
+      "--spec",
+      "out/repaired-spec",
+      "--route",
+      "code-to-model"
+    ],
+    "exit_code": 0,
+    "duration_seconds": 11.290845003910363
+  },
+  {
+    "label": "repaired-model",
+    "output": "out/cases/v03-replay-20260922T192104Z-03fd3a64/repaired-model",
+    "command": [
+      "/usr/bin/python3",
+      "out/framework/runner.py",
+      "--manifest",
+      "out/framework/targets/etcd/manifest.json",
+      "--cases",
+      "out/cases/model-seeds.json",
+      "--output",
+      "/workspace/out/cases/v03-replay-20260922T192104Z-03fd3a64/repaired-model",
+      "--spec",
+      "out/repaired-spec",
+      "--route",
+      "model-to-code"
+    ],
+    "exit_code": 0,
+    "duration_seconds": 7.232154295779765
+  },
+  {
+    "label": "old-code",
+    "output": "out/cases/v03-replay-20260922T192104Z-03fd3a64/old-code",
+    "command": [
+      "/usr/bin/python3",
+      "out/framework/runner.py",
+      "--manifest",
+      "out/framework/targets/etcd/manifest-old.json",
+      "--cases",
+      "out/cases/code-inputs.json",
+      "--output",
+      "/workspace/out/cases/v03-replay-20260922T192104Z-03fd3a64/old-code",
+      "--spec",
+      "old/spec",
+      "--route",
+      "code-to-model"
+    ],
+    "exit_code": 0,
+    "duration_seconds": 11.09177134372294
+  },
+  {
+    "label": "old-model",
+    "output": "out/cases/v03-replay-20260922T192104Z-03fd3a64/old-model",
+    "command": [
+      "/usr/bin/python3",
+      "out/framework/runner.py",
+      "--manifest",
+      "out/framework/targets/etcd/manifest-old.json",
+      "--cases",
+      "out/cases/model-seeds.json",
+      "--output",
+      "/workspace/out/cases/v03-replay-20260922T192104Z-03fd3a64/old-model",
+      "--spec",
+      "old/spec",
+      "--route",
+      "model-to-code"
+    ],
+    "exit_code": 0,
+    "duration_seconds": 6.93050042912364
+  }
+]

@@ -1,0 +1,399 @@
+{
+  "protocol": "action-validation/v1",
+  "route": "code-to-model",
+  "spec": "new/spec",
+  "counts": {
+    "behavioral_mismatch": 3,
+    "match": 3
+  },
+  "total": 6,
+  "commands": [
+    {
+      "engine": "implementation",
+      "command": [
+        "python3",
+        "out/framework/adapters/go/run.py",
+        "--input",
+        "/workspace/out/cases/v03-chain-inputs.json",
+        "--output",
+        "/workspace/out/cases/baseline-chain/implementation.jsonl",
+        "--work",
+        "/workspace/out/cases/baseline-chain/implementation"
+      ],
+      "duration_seconds": 1.2169682765379548,
+      "exit_code": 0
+    },
+    {
+      "engine": "model",
+      "command": [
+        "python3",
+        "out/framework/adapters/tla/run.py",
+        "--input",
+        "/workspace/out/cases/v03-chain-inputs.json",
+        "--output",
+        "/workspace/out/cases/baseline-chain/model.jsonl",
+        "--spec",
+        "/workspace/new/spec",
+        "--work",
+        "/workspace/out/cases/baseline-chain/model"
+      ],
+      "duration_seconds": 2.720458830706775,
+      "exit_code": 0
+    }
+  ],
+  "results": [
+    {
+      "id": "v03-propose-apply-simple-Auto",
+      "action": "propose_then_apply",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.log[2].encoded",
+          "left": 6,
+          "right": 10
+        },
+        {
+          "path": "$.state.log[2].kind",
+          "left": "Normal",
+          "right": "V2"
+        },
+        {
+          "path": "$.state.log[2].transition",
+          "left": "Legacy",
+          "right": "Auto"
+        },
+        {
+          "path": "$.state.log[2].weight",
+          "left": 0,
+          "right": 2
+        },
+        {
+          "path": "$.state.messages[0].entries[0].encoded",
+          "left": 6,
+          "right": 10
+        },
+        {
+          "path": "$.state.messages[0].entries[0].kind",
+          "left": "Normal",
+          "right": "V2"
+        },
+        {
+          "path": "$.state.messages[0].entries[0].transition",
+          "left": "Legacy",
+          "right": "Auto"
+        },
+        {
+          "path": "$.state.messages[0].entries[0].weight",
+          "left": 0,
+          "right": 2
+        },
+        {
+          "path": "$.state.messages[1].entries[0].encoded",
+          "left": 6,
+          "right": 10
+        },
+        {
+          "path": "$.state.messages[1].entries[0].kind",
+          "left": "Normal",
+          "right": "V2"
+        },
+        {
+          "path": "$.state.messages[1].entries[0].transition",
+          "left": "Legacy",
+          "right": "Auto"
+        },
+        {
+          "path": "$.state.messages[1].entries[0].weight",
+          "left": 0,
+          "right": 2
+        },
+        {
+          "path": "$.state.pending",
+          "left": 0,
+          "right": 3
+        },
+        {
+          "path": "$.state.quota",
+          "left": 0,
+          "right": 2
+        },
+        {
+          "path": "$.state.unstable[0].encoded",
+          "left": 6,
+          "right": 10
+        },
+        {
+          "path": "$.state.unstable[0].kind",
+          "left": "Normal",
+          "right": "V2"
+        },
+        {
+          "path": "$.state.unstable[0].transition",
+          "left": "Legacy",
+          "right": "Auto"
+        },
+        {
+          "path": "$.state.unstable[0].weight",
+          "left": 0,
+          "right": 2
+        },
+        {
+          "path": "$.status",
+          "left": "ok",
+          "right": "panic"
+        }
+      ]
+    },
+    {
+      "id": "v03-propose-apply-simple-JointExplicit",
+      "action": "propose_then_apply",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.config.outgoing",
+          "left": [],
+          "right": [
+            1,
+            2,
+            3
+          ]
+        },
+        {
+          "path": "$.state.log[2].encoded",
+          "left": 6,
+          "right": 10
+        },
+        {
+          "path": "$.state.log[2].kind",
+          "left": "Normal",
+          "right": "V2"
+        },
+        {
+          "path": "$.state.log[2].transition",
+          "left": "Legacy",
+          "right": "JointExplicit"
+        },
+        {
+          "path": "$.state.log[2].weight",
+          "left": 0,
+          "right": 2
+        },
+        {
+          "path": "$.state.messages[0].entries[0].encoded",
+          "left": 6,
+          "right": 10
+        },
+        {
+          "path": "$.state.messages[0].entries[0].kind",
+          "left": "Normal",
+          "right": "V2"
+        },
+        {
+          "path": "$.state.messages[0].entries[0].transition",
+          "left": "Legacy",
+          "right": "JointExplicit"
+        },
+        {
+          "path": "$.state.messages[0].entries[0].weight",
+          "left": 0,
+          "right": 2
+        },
+        {
+          "path": "$.state.messages[1].entries[0].encoded",
+          "left": 6,
+          "right": 10
+        },
+        {
+          "path": "$.state.messages[1].entries[0].kind",
+          "left": "Normal",
+          "right": "V2"
+        },
+        {
+          "path": "$.state.messages[1].entries[0].transition",
+          "left": "Legacy",
+          "right": "JointExplicit"
+        },
+        {
+          "path": "$.state.messages[1].entries[0].weight",
+          "left": 0,
+          "right": 2
+        },
+        {
+          "path": "$.state.pending",
+          "left": 0,
+          "right": 3
+        },
+        {
+          "path": "$.state.quota",
+          "left": 0,
+          "right": 2
+        },
+        {
+          "path": "$.state.unstable[0].encoded",
+          "left": 6,
+          "right": 10
+        },
+        {
+          "path": "$.state.unstable[0].kind",
+          "left": "Normal",
+          "right": "V2"
+        },
+        {
+          "path": "$.state.unstable[0].transition",
+          "left": "Legacy",
+          "right": "JointExplicit"
+        },
+        {
+          "path": "$.state.unstable[0].weight",
+          "left": 0,
+          "right": 2
+        }
+      ]
+    },
+    {
+      "id": "v03-propose-apply-simple-JointImplicit",
+      "action": "propose_then_apply",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.config.autoLeave",
+          "left": false,
+          "right": true
+        },
+        {
+          "path": "$.state.config.outgoing",
+          "left": [],
+          "right": [
+            1,
+            2,
+            3
+          ]
+        },
+        {
+          "path": "$.state.log[2].encoded",
+          "left": 6,
+          "right": 10
+        },
+        {
+          "path": "$.state.log[2].kind",
+          "left": "Normal",
+          "right": "V2"
+        },
+        {
+          "path": "$.state.log[2].transition",
+          "left": "Legacy",
+          "right": "JointImplicit"
+        },
+        {
+          "path": "$.state.log[2].weight",
+          "left": 0,
+          "right": 2
+        },
+        {
+          "path": "$.state.messages[0].entries[0].encoded",
+          "left": 6,
+          "right": 10
+        },
+        {
+          "path": "$.state.messages[0].entries[0].kind",
+          "left": "Normal",
+          "right": "V2"
+        },
+        {
+          "path": "$.state.messages[0].entries[0].transition",
+          "left": "Legacy",
+          "right": "JointImplicit"
+        },
+        {
+          "path": "$.state.messages[0].entries[0].weight",
+          "left": 0,
+          "right": 2
+        },
+        {
+          "path": "$.state.messages[1].entries[0].encoded",
+          "left": 6,
+          "right": 10
+        },
+        {
+          "path": "$.state.messages[1].entries[0].kind",
+          "left": "Normal",
+          "right": "V2"
+        },
+        {
+          "path": "$.state.messages[1].entries[0].transition",
+          "left": "Legacy",
+          "right": "JointImplicit"
+        },
+        {
+          "path": "$.state.messages[1].entries[0].weight",
+          "left": 0,
+          "right": 2
+        },
+        {
+          "path": "$.state.pending",
+          "left": 0,
+          "right": 3
+        },
+        {
+          "path": "$.state.quota",
+          "left": 0,
+          "right": 2
+        },
+        {
+          "path": "$.state.unstable[0].encoded",
+          "left": 6,
+          "right": 10
+        },
+        {
+          "path": "$.state.unstable[0].kind",
+          "left": "Normal",
+          "right": "V2"
+        },
+        {
+          "path": "$.state.unstable[0].transition",
+          "left": "Legacy",
+          "right": "JointImplicit"
+        },
+        {
+          "path": "$.state.unstable[0].weight",
+          "left": 0,
+          "right": 2
+        }
+      ]
+    },
+    {
+      "id": "v03-propose-apply-joint-Auto",
+      "action": "propose_then_apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-propose-apply-joint-JointExplicit",
+      "action": "propose_then_apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-propose-apply-joint-JointImplicit",
+      "action": "propose_then_apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    }
+  ],
+  "extra_results": {
+    "implementation": [],
+    "model": []
+  }
+}

@@ -1,0 +1,79 @@
+[
+  {
+    "name": "generic-tests",
+    "command": [
+      "python3",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "out/framework",
+      "-p",
+      "test_runner.py",
+      "-v"
+    ],
+    "exit_code": 0,
+    "expected_exit": 0,
+    "duration_seconds": 0.06411985028535128
+  },
+  {
+    "name": "valid-input-audit",
+    "command": [
+      "python3",
+      "out/framework/targets/etcd/audit_inputs.py",
+      "out/cases/code-inputs.json",
+      "/workspace/out/cases/v02-replay-20260922T183435Z-f6c07e08/baseline-model/generated-cases.json"
+    ],
+    "exit_code": 0,
+    "expected_exit": 0,
+    "duration_seconds": 0.06405645608901978
+  },
+  {
+    "name": "invalid-input-audit",
+    "command": [
+      "python3",
+      "out/framework/targets/etcd/audit_inputs.py",
+      "out/cases/invalid-inputs.json"
+    ],
+    "exit_code": 1,
+    "expected_exit": 1,
+    "duration_seconds": 0.032033421099185944
+  },
+  {
+    "name": "source-tests",
+    "command": [
+      "timeout",
+      "90s",
+      "/usr/local/go/bin/go",
+      "test",
+      "-run",
+      "Test(RawNodeConsumeReady|Learner.*|Restore.*|Node.*)$",
+      "-count=1",
+      ".",
+      "./confchange",
+      "./quorum",
+      "./tracker",
+      "./raftpb"
+    ],
+    "exit_code": 0,
+    "expected_exit": 0,
+    "duration_seconds": 0.5652574244886637
+  },
+  {
+    "name": "source-package-tests",
+    "command": [
+      "timeout",
+      "90s",
+      "/usr/local/go/bin/go",
+      "test",
+      "-count=1",
+      "./confchange",
+      "./quorum",
+      "./tracker",
+      "./raftpb"
+    ],
+    "exit_code": 0,
+    "expected_exit": 0,
+    "duration_seconds": 0.415103062056005
+  }
+]

@@ -1,0 +1,36 @@
+{
+  "checked": 6,
+  "valid": 0,
+  "errors": [
+    {
+      "id": "invalid-restore-overlap",
+      "path": "out/cases/invalid-inputs.json",
+      "error": "AssertionError"
+    },
+    {
+      "id": "invalid-restore-staged-without-joint",
+      "path": "out/cases/invalid-inputs.json",
+      "error": "AssertionError"
+    },
+    {
+      "id": "invalid-restore-empty-incoming",
+      "path": "out/cases/invalid-inputs.json",
+      "error": "AssertionError"
+    },
+    {
+      "id": "invalid-restart-overlap",
+      "path": "out/cases/invalid-inputs.json",
+      "error": "AssertionError"
+    },
+    {
+      "id": "invalid-restart-staged-without-joint",
+      "path": "out/cases/invalid-inputs.json",
+      "error": "AssertionError"
+    },
+    {
+      "id": "invalid-restart-empty-incoming",
+      "path": "out/cases/invalid-inputs.json",
+      "error": "AssertionError"
+    }
+  ]
+}

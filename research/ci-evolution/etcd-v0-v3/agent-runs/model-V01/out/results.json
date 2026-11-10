@@ -1,0 +1,2137 @@
+{
+  "protocol": "action-validation/v1",
+  "pilot": true,
+  "claim": "Developmental local action validation; no independent bug discovery or general conformance claim.",
+  "sources": {
+    "old": "old/source",
+    "new": "new/source",
+    "old_spec": "old/spec",
+    "baseline": "new/spec",
+    "repair": "out/repaired-spec",
+    "old_snapshot_executed": false
+  },
+  "runs": {
+    "baseline-code": {
+      "total": 105,
+      "counts": {
+        "match": 97,
+        "behavioral_mismatch": 8
+      },
+      "route": "code-to-model",
+      "spec": "new/spec",
+      "duration_seconds": 2.7480428088456392,
+      "comparison": "out/cases/baseline-code/comparison.json",
+      "outer_commands": [
+        {
+          "engine": "implementation",
+          "command": [
+            "python3",
+            "/workspace/out/framework/adapters/go/run.py",
+            "--input",
+            "/workspace/out/cases/code-inputs.json",
+            "--output",
+            "/workspace/out/cases/baseline-code/implementation.jsonl",
+            "--work",
+            "/workspace/out/cases/baseline-code/implementation"
+          ],
+          "duration_seconds": 0.36488213296979666,
+          "exit_code": 0
+        },
+        {
+          "engine": "model",
+          "command": [
+            "python3",
+            "/workspace/out/framework/adapters/tla/run.py",
+            "--input",
+            "/workspace/out/cases/code-inputs.json",
+            "--output",
+            "/workspace/out/cases/baseline-code/model.jsonl",
+            "--spec",
+            "/workspace/new/spec",
+            "--work",
+            "/workspace/out/cases/baseline-code/model"
+          ],
+          "duration_seconds": 2.520137487910688,
+          "exit_code": 0
+        }
+      ]
+    },
+    "baseline-model": {
+      "total": 43,
+      "counts": {
+        "match": 33,
+        "behavioral_mismatch": 10
+      },
+      "route": "model-to-code",
+      "spec": "new/spec",
+      "duration_seconds": 2.3974297987297177,
+      "comparison": "out/cases/baseline-model/comparison.json",
+      "outer_commands": [
+        {
+          "engine": "model",
+          "command": [
+            "python3",
+            "/workspace/out/framework/adapters/tla/run.py",
+            "--input",
+            "/workspace/out/framework/targets/etcd/model-seeds.json",
+            "--output",
+            "/workspace/out/cases/baseline-model/model.jsonl",
+            "--spec",
+            "/workspace/new/spec",
+            "--work",
+            "/workspace/out/cases/baseline-model/model",
+            "--generate"
+          ],
+          "duration_seconds": 2.2189404275268316,
+          "exit_code": 0
+        },
+        {
+          "engine": "implementation",
+          "command": [
+            "python3",
+            "/workspace/out/framework/adapters/go/run.py",
+            "--input",
+            "/workspace/out/cases/baseline-model/generated-cases.json",
+            "--output",
+            "/workspace/out/cases/baseline-model/implementation.jsonl",
+            "--work",
+            "/workspace/out/cases/baseline-model/implementation"
+          ],
+          "duration_seconds": 0.3145485147833824,
+          "exit_code": 0
+        }
+      ]
+    },
+    "repaired-code": {
+      "total": 105,
+      "counts": {
+        "match": 105
+      },
+      "route": "code-to-model",
+      "spec": "out/repaired-spec",
+      "duration_seconds": 2.6481207069009542,
+      "comparison": "out/cases/repaired-code/comparison.json",
+      "outer_commands": [
+        {
+          "engine": "implementation",
+          "command": [
+            "python3",
+            "/workspace/out/framework/adapters/go/run.py",
+            "--input",
+            "/workspace/out/cases/code-inputs.json",
+            "--output",
+            "/workspace/out/cases/repaired-code/implementation.jsonl",
+            "--work",
+            "/workspace/out/cases/repaired-code/implementation"
+          ],
+          "duration_seconds": 0.314577367156744,
+          "exit_code": 0
+        },
+        {
+          "engine": "model",
+          "command": [
+            "python3",
+            "/workspace/out/framework/adapters/tla/run.py",
+            "--input",
+            "/workspace/out/cases/code-inputs.json",
+            "--output",
+            "/workspace/out/cases/repaired-code/model.jsonl",
+            "--spec",
+            "/workspace/out/repaired-spec",
+            "--work",
+            "/workspace/out/cases/repaired-code/model"
+          ],
+          "duration_seconds": 2.4695772463455796,
+          "exit_code": 0
+        }
+      ]
+    },
+    "repaired-model": {
+      "total": 43,
+      "counts": {
+        "match": 43
+      },
+      "route": "model-to-code",
+      "spec": "out/repaired-spec",
+      "duration_seconds": 2.346927274018526,
+      "comparison": "out/cases/repaired-model/comparison.json",
+      "outer_commands": [
+        {
+          "engine": "model",
+          "command": [
+            "python3",
+            "/workspace/out/framework/adapters/tla/run.py",
+            "--input",
+            "/workspace/out/framework/targets/etcd/model-seeds.json",
+            "--output",
+            "/workspace/out/cases/repaired-model/model.jsonl",
+            "--spec",
+            "/workspace/out/repaired-spec",
+            "--work",
+            "/workspace/out/cases/repaired-model/model",
+            "--generate"
+          ],
+          "duration_seconds": 2.168800452724099,
+          "exit_code": 0
+        },
+        {
+          "engine": "implementation",
+          "command": [
+            "python3",
+            "/workspace/out/framework/adapters/go/run.py",
+            "--input",
+            "/workspace/out/cases/repaired-model/generated-cases.json",
+            "--output",
+            "/workspace/out/cases/repaired-model/implementation.jsonl",
+            "--work",
+            "/workspace/out/cases/repaired-model/implementation"
+          ],
+          "duration_seconds": 0.3146972069516778,
+          "exit_code": 0
+        }
+      ]
+    }
+  },
+  "totals": {
+    "code_derived_cases": 105,
+    "tlc_generated_cases": 43,
+    "distinct_case_ids": 148,
+    "distinct_semantic_inputs": 122,
+    "baseline_pairs": 148,
+    "baseline_matches": 130,
+    "baseline_mismatches": 18,
+    "repaired_pairs": 148,
+    "repaired_matches": 148,
+    "repaired_mismatches": 0,
+    "final_adapter_errors": 0,
+    "unsupported_cases": 0,
+    "runner_fault_injection_tests_passed": 8
+  },
+  "coverage": {
+    "proposal": {
+      "baseline-code": 9,
+      "baseline-model": 6,
+      "repaired-code": 9,
+      "repaired-model": 6
+    },
+    "apply": {
+      "baseline-code": 29,
+      "baseline-model": 14,
+      "repaired-code": 29,
+      "repaired-model": 14
+    },
+    "hup": {
+      "baseline-code": 10,
+      "baseline-model": 4,
+      "repaired-code": 10,
+      "repaired-model": 4
+    },
+    "read": {
+      "baseline-code": 8,
+      "baseline-model": 2,
+      "repaired-code": 8,
+      "repaired-model": 2
+    },
+    "checkquorum": {
+      "baseline-code": 12,
+      "baseline-model": 3,
+      "repaired-code": 12,
+      "repaired-model": 3
+    },
+    "readack": {
+      "baseline-code": 2,
+      "baseline-model": 1,
+      "repaired-code": 2,
+      "repaired-model": 1
+    },
+    "ready_raw": {
+      "baseline-code": 6,
+      "baseline-model": 1,
+      "repaired-code": 6,
+      "repaired-model": 1
+    },
+    "advance_raw": {
+      "baseline-code": 6,
+      "baseline-model": 4,
+      "repaired-code": 6,
+      "repaired-model": 4
+    },
+    "ready_node": {
+      "baseline-code": 6,
+      "baseline-model": 1,
+      "repaired-code": 6,
+      "repaired-model": 1
+    },
+    "advance_node": {
+      "baseline-code": 6,
+      "baseline-model": 4,
+      "repaired-code": 6,
+      "repaired-model": 4
+    },
+    "restore": {
+      "baseline-code": 7,
+      "baseline-model": 2,
+      "repaired-code": 7,
+      "repaired-model": 2
+    },
+    "restart": {
+      "baseline-code": 4,
+      "baseline-model": 1,
+      "repaired-code": 4,
+      "repaired-model": 1
+    }
+  },
+  "mismatches": [
+    {
+      "id": "apply-simple-empty-explicit",
+      "action": "apply",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.return",
+          "left": {
+            "autoLeave": false,
+            "learners": [],
+            "learnersNext": [],
+            "outgoing": [
+              1,
+              2,
+              3
+            ],
+            "voters": [
+              1,
+              2,
+              3
+            ]
+          },
+          "right": null
+        },
+        {
+          "path": "$.state.config.outgoing",
+          "left": [
+            1,
+            2,
+            3
+          ],
+          "right": []
+        },
+        {
+          "path": "$.status",
+          "left": "ok",
+          "right": "panic"
+        }
+      ],
+      "run": "baseline-code",
+      "repair": "R1",
+      "classification": "source_backed_model_behavior_error",
+      "evidence": "out/cases/baseline-code/comparison.json"
+    },
+    {
+      "id": "apply-simple-empty-implicit",
+      "action": "apply",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.return",
+          "left": {
+            "autoLeave": true,
+            "learners": [],
+            "learnersNext": [],
+            "outgoing": [
+              1,
+              2,
+              3
+            ],
+            "voters": [
+              1,
+              2,
+              3
+            ]
+          },
+          "right": null
+        },
+        {
+          "path": "$.state.config.autoLeave",
+          "left": true,
+          "right": false
+        },
+        {
+          "path": "$.state.config.outgoing",
+          "left": [
+            1,
+            2,
+            3
+          ],
+          "right": []
+        },
+        {
+          "path": "$.status",
+          "left": "ok",
+          "right": "panic"
+        }
+      ],
+      "run": "baseline-code",
+      "repair": "R1",
+      "classification": "source_backed_model_behavior_error",
+      "evidence": "out/cases/baseline-code/comparison.json"
+    },
+    {
+      "id": "apply-joint-empty-explicit",
+      "action": "apply",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.return",
+          "left": null,
+          "right": {
+            "autoLeave": false,
+            "learners": [
+              3
+            ],
+            "learnersNext": [],
+            "outgoing": [],
+            "voters": [
+              1,
+              2
+            ]
+          }
+        },
+        {
+          "path": "$.state.config.autoLeave",
+          "left": true,
+          "right": false
+        },
+        {
+          "path": "$.state.config.learners",
+          "left": [],
+          "right": [
+            3
+          ]
+        },
+        {
+          "path": "$.state.config.learnersNext",
+          "left": [
+            3
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.config.outgoing",
+          "left": [
+            1,
+            2,
+            3
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.prs[2].learner",
+          "left": false,
+          "right": true
+        },
+        {
+          "path": "$.status",
+          "left": "panic",
+          "right": "ok"
+        }
+      ],
+      "run": "baseline-code",
+      "repair": "R1",
+      "classification": "source_backed_model_behavior_error",
+      "evidence": "out/cases/baseline-code/comparison.json"
+    },
+    {
+      "id": "apply-joint-empty-implicit",
+      "action": "apply",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.return",
+          "left": null,
+          "right": {
+            "autoLeave": false,
+            "learners": [
+              3
+            ],
+            "learnersNext": [],
+            "outgoing": [],
+            "voters": [
+              1,
+              2
+            ]
+          }
+        },
+        {
+          "path": "$.state.config.autoLeave",
+          "left": true,
+          "right": false
+        },
+        {
+          "path": "$.state.config.learners",
+          "left": [],
+          "right": [
+            3
+          ]
+        },
+        {
+          "path": "$.state.config.learnersNext",
+          "left": [
+            3
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.config.outgoing",
+          "left": [
+            1,
+            2,
+            3
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.prs[2].learner",
+          "left": false,
+          "right": true
+        },
+        {
+          "path": "$.status",
+          "left": "panic",
+          "right": "ok"
+        }
+      ],
+      "run": "baseline-code",
+      "repair": "R1",
+      "classification": "source_backed_model_behavior_error",
+      "evidence": "out/cases/baseline-code/comparison.json"
+    },
+    {
+      "id": "hup-V2-False",
+      "action": "hup",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.messages",
+          "left": [
+            {
+              "commit": 0,
+              "context": 0,
+              "entries": [],
+              "fromId": 1,
+              "hint": 0,
+              "index": 2,
+              "logTerm": 2,
+              "reject": false,
+              "snapshot": {
+                "config": {
+                  "autoLeave": false,
+                  "learners": [],
+                  "learnersNext": [],
+                  "outgoing": [],
+                  "voters": []
+                },
+                "index": 0,
+                "term": 0
+              },
+              "term": 3,
+              "to": 2,
+              "type": "MsgVote"
+            },
+            {
+              "commit": 0,
+              "context": 0,
+              "entries": [],
+              "fromId": 1,
+              "hint": 0,
+              "index": 2,
+              "logTerm": 2,
+              "reject": false,
+              "snapshot": {
+                "config": {
+                  "autoLeave": false,
+                  "learners": [],
+                  "learnersNext": [],
+                  "outgoing": [],
+                  "voters": []
+                },
+                "index": 0,
+                "term": 0
+              },
+              "term": 3,
+              "to": 3,
+              "type": "MsgVote"
+            }
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.role",
+          "left": "Candidate",
+          "right": "Follower"
+        },
+        {
+          "path": "$.state.term",
+          "left": 3,
+          "right": 2
+        },
+        {
+          "path": "$.state.vote",
+          "left": 1,
+          "right": 0
+        },
+        {
+          "path": "$.state.votes",
+          "left": [
+            {
+              "id": 1,
+              "yes": true
+            }
+          ],
+          "right": []
+        }
+      ],
+      "run": "baseline-code",
+      "repair": "R2",
+      "classification": "source_backed_model_behavior_error",
+      "evidence": "out/cases/baseline-code/comparison.json"
+    },
+    {
+      "id": "hup-V2-True",
+      "action": "hup",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.messages",
+          "left": [
+            {
+              "commit": 0,
+              "context": 0,
+              "entries": [],
+              "fromId": 1,
+              "hint": 0,
+              "index": 2,
+              "logTerm": 2,
+              "reject": false,
+              "snapshot": {
+                "config": {
+                  "autoLeave": false,
+                  "learners": [],
+                  "learnersNext": [],
+                  "outgoing": [],
+                  "voters": []
+                },
+                "index": 0,
+                "term": 0
+              },
+              "term": 3,
+              "to": 2,
+              "type": "MsgPreVote"
+            },
+            {
+              "commit": 0,
+              "context": 0,
+              "entries": [],
+              "fromId": 1,
+              "hint": 0,
+              "index": 2,
+              "logTerm": 2,
+              "reject": false,
+              "snapshot": {
+                "config": {
+                  "autoLeave": false,
+                  "learners": [],
+                  "learnersNext": [],
+                  "outgoing": [],
+                  "voters": []
+                },
+                "index": 0,
+                "term": 0
+              },
+              "term": 3,
+              "to": 3,
+              "type": "MsgPreVote"
+            }
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.role",
+          "left": "PreCandidate",
+          "right": "Follower"
+        },
+        {
+          "path": "$.state.votes",
+          "left": [
+            {
+              "id": 1,
+              "yes": true
+            }
+          ],
+          "right": []
+        }
+      ],
+      "run": "baseline-code",
+      "repair": "R2",
+      "classification": "source_backed_model_behavior_error",
+      "evidence": "out/cases/baseline-code/comparison.json"
+    },
+    {
+      "id": "advance-raw-True-0-0-Leader-0",
+      "action": "advance_raw",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.last",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.log",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            }
+          ],
+          "right": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            },
+            {
+              "changes": [],
+              "encoded": 10,
+              "index": 3,
+              "kind": "V2",
+              "target": 0,
+              "term": 2,
+              "transition": "Auto",
+              "weight": 2
+            }
+          ]
+        },
+        {
+          "path": "$.state.prs[0].match",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.prs[0].next",
+          "left": 3,
+          "right": 4
+        },
+        {
+          "path": "$.state.quota",
+          "left": 0,
+          "right": 2
+        },
+        {
+          "path": "$.state.unstable",
+          "left": [],
+          "right": [
+            {
+              "changes": [],
+              "encoded": 10,
+              "index": 3,
+              "kind": "V2",
+              "target": 0,
+              "term": 2,
+              "transition": "Auto",
+              "weight": 2
+            }
+          ]
+        }
+      ],
+      "run": "baseline-code",
+      "repair": "R3",
+      "classification": "source_backed_model_behavior_error",
+      "evidence": "out/cases/baseline-code/comparison.json"
+    },
+    {
+      "id": "advance-node-True-0-0-Leader-0",
+      "action": "advance_node",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.last",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.log",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            }
+          ],
+          "right": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            },
+            {
+              "changes": [],
+              "encoded": 10,
+              "index": 3,
+              "kind": "V2",
+              "target": 0,
+              "term": 2,
+              "transition": "Auto",
+              "weight": 2
+            }
+          ]
+        },
+        {
+          "path": "$.state.prs[0].match",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.prs[0].next",
+          "left": 3,
+          "right": 4
+        },
+        {
+          "path": "$.state.quota",
+          "left": 0,
+          "right": 2
+        },
+        {
+          "path": "$.state.unstable",
+          "left": [],
+          "right": [
+            {
+              "changes": [],
+              "encoded": 10,
+              "index": 3,
+              "kind": "V2",
+              "target": 0,
+              "term": 2,
+              "transition": "Auto",
+              "weight": 2
+            }
+          ]
+        }
+      ],
+      "run": "baseline-code",
+      "repair": "R3",
+      "classification": "source_backed_model_behavior_error",
+      "evidence": "out/cases/baseline-code/comparison.json"
+    },
+    {
+      "id": "tlc-advance-raw-True-2-0-Leader-2-2-0",
+      "action": "advance_raw",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.last",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.log",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            }
+          ],
+          "right": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            },
+            {
+              "changes": [],
+              "encoded": 10,
+              "index": 3,
+              "kind": "V2",
+              "target": 0,
+              "term": 2,
+              "transition": "Auto",
+              "weight": 2
+            }
+          ]
+        },
+        {
+          "path": "$.state.prs[0].match",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.prs[0].next",
+          "left": 3,
+          "right": 4
+        },
+        {
+          "path": "$.state.quota",
+          "left": 0,
+          "right": 2
+        },
+        {
+          "path": "$.state.unstable",
+          "left": [],
+          "right": [
+            {
+              "changes": [],
+              "encoded": 10,
+              "index": 3,
+              "kind": "V2",
+              "target": 0,
+              "term": 2,
+              "transition": "Auto",
+              "weight": 2
+            }
+          ]
+        }
+      ],
+      "run": "baseline-model",
+      "repair": "R3",
+      "classification": "source_backed_model_behavior_error",
+      "evidence": "out/cases/baseline-model/comparison.json"
+    },
+    {
+      "id": "tlc-advance-raw-True-2-0-Leader-2-2-16",
+      "action": "advance_raw",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.pending",
+          "left": 0,
+          "right": 3
+        }
+      ],
+      "run": "baseline-model",
+      "repair": "R3",
+      "classification": "source_backed_model_behavior_error",
+      "evidence": "out/cases/baseline-model/comparison.json"
+    },
+    {
+      "id": "tlc-apply-joint-demote-JointExplicit-0",
+      "action": "apply",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.return",
+          "left": null,
+          "right": {
+            "autoLeave": false,
+            "learners": [
+              3
+            ],
+            "learnersNext": [],
+            "outgoing": [],
+            "voters": [
+              1,
+              2
+            ]
+          }
+        },
+        {
+          "path": "$.state.config.autoLeave",
+          "left": true,
+          "right": false
+        },
+        {
+          "path": "$.state.config.learners",
+          "left": [],
+          "right": [
+            3
+          ]
+        },
+        {
+          "path": "$.state.config.learnersNext",
+          "left": [
+            3
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.config.outgoing",
+          "left": [
+            1,
+            2,
+            3
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.prs[2].learner",
+          "left": false,
+          "right": true
+        },
+        {
+          "path": "$.status",
+          "left": "panic",
+          "right": "ok"
+        }
+      ],
+      "run": "baseline-model",
+      "repair": "R1",
+      "classification": "source_backed_model_behavior_error",
+      "evidence": "out/cases/baseline-model/comparison.json"
+    },
+    {
+      "id": "tlc-apply-joint-demote-JointImplicit-0",
+      "action": "apply",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.return",
+          "left": null,
+          "right": {
+            "autoLeave": false,
+            "learners": [
+              3
+            ],
+            "learnersNext": [],
+            "outgoing": [],
+            "voters": [
+              1,
+              2
+            ]
+          }
+        },
+        {
+          "path": "$.state.config.autoLeave",
+          "left": true,
+          "right": false
+        },
+        {
+          "path": "$.state.config.learners",
+          "left": [],
+          "right": [
+            3
+          ]
+        },
+        {
+          "path": "$.state.config.learnersNext",
+          "left": [
+            3
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.config.outgoing",
+          "left": [
+            1,
+            2,
+            3
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.prs[2].learner",
+          "left": false,
+          "right": true
+        },
+        {
+          "path": "$.status",
+          "left": "panic",
+          "right": "ok"
+        }
+      ],
+      "run": "baseline-model",
+      "repair": "R1",
+      "classification": "source_backed_model_behavior_error",
+      "evidence": "out/cases/baseline-model/comparison.json"
+    },
+    {
+      "id": "tlc-apply-simple-demote-JointExplicit-0",
+      "action": "apply",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.return",
+          "left": {
+            "autoLeave": false,
+            "learners": [],
+            "learnersNext": [],
+            "outgoing": [
+              1,
+              2,
+              3
+            ],
+            "voters": [
+              1,
+              2,
+              3
+            ]
+          },
+          "right": null
+        },
+        {
+          "path": "$.state.config.outgoing",
+          "left": [
+            1,
+            2,
+            3
+          ],
+          "right": []
+        },
+        {
+          "path": "$.status",
+          "left": "ok",
+          "right": "panic"
+        }
+      ],
+      "run": "baseline-model",
+      "repair": "R1",
+      "classification": "source_backed_model_behavior_error",
+      "evidence": "out/cases/baseline-model/comparison.json"
+    },
+    {
+      "id": "tlc-apply-simple-demote-JointImplicit-0",
+      "action": "apply",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.return",
+          "left": {
+            "autoLeave": true,
+            "learners": [],
+            "learnersNext": [],
+            "outgoing": [
+              1,
+              2,
+              3
+            ],
+            "voters": [
+              1,
+              2,
+              3
+            ]
+          },
+          "right": null
+        },
+        {
+          "path": "$.state.config.autoLeave",
+          "left": true,
+          "right": false
+        },
+        {
+          "path": "$.state.config.outgoing",
+          "left": [
+            1,
+            2,
+            3
+          ],
+          "right": []
+        },
+        {
+          "path": "$.status",
+          "left": "ok",
+          "right": "panic"
+        }
+      ],
+      "run": "baseline-model",
+      "repair": "R1",
+      "classification": "source_backed_model_behavior_error",
+      "evidence": "out/cases/baseline-model/comparison.json"
+    },
+    {
+      "id": "tlc-hup-V2-False-1-FALSE",
+      "action": "hup",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.messages",
+          "left": [
+            {
+              "commit": 0,
+              "context": 0,
+              "entries": [],
+              "fromId": 1,
+              "hint": 0,
+              "index": 2,
+              "logTerm": 2,
+              "reject": false,
+              "snapshot": {
+                "config": {
+                  "autoLeave": false,
+                  "learners": [],
+                  "learnersNext": [],
+                  "outgoing": [],
+                  "voters": []
+                },
+                "index": 0,
+                "term": 0
+              },
+              "term": 3,
+              "to": 2,
+              "type": "MsgVote"
+            },
+            {
+              "commit": 0,
+              "context": 0,
+              "entries": [],
+              "fromId": 1,
+              "hint": 0,
+              "index": 2,
+              "logTerm": 2,
+              "reject": false,
+              "snapshot": {
+                "config": {
+                  "autoLeave": false,
+                  "learners": [],
+                  "learnersNext": [],
+                  "outgoing": [],
+                  "voters": []
+                },
+                "index": 0,
+                "term": 0
+              },
+              "term": 3,
+              "to": 3,
+              "type": "MsgVote"
+            }
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.role",
+          "left": "Candidate",
+          "right": "Follower"
+        },
+        {
+          "path": "$.state.term",
+          "left": 3,
+          "right": 2
+        },
+        {
+          "path": "$.state.vote",
+          "left": 1,
+          "right": 0
+        },
+        {
+          "path": "$.state.votes",
+          "left": [
+            {
+              "id": 1,
+              "yes": true
+            }
+          ],
+          "right": []
+        }
+      ],
+      "run": "baseline-model",
+      "repair": "R2",
+      "classification": "source_backed_model_behavior_error",
+      "evidence": "out/cases/baseline-model/comparison.json"
+    },
+    {
+      "id": "tlc-hup-V2-False-1-TRUE",
+      "action": "hup",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.messages",
+          "left": [
+            {
+              "commit": 0,
+              "context": 0,
+              "entries": [],
+              "fromId": 1,
+              "hint": 0,
+              "index": 2,
+              "logTerm": 2,
+              "reject": false,
+              "snapshot": {
+                "config": {
+                  "autoLeave": false,
+                  "learners": [],
+                  "learnersNext": [],
+                  "outgoing": [],
+                  "voters": []
+                },
+                "index": 0,
+                "term": 0
+              },
+              "term": 3,
+              "to": 2,
+              "type": "MsgPreVote"
+            },
+            {
+              "commit": 0,
+              "context": 0,
+              "entries": [],
+              "fromId": 1,
+              "hint": 0,
+              "index": 2,
+              "logTerm": 2,
+              "reject": false,
+              "snapshot": {
+                "config": {
+                  "autoLeave": false,
+                  "learners": [],
+                  "learnersNext": [],
+                  "outgoing": [],
+                  "voters": []
+                },
+                "index": 0,
+                "term": 0
+              },
+              "term": 3,
+              "to": 3,
+              "type": "MsgPreVote"
+            }
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.role",
+          "left": "PreCandidate",
+          "right": "Follower"
+        },
+        {
+          "path": "$.state.votes",
+          "left": [
+            {
+              "id": 1,
+              "yes": true
+            }
+          ],
+          "right": []
+        }
+      ],
+      "run": "baseline-model",
+      "repair": "R2",
+      "classification": "source_backed_model_behavior_error",
+      "evidence": "out/cases/baseline-model/comparison.json"
+    },
+    {
+      "id": "tlc-advance-node-True-2-0-Leader-2-2-0",
+      "action": "advance_node",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.last",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.log",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            }
+          ],
+          "right": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            },
+            {
+              "changes": [],
+              "encoded": 10,
+              "index": 3,
+              "kind": "V2",
+              "target": 0,
+              "term": 2,
+              "transition": "Auto",
+              "weight": 2
+            }
+          ]
+        },
+        {
+          "path": "$.state.prs[0].match",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.prs[0].next",
+          "left": 3,
+          "right": 4
+        },
+        {
+          "path": "$.state.quota",
+          "left": 0,
+          "right": 2
+        },
+        {
+          "path": "$.state.unstable",
+          "left": [],
+          "right": [
+            {
+              "changes": [],
+              "encoded": 10,
+              "index": 3,
+              "kind": "V2",
+              "target": 0,
+              "term": 2,
+              "transition": "Auto",
+              "weight": 2
+            }
+          ]
+        }
+      ],
+      "run": "baseline-model",
+      "repair": "R3",
+      "classification": "source_backed_model_behavior_error",
+      "evidence": "out/cases/baseline-model/comparison.json"
+    },
+    {
+      "id": "tlc-advance-node-True-2-0-Leader-2-2-16",
+      "action": "advance_node",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.pending",
+          "left": 0,
+          "right": 3
+        }
+      ],
+      "run": "baseline-model",
+      "repair": "R3",
+      "classification": "source_backed_model_behavior_error",
+      "evidence": "out/cases/baseline-model/comparison.json"
+    }
+  ],
+  "repairs": [
+    {
+      "id": "R1",
+      "operator": "IsLeave",
+      "source": [
+        "new/source/raftpb/confchange.go:96",
+        "new/source/raft.go:1449"
+      ],
+      "model": "out/repaired-spec/base.tla:522",
+      "classification": "model_behavior_error",
+      "change": "Require transition Auto as well as empty V2 changes. Explicit/implicit empty batches request entry into joint state; they do not leave it.",
+      "baseline_case_counts": {
+        "baseline-code": 4,
+        "baseline-model": 4
+      },
+      "remaining_after_repair": 0
+    },
+    {
+      "id": "R2",
+      "operator": "StepHup",
+      "source": [
+        "new/source/raft.go:906",
+        "new/source/raft.go:1580"
+      ],
+      "model": "out/repaired-spec/base.tla:268",
+      "classification": "model_behavior_error_masking_implementation_defect",
+      "change": "Scan only legacy configuration entries, matching unchanged numOfPendingConf. This retains the implementation omission for V2 rather than fixing the implementation in the model.",
+      "baseline_case_counts": {
+        "baseline-code": 2,
+        "baseline-model": 2
+      },
+      "remaining_after_repair": 0
+    },
+    {
+      "id": "R3",
+      "operator": "AdvanceCore",
+      "source": [
+        "new/source/raft.go:559"
+      ],
+      "model": "out/repaired-spec/base.tla:1071",
+      "classification": "model_behavior_error",
+      "change": "Require a positive captured applied cursor before automatic leave, matching the enclosing Go branch. Zero cursor causes neither append nor failed-append pending-index retry.",
+      "baseline_case_counts": {
+        "baseline-code": 2,
+        "baseline-model": 4
+      },
+      "remaining_after_repair": 0
+    }
+  ],
+  "retained_implementation_behavior": [
+    {
+      "id": "snapshot_joint_loss",
+      "behavior": "Restore and constructor read only ConfState.Nodes and Learners; outgoing voters, staged learners and AutoLeave are lost. Already modeled by RestoreProjection; no repair.",
+      "source": [
+        "new/source/raft.go:337",
+        "new/source/raft.go:1385",
+        "new/source/raft.go:1418"
+      ],
+      "cases": [
+        "restore-joint",
+        "restart-joint",
+        "restore-outgoing-only"
+      ],
+      "classification": "implementation_defect_faithfully_modeled"
+    },
+    {
+      "id": "campaign_v2_scan",
+      "behavior": "numOfPendingConf ignores V2. R2 aligns the model with that code behavior; it does not fix the defect.",
+      "source": [
+        "new/source/raft.go:1580"
+      ],
+      "classification": "implementation_defect_retained"
+    }
+  ],
+  "invariant_issues": [
+    {
+      "name": "CampaignDecisionEligibility / CampaignContract",
+      "source": "new/spec/base.tla:660",
+      "issue": "Still treats V2 as campaign-blocking. Decide later whether this is an intended correctness property exposing the real source omission or a source-alignment contract needing revision.",
+      "changed": false
+    },
+    {
+      "name": "AutoLeaveAdvance / history.autoLeaveChecks.eligible",
+      "source": "new/spec/base.tla:1095",
+      "issue": "Eligibility observation lacks positive-cursor guard. Repaired zero-cursor behavior can fail this unchanged contract. Review observer/property together later.",
+      "changed": false
+    },
+    {
+      "name": "JointSnapshotRecovery",
+      "source": "new/spec/base.tla:1331",
+      "issue": "Can expose faithful source loss of joint state. Do not change behavior to satisfy the invariant.",
+      "changed": false
+    }
+  ],
+  "adapter_triage": [
+    {
+      "issue": "Wrong nil versus nonnil empty Entry.Size projection",
+      "resolution": "Concrete EmptyEncoded changed from 8 to 6 in adapter override. Input/output sizes now independently measured in Go; no baseline spec repair.",
+      "evidence": "out/evidence/development-comparison.json"
+    },
+    {
+      "issue": "Stray target field on normal log descriptors",
+      "resolution": "Corrected descriptor; classified as pre-state mapping error.",
+      "evidence": "out/evidence/development-comparison.json"
+    },
+    {
+      "issue": "Internal DropQuota treated as public Advance drop",
+      "resolution": "Only proposal error maps to dropped; Advance remains void/ok, with all state effects compared.",
+      "evidence": "out/evidence/development-comparison.json"
+    },
+    {
+      "issue": "TLC nested EXCEPT @ bound to a boolean",
+      "resolution": "Qualified original input progress reference; aborted invocation retained.",
+      "evidence": "out/evidence/model-domain-adapter-error"
+    },
+    {
+      "issue": "Initial quota backing and stale-term descriptors structurally invalid",
+      "resolution": "Corrected input domains; all final cases pass the separate structural audit. Earlier runs excluded from final totals.",
+      "evidence": "out/evidence/input-domain-audit.json"
+    },
+    {
+      "issue": "Unavailable default build temporary directory / CGO temporary path",
+      "resolution": "TMPDIR/GOTMPDIR/GOCACHE and Java temp path set inside workspace; pure-Go adapter uses CGO_ENABLED=0.",
+      "evidence": [
+        "out/evidence/go-development.log",
+        "out/evidence/go-development-2.log"
+      ]
+    }
+  ],
+  "integrity": {
+    "changed_original_files": [],
+    "missing_original_files": [],
+    "added_files": [
+      "new/source/action_validation_test.go"
+    ],
+    "repair_only_three_behavioral_spans": true,
+    "other_repaired_file_differences": [],
+    "invariant_bodies_unchanged": true
+  },
+  "input_domain_audit": {
+    "checked": 148,
+    "valid": 148,
+    "errors": []
+  },
+  "verification": {
+    "evidence_audit": {
+      "checks": [
+        {
+          "run": "baseline-code",
+          "cases": 105,
+          "result_envelopes": 210,
+          "comparison_revalidated": true,
+          "original_model_copy_verified": true
+        },
+        {
+          "run": "baseline-model",
+          "cases": 43,
+          "result_envelopes": 86,
+          "comparison_revalidated": true,
+          "original_model_copy_verified": true
+        },
+        {
+          "run": "repaired-code",
+          "cases": 105,
+          "result_envelopes": 210,
+          "comparison_revalidated": true,
+          "original_model_copy_verified": true
+        },
+        {
+          "run": "repaired-model",
+          "cases": 43,
+          "result_envelopes": 86,
+          "comparison_revalidated": true,
+          "original_model_copy_verified": true
+        }
+      ],
+      "duration_seconds": 0.4307539388537407
+    },
+    "runner_tests": {
+      "command": [
+        "python3",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "out/framework",
+        "-p",
+        "test_runner.py",
+        "-v"
+      ],
+      "log": "out/evidence/runner-tests.log",
+      "passed": 8
+    },
+    "input_audit": {
+      "command": [
+        "python3",
+        "out/framework/targets/etcd/audit_inputs.py",
+        "out/cases/code-inputs.json",
+        "out/cases/baseline-model/generated-cases.json"
+      ],
+      "evidence": "out/evidence/input-domain-audit.json"
+    }
+  },
+  "commands": [
+    {
+      "command": [
+        "timeout",
+        "90s",
+        "/usr/local/go/bin/go",
+        "test",
+        "-run",
+        "^TestActionValidation$",
+        "-count=1",
+        "-v",
+        "."
+      ],
+      "cwd": "/workspace/new/source",
+      "env": {
+        "GOMAXPROCS": "2",
+        "GOTMPDIR": "/workspace/out/tmp",
+        "TMPDIR": "/workspace/out/tmp",
+        "GOCACHE": "/workspace/out/go-cache",
+        "GOPROXY": "off",
+        "CGO_ENABLED": "0",
+        "AV_INPUT": "/workspace/out/cases/code-inputs.json",
+        "AV_OUTPUT": "/workspace/out/cases/baseline-code/implementation.jsonl"
+      },
+      "duration_seconds": 0.3147015906870365,
+      "exit_code": 0,
+      "run": "baseline-code",
+      "engine": "implementation",
+      "outer_timeout_seconds": 90
+    },
+    {
+      "command": [
+        "/usr/bin/java",
+        "-XX:+UseParallelGC",
+        "-Xmx2G",
+        "-Djava.io.tmpdir=/workspace/out/tmp",
+        "-cp",
+        "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+        "tlc2.TLC",
+        "-workers",
+        "1",
+        "-metadir",
+        "/workspace/out/cases/baseline-code/model/raw/states",
+        "-config",
+        "LocalActions.cfg",
+        "LocalActions"
+      ],
+      "cwd": "/workspace/out/cases/baseline-code/model/raw",
+      "duration_seconds": 1.3168293125927448,
+      "exit_code": 0,
+      "run": "baseline-code",
+      "engine": "model",
+      "tlc_states": {
+        "generated": 232,
+        "distinct": 186
+      },
+      "workers": 1,
+      "heap_gb": 2,
+      "outer_timeout_seconds": 175
+    },
+    {
+      "command": [
+        "/usr/bin/java",
+        "-XX:+UseParallelGC",
+        "-Xmx2G",
+        "-Djava.io.tmpdir=/workspace/out/tmp",
+        "-cp",
+        "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+        "tlc2.TLC",
+        "-workers",
+        "1",
+        "-metadir",
+        "/workspace/out/cases/baseline-code/model/node/states",
+        "-config",
+        "LocalActions.cfg",
+        "LocalActions"
+      ],
+      "cwd": "/workspace/out/cases/baseline-code/model/node",
+      "duration_seconds": 1.1165119055658579,
+      "exit_code": 0,
+      "run": "baseline-code",
+      "engine": "model",
+      "tlc_states": {
+        "generated": 70,
+        "distinct": 24
+      },
+      "workers": 1,
+      "heap_gb": 2,
+      "outer_timeout_seconds": 175
+    },
+    {
+      "command": [
+        "timeout",
+        "90s",
+        "/usr/local/go/bin/go",
+        "test",
+        "-run",
+        "^TestActionValidation$",
+        "-count=1",
+        "-v",
+        "."
+      ],
+      "cwd": "/workspace/new/source",
+      "env": {
+        "GOMAXPROCS": "2",
+        "GOTMPDIR": "/workspace/out/tmp",
+        "TMPDIR": "/workspace/out/tmp",
+        "GOCACHE": "/workspace/out/go-cache",
+        "GOPROXY": "off",
+        "CGO_ENABLED": "0",
+        "AV_INPUT": "/workspace/out/cases/baseline-model/generated-cases.json",
+        "AV_OUTPUT": "/workspace/out/cases/baseline-model/implementation.jsonl"
+      },
+      "duration_seconds": 0.26458006724715233,
+      "exit_code": 0,
+      "run": "baseline-model",
+      "engine": "implementation",
+      "outer_timeout_seconds": 90
+    },
+    {
+      "command": [
+        "/usr/bin/java",
+        "-XX:+UseParallelGC",
+        "-Xmx2G",
+        "-Djava.io.tmpdir=/workspace/out/tmp",
+        "-cp",
+        "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+        "tlc2.TLC",
+        "-workers",
+        "1",
+        "-metadir",
+        "/workspace/out/cases/baseline-model/model/raw/states",
+        "-config",
+        "LocalActions.cfg",
+        "LocalActions"
+      ],
+      "cwd": "/workspace/out/cases/baseline-model/model/raw",
+      "duration_seconds": 1.06656005512923,
+      "exit_code": 0,
+      "run": "baseline-model",
+      "engine": "model",
+      "tlc_states": {
+        "generated": 93,
+        "distinct": 76
+      },
+      "workers": 1,
+      "heap_gb": 2,
+      "outer_timeout_seconds": 175
+    },
+    {
+      "command": [
+        "/usr/bin/java",
+        "-XX:+UseParallelGC",
+        "-Xmx2G",
+        "-Djava.io.tmpdir=/workspace/out/tmp",
+        "-cp",
+        "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+        "tlc2.TLC",
+        "-workers",
+        "1",
+        "-metadir",
+        "/workspace/out/cases/baseline-model/model/node/states",
+        "-config",
+        "LocalActions.cfg",
+        "LocalActions"
+      ],
+      "cwd": "/workspace/out/cases/baseline-model/model/node",
+      "duration_seconds": 1.0662896763533354,
+      "exit_code": 0,
+      "run": "baseline-model",
+      "engine": "model",
+      "tlc_states": {
+        "generated": 27,
+        "distinct": 10
+      },
+      "workers": 1,
+      "heap_gb": 2,
+      "outer_timeout_seconds": 175
+    },
+    {
+      "command": [
+        "timeout",
+        "90s",
+        "/usr/local/go/bin/go",
+        "test",
+        "-run",
+        "^TestActionValidation$",
+        "-count=1",
+        "-v",
+        "."
+      ],
+      "cwd": "/workspace/new/source",
+      "env": {
+        "GOMAXPROCS": "2",
+        "GOTMPDIR": "/workspace/out/tmp",
+        "TMPDIR": "/workspace/out/tmp",
+        "GOCACHE": "/workspace/out/go-cache",
+        "GOPROXY": "off",
+        "CGO_ENABLED": "0",
+        "AV_INPUT": "/workspace/out/cases/code-inputs.json",
+        "AV_OUTPUT": "/workspace/out/cases/repaired-code/implementation.jsonl"
+      },
+      "duration_seconds": 0.26469219382852316,
+      "exit_code": 0,
+      "run": "repaired-code",
+      "engine": "implementation",
+      "outer_timeout_seconds": 90
+    },
+    {
+      "command": [
+        "/usr/bin/java",
+        "-XX:+UseParallelGC",
+        "-Xmx2G",
+        "-Djava.io.tmpdir=/workspace/out/tmp",
+        "-cp",
+        "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+        "tlc2.TLC",
+        "-workers",
+        "1",
+        "-metadir",
+        "/workspace/out/cases/repaired-code/model/raw/states",
+        "-config",
+        "LocalActions.cfg",
+        "LocalActions"
+      ],
+      "cwd": "/workspace/out/cases/repaired-code/model/raw",
+      "duration_seconds": 1.3169809086248279,
+      "exit_code": 0,
+      "run": "repaired-code",
+      "engine": "model",
+      "tlc_states": {
+        "generated": 232,
+        "distinct": 186
+      },
+      "workers": 1,
+      "heap_gb": 2,
+      "outer_timeout_seconds": 175
+    },
+    {
+      "command": [
+        "/usr/bin/java",
+        "-XX:+UseParallelGC",
+        "-Xmx2G",
+        "-Djava.io.tmpdir=/workspace/out/tmp",
+        "-cp",
+        "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+        "tlc2.TLC",
+        "-workers",
+        "1",
+        "-metadir",
+        "/workspace/out/cases/repaired-code/model/node/states",
+        "-config",
+        "LocalActions.cfg",
+        "LocalActions"
+      ],
+      "cwd": "/workspace/out/cases/repaired-code/model/node",
+      "duration_seconds": 1.0664476044476032,
+      "exit_code": 0,
+      "run": "repaired-code",
+      "engine": "model",
+      "tlc_states": {
+        "generated": 70,
+        "distinct": 24
+      },
+      "workers": 1,
+      "heap_gb": 2,
+      "outer_timeout_seconds": 175
+    },
+    {
+      "command": [
+        "timeout",
+        "90s",
+        "/usr/local/go/bin/go",
+        "test",
+        "-run",
+        "^TestActionValidation$",
+        "-count=1",
+        "-v",
+        "."
+      ],
+      "cwd": "/workspace/new/source",
+      "env": {
+        "GOMAXPROCS": "2",
+        "GOTMPDIR": "/workspace/out/tmp",
+        "TMPDIR": "/workspace/out/tmp",
+        "GOCACHE": "/workspace/out/go-cache",
+        "GOPROXY": "off",
+        "CGO_ENABLED": "0",
+        "AV_INPUT": "/workspace/out/cases/repaired-model/generated-cases.json",
+        "AV_OUTPUT": "/workspace/out/cases/repaired-model/implementation.jsonl"
+      },
+      "duration_seconds": 0.26455852948129177,
+      "exit_code": 0,
+      "run": "repaired-model",
+      "engine": "implementation",
+      "outer_timeout_seconds": 90
+    },
+    {
+      "command": [
+        "/usr/bin/java",
+        "-XX:+UseParallelGC",
+        "-Xmx2G",
+        "-Djava.io.tmpdir=/workspace/out/tmp",
+        "-cp",
+        "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+        "tlc2.TLC",
+        "-workers",
+        "1",
+        "-metadir",
+        "/workspace/out/cases/repaired-model/model/raw/states",
+        "-config",
+        "LocalActions.cfg",
+        "LocalActions"
+      ],
+      "cwd": "/workspace/out/cases/repaired-model/model/raw",
+      "duration_seconds": 1.066180119290948,
+      "exit_code": 0,
+      "run": "repaired-model",
+      "engine": "model",
+      "tlc_states": {
+        "generated": 93,
+        "distinct": 76
+      },
+      "workers": 1,
+      "heap_gb": 2,
+      "outer_timeout_seconds": 175
+    },
+    {
+      "command": [
+        "/usr/bin/java",
+        "-XX:+UseParallelGC",
+        "-Xmx2G",
+        "-Djava.io.tmpdir=/workspace/out/tmp",
+        "-cp",
+        "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+        "tlc2.TLC",
+        "-workers",
+        "1",
+        "-metadir",
+        "/workspace/out/cases/repaired-model/model/node/states",
+        "-config",
+        "LocalActions.cfg",
+        "LocalActions"
+      ],
+      "cwd": "/workspace/out/cases/repaired-model/model/node",
+      "duration_seconds": 1.0161886252462864,
+      "exit_code": 0,
+      "run": "repaired-model",
+      "engine": "model",
+      "tlc_states": {
+        "generated": 27,
+        "distinct": 10
+      },
+      "workers": 1,
+      "heap_gb": 2,
+      "outer_timeout_seconds": 175
+    }
+  ],
+  "durations": {
+    "final_recorded_execution_seconds": 10.140520588494837,
+    "max_tlc_invocation_seconds": 1.3169809086248279,
+    "note": "Measured subprocess wall time, excludes implementation/analysis and diagnostic development attempts. Earlier attempt commands/durations are in their preserved work directories where recorded."
+  },
+  "limitations": [
+    "Locally injected structurally valid states; no reachability proof from protocol Init, no full protocol checking.",
+    "Shared domains and projections permit correlated mistakes; the TLC-generated route is not an independent oracle.",
+    "Node ownership tests call the exact real helpers, but omit channel/select scheduling and proposal-channel gating.",
+    "No old-version execution adapter; saved legacy cases require API mapping before replay there.",
+    "Ghost histories/durability observers, arbitrary payload/context bytes, remote/lease reads, disk I/O failures, bootstrap/status APIs and end-to-end restart/application schedules are outside the declared projection.",
+    "No invariants were edited or checked as safety properties; listed invariant issues require later review."
+  ],
+  "next_actions": [
+    "Add real Node channel lifecycle schedules and application-to-Advance sequences.",
+    "Obtain reachable cluster traces for the distinguishing cases before interpreting them as distributed counterexamples.",
+    "Extend byte-preserving context/remote-read and snapshot/restart replay mappings.",
+    "Review the three invariant issues separately, then decide bounds for a later protocol model-checking campaign.",
+    "Generate an old-version implementation/model adapter to replay the compatible saved cases."
+  ]
+}

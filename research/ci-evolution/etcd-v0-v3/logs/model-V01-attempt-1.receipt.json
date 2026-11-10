@@ -1,0 +1,12 @@
+{
+  "packet": "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/agent-runs/model-V01",
+  "model": "gpt-6-astra",
+  "effort": "xhigh",
+  "started_at": "2026-09-22T17:38:46.507760+00:00",
+  "status": "finished",
+  "log": "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/logs/model-V01-attempt-1.jsonl",
+  "pid": 1186971,
+  "exit_code": -15,
+  "seconds": 85.79296264611185,
+  "usage": []
+}

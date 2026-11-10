@@ -1,0 +1,13 @@
+{
+  "java": "OpenJDK 21.0.11",
+  "classpath": "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+  "workers_per_tlc_run": 1,
+  "focused_heap_gib": 4,
+  "ordinary_heap_gib": 6,
+  "max_outer_timeout_seconds": 600,
+  "progress_interval_property": "-Dtlc2.TLC.progressInterval=10",
+  "coverage_enabled": false,
+  "syntax_evidence": "out/runs/preflight-final-sany.log",
+  "initial_sany_issue": "Initial standalone call had wrong module cwd; preserved in out/runs/preflight-sany.log; final SANY and every accepted TLC run parsed correctly",
+  "network_for_go": "GOPROXY=off GOSUMDB=off GOTOOLCHAIN=local"
+}

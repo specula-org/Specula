@@ -1,0 +1,92 @@
+[
+  {
+    "id": "joint-union-majority",
+    "kind": "semantic-witness",
+    "source": "Native old flat union projection; full joint state unrepresentable in V00"
+  },
+  {
+    "id": "joint-both-majorities",
+    "kind": "allowed-control",
+    "source": "Both joint voter halves acknowledge"
+  },
+  {
+    "id": "nonvoter-contribution",
+    "kind": "mutation-negative",
+    "source": "Deliberately fabricated nonvoter match; not an implementation bug"
+  },
+  {
+    "id": "leave-id-zero-wrong-predecessor",
+    "kind": "semantic-witness",
+    "source": "Constructed commit event from ConfigOf on explicit bootstrap/joint/leave log"
+  },
+  {
+    "id": "leave-joint-predecessor",
+    "kind": "allowed-control",
+    "source": "Predecessor is complete joint configuration"
+  },
+  {
+    "id": "actual-bootstrap-exemption",
+    "kind": "allowed-control",
+    "source": "Exact BootLog positions are constructor anchors"
+  },
+  {
+    "id": "joint-self-quorum-False",
+    "kind": "semantic-witness",
+    "source": "replay-V01-observed-05/joint-self-quorum-False"
+  },
+  {
+    "id": "joint-self-quorum-True",
+    "kind": "semantic-witness",
+    "source": "replay-V01-observed-05/joint-self-quorum-True"
+  },
+  {
+    "id": "pending-v2-retained-obligation-False",
+    "kind": "retained-negative",
+    "source": "replay-V01-observed-05/pending-v2-retained-obligation-False"
+  },
+  {
+    "id": "pending-v2-retained-obligation-True",
+    "kind": "retained-negative",
+    "source": "replay-V01-observed-05/pending-v2-retained-obligation-True"
+  },
+  {
+    "id": "valid-auto-append",
+    "kind": "semantic-witness",
+    "source": "replay-V01-observed-05/v03-advance-raw-cross-0"
+  },
+  {
+    "id": "prefix-only-is-too-weak",
+    "kind": "mutation-negative",
+    "source": "Append unrelated normal entry to valid actual Advance observation"
+  },
+  {
+    "id": "empty-v2-is-not-necessarily-leave",
+    "kind": "mutation-negative",
+    "source": "Change automatic leave Transition only"
+  },
+  {
+    "id": "captured-cursor-retained",
+    "kind": "mutation-negative",
+    "source": "Violate unchanged exact applied cursor obligation"
+  },
+  {
+    "id": "newer-snapshot-retained",
+    "kind": "mutation-negative",
+    "source": "Deliberately remove newer pending snapshot"
+  },
+  {
+    "id": "outstanding-leave-not-duplicated",
+    "kind": "semantic-witness",
+    "source": "replay-V01-observed-05/auto-outstanding-leave"
+  },
+  {
+    "id": "positive-cursor-observer",
+    "kind": "observer-witness",
+    "source": "replay-V01-observed-05/v03-advance-raw-zero-cursor-0"
+  },
+  {
+    "id": "successful-leave-may-update-pending",
+    "kind": "allowed-control",
+    "source": "Nearby corrected pending cursor on the real valid-auto-append observation; not an implementation bug"
+  }
+]

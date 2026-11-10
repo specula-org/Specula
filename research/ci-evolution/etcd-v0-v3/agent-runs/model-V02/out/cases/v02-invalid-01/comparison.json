@@ -1,0 +1,103 @@
+{
+  "protocol": "action-validation/v1",
+  "route": "code-to-model",
+  "spec": "out/repaired-spec",
+  "counts": {
+    "adapter_error": 6
+  },
+  "total": 6,
+  "commands": [
+    {
+      "engine": "implementation",
+      "command": [
+        "python3",
+        "out/framework/adapters/go/run.py",
+        "--input",
+        "/workspace/out/cases/invalid-inputs.json",
+        "--output",
+        "/workspace/out/cases/v02-invalid-01/implementation.jsonl",
+        "--work",
+        "/workspace/out/cases/v02-invalid-01/implementation"
+      ],
+      "duration_seconds": 1.0664796065539122,
+      "exit_code": 0
+    },
+    {
+      "engine": "model",
+      "command": [
+        "python3",
+        "out/framework/adapters/tla/run.py",
+        "--input",
+        "/workspace/out/cases/invalid-inputs.json",
+        "--output",
+        "/workspace/out/cases/v02-invalid-01/model.jsonl",
+        "--spec",
+        "/workspace/out/repaired-spec",
+        "--work",
+        "/workspace/out/cases/v02-invalid-01/model"
+      ],
+      "duration_seconds": 1.0664142929017544,
+      "exit_code": 1
+    }
+  ],
+  "results": [
+    {
+      "id": "invalid-restore-overlap",
+      "action": "restore",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "invalid-restore-staged-without-joint",
+      "action": "restore",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "invalid-restore-empty-incoming",
+      "action": "restore",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "invalid-restart-overlap",
+      "action": "restart",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "invalid-restart-staged-without-joint",
+      "action": "restart",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "invalid-restart-empty-incoming",
+      "action": "restart",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    }
+  ],
+  "extra_results": {
+    "implementation": [],
+    "model": []
+  }
+}

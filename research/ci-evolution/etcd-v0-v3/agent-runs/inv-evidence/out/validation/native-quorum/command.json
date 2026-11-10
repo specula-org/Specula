@@ -1,0 +1,17 @@
+{
+  "command": [
+    "java",
+    "-Xmx2G",
+    "-cp",
+    "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+    "tlc2.TLC",
+    "-workers",
+    "1",
+    "-config",
+    "NativeQuorum.cfg",
+    "NativeQuorum"
+  ],
+  "cwd": "/workspace/out/validation/native-quorum",
+  "seconds": 2.6205911859869957,
+  "exit_code": 0
+}

@@ -1,0 +1,1404 @@
+{
+  "assessment_phase": "fresh independent first judgment; static inspection only",
+  "overall_decision": "targeted_maintenance_required",
+  "reason": "Retain consensus, configuration provenance, joint recovery and quorum safety. Change learner-vote and RawNode Ready ownership contracts; migrate ConfState observations; repair specific old observers/oracles and add missing decision, output-preservation and source-boundary checks. Current source still has suspected defects, so successful property maintenance is not a correctness verdict.",
+  "scope": {
+    "inputs": [
+      "old/source",
+      "new/source",
+      "update.patch",
+      "old/spec"
+    ],
+    "tests_executed": false,
+    "tlc_executed": false,
+    "source_or_spec_modified": false,
+    "external_sources_or_agents_used": false,
+    "validation_status": "All witnesses are proposed, not executed. Verdicts describe predicate discrimination or static source expectations, not observed test results."
+  },
+  "interpretation": {
+    "classification": "semantic_requirement_change = documented behavioral contract change; representation_migration = same meaning through changed fields/events; pre_existing_property_repair = incorrect old oracle/observer; unchanged_requirement_coverage_gap = required contract not adequately observed by old suite; unchanged_requirement = retain.",
+    "witnesses": "For keep decisions old and proposed predicates are identical, so an honest disagreeing valuation does not exist. Their concrete bad states are anti-weakening controls. For additions, old_property_or_suite explains an existing-suite blind spot, not a nonexistent old formula.",
+    "no_removals": "No whole old correctness property is removed. Only obsolete conjuncts/branches are replaced. Reachability canaries remain separate from invariants.",
+    "predicate_format": "Existing named predicates are retained by reference. New expressions are exact TLA fragments or precise source-transition predicates; they are proposals, not edits to spec."
+  },
+  "entries": [
+    {
+      "name": "VoteDecisionEligibility",
+      "decision": "modify",
+      "classification": "semantic_requirement_change",
+      "semantic_or_representation_change": "semantic",
+      "evidence": [
+        "old/spec/base.tla:630-655 (VoteObservation and exact VoteContract)",
+        "old/source/raft_test.go:381 (TestLearnerCannotVote)",
+        "new/source/raft.go:924-971 (promotion-lag rationale and shared Vote/PreVote branch)",
+        "new/source/raft_test.go:381-396 (TestLearnerCanVote; assertion defect recorded separately)"
+      ],
+      "proposed_expression_or_predicate": "Retain VoteContract definitions lease, stale, reset, t, v, lead, fresh, can. Set grant = ~lease /\\ ~stale /\\ fresh /\\ can; silence = lease \\/ (stale /\\ m.type=\"MsgVote\"). Keep exact expected response type, term, recipient, reject flag and count=1, afterTerm=t, and afterVote=(IF grant /\\ m.type=\"MsgVote\" THEN m.from ELSE v). No voter-membership test on the receiver or candidate is introduced.",
+      "witness": {
+        "kind": "disagreement",
+        "state_or_transition": "Node 2 locally has voters={1}, learners={2}, term=1, vote=0, lead=0, lastTerm<=11, lastIndex<=11. Receive MsgVote(from=1,to=2,term=2,logTerm=11,index=11), with no lease suppression. Post: term=2, vote=1, exactly one MsgVoteResp(to=1,term=2,reject=false).",
+        "old_property_or_suite": "False: old VoteContract requires learner silence.",
+        "proposed_property": "True. Conversely, silence for this eligible request passes the old decision contract and fails the proposed one.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "The documented requirement now permits and requires eligible locally classified learners to respond, including PreVote. Vote freshness, one vote per term, leases and future-PreVote term behavior remain required.",
+      "observer_or_model_work": "Remove only the learner early return in the NEW reference StepVote. Keep the old model for comparison. Keep learner in VoteObservation as diagnostic evidence; do not suppress its observation."
+    },
+    {
+      "name": "LearnerEligibility",
+      "decision": "modify",
+      "classification": "semantic_requirement_change",
+      "semantic_or_representation_change": "semantic",
+      "evidence": [
+        "old/spec/base.tla:1289-1290 (grant and campaign conjuncts)",
+        "new/source/raft.go:933-948; new/source/raft.go:1456-1460",
+        "new/source/raft_test.go:311-326; new/source/raft_test.go:3921-3950"
+      ],
+      "proposed_expression_or_predicate": "\\A x \\in history.campaigns : ~x.learner. Delete only the blanket no-learner-grants conjunct. Retain VoteDecisionEligibility for grant legality and QuorumAccounting/ReadBasis for voter-only counting.",
+      "witness": {
+        "kind": "disagreement",
+        "state_or_transition": "Node 2 locally has voters={1}, learners={2}, term=1, vote=0, lead=0, lastTerm<=11, lastIndex<=11. Receive MsgVote(from=1,to=2,term=2,logTerm=11,index=11), with no lease suppression. Post: term=2, vote=1, exactly one MsgVoteResp(to=1,term=2,reject=false).",
+        "old_property_or_suite": "False: old VoteContract requires learner silence.",
+        "proposed_property": "True. Conversely, silence for this eligible request passes the old decision contract and fails the proposed one.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "A learner may vote for an up-to-date candidate but may not start Hup, timeout or transfer-triggered campaigns while locally a learner. LearnersNext are outgoing voters until leave, not active learners."
+    },
+    {
+      "name": "CampaignDecisionEligibility",
+      "decision": "modify",
+      "classification": "pre_existing_property_repair",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "old/spec/base.tla:673-692 (CampaignContract uses IsSingleton)",
+        "old/spec/base.tla:131-141; old/spec/base.tla:250-261",
+        "new/source/raft.go:770-809 (self poll under joint quorum)",
+        "new/source/tracker/tracker.go:156-159 (read fast-path IsSingleton)"
+      ],
+      "proposed_expression_or_predicate": "In CampaignContract replace its local singleton test by selfWins = JointWon(o.config,{o.node}); use selfWins in expected requests, afterRole and afterTerm. Retain ignore/due tests, freshness and multiplicity checks, and pending scan over ALL ConfKinds, including V2. Do not change the global IsSingleton used for reads.",
+      "witness": {
+        "kind": "disagreement",
+        "state_or_transition": "Eligible follower 1, applied=commit, voters={1}, outgoing={1}, learners={}, PreVote enabled. Hup yields Leader at term+1 with no external vote requests.",
+        "old_property_or_suite": "False: IsSingleton is false for a nonempty outgoing half, so old contract expects PreCandidate at the same term.",
+        "proposed_property": "True: self wins both halves.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "The source already used joint self-voting before this patch. This repairs an old oracle defect made relevant by restoring joint configurations; it is not permission to campaign over unapplied V2 entries."
+    },
+    {
+      "name": "TransferDecisionEligibility",
+      "decision": "keep",
+      "classification": "unchanged_requirement",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "old/spec/base.tla:694",
+        "new/source/raft.go:1205-1243; new/source/raft.go:1526-1528"
+      ],
+      "proposed_expression_or_predicate": "Retain TransferContract verbatim: unknown/learner/repeated target ignored, self aborts a different transfer, eligible target resets timer, TimeoutNow only when caught up.",
+      "witness": {
+        "kind": "anti_weakening_control",
+        "state_or_transition": "Leader voters={1,2}, learners={3}, transfer=0 receives a transfer request to 3 and sets transfer=3 or emits TimeoutNow.",
+        "old_property_or_suite": "Fails the stated bad control.",
+        "proposed_property": "Also fails: unchanged predicate; no old/proposed disagreement exists.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "Voting permission does not make a local learner a valid transfer target. This is an unaffected decision-time negative control."
+    },
+    {
+      "name": "RequestCorrelatedConfigurationEffects",
+      "decision": "keep",
+      "classification": "unchanged_requirement",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "old/spec/base.tla:710",
+        "new/source/raft.go:1463-1496; new/source/rawnode_test.go:235-260"
+      ],
+      "proposed_expression_or_predicate": "Retain EffectContract and ConfigAfter, including committed-entry identity, request correlation, bootstrap exceptions, and IsLeave for id=0 automatic entries.",
+      "witness": {
+        "kind": "anti_weakening_control",
+        "state_or_transition": "Committed request q adds learner 4, but applying its entry adds voter 4; alternatively cancel the API after handoff and incorrectly suppress the committed effect.",
+        "old_property_or_suite": "Fails the stated bad control.",
+        "proposed_property": "Also fails: unchanged predicate; no old/proposed disagreement exists.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "switchToConfig factors implementation without changing application semantics. ConfigAfter already preserves both joint halves, staging and AutoLeave."
+    },
+    {
+      "name": "ProposalConfigurationDecisions",
+      "decision": "keep",
+      "classification": "unchanged_requirement",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "old/spec/base.tla:728",
+        "new/source/node.go:135-147; new/source/raft.go:1013-1056"
+      ],
+      "proposed_expression_or_predicate": "Retain ProposalContract verbatim, including pending-conf rewriting for both legacy and V2 entries, content/request correspondence, admission and forwarding decisions.",
+      "witness": {
+        "kind": "anti_weakening_control",
+        "state_or_transition": "pendingConf=8, applied=7: admit a second V2 entry unchanged instead of rewriting it to a Normal no-op.",
+        "old_property_or_suite": "Fails the stated bad control.",
+        "proposed_property": "Also fails: unchanged predicate; no old/proposed disagreement exists.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "The patch changes neither single-pending configuration admission nor proposal correlation. Do not regenerate these properties because output field names changed."
+    },
+    {
+      "name": "ReadyOwnership",
+      "decision": "modify",
+      "classification": "semantic_requirement_change",
+      "semantic_or_representation_change": "semantic",
+      "evidence": [
+        "old/spec/base.tla:955-983; old/spec/base.tla:1321-1326",
+        "old/source/rawnode.go:122-158,183-191",
+        "new/source/rawnode.go:119-145,170-176",
+        "new/source/node.go:306-319,385-391; new/source/rawnode_test.go:928-960"
+      ],
+      "proposed_expression_or_predicate": "At EVERY accepted Ready (RawNode.Ready return or Node channel handoff): quotaAfter=quotaBefore, returnedMessages=outBefore, returnedReads=readsBefore, outAfter=EmptyBag, readsAfter=<<>>; prevSoftAfter equals returned SoftState when present, otherwise prevSoftBefore. Ready acceptance leaves prevHardState, log stability and applied cursor unchanged. Remove the old raw/nonraw difference. A preview is not acceptance.",
+      "witness": {
+        "kind": "disagreement",
+        "state_or_transition": "RawNode has out={m1}, readStates=<<r1>>, quota=q and a new SoftState. RawNode.Ready returns those values and leaves out={}, readStates=<<>>, prevSoftSt equal to the returned SoftState, quota=q.",
+        "old_property_or_suite": "False: the old raw branch requires out and readStates to remain pending.",
+        "proposed_property": "True; leaving m1/r1 in the core after delivery is now a failure.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "RawNode.Ready now accepts ownership immediately and its result must be handled and advanced. Node speculative preparation must remain read-only.",
+      "observer_or_model_work": "Extend readyChecks with the returned batch and before/after soft/hard/cursor fields. New ProtocolReady must accept for both wrappers. Move RawNode acceptance out of AdvanceCore; keep one outstanding accepted batch and caller persistence/publication obligations."
+    },
+    {
+      "name": "ReadyAccounting",
+      "decision": "modify",
+      "classification": "representation_migration",
+      "semantic_or_representation_change": "representation",
+      "evidence": [
+        "old/spec/base.tla:1096-1113 (lostReads observer)",
+        "old/spec/base.tla:1313-1320 (predicate)",
+        "new/source/rawnode.go:138-145,170-176"
+      ],
+      "proposed_expression_or_predicate": "Keep the ReadyAccounting invariant expression (history.lostReads={} and existing pagination/cursor checks). Repair the Advance observer: detect actual removals from pre-Advance pending readStates to post-Advance pending readStates on EVERY Advance, independent of b.raw and whether b.reads was empty. Retain sequence/multiplicity evidence for exact preservation; pending reads not in the old batch are not lost merely because they have not yet been handed to the caller.",
+      "witness": {
+        "kind": "disagreement",
+        "state_or_transition": "Ready B delivered r1; while B is outstanding, r2 is produced. Advance(B) preserves pending readStates=<<r2>>, and application.reads contains r1 only.",
+        "old_property_or_suite": "False under the old observer: b.reads is nonempty and r2 is absent from application.reads, so it records r2 as lost even when preserved.",
+        "proposed_property": "True. Conversely, B.reads=<<>> followed by r2 production and erroneous clearing at Advance is missed by the old guard but rejected by the repaired observer.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "The no-lost-reads and page-boundary requirements are unchanged. This is a pre-existing observer defect exposed by the new legal interleavings, not a weaker read contract.",
+      "observer_or_model_work": "Compute loss from actual pre/post output evidence, not from membership in the application queue. The separate AdvancePreservesPendingOutput property also checks exact sequence equality and messages."
+    },
+    {
+      "name": "AdvancePreservesPendingOutput",
+      "decision": "add",
+      "classification": "unchanged_requirement_coverage_gap",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "new/source/rawnode_test.go:928-960 (m1/Ready/m2/Advance witness)",
+        "new/source/rawnode.go:170-176; new/source/raft.go:556-593",
+        "old/spec/base.tla:1078-1095; old/spec/base.tla:1307-1326"
+      ],
+      "proposed_expression_or_predicate": "For each successful Advance of the outstanding accepted batch, outAfter=outBeforeAdvance, readStatesAfter=readStatesBeforeAdvance, and prevSoftAfter=prevSoftBeforeAdvance. prevHardAfter is the batch HardState if nonempty, otherwise unchanged. Acknowledgement may stabilize only batch entries/snapshot and advance only its applied cursor; later pending work must be available to a subsequent Ready.",
+      "witness": {
+        "kind": "disagreement",
+        "state_or_transition": "Ready B owns message m1. Receive a heartbeat while B is outstanding, producing distinct m2. Advance(B) incorrectly empties the message buffer.",
+        "old_property_or_suite": "Old AckPreservation checks log/snapshot/applied state, ReadyAccounting checks reads, and ReadyOwnership checks only Ready; none detects this message loss.",
+        "proposed_property": "False: m2 must survive. New source TestRawNodeConsumeReady specifies this behavior.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "A direct gap remains even after fixing ReadyOwnership: a mutant can accept Ready correctly but still clear newer messages at Advance. Old RawNode documentation excluded Step interleavings; the new API/test expressly supports preserving this work."
+    },
+    {
+      "name": "ReadyPreviewIsReadOnly",
+      "decision": "add",
+      "classification": "representation_migration",
+      "semantic_or_representation_change": "representation",
+      "evidence": [
+        "new/source/rawnode.go:129-137; new/source/node.go:306-319,337-386",
+        "new/source/rawnode_test.go:928-946; old/spec/base.tla:965-983"
+      ],
+      "proposed_expression_or_predicate": "Calling readyWithoutAccept returns the current Ready projection without changing any core state, previous soft/hard state, quotas, pending messages or reads, and without creating an accepted application batch. Node transfers ownership only at the successful readyc send and accepts exactly that sent batch.",
+      "witness": {
+        "kind": "disagreement",
+        "state_or_transition": "Node previews {m1}, but select handles an incoming message producing m2 before a Ready consumer receives anything. The next preview and handoff must contain m1 and m2. A buggy preview that clears m1 violates the predicate.",
+        "old_property_or_suite": "The old suite observes only ProtocolReady handoffs, so no predicate sees the unconsumed preview loss.",
+        "proposed_property": "False for clearing; true for the read-only preview.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "The existing read-only preview role moves to an explicit internal API while public Ready changes semantics. Add a distinct preview observation rather than treating speculative preparation as an accepted batch; preview purity itself remains required.",
+      "observer_or_model_work": "Add preview/handoff observations or a focused source witness. An atomic handoff-only model cannot establish preview purity."
+    },
+    {
+      "name": "AckPreservation",
+      "decision": "keep",
+      "classification": "unchanged_requirement",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "old/spec/base.tla:1307",
+        "new/source/raft.go:556-593; new/source/rawnode.go:170-176"
+      ],
+      "proposed_expression_or_predicate": "Retain the existing prefix/optional leave-entry, newer-snapshot preservation, and acknowledged-cursor equality clauses.",
+      "witness": {
+        "kind": "anti_weakening_control",
+        "state_or_transition": "Batch B acknowledges snapshot 10; a newer unstable snapshot 12 arrives before Advance(B), which incorrectly clears snapshot 12.",
+        "old_property_or_suite": "Fails the stated bad control.",
+        "proposed_property": "Also fails: unchanged predicate; no old/proposed disagreement exists.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "Advance ownership changed but acknowledgement still must preserve newer log and snapshot work. This property does not cover pending messages."
+    },
+    {
+      "name": "AutoLeaveAdvance",
+      "decision": "modify",
+      "classification": "pre_existing_property_repair",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "old/spec/base.tla:1078-1109,1327-1333",
+        "new/source/raft.go:556-583 (unchanged index>0 outer guard)",
+        "new/source/tracker/tracker.go:29-33"
+      ],
+      "proposed_expression_or_predicate": "Retain AutoLeaveAdvance effect predicate. Repair eligible observation to include b.cursor>0 in addition to pre-Advance autoLeave, cursor>=pendingConf and Leader; check normal/nonfatal Advance states. Do not infer eligibility from successful append. Eligible attempts still must append a leave or record the quota retry cursor.",
+      "witness": {
+        "kind": "disagreement",
+        "state_or_transition": "Construct a local Advance fixture: Leader with valid joint config, AutoLeave=true, pendingConf=0, Ready cursor=0 and no entries/snapshot, enough quota. No append occurs.",
+        "old_property_or_suite": "False: old observer sets eligible=true although AdvanceCore and source explicitly skip cursor zero.",
+        "proposed_property": "True: ineligible. For cursor=5, pendingConf=5 and enough quota, a no-append transition remains false.",
+        "validation_scope": "local function fixture; reachability from bounded MCInit is unresolved"
+      },
+      "reason": "This is a pre-existing mismatch between observer and unchanged source guard. Full preservation of AutoLeave during restore is already required; do not weaken positive-cursor obligations."
+    },
+    {
+      "name": "AutoLeaveAttemptExactness",
+      "decision": "add",
+      "classification": "unchanged_requirement_coverage_gap",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "new/source/raft.go:561-585; new/source/raftpb/confchange.go:98-104",
+        "old/spec/base.tla:77-82,184-190,1328-1333"
+      ],
+      "proposed_expression_or_predicate": "For an eligible normal Advance, compute quotaBlocked from PRE-attempt quota>0 and quota+AutoLeaveWeight>MaxUncommitted. If blocked, history is unchanged and pendingConf becomes pre-attempt Last. Otherwise append exactly one fresh entry at Last+1 in current term with kind=V2, changes=<<>>, transition=Auto, id=0 and canonical serialized payload; preserve the old prefix. Ineligible Advance appends no automatic leave. Apply the existing committed-entry quota reduction after the attempt. Do not require zero payload weight.",
+      "witness": {
+        "kind": "disagreement",
+        "state_or_transition": "Eligible Advance with sufficient quota appends V2(changes=<<>>,transition=JointExplicit) at Last+1; or appends nothing while a stale decision=DropQuota and pending=Last remain from an earlier call.",
+        "old_property_or_suite": "AutoLeaveAdvance accepts the first because it checks only kind and empty changes, and can accept the second via stale decision.",
+        "proposed_property": "False in both cases; the entry must satisfy IsLeave, or a quota refusal must be justified by this attempt.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "The old property remains useful but cannot establish a genuine leave or a genuine quota refusal. The canonical empty V2 is nonzero-sized in this revision. Repeated successful automatic exits and eventual exit remain separately flagged."
+    },
+    {
+      "name": "JointSnapshotRecovery",
+      "decision": "keep",
+      "classification": "unchanged_requirement",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "old/spec/base.tla:312-324,1222-1250,1343-1349",
+        "new/source/confchange/restore.go:112-155; new/source/confchange/restore_test.go:85-142",
+        "new/source/raft.go:360-367,1433-1446"
+      ],
+      "proposed_expression_or_predicate": "Retain both conjuncts: every recorded restart whose expectedConfig.outgoing is nonempty has config=expectedConfig; every live node whose ConfigOf(cfgHist) is joint has config=ConfigOf(cfgHist). Equality includes voters, outgoing, learners, learnersNext and autoLeave.",
+      "witness": {
+        "kind": "anti_weakening_control",
+        "state_or_transition": "A valid persisted snapshot at index 11 has voters={1,2}, outgoing={1,2,3}, learners={4}, learnersNext={3}, autoLeave=true. Restart or full install drops outgoing, learnersNext and autoLeave.",
+        "old_property_or_suite": "False under existing JointSnapshotRecovery and ConfigurationOrigin.",
+        "proposed_property": "Also false: predicates stay unchanged. Preserving all five fields satisfies both.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "The patch repairs loss of joint state that the OLD property already rejects. Do not project expected configuration to incoming voters or make the property conditional on what the implementation restored.",
+      "observer_or_model_work": "In the new reference implementation replace lossy RestoreProjection with full valid-ConfState reconstruction, and include outgoing-only members in progress domains. Keep full expectedConfig/cfgHist observations independent of reconstruction. Keep the incoming-only source admission guard source-faithful so a new admission property can expose it."
+    },
+    {
+      "name": "ConfigurationOrigin",
+      "decision": "keep",
+      "classification": "unchanged_requirement",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "old/spec/base.tla:1278",
+        "new/source/node.go:169-174; new/source/raft.go:360-367,1433-1446"
+      ],
+      "proposed_expression_or_predicate": "Retain equality to ConfigOf(cfgHist), log coverage of cfgHist and cfgHist length <= commit for live nodes.",
+      "witness": {
+        "kind": "anti_weakening_control",
+        "state_or_transition": "Full install restores voters correctly but converts staged learner 3 immediately to an active learner while its committed cfgHist retains 3 as an outgoing voter.",
+        "old_property_or_suite": "Fails the stated bad control.",
+        "proposed_property": "Also fails: unchanged predicate; no old/proposed disagreement exists.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "This already covers configuration equality for nonjoint and joint paths. Changing field names needs an adapter, not weaker provenance."
+    },
+    {
+      "name": "JointConfigurationShape",
+      "decision": "keep",
+      "classification": "unchanged_requirement",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "old/spec/base.tla:1335",
+        "new/source/tracker/tracker.go:26-77; new/source/confchange/confchange.go:278-330"
+      ],
+      "proposed_expression_or_predicate": "Retain EmptyConfig exception, nonempty incoming voters, learner/voter disjointness, LearnersNext subset of outgoing and disjoint from incoming/learners, and no AutoLeave/LearnersNext outside joint state.",
+      "witness": {
+        "kind": "anti_weakening_control",
+        "state_or_transition": "voters={1,2}, outgoing={1,2,3}, learners={3}, learnersNext={} incorrectly labels outgoing voter 3 as an active learner.",
+        "old_property_or_suite": "Fails the stated bad control.",
+        "proposed_property": "Also fails: unchanged predicate; no old/proposed disagreement exists.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "Full restoration must preserve the shape already required. The empty initial configuration remains permitted."
+    },
+    {
+      "name": "SnapshotBacking",
+      "decision": "keep",
+      "classification": "unchanged_requirement",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "old/spec/base.tla:1302",
+        "new/source/node.go:169-174; new/source/storage.go:188-210"
+      ],
+      "proposed_expression_or_predicate": "Retain SnapshotValid and all current unstable/durable/history snapshot checks: index=Len(hist), config=ConfigOf(hist), and term matches the indexed entry.",
+      "witness": {
+        "kind": "anti_weakening_control",
+        "state_or_transition": "Snapshot 11 represents a joint demotion but stores only incoming voters and learners, omitting outgoing/staging/AutoLeave.",
+        "old_property_or_suite": "Fails the stated bad control.",
+        "proposed_property": "Also fails: unchanged predicate; no old/proposed disagreement exists.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "This property already checks producer-side joint configuration preservation, independently of recovery."
+    },
+    {
+      "name": "SnapshotRestoreDecisionCompleteness",
+      "decision": "add",
+      "classification": "unchanged_requirement_coverage_gap",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "new/source/raft.go:1378-1453 (membership intent, incomplete scan and fast-forward branch)",
+        "new/source/tracker/tracker.go:43-77; new/source/confchange/confchange.go:238-248",
+        "old/spec/base.tla:314-324,1343-1349; new/source/raft_test.go:2712-2902"
+      ],
+      "proposed_expression_or_predicate": "For a valid snapshot offered to a live follower after normal term processing: if index<=commit, ignore; if recipient is outside voters UNION outgoing UNION learners, reject; otherwise if the local log matches (index,term), fast-forward commit with no full configuration install; otherwise accept, install the snapshot and all five configuration fields, with progress for all members. LearnersNext are included via outgoing. Observe attempts, expected membership, outcome and before/after state, not only successful installations.",
+      "witness": {
+        "kind": "disagreement",
+        "state_or_transition": "Follower 3 is behind (commit=5, no match at 11). Leader 1 sends valid snapshot 11 with voters={1,2}, outgoing={1,2,3}, learnersNext={3}, learners={}, autoLeave=true. Node 3 appears only in outgoing and LearnersNext. restore returns false with no install.",
+        "old_property_or_suite": "JointSnapshotRecovery/ConfigurationOrigin can remain true because cfgHist and local configuration never change; no restart record exists.",
+        "proposed_property": "False: 3 is still a voting member and must be able to restore. The supplied NEW source still scans only Voters and Learners.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "Round-trip safety after successful recovery is too weak to detect rejecting a required recovery. This adds an admission obligation; it must expose the implementation omission, not redefine membership."
+    },
+    {
+      "name": "RestoredProgressRoleConsistency",
+      "decision": "add",
+      "classification": "unchanged_requirement_coverage_gap",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "new/source/confchange/confchange.go:252-272,278-317",
+        "new/source/raft.go:1433-1449,1491-1501,1456-1460",
+        "new/source/raft_test.go:2744-2788,2797-2843; old/spec/base.tla:88-93,1383-1397"
+      ],
+      "proposed_expression_or_predicate": "After Restore/switchToConfig, keys(prs)=voters UNION outgoing UNION learners; each progress.IsLearner iff its ID is in active learners; staged LearnersNext retain IsLearner=false. raft.isLearner equals membership of self in active learners when self progress exists, and false when absent. All created progress has Probe state, zero Match, Next=lastIndex+1, empty inflights and configured capacity; a network full restore may update self Match to snapshot index, while constructor becomeFollower/reset establishes its documented reset values. Campaign/transfer/quorum observations must use these ACTUAL flags, not flags synthesized from configuration.",
+      "witness": {
+        "kind": "disagreement",
+        "state_or_transition": "Restore the correct five-field config with learnersNext={3} and outgoing containing 3, but progress[3].IsLearner=true.",
+        "old_property_or_suite": "JointSnapshotRecovery and JointConfigurationShape pass; old Progress has no IsLearner field and TypeOK checks only its domain/mode.",
+        "proposed_property": "False: 3 remains a voter until LeaveJoint. Also reject stale raft.isLearner after promotion.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "Configuration equality alone cannot check the concrete progress and local-role caches introduced into the common restore/switch path.",
+      "observer_or_model_work": "Extend source trace observations with actual Progress.IsLearner and raft.isLearner; do not derive them from config. Existing TypeOK domain checks remain."
+    },
+    {
+      "name": "ConfigurationSwitchSideEffects",
+      "decision": "add",
+      "classification": "unchanged_requirement_coverage_gap",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "new/source/raft.go:1485-1531",
+        "old/source/raft.go:1456-1512",
+        "old/spec/base.tla:565-579,710-727"
+      ],
+      "proposed_expression_or_predicate": "For a valid switchToConfig on a leader whose installed progress still contains self as a voter and whose incoming voters are nonempty: recompute the maximal index acknowledged by both installed voter halves; advance commit when it exceeds the old commit and its term is current; if commit advances, perform the eligible append sends under the existing BcastAppend/progress-pause rules. Abort a nonzero transfer target absent from installed progress. For follower construction/restore, installing configuration must not cause leader-only commit broadcasts. Do not invent immediate step-down for the removed/demoted leader early-return branch; that policy remains unresolved.",
+      "witness": {
+        "kind": "disagreement",
+        "state_or_transition": "Leader 1, term=5, old voters={1,2,3,4}, committed=8, Last=10 with entry 10 in term 5; matches={1:10,2:10,3:8,4:8}, transfer=4. Apply a valid committed removal of 4 at index 8, yielding voters={1,2,3}; peers 2 and 3 are ready for append sends. A mutant installs the correct config but retains commit=8 and transfer=4.",
+        "old_property_or_suite": "EffectContract, ConfigurationOrigin and JointConfigurationShape can pass the correct configuration. TransferDecisionEligibility observes transfer requests, not configuration switches; QuorumAccounting does not require a commit event.",
+        "proposed_property": "False: commit must advance to 10, eligible replication sends follow, and transfer=0.",
+        "validation_scope": "local source/model transition; not executed"
+      },
+      "reason": "The refactoring centralizes existing side effects, so configuration equality alone is insufficient to assess preservation. This is targeted additional coverage, not a changed membership policy.",
+      "observer_or_model_work": "Observe pre/post commit, term, progress, transfer and newly emitted messages on configuration switches; include ApplyConfChange plus constructor/restore call sites with their proper role guards."
+    },
+    {
+      "name": "ConfStateObservationMapping",
+      "decision": "modify",
+      "classification": "representation_migration",
+      "semantic_or_representation_change": "representation",
+      "evidence": [
+        "old/source/raftpb/raft.proto:99-116; new/source/raftpb/raft.proto:99-116",
+        "old/spec/base.tla:52-58; old/spec/Trace.tla:65-73",
+        "new/source/tracker/tracker.go:145-153; new/source/node.go:366-378"
+      ],
+      "proposed_expression_or_predicate": "Keep the abstract record schema. Map old Nodes/new Voters to config.voters; old NodesJoint/new VotersOutgoing to config.outgoing; preserve Learners, LearnersNext and AutoLeave. Normalize list order and nil/empty for valid duplicate-free configurations. Apply the same mapping to initial state, snapshots, returned ApplyConfChange, live tracker, persisted state and expected observations. Keep complete Trace.ValidatePostState equality.",
+      "witness": {
+        "kind": "disagreement",
+        "state_or_transition": "Source ConfState changes field spelling from Nodes=[1,2], NodesJoint=[1,3] to Voters=[1,2], VotersOutgoing=[1,3], preserving all values.",
+        "old_property_or_suite": "An unmigrated adapter can emit empty voters/outgoing or fail to bind fields.",
+        "proposed_property": "Both versions decode to voters={1,2}, outgoing={1,3}; omission or swapping is rejected.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "Field names and JSON names change; configuration meaning and protobuf field numbers do not. No abstract invariant should be renamed or weakened solely for this migration."
+    },
+    {
+      "name": "ConfStateWireCompatibility",
+      "decision": "add",
+      "classification": "representation_migration",
+      "semantic_or_representation_change": "representation",
+      "evidence": [
+        "update.patch (raftpb/raft.proto and raftpb/raft.pb.go hunks)",
+        "new/source/raftpb/raft.pb.go:328-348,663-702,911-938,1810-2030"
+      ],
+      "proposed_expression_or_predicate": "Cross-version protobuf decoding preserves all five mapped fields in both directions: tag 1 incoming voters, 2 learners, 3 outgoing voters, 4 staged learners, 5 AutoLeave. Check standalone ConfState and nested snapshot/InitialState payloads, including packed/unpacked repeated input where supported. Do not require unchanged JSON field names or generated descriptor bytes.",
+      "witness": {
+        "kind": "disagreement",
+        "state_or_transition": "Persist old protobuf ConfState with Nodes=[1,2], NodesJoint=[1,3], Learners=[4], LearnersNext=[3], AutoLeave=true; decode in new code. A mutant treats tag 3 as ordinary learners.",
+        "old_property_or_suite": "The old abstract suite has no protobuf decoder observation and can pass on a separately supplied correct record.",
+        "proposed_property": "False: mapped old/new configuration equality fails.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "The representation migration has a wire compatibility obligation outside the set-valued model. This is not an added restriction on network delivery ordering."
+    },
+    {
+      "name": "ConfStateExportAndEquivalent",
+      "decision": "add",
+      "classification": "representation_migration",
+      "semantic_or_representation_change": "representation",
+      "evidence": [
+        "new/source/tracker/tracker.go:145-153",
+        "new/source/raftpb/confstate.go:23-45; new/source/raftpb/confstate_test.go:21-58",
+        "new/source/confchange/restore_test.go:85-142; new/source/util.go:136-143"
+      ],
+      "proposed_expression_or_predicate": "ConfState() exports each active tracker component to its matching field and AutoLeave exactly, with sorted ID slices. Equivalent(a,b)==nil iff the four ID multisets agree after sorting and AutoLeave agrees; nil and empty lists compare equal, unknown protobuf fields do not affect equivalence. Equivalent must not mutate either input or aliased backing arrays. For valid duplicate-free configurations this equals equality of the abstract five-field records. Equivalent is not a validity checker.",
+      "witness": {
+        "kind": "disagreement",
+        "state_or_transition": "a has Voters=[2,1], VotersOutgoing=[3,1], LearnersNext=[3], AutoLeave=true; b permutes each list. Equivalent must succeed without sorting a in place. Flip only b.AutoLeave and it must fail.",
+        "old_property_or_suite": "Old set-valued equality covers order insensitivity of valid configs but has no helper purity/AutoLeave comparison call observation; an in-place sorting mutant is invisible.",
+        "proposed_property": "Rejects mutation and flag mismatch; accepts pure reordering and nil/empty normalization.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "The new helper and export method need direct representation checks. Do not use Equivalent as the sole oracle for Restore when the same helper is under assessment; compare components independently. Duplicate-containing input validity is unresolved."
+    },
+    {
+      "name": "QuorumAccounting",
+      "decision": "keep",
+      "classification": "unchanged_requirement",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "old/spec/base.tla:1291",
+        "new/source/tracker/tracker.go:175-178,265-289; new/source/quorum/joint.go:46-74"
+      ],
+      "proposed_expression_or_predicate": "Retain nonempty incoming configuration, JointWon(w.config,w.yes), and commit matches subset of VoterIDs with JointWon. Won intersects acknowledgements with EACH voter half.",
+      "witness": {
+        "kind": "anti_weakening_control",
+        "state_or_transition": "Candidate voters={1,2,3}, learners={4}: self 1 and learner 4 alone become leader; or incoming={1,2,3}, outgoing={3,4,5}, yes={1,2,3} wins without an outgoing majority.",
+        "old_property_or_suite": "Fails the stated bad control.",
+        "proposed_property": "Also fails: unchanged predicate; no old/proposed disagreement exists.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "Learner vote emission is distinct from whether a receiver counts that vote. Already ignores nonvoters and requires both joint majorities; do not ban counting a locally stale learner when the candidate config lists it as voter."
+    },
+    {
+      "name": "QuorumConsumerDecisions",
+      "decision": "add",
+      "classification": "unchanged_requirement_coverage_gap",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "new/source/raft.go:813-820,991-1011,1163-1174",
+        "new/source/tracker/tracker.go:213-224,265-289; new/source/quorum/joint.go:58-74",
+        "old/spec/base.tla:366-375,418-423,438-452,1291-1295,1366-1375"
+      ],
+      "proposed_expression_or_predicate": "At a valid vote-response decision, after first-vote-per-ID recording, win iff each configured voter half has a strict majority of yes votes, lose iff a half can no longer win, otherwise remain pending; count IDs by the receiver configuration. At CheckQuorum, mark self active if tracked, retain leadership iff both halves have active voter majorities and clear nonself activity afterward. For a recognized nonempty ReadIndex heartbeat context in safe mode, release its pending prefix iff acknowledgements win both current voter halves. Learners do not contribute unless they are voters in the consuming configuration.",
+      "witness": {
+        "kind": "disagreement",
+        "state_or_transition": "Node 3 campaigns with voters={1,2,3}; node 1 still locally considers itself a learner but grants a valid same-term vote. After self vote plus 1, node 3 stays Candidate because an incorrect tally uses sender-local learner status.",
+        "old_property_or_suite": "QuorumAccounting is silent when there is no win; ElectionProgress assumes eventual common configurations and all stable services.",
+        "proposed_property": "False: this decision must win. Negative control: votes from learner 4 cannot replace voter 1. Activity={1,2,3} in incoming={1,2,3}, outgoing={3,4,5} must fail CheckQuorum.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "Existing properties check safety of recorded wins/commits/completed reads; they do not check refusal of an eligible decision or CheckQuorum itself. This fills those decision-time gaps without changing quorum requirements."
+    },
+    {
+      "name": "MajorityCommittedIndexExactness",
+      "decision": "add",
+      "classification": "unchanged_requirement_coverage_gap",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "new/source/quorum/majority.go:124-171; new/source/quorum/joint.go:46-55",
+        "new/source/quorum/testdata/majority_commit.txt; new/source/quorum/testdata/joint_commit.txt",
+        "old/spec/base.tla:141-156,1291-1295"
+      ],
+      "proposed_expression_or_predicate": "For a nonempty majority of n IDs, replace missing acknowledgements by zero and return the ascending order statistic at zero-based n-(floor(n/2)+1); for empty majority return MaxUint64. Joint result is min of both halves. Ignore acknowledgements of nonmembers and do not mutate input. Exercise n=0,1,7,8 across the stack/heap boundary. At the Raft layer current-term commitment rules remain unchanged.",
+      "witness": {
+        "kind": "disagreement",
+        "state_or_transition": "Eight voters have indexes [1,2,3,4,5,6,7,8], requiring five votes: return 4. A faulty allocation/slice path returns 0.",
+        "old_property_or_suite": "QuorumAccounting can remain true because undercommit creates no unsafe commit record.",
+        "proposed_property": "False: exact helper result is 4. Empty outgoing half must be neutral.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "Sorting/allocation refactoring should not change behavior. Add exactness at the helper boundary rather than relaxing commit safety or globally requiring Next>Match."
+    },
+    {
+      "name": "StableProgressVisit",
+      "decision": "add",
+      "classification": "semantic_requirement_change",
+      "semantic_or_representation_change": "semantic",
+      "evidence": [
+        "old/source/tracker/tracker.go:169-174; new/source/tracker/tracker.go:181-210",
+        "new/source/raft.go:528-552,618,1007-1011; old/spec/base.tla:234-249"
+      ],
+      "proposed_expression_or_predicate": "For an unmodified ProgressMap during one Visit call, callbacks occur exactly once for every tracked ID in increasing uint64 order and receive its actual progress pointer. Cover 0,1,7,8 entries. Applies only to Visit call sites, not campaign map iteration, concurrent map mutation, message delivery, or all protocol outputs.",
+      "witness": {
+        "kind": "disagreement",
+        "state_or_transition": "ProgressMap IDs={9,2,5}; callback trace is <<9,2,5>> (or omits ID 5).",
+        "old_property_or_suite": "The old contract permits arbitrary map order; bag-valued out/wire observers erase callback order.",
+        "proposed_property": "Order must be <<2,5,9>>, each ID exactly once.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "Stable iteration is an explicit new helper contract. A separate ordered source observation is needed; do not serialize the asynchronous network to check it.",
+      "observer_or_model_work": "Add a per-Visit callback sequence observer. Do not reuse SetSequence(CHOOSE) as a numeric sort oracle. If modelled, preserve numeric ordering under any symmetry reduction."
+    },
+    {
+      "name": "ElectionSafety",
+      "decision": "keep",
+      "classification": "unchanged_requirement",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "old/spec/base.tla:1257",
+        "new/source/raft.go:813-820; new/source/quorum/joint.go:58-74"
+      ],
+      "proposed_expression_or_predicate": "Retain: any two history.wins at equal term have the same node.",
+      "witness": {
+        "kind": "anti_weakening_control",
+        "state_or_transition": "Record leaders 1 and 2 at term 7.",
+        "old_property_or_suite": "Fails the stated bad control.",
+        "proposed_property": "Also fails: unchanged predicate; no old/proposed disagreement exists.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "Learner voting and recovery do not relax election uniqueness."
+    },
+    {
+      "name": "LogMatching",
+      "decision": "keep",
+      "classification": "unchanged_requirement",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "old/spec/base.tla:1258",
+        "new/source/log.go:88-103"
+      ],
+      "proposed_expression_or_predicate": "Retain equal-positive-term/index implies equal prefixes across all server histories.",
+      "witness": {
+        "kind": "anti_weakening_control",
+        "state_or_transition": "Histories share term 3 at index 8 but differ at index 6.",
+        "old_property_or_suite": "Fails the stated bad control.",
+        "proposed_property": "Also fails: unchanged predicate; no old/proposed disagreement exists.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "Unchanged consensus safety control."
+    },
+    {
+      "name": "LeaderCompleteness",
+      "decision": "keep",
+      "classification": "unchanged_requirement",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "old/spec/base.tla:1262",
+        "new/source/raft.go:931-932; new/source/log.go:256-261"
+      ],
+      "proposed_expression_or_predicate": "Retain later-term winner history covers every earlier durable committed obligation.",
+      "witness": {
+        "kind": "anti_weakening_control",
+        "state_or_transition": "Term-8 leader lacks an entry durably committed in term 7.",
+        "old_property_or_suite": "Fails the stated bad control.",
+        "proposed_property": "Also fails: unchanged predicate; no old/proposed disagreement exists.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "A locally stale learner may grant only under the unchanged freshness rule; no relaxation of completeness."
+    },
+    {
+      "name": "CommittedHistory",
+      "decision": "keep",
+      "classification": "unchanged_requirement",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "old/spec/base.tla:1264",
+        "new/source/log.go:88-103,199-217"
+      ],
+      "proposed_expression_or_predicate": "Retain liveOK and compatibility of obligations and live committed prefixes.",
+      "witness": {
+        "kind": "anti_weakening_control",
+        "state_or_transition": "An append or snapshot transition overwrites the committed prefix at index 5.",
+        "old_property_or_suite": "Fails the stated bad control.",
+        "proposed_property": "Also fails: unchanged predicate; no old/proposed disagreement exists.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "Recovery/Ready changes do not authorize committed-prefix loss."
+    },
+    {
+      "name": "AppliedAgreement",
+      "decision": "keep",
+      "classification": "unchanged_requirement",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "old/spec/base.tla:1268",
+        "new/source/node.go:152-167; new/source/README.md:120-122"
+      ],
+      "proposed_expression_or_predicate": "Retain pairwise Compatible over history.applied.",
+      "witness": {
+        "kind": "anti_weakening_control",
+        "state_or_transition": "Two nodes apply different commands at index 5.",
+        "old_property_or_suite": "Fails the stated bad control.",
+        "proposed_property": "Also fails: unchanged predicate; no old/proposed disagreement exists.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "Application order remains unchanged."
+    },
+    {
+      "name": "VoteRecovery",
+      "decision": "keep",
+      "classification": "unchanged_requirement",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "old/spec/base.tla:1270",
+        "new/source/raft.go:369-375,1534-1540"
+      ],
+      "proposed_expression_or_predicate": "Retain recovered term >= savedTerm and identical saved nonzero vote when terms are equal.",
+      "witness": {
+        "kind": "anti_weakening_control",
+        "state_or_transition": "Saved (term=4,vote=2) recovers (term=4,vote=0).",
+        "old_property_or_suite": "Fails the stated bad control.",
+        "proposed_property": "Also fails: unchanged predicate; no old/proposed disagreement exists.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "Now relevant to learner grants too; do not exempt learner votes."
+    },
+    {
+      "name": "RecoveryBacking",
+      "decision": "keep",
+      "classification": "unchanged_requirement",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "old/spec/base.tla:1272",
+        "new/source/raft.go:369-375,1534-1540"
+      ],
+      "proposed_expression_or_predicate": "Retain committed index within disk history, no Missing committed entries, and durable application-prefix coverage.",
+      "witness": {
+        "kind": "anti_weakening_control",
+        "state_or_transition": "Restart commit=9 with durable history ending at 8.",
+        "old_property_or_suite": "Fails the stated bad control.",
+        "proposed_property": "Also fails: unchanged predicate; no old/proposed disagreement exists.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "Full ConfState recovery does not substitute for durable log backing."
+    },
+    {
+      "name": "PromiseBacking",
+      "decision": "keep",
+      "classification": "unchanged_requirement",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "old/spec/base.tla:1276",
+        "new/source/node.go:69-85; new/source/README.md:116-118"
+      ],
+      "proposed_expression_or_predicate": "Retain every history.promises item backed by the required durable state.",
+      "witness": {
+        "kind": "anti_weakening_control",
+        "state_or_transition": "Publish a granted term-4 vote while persisted HardState is still term 3.",
+        "old_property_or_suite": "Fails the stated bad control.",
+        "proposed_property": "Also fails: unchanged predicate; no old/proposed disagreement exists.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "Ready acceptance is ownership transfer, not persistence; learner vote responses have the same persistence requirement."
+    },
+    {
+      "name": "ConfigurationTransitionSafety",
+      "decision": "keep",
+      "classification": "unchanged_requirement",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "old/spec/base.tla:1285",
+        "new/source/README.md:193-195; new/source/raftpb/confchange.go:69-104"
+      ],
+      "proposed_expression_or_predicate": "Retain predecessor ConfigOf(prefix) at commitment for nonbootstrap, nonzero-id configuration entries.",
+      "witness": {
+        "kind": "anti_weakening_control",
+        "state_or_transition": "Commit entry changing {1,2,3} to {1,2} using only the post-change quorum rather than its predecessor.",
+        "old_property_or_suite": "Fails the stated bad control.",
+        "proposed_property": "Also fails: unchanged predicate; no old/proposed disagreement exists.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "Joint V2 is already included in ConfKinds. Do not weaken this to match any discovered V2 campaigning bug."
+    },
+    {
+      "name": "ReplicationEvidence",
+      "decision": "keep",
+      "classification": "unchanged_requirement",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "old/spec/base.tla:1296",
+        "new/source/raft.go:1093-1144; new/source/tracker/progress.go:135-158"
+      ],
+      "proposed_expression_or_predicate": "Retain nonself positive Match requires compatible acknowledgement evidence of at least that length.",
+      "witness": {
+        "kind": "anti_weakening_control",
+        "state_or_transition": "Mark peer 2 Match=10 after mere successful snapshot transport without peer acknowledgement.",
+        "old_property_or_suite": "Fails the stated bad control.",
+        "proposed_property": "Also fails: unchanged predicate; no old/proposed disagreement exists.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "Added snapshot-replication TODO is a comment, not a change to replication evidence."
+    },
+    {
+      "name": "QuotaIntegrity",
+      "decision": "keep",
+      "classification": "unchanged_requirement",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "old/spec/base.tla:1350",
+        "new/source/raft.go:585,1559-1601; new/source/tracker/inflights.go:43-124"
+      ],
+      "proposed_expression_or_predicate": "Retain nonnegative bounded-by-unapplied-payload leader quota and bounded, increasing inflight indexes.",
+      "witness": {
+        "kind": "anti_weakening_control",
+        "state_or_transition": "A leader has only payload weight 2 in its unapplied suffix but quota=3; alternatively an inflight sequence has length MaxInflight+1 or nonincreasing indexes.",
+        "old_property_or_suite": "Fails the stated bad control.",
+        "proposed_property": "Also fails: unchanged predicate; no old/proposed disagreement exists.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "Ownership move does not move quota release. Oversized first entry remains permitted."
+    },
+    {
+      "name": "OutcomeSoundness",
+      "decision": "keep",
+      "classification": "unchanged_requirement",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "old/spec/base.tla:1358",
+        "new/source/raft.go:1013-1056,1258-1291"
+      ],
+      "proposed_expression_or_predicate": "Retain exact ExpectedDecision for accepted, forwarded, removed, transferring, quota and no-leader cases.",
+      "witness": {
+        "kind": "anti_weakening_control",
+        "state_or_transition": "Leader with transfer in progress accepts a proposal.",
+        "old_property_or_suite": "Fails the stated bad control.",
+        "proposed_property": "Also fails: unchanged predicate; no old/proposed disagreement exists.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "Configuration and wrapper refactoring do not change proposal outcome requirements."
+    },
+    {
+      "name": "ReadBasis",
+      "decision": "keep",
+      "classification": "unchanged_requirement",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "old/spec/base.tla:1366",
+        "new/source/raft.go:1058-1090,1159-1174; new/source/tracker/tracker.go:156-159"
+      ],
+      "proposed_expression_or_predicate": "Retain current confirmation configuration, both voter majorities, same-term confirmation, current-term commit/nonjoint-singleton exception and preceding-write coverage.",
+      "witness": {
+        "kind": "anti_weakening_control",
+        "state_or_transition": "Incoming={1,2,3}, outgoing={3,4,5}; complete a read with confirmAcks={1,2,3}.",
+        "old_property_or_suite": "Fails the stated bad control.",
+        "proposed_property": "Also fails: unchanged predicate; no old/proposed disagreement exists.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "Read quorum exclusion of learners and joint halves is already expressed; do not replace read IsSingleton when repairing campaign selfWins."
+    },
+    {
+      "name": "ReadApplication",
+      "decision": "keep",
+      "classification": "unchanged_requirement",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "old/spec/base.tla:1376",
+        "new/source/node.go:63-67"
+      ],
+      "proposed_expression_or_predicate": "Retain application covers the read history and reaches at least the read index.",
+      "witness": {
+        "kind": "anti_weakening_control",
+        "state_or_transition": "Complete read index=10 with application only through index=9.",
+        "old_property_or_suite": "Fails the stated bad control.",
+        "proposed_property": "Also fails: unchanged predicate; no old/proposed disagreement exists.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "Ready consumption does not permit serving reads before application."
+    },
+    {
+      "name": "ReadCorrelation",
+      "decision": "keep",
+      "classification": "unchanged_requirement",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "old/spec/base.tla:1378",
+        "new/source/node.go:63-67; new/source/read_only.go:56-75"
+      ],
+      "proposed_expression_or_predicate": "Retain matching request/context IDs and recorded handoff.",
+      "witness": {
+        "kind": "anti_weakening_control",
+        "state_or_transition": "Deliver ReadState for request A as the result of request B.",
+        "old_property_or_suite": "Fails the stated bad control.",
+        "proposed_property": "Also fails: unchanged predicate; no old/proposed disagreement exists.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "Observer ownership migration must not discard request correlation."
+    },
+    {
+      "name": "NoUnexpectedFatal",
+      "decision": "keep",
+      "classification": "unchanged_requirement",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "old/spec/base.tla:1380",
+        "new/source/raft.go:1440-1446,1477-1479"
+      ],
+      "proposed_expression_or_predicate": "Retain verbatim: NoUnexpectedFatal == \\A n \\in Server : raft[n].fatal=\"\". Add no alive, learner, joint-recovery or automatic-leave exemption.",
+      "witness": {
+        "kind": "anti_weakening_control",
+        "state_or_transition": "Apply a second automatic leave after the first already left joint state and panic.",
+        "old_property_or_suite": "Fails the stated bad control.",
+        "proposed_property": "Also fails: unchanged predicate; no old/proposed disagreement exists.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "Do not silence errors for valid restored configurations or duplicate auto-exit bugs. Invalid external input needs a separately specified contract."
+    },
+    {
+      "name": "TypeOK",
+      "decision": "keep",
+      "classification": "unchanged_requirement",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "old/spec/base.tla:1383",
+        "new/source/tracker/tracker.go:26-77; new/source/confchange/confchange.go:278-330"
+      ],
+      "proposed_expression_or_predicate": "Retain existing domains, configuration constraints, progress-domain=Members, valid roles/modes, natural indexes and bag typing.",
+      "witness": {
+        "kind": "anti_weakening_control",
+        "state_or_transition": "Restored config retains outgoing-only voter 3 but progress has no key 3.",
+        "old_property_or_suite": "Fails the stated bad control.",
+        "proposed_property": "Also fails: unchanged predicate; no old/proposed disagreement exists.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "Already enforces progress membership including outgoing. Add concrete role-flag checks separately."
+    },
+    {
+      "name": "LogStructure",
+      "decision": "keep",
+      "classification": "unchanged_requirement",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "old/spec/base.tla:1398",
+        "new/source/log.go:199-217"
+      ],
+      "proposed_expression_or_predicate": "Retain applied<=commit<=Last, consecutive log indexes and unstable bounds.",
+      "witness": {
+        "kind": "anti_weakening_control",
+        "state_or_transition": "Advance moves applied=11 while commit=10.",
+        "old_property_or_suite": "Fails the stated bad control.",
+        "proposed_property": "Also fails: unchanged predicate; no old/proposed disagreement exists.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "Unchanged boundary control for the Ready/Advance refactor."
+    },
+    {
+      "name": "MCTypeOK",
+      "decision": "keep",
+      "classification": "unchanged_requirement",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "old/spec/MC.tla:65-66; old/spec/base.tla:1383-1397"
+      ],
+      "proposed_expression_or_predicate": "Retain TypeOK and faultCount domain/nonnegative/budget constraints.",
+      "witness": {
+        "kind": "anti_weakening_control",
+        "state_or_transition": "faultCount.request exceeds RequestLimit or a progress-domain key is missing.",
+        "old_property_or_suite": "False.",
+        "proposed_property": "False; no disagreement exists.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "Bounds are exploration controls, not reasons to narrow protocol correctness or change TypeOK."
+    },
+    {
+      "name": "NonzeroNodeIDContract",
+      "decision": "keep",
+      "classification": "unchanged_requirement",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "old/spec/base.tla:20-29; new/source/README.md:186-189",
+        "update.patch (removed duplicate NewRawNode check); new/source/raft.go:211-225,322-325"
+      ],
+      "proposed_expression_or_predicate": "Server excludes 0; NewRawNode/StartNode/RestartNode with Config.ID=0 must not successfully construct a running node. Config.validate remains authoritative; panic text need not match.",
+      "witness": {
+        "kind": "unchanged_contract_control",
+        "state_or_transition": "Call NewRawNode with otherwise valid config and ID=0.",
+        "old_property_or_suite": "Rejected by old constructor.",
+        "proposed_property": "Still rejected by newRaft -> validate; no semantic disagreement.",
+        "validation_scope": "constructor boundary; excluded from normal MC by ASSUME"
+      },
+      "reason": "Removing a duplicate check changes location/message, not the nonzero-ID requirement. The model assumption does not itself validate the public constructor."
+    },
+    {
+      "name": "NodeWrapperConcurrencySafety",
+      "decision": "add",
+      "classification": "unchanged_requirement_coverage_gap",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "new/source/node.go:296-408; new/source/README.md:126-134",
+        "update.patch (node.rn storage and Tick logging change)"
+      ],
+      "proposed_expression_or_predicate": "Concurrent public Node.Tick calls and the Node event loop must not race on mutable raft state. On a full tick channel, diagnostic logging must use a synchronized/safe snapshot of any mutable field and leave protocol state unchanged. No extra thread-safety is assumed for RawNode itself.",
+      "witness": {
+        "kind": "disagreement",
+        "state_or_transition": "The tick buffer is full. External goroutine enters Tick default branch and reads n.rn.raft.lead while the event loop changes r.lead during a leader transition.",
+        "old_property_or_suite": "Atomic model has no goroutines or race observer and cannot reject this execution.",
+        "proposed_property": "Fails the source-level race-free Node-wrapper requirement unless the read is synchronized.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "Storing rn on Node exposes a new read of mutable leader state outside the owning loop. This must not be hidden by atomic model actions."
+    },
+    {
+      "name": "GlobalLoggerPublication",
+      "decision": "unresolved",
+      "classification": "unchanged_requirement_coverage_gap",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "new/source/logger.go:45-55; new/source/raft.go:242-244",
+        "update.patch (SetLogger mutex added)"
+      ],
+      "proposed_expression_or_predicate": "At minimum concurrent SetLogger writers must serialize. If setting the global logger concurrently with constructing a Config/Node is supported, every raftLogger read/write must have a common synchronization or atomic publication protocol; each constructor selects one complete Logger interface value. The supplied files do not explicitly settle an initialization-only SetLogger restriction.",
+      "witness": {
+        "kind": "disagreement",
+        "state_or_transition": "Goroutine A writes raftLogger in SetLogger while B executes Config.validate with Logger=nil and reads raftLogger without the mutex.",
+        "old_property_or_suite": "Unobserved by the old model.",
+        "proposed_property": "Would violate concurrent-publication safety; exact API scope remains unresolved.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "A writer-only mutex does not establish safety of readers. Record the suspected race and missing concurrency contract; do not infer successful synchronization from the patch alone."
+    },
+    {
+      "name": "UpdateReadyOwnership",
+      "decision": "modify",
+      "classification": "semantic_requirement_change",
+      "semantic_or_representation_change": "semantic",
+      "evidence": [
+        "old/spec/Update.tla:67-73",
+        "old/spec/base.tla:955-983; old/spec/base.tla:1321-1326"
+      ],
+      "proposed_expression_or_predicate": "Retain alias UpdateReadyOwnership == ReadyOwnership; inherit exactly the decision for ReadyOwnership.",
+      "witness": {
+        "kind": "disagreement",
+        "state_or_transition": "RawNode has out={m1}, readStates=<<r1>>, quota=q and a new SoftState. RawNode.Ready returns those values and leaves out={}, readStates=<<>>, prevSoftSt equal to the returned SoftState, quota=q.",
+        "old_property_or_suite": "False: the old raw branch requires out and readStates to remain pending.",
+        "proposed_property": "True; leaving m1/r1 in the core after delivery is now a failure.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "No independently copied update-specific predicate; the base contract remains the single owner."
+    },
+    {
+      "name": "UpdateAutoLeaveAdvance",
+      "decision": "modify",
+      "classification": "pre_existing_property_repair",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "old/spec/Update.tla:67-73",
+        "old/spec/base.tla:1078-1109,1327-1333"
+      ],
+      "proposed_expression_or_predicate": "Retain alias UpdateAutoLeaveAdvance == AutoLeaveAdvance; inherit exactly the decision for AutoLeaveAdvance.",
+      "witness": {
+        "kind": "disagreement",
+        "state_or_transition": "Construct a local Advance fixture: Leader with valid joint config, AutoLeave=true, pendingConf=0, Ready cursor=0 and no entries/snapshot, enough quota. No append occurs.",
+        "old_property_or_suite": "False: old observer sets eligible=true although AdvanceCore and source explicitly skip cursor zero.",
+        "proposed_property": "True: ineligible. For cursor=5, pendingConf=5 and enough quota, a no-append transition remains false.",
+        "validation_scope": "local function fixture; reachability from bounded MCInit is unresolved"
+      },
+      "reason": "No independently copied update-specific predicate; the base contract remains the single owner."
+    },
+    {
+      "name": "UpdateJointConfigurationShape",
+      "decision": "keep",
+      "classification": "unchanged_requirement",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "old/spec/Update.tla:67-73",
+        "old/spec/base.tla:1335"
+      ],
+      "proposed_expression_or_predicate": "Retain alias UpdateJointConfigurationShape == JointConfigurationShape; inherit exactly the decision for JointConfigurationShape.",
+      "witness": {
+        "kind": "anti_weakening_control",
+        "state_or_transition": "voters={1,2}, outgoing={1,2,3}, learners={3}, learnersNext={} incorrectly labels outgoing voter 3 as an active learner.",
+        "old_property_or_suite": "Fails the stated bad control.",
+        "proposed_property": "Also fails: unchanged predicate; no old/proposed disagreement exists.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "No independently copied update-specific predicate; the base contract remains the single owner."
+    },
+    {
+      "name": "UpdateJointSnapshotRecovery",
+      "decision": "keep",
+      "classification": "unchanged_requirement",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "old/spec/Update.tla:67-73",
+        "old/spec/base.tla:312-324,1222-1250,1343-1349"
+      ],
+      "proposed_expression_or_predicate": "Retain alias UpdateJointSnapshotRecovery == JointSnapshotRecovery; inherit exactly the decision for JointSnapshotRecovery.",
+      "witness": {
+        "kind": "anti_weakening_control",
+        "state_or_transition": "A valid persisted snapshot at index 11 has voters={1,2}, outgoing={1,2,3}, learners={4}, learnersNext={3}, autoLeave=true. Restart or full install drops outgoing, learnersNext and autoLeave.",
+        "old_property_or_suite": "False under existing JointSnapshotRecovery and ConfigurationOrigin.",
+        "proposed_property": "Also false: predicates stay unchanged. Preserving all five fields satisfies both.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "No independently copied update-specific predicate; the base contract remains the single owner."
+    },
+    {
+      "name": "JointNotReached",
+      "decision": "keep",
+      "classification": "unchanged_requirement",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "old/spec/Update.tla:75-81"
+      ],
+      "proposed_expression_or_predicate": "~(\\E n \\in Server : raft[n].config.outgoing # {})",
+      "witness": {
+        "kind": "reachability_control",
+        "state_or_transition": "A node enters a joint configuration.",
+        "old_property_or_suite": "False, intentionally: produces a reachability witness.",
+        "proposed_property": "Also false; no semantic disagreement.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "A negated reachability canary, not a correctness invariant. Successful checks without a violation do not establish exercised behavior."
+    },
+    {
+      "name": "AutoLeaveNotAppended",
+      "decision": "keep",
+      "classification": "unchanged_requirement",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "old/spec/Update.tla:75-81"
+      ],
+      "proposed_expression_or_predicate": "~(\\E n \\in Server : \\E e \\in SeqSet(Hist(raft[n])) : e.kind=\"V2\" /\\ e.id=0 /\\ e.changes=<<>>)",
+      "witness": {
+        "kind": "reachability_control",
+        "state_or_transition": "An automatic V2 empty-change entry is appended.",
+        "old_property_or_suite": "False, intentionally: produces a reachability witness.",
+        "proposed_property": "Also false; no semantic disagreement.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "A negated reachability canary, not a correctness invariant. Successful checks without a violation do not establish exercised behavior."
+    },
+    {
+      "name": "JointRecoveryNotReached",
+      "decision": "modify",
+      "classification": "pre_existing_property_repair",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "old/spec/Update.tla:82-85; old/spec/base.tla:1239-1250",
+        "new/source/raft.go:360-367,1433-1446"
+      ],
+      "proposed_expression_or_predicate": "Use a negated JOINT RECOVERY EVENT canary, e.g. ~exists x in history.recovery: x.expectedConfig.outgoing#{}; extend to recorded full snapshot restore attempts for network recovery. Do not require restored config to differ from expected. Correctness of the event is checked by JointSnapshotRecovery and the admission property.",
+      "witness": {
+        "kind": "reachability_disagreement",
+        "state_or_transition": "A node successfully restarts with a joint ConfState and exactly preserves all five fields.",
+        "old_property_or_suite": "True: the old canary only detects a joint cfgHist/config MISMATCH, so successful joint recovery is invisible.",
+        "proposed_property": "False: the recovery event is reached, independently of whether it is correct.",
+        "validation_scope": "local transition; not executed"
+      },
+      "reason": "The old canary detects the lossy-recovery bug, not general joint recovery. After that bug is fixed, absence of its counterexample is not a coverage failure."
+    },
+    {
+      "name": "ElectionProgress",
+      "decision": "keep",
+      "classification": "unchanged_requirement",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "old/spec/MC.tla:81-135"
+      ],
+      "proposed_expression_or_predicate": "Retain ElectionProgress and its existing explicit premises verbatim; do not claim it has been checked by finite bounded MC.",
+      "witness": {
+        "kind": "temporal_control",
+        "state_or_transition": "Stabilize every service and a common voter config, service a quiet eligible campaign forever, but never elect a leader.",
+        "old_property_or_suite": "False under the original premises.",
+        "proposed_property": "Also false; no disagreement.",
+        "validation_scope": "infinite behavior; not executed"
+      },
+      "reason": "CommonConfiguration plus StableServices excludes the motivating lagging-promotion scenario with a failed leader."
+    },
+    {
+      "name": "CatchupProgress",
+      "decision": "keep",
+      "classification": "unchanged_requirement",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "old/spec/MC.tla:81-135"
+      ],
+      "proposed_expression_or_predicate": "Retain CatchupProgress and its existing explicit premises verbatim; do not claim it has been checked by finite bounded MC.",
+      "witness": {
+        "kind": "temporal_control",
+        "state_or_transition": "Stable leader 1, outgoing voter 3 and all required fair services persist, but 3 never applies committed index 11.",
+        "old_property_or_suite": "False under the original premises.",
+        "proposed_property": "Also false; no disagreement.",
+        "validation_scope": "infinite behavior; not executed"
+      },
+      "reason": "Still requires a stable leader, services, continuing ticks and fair delivery/application; outgoing-only members must remain in Members."
+    },
+    {
+      "name": "ManagementProgress",
+      "decision": "keep",
+      "classification": "unchanged_requirement",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "old/spec/MC.tla:81-135"
+      ],
+      "proposed_expression_or_predicate": "Retain ManagementProgress and its existing explicit premises verbatim; do not claim it has been checked by finite bounded MC.",
+      "witness": {
+        "kind": "temporal_control",
+        "state_or_transition": "A committed configuration entry is forever absent from application despite the stated fair caller/services.",
+        "old_property_or_suite": "False under the original premises.",
+        "proposed_property": "Also false; no disagreement.",
+        "validation_scope": "infinite behavior; not executed"
+      },
+      "reason": "Ordered continuing callbacks are required; does not prove automatic exit is eventually proposed/committed."
+    },
+    {
+      "name": "TransferSettlement",
+      "decision": "keep",
+      "classification": "unchanged_requirement",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "old/spec/MC.tla:81-135"
+      ],
+      "proposed_expression_or_predicate": "Retain TransferSettlement and its existing explicit premises verbatim; do not claim it has been checked by finite bounded MC.",
+      "witness": {
+        "kind": "temporal_control",
+        "state_or_transition": "An admitted transfer remains set forever despite the original settlement premises.",
+        "old_property_or_suite": "False under the original premises.",
+        "proposed_property": "Also false; no disagreement.",
+        "validation_scope": "infinite behavior; not executed"
+      },
+      "reason": "Learner grants do not change transfer admission; settlement is conditional on ticks and no replacement transfers."
+    },
+    {
+      "name": "ReadProgress",
+      "decision": "keep",
+      "classification": "unchanged_requirement",
+      "semantic_or_representation_change": "neither",
+      "evidence": [
+        "old/spec/MC.tla:81-135"
+      ],
+      "proposed_expression_or_predicate": "Retain ReadProgress and its existing explicit premises verbatim; do not claim it has been checked by finite bounded MC.",
+      "witness": {
+        "kind": "temporal_control",
+        "state_or_transition": "An enabled delivered read is never completed despite the specified fairness.",
+        "old_property_or_suite": "False under the original premises.",
+        "proposed_property": "Also false; no disagreement.",
+        "validation_scope": "infinite behavior; not executed"
+      },
+      "reason": "Only delivered, enabled correlated reads are covered; it does not prove production of a ReadState."
+    }
+  ],
+  "already_covered_updated_behaviors": [
+    {
+      "behavior": "Full joint configuration restored after restart or accepted snapshot",
+      "properties": [
+        "JointSnapshotRecovery",
+        "ConfigurationOrigin",
+        "SnapshotBacking"
+      ],
+      "actual_observer_explanation": "ProtocolRestart records expectedConfig independently from disk snapshot or AppliedAdapter history and records actual config; JointSnapshotRecovery compares full records, not incoming-only projections. Restore writes cfgHist from s.hist, so its live-node conjunct and ConfigurationOrigin catch lost outgoing/LearnersNext/AutoLeave on a successful install. SnapshotValid checks the producer. None requires that an otherwise eligible snapshot be accepted."
+    },
+    {
+      "behavior": "Both joint majorities and exclusion of receiver-local learners for election/commit/read safety",
+      "properties": [
+        "QuorumAccounting",
+        "ReadBasis"
+      ],
+      "actual_observer_explanation": "BecomeLeader records config and yes before Reset; MaybeCommit records config and matching IDs. JointWon uses Won on incoming AND outgoing, and Won intersects acknowledgements with each voter set. ReadOnlyRecvAck/ReleaseReadPrefix attaches confirmConfig and confirmAcks; ReadBasis checks them for completed reads. A grant from a sender locally calling itself a learner may count if that ID is a voter in the consumer configuration."
+    },
+    {
+      "behavior": "Configuration apply, pending proposal rewriting, and automatic leave application",
+      "properties": [
+        "RequestCorrelatedConfigurationEffects",
+        "ProposalConfigurationDecisions",
+        "JointConfigurationShape"
+      ],
+      "actual_observer_explanation": "EffectObservation captures the applied entry, pre/post config and correlated request; ConfigAfter already implements V2 EnterJoint, staged demotions and LeaveJoint. IsLeave requires transition Auto as well as no changes. ProposalObservation checks actual appended content, including Normal no-op rewriting when another config is pending. This is not new V2 extraction."
+    },
+    {
+      "behavior": "Learners still may not campaign or receive transfer leadership",
+      "properties": [
+        "LearnerEligibility campaign conjunct",
+        "CampaignDecisionEligibility",
+        "TransferDecisionEligibility"
+      ],
+      "actual_observer_explanation": "history.campaigns records local learner status at campaign initiation. CampaignObservation records all explicit Hup and Tick decisions. TransferObservation compares target eligibility, transfer state, timer and TimeoutNow responses. These controls are independent of whether a node may grant a vote."
+    },
+    {
+      "behavior": "Advance applied cursor, pagination and protection of newer snapshots",
+      "properties": [
+        "AckPreservation",
+        "ReadyAccounting",
+        "LogStructure"
+      ],
+      "actual_observer_explanation": "history.acks stores before/after history, old/batch/after snapshot and cursor/applied. readyChecks stores page start, first available index, commit and cursor. This covers log/snapshot acknowledgement but has no message-buffer preservation assertion; lostReads also needs the observer repair described above."
+    },
+    {
+      "behavior": "Ready acceptance leaves quota unchanged and Advance releases committed-entry quota",
+      "properties": [
+        "ReadyOwnership quota conjunct",
+        "QuotaIntegrity"
+      ],
+      "actual_observer_explanation": "readyChecks already captures quotaBefore/quotaAfter. Move message/read acceptance without moving quota release. QuotaIntegrity checks payload accounting and inflights; ownership changes do not authorize zeroing quota."
+    },
+    {
+      "behavior": "Automatic exit attempt after application progress",
+      "properties": [
+        "AutoLeaveAdvance",
+        "UpdateAutoLeaveAdvance"
+      ],
+      "actual_observer_explanation": "ProtocolAdvance already records eligibility, beforeLast, afterHist, pending and decision; the invariant requires an empty-change V2 append or quota retry. Fix the missing positive-cursor condition and add exact attempt checking. Preserving AutoLeave on restore makes this unchanged requirement reachable after recovery."
+    },
+    {
+      "behavior": "Refactored switchToConfig does not change membership effects",
+      "properties": [
+        "ConfigurationOrigin",
+        "RequestCorrelatedConfigurationEffects",
+        "TypeOK",
+        "JointConfigurationShape"
+      ],
+      "actual_observer_explanation": "Existing config equality and progress-domain assertions cover installing the intended components and member set. They do not observe concrete IsLearner caches or all quorum/transfer side effects; those limits are explicitly retained."
+    }
+  ],
+  "suspected_implementation_or_model_defects": [
+    {
+      "id": "D1",
+      "kind": "implementation omission, still present in new source",
+      "evidence": [
+        "new/source/raft.go:1398-1419",
+        "old/spec/base.tla:314-319"
+      ],
+      "description": "Snapshot recipient scan excludes VotersOutgoing and LearnersNext-only identities, despite their continued participation in the joint tracker. A valid outgoing-only member can be denied required recovery.",
+      "must_not_hide": "Keep the guard source-faithful in the new model and add SnapshotRestoreDecisionCompleteness; do not restrict snapshot generators/expected membership to incoming voters and learners.",
+      "witness": "SnapshotRestoreDecisionCompleteness"
+    },
+    {
+      "id": "D2",
+      "kind": "pre-existing implementation defect preserved by the patch",
+      "evidence": [
+        "new/source/raft.go:905-911,1605-1612",
+        "old/spec/base.tla:263-270,673-692"
+      ],
+      "description": "numOfPendingConf counts only EntryConfChange, so a committed unapplied V2 change can fail to block Hup. Source and old model expose the omission; CampaignContract correctly uses ConfKinds.",
+      "must_not_hide": "Keep the V2 pending-entry requirement while independently repairing CampaignContract selfWins. Do not change ConfKinds to LegacyConfKinds.",
+      "witness": "Eligible follower has applied=7, commit=8, Hist[8].kind=V2. Hup must not campaign until callback applies it; current implementation may do so."
+    },
+    {
+      "id": "D3",
+      "kind": "new/remaining source concurrency risks",
+      "evidence": [
+        "new/source/node.go:403-408",
+        "new/source/logger.go:45-55",
+        "new/source/raft.go:242-244"
+      ],
+      "description": "Node.Tick now reads mutable lead outside the event loop when its channel is full. SetLogger locks writers, but Config.validate reads raftLogger without that mutex. Global SetLogger concurrency scope is not explicit.",
+      "must_not_hide": "Atomic Raft actions cannot establish Go race freedom. Preserve Node-wrapper safety and report conditional global logger risk separately.",
+      "witness": "NodeWrapperConcurrencySafety; GlobalLoggerPublication"
+    },
+    {
+      "id": "D4",
+      "kind": "new source test assertion defect",
+      "evidence": [
+        "new/source/raft_test.go:390-395"
+      ],
+      "description": "TestLearnerCanVote uses msg.Type != MsgVoteResp && !msg.Reject; it can accept a rejected MsgVoteResp and wrong-type rejected messages.",
+      "must_not_hide": "Require exactly one response with the correct type AND reject=false for the eligible fixture; retain exact VoteContract, not the test boolean."
+    },
+    {
+      "id": "D5",
+      "kind": "old model behaviors requiring migration, not weakened requirements",
+      "evidence": [
+        "old/spec/base.tla:273-285,312-324,965-983,1078-1095,1222-1238"
+      ],
+      "description": "StepVote still returns early for learners; RestoreProjection drops joint fields; RawNode Ready does not accept, while RawNode Advance clears outputs. Those bodies represent OLD source.",
+      "must_not_hide": "Update the new reference bodies according to source, retaining the old reference for comparison and independent correctness oracles. Do not just edit predicates until unchanged old transitions pass."
+    },
+    {
+      "id": "D6",
+      "kind": "old oracle/observer defects",
+      "evidence": [
+        "old/spec/base.tla:673-692,1101-1109,1327-1333",
+        "old/spec/Update.tla:82-85"
+      ],
+      "description": "CampaignContract confuses read singleton with self-election; lostReads inspects application membership rather than actual loss and skips empty batches; auto-leave eligibility omits cursor>0; joint recovery canary is bug-dependent.",
+      "must_not_hide": "Apply only the isolated repairs listed in entries, keeping unrelated election, read, positive-cursor and recovery requirements."
+    },
+    {
+      "id": "D7",
+      "kind": "pre-existing suspected automatic-exit repetition defect; reachability needs validation",
+      "evidence": [
+        "new/source/raft.go:563-582",
+        "old/spec/base.tla:1078-1084",
+        "new/source/confchange/confchange.go:92-103"
+      ],
+      "description": "A successful automatic leave append does not advance pendingConfIndex. A later Advance before that leave applies may append another empty V2 leave; applying the second after exiting joint would error. Old AutoLeaveAdvance accepts one leave on each eligible call.",
+      "must_not_hide": "Do not treat repeated leave panics as permitted or rewrite ConfigAfter to silently accept invalid second leave. Validate a paginated/application-lag witness; no new at-most-one formula is asserted without resolving leader-change/retry scope.",
+      "witness": "Same leader, autoLeave joint with pendingConf=k, first Advance cursor=k appends leave at l. Another already-committed normal-entry page with cursor>=k advances before leave application and may append a second exit."
+    },
+    {
+      "id": "D8",
+      "kind": "remaining source/model scope gaps",
+      "evidence": [
+        "new/source/raft.go:1503-1513",
+        "old/spec/base.tla:88-93",
+        "old/spec/Trace.tla:65-73"
+      ],
+      "description": "Removed/demoted leader early return has a step-down TODO; old model derives learner role from config rather than observing concrete progress/local flags. This update factors the path but does not prove those obligations.",
+      "must_not_hide": "Do not add an unconditional Leader=>voter invariant that contradicts documented transitional behavior without a scoped requirement; do observe role consistency and validate side effects separately."
+    }
+  ],
+  "unresolved_obligations": [
+    {
+      "name": "Witness execution and model correspondence",
+      "status": "not attempted by instruction",
+      "details": "Run old/new source witnesses and old/new reference replay only in the next phase. The new model must migrate StepVote, accepted Ready/Advance and full restoration; Trace post-state equality stays mandatory. None of the local fixtures is claimed reachable from every bounded cfg."
+    },
+    {
+      "name": "Enabled property and workload coverage",
+      "status": "open",
+      "details": "MC.cfg disables many extension properties and excludes V2 from WorkloadKinds; Update_full.cfg includes V2 but omits integrated decision contracts and uses only RawNodes. Later validation must combine relevant invariants, cover Node and RawNode paths, use nonempty joint incoming/outgoing/staged learners and both autoLeave values, and demonstrate reachability with canaries. Passing a selected cfg is not completeness."
+    },
+    {
+      "name": "Progress under lagging promotion and after joint recovery",
+      "status": "open",
+      "details": "Old ElectionProgress requires eventual CommonConfiguration and StableServices for all nodes, excluding a crashed old leader and a voter still locally classified learner. Validate candidate 3 with committed promotion of 1, old leader 2 down, learner 1 granting, and receiver-config quorum {1,3}. Eventual progress needs explicit fair delivery/persistence, stable up-to-date candidate and available quorum; do not assume configuration convergence before election. Automatic exit eventual scheduling/commit and quota-retry progress also lack a complete liveness argument."
+    },
+    {
+      "name": "Malformed ConfState contract",
+      "status": "open",
+      "details": "Restore requires an empty Changer and tests valid configurations plus empty. Invalid overlaps, zero/duplicate IDs, learners-only, AutoLeave without outgoing and unexpected protobuf fields need an explicit error/panic/rejection contract. New Equivalent preserves duplicate multiplicity while abstract sets erase it; do not silently call duplicate-containing inputs valid. No blanket nonpanic property is proposed for invalid external data."
+    },
+    {
+      "name": "Refactored configuration side effects",
+      "status": "predicate proposed; execution pending; removed-leader policy open",
+      "details": "ConfigurationSwitchSideEffects specifies eligible leader commit recalculation/broadcast, transfer abort and follower role guards. RestoredProgressRoleConsistency covers local-role cache updates and staged demotion. Both require new observations and execution. Immediate step-down for a removed/demoted leader remains a TODO whose precise policy is not supplied."
+    },
+    {
+      "name": "Representation and concurrency outside current abstraction",
+      "status": "open",
+      "details": "Use source-boundary observations for protobuf compatibility, Equivalent input immutability, actual role flags, stable Visit ordering at 7/8 entries, constructor ID rejection and races. Do not claim set/bag-valued atomic MC establishes them. SetLogger concurrent-construction support and callback mutation during Visit remain API-scope questions."
+    },
+    {
+      "name": "Automatic leave repetition and source-model quota details",
+      "status": "open",
+      "details": "Execute D7 paginated Advance witness and distinguish a repeated leave bug from legitimate retries/leadership changes. Preserve canonical nonzero empty-V2 payload weight and actual serialized sizes; finite MC maps them to abstract weights, so repeat source-level quota-boundary witnesses."
+    },
+    {
+      "name": "Referenced but unsupplied support artifacts",
+      "status": "input limitation",
+      "details": "old/spec comments refer to modeling-brief.md, model-notes.md and instrumentation-spec.md; they are not supplied in old/spec. No trace instrumentation or new spec is supplied. Assessment relies on actual supplied definitions/contracts/tests, not those comments as evidence of validated coverage."
+    }
+  ]
+}

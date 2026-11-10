@@ -1,0 +1,4 @@
+# runtime/cgo
+cgo: open /home/ubuntu/tmp/cgo-gcc-input-2643075492: no such file or directory
+FAIL	go.etcd.io/etcd/raft [build failed]
+FAIL

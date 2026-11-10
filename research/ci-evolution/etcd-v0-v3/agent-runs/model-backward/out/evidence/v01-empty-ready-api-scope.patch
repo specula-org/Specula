@@ -1,0 +1,11 @@
+--- 
++++ 
+@@ -965,7 +965,7 @@
+ ProtocolReady(n) ==
+     /\ Live(n) /\ ~ready[n].active
+     /\ LET r==raft[n] b==NewReady(r) IN
+-       /\ ContainsUpdates(b)
++       /\ (ContainsUpdates(b) \/ n\in RawNodes)
+        /\ ready'=[ready EXCEPT ![n]=b]
+        \* rawnode.go:122-150; RawNode.Ready is read-only. node.go:308-320,
+        \* 386-388 accepts only after the Ready is actually delivered.

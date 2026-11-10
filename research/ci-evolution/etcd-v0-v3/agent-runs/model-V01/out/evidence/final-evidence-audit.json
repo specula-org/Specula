@@ -1,0 +1,33 @@
+{
+  "checks": [
+    {
+      "run": "baseline-code",
+      "cases": 105,
+      "result_envelopes": 210,
+      "comparison_revalidated": true,
+      "original_model_copy_verified": true
+    },
+    {
+      "run": "baseline-model",
+      "cases": 43,
+      "result_envelopes": 86,
+      "comparison_revalidated": true,
+      "original_model_copy_verified": true
+    },
+    {
+      "run": "repaired-code",
+      "cases": 105,
+      "result_envelopes": 210,
+      "comparison_revalidated": true,
+      "original_model_copy_verified": true
+    },
+    {
+      "run": "repaired-model",
+      "cases": 43,
+      "result_envelopes": 86,
+      "comparison_revalidated": true,
+      "original_model_copy_verified": true
+    }
+  ],
+  "duration_seconds": 0.4307539388537407
+}

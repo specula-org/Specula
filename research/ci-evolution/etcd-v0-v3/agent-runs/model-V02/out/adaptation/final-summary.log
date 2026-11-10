@@ -1,0 +1,35 @@
+{
+  "totals": {
+    "code_derived": 239,
+    "model_derived": 103,
+    "supported_pairs_per_model": 342,
+    "baseline_matches": 324,
+    "baseline_mismatches": 18,
+    "repaired_matches": 342,
+    "repaired_mismatches": 0,
+    "final_supported_adapter_errors": 0,
+    "old_version_subset_matches": 21,
+    "invalid_inputs_separate": 6
+  },
+  "version_comparison": {
+    "cases": 21,
+    "changed_outputs": 14,
+    "unchanged_outputs": 7,
+    "changed_pre_states": 2,
+    "changed_inputs": 0,
+    "evidence": "out/adaptation/version-deltas.json",
+    "note": "Both versions separately match their supplied/repaired model on this subset. Advance pre-state deltas are expected because Ready acceptance changed; these are version changes, not adapter mismatches."
+  },
+  "timing": {
+    "start_utc": "2026-09-22T18:11:43+00:00",
+    "first_current_compatible_run_utc": "2026-09-22T18:16:04.715386+00:00",
+    "first_compatible_seconds": 261.715386,
+    "last_executable_binding_edit_utc": "2026-09-22T18:23:37.885088+00:00",
+    "executable_adaptation_seconds": 714.885088,
+    "reporting_completed_utc": "2026-09-22T18:29:35.034471+00:00",
+    "total_wall_seconds": 1260.066275,
+    "note": "Wall time includes local inspection, binding/domain/model work, testing, reporting and final artifact audit. Individual command times are separately recorded; no labor-time precision claimed.",
+    "final_artifact_audit_utc": "2026-09-22T18:32:43.066275+00:00"
+  },
+  "footprint_files": 15
+}

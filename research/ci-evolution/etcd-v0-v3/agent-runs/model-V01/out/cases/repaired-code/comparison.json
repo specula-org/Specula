@@ -1,0 +1,889 @@
+{
+  "protocol": "action-validation/v1",
+  "route": "code-to-model",
+  "spec": "out/repaired-spec",
+  "counts": {
+    "match": 105
+  },
+  "total": 105,
+  "commands": [
+    {
+      "engine": "implementation",
+      "command": [
+        "python3",
+        "/workspace/out/framework/adapters/go/run.py",
+        "--input",
+        "/workspace/out/cases/code-inputs.json",
+        "--output",
+        "/workspace/out/cases/repaired-code/implementation.jsonl",
+        "--work",
+        "/workspace/out/cases/repaired-code/implementation"
+      ],
+      "duration_seconds": 0.314577367156744,
+      "exit_code": 0
+    },
+    {
+      "engine": "model",
+      "command": [
+        "python3",
+        "/workspace/out/framework/adapters/tla/run.py",
+        "--input",
+        "/workspace/out/cases/code-inputs.json",
+        "--output",
+        "/workspace/out/cases/repaired-code/model.jsonl",
+        "--spec",
+        "/workspace/out/repaired-spec",
+        "--work",
+        "/workspace/out/cases/repaired-code/model"
+      ],
+      "duration_seconds": 2.4695772463455796,
+      "exit_code": 0
+    }
+  ],
+  "results": [
+    {
+      "id": "proposal-AddVoter-0-0-0",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "proposal-AddVoter-2-0-0",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "proposal-AddVoter-0-16-0",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "proposal-AddVoter-0-0-2",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "proposal-V2-0-0-0",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "proposal-V2-2-0-0",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "proposal-V2-0-16-0",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "proposal-V2-0-0-2",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "proposal-removed",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-simple-add",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-simple-demote",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-simple-replace",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-simple-leave",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-simple-empty-explicit",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-simple-empty-implicit",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-simple-zero-id",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-simple-remove-self",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-simple-remove-transfer",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-simple-remove-readd",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-joint-add",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-joint-demote",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-joint-replace",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-joint-leave",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-joint-empty-explicit",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-joint-empty-implicit",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-joint-zero-id",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-joint-remove-self",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-joint-remove-transfer",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-joint-remove-readd",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-last-voter",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-legacy-demote",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-unknown-remove",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-existing-voter",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-new-learner",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-promote-learner",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-update",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-self-demote",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-reduced-quorum-commit",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "hup-Normal-False",
+      "action": "hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "hup-Normal-True",
+      "action": "hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "hup-AddVoter-False",
+      "action": "hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "hup-AddVoter-True",
+      "action": "hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "hup-V2-False",
+      "action": "hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "hup-V2-True",
+      "action": "hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "hup-singleton",
+      "action": "hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "hup-joint-single",
+      "action": "hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "hup-learner",
+      "action": "hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "hup-outgoing-self",
+      "action": "hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "read-simple-False",
+      "action": "read",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "read-simple-True",
+      "action": "read",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "quorum-simple-1",
+      "action": "checkquorum",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "quorum-simple-2",
+      "action": "checkquorum",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "quorum-simple-0",
+      "action": "checkquorum",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "read-singleton-False",
+      "action": "read",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "read-singleton-True",
+      "action": "read",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "quorum-singleton-1",
+      "action": "checkquorum",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "quorum-singleton-2",
+      "action": "checkquorum",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "quorum-singleton-0",
+      "action": "checkquorum",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "read-joint-False",
+      "action": "read",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "read-joint-True",
+      "action": "read",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "quorum-joint-1",
+      "action": "checkquorum",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "quorum-joint-2",
+      "action": "checkquorum",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "quorum-joint-0",
+      "action": "checkquorum",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "read-joint-single-False",
+      "action": "read",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "read-joint-single-True",
+      "action": "read",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "quorum-joint-single-1",
+      "action": "checkquorum",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "quorum-joint-single-2",
+      "action": "checkquorum",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "quorum-joint-single-0",
+      "action": "checkquorum",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "ack-joint-1",
+      "action": "readack",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "ack-joint-2",
+      "action": "readack",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "ready-raw-False-2-1-Leader-2",
+      "action": "ready_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "advance-raw-False-2-1-Leader-2",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "ready-raw-True-2-0-Leader-2",
+      "action": "ready_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "advance-raw-True-2-0-Leader-2",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "ready-raw-True-2-16-Leader-2",
+      "action": "ready_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "advance-raw-True-2-16-Leader-2",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "ready-raw-True-0-0-Leader-0",
+      "action": "ready_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "advance-raw-True-0-0-Leader-0",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "ready-raw-True-2-0-Follower-2",
+      "action": "ready_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "advance-raw-True-2-0-Follower-2",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "ready-raw-True-2-0-Leader-3",
+      "action": "ready_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "advance-raw-True-2-0-Leader-3",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "ready-node-False-2-1-Leader-2",
+      "action": "ready_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "advance-node-False-2-1-Leader-2",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "ready-node-True-2-0-Leader-2",
+      "action": "ready_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "advance-node-True-2-0-Leader-2",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "ready-node-True-2-16-Leader-2",
+      "action": "ready_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "advance-node-True-2-16-Leader-2",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "ready-node-True-0-0-Leader-0",
+      "action": "ready_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "advance-node-True-0-0-Leader-0",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "ready-node-True-2-0-Follower-2",
+      "action": "ready_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "advance-node-True-2-0-Follower-2",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "ready-node-True-2-0-Leader-3",
+      "action": "ready_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "advance-node-True-2-0-Leader-3",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "restore-simple",
+      "action": "restore",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "restart-simple",
+      "action": "restart",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "restore-joint",
+      "action": "restore",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "restart-joint",
+      "action": "restart",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "restore-outgoing-only",
+      "action": "restore",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "restart-outgoing-only",
+      "action": "restart",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "restore-learner",
+      "action": "restore",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "restart-learner",
+      "action": "restart",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "restore-stale",
+      "action": "restore",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "restore-fast-forward",
+      "action": "restore",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "restore-non-follower",
+      "action": "restore",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    }
+  ],
+  "extra_results": {
+    "implementation": [],
+    "model": []
+  }
+}

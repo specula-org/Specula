@@ -1,0 +1,69 @@
+TLC2 Version 2.20 of Day Month 20?? (rev: ${git.shortRevision})
+Running breadth-first search Model-Checking with fp 122 and seed -3259830489737765481 with 1 worker on 96 cores with 1963MB heap and 64MB offheap memory [pid: 4243] (Linux 6.8.0-1044-azure amd64, Ubuntu 21.0.11 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /workspace/out/cases/baseline-v03-code-02/model/raw/LocalActions.tla
+Parsing file /workspace/out/cases/baseline-v03-code-02/model/raw/base.tla
+Parsing file /workspace/out/tmp/tlc-10696038955517553988/Json.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Json.tla)
+Parsing file /workspace/out/tmp/tlc-10696038955517553988/_TLCTrace.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/_TLCTrace.tla)
+Parsing file /workspace/out/tmp/tlc-10696038955517553988/Naturals.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Naturals.tla)
+Parsing file /workspace/out/tmp/tlc-10696038955517553988/Integers.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Integers.tla)
+Parsing file /workspace/out/tmp/tlc-10696038955517553988/Sequences.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Sequences.tla)
+Parsing file /workspace/out/tmp/tlc-10696038955517553988/FiniteSets.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/FiniteSets.tla)
+Parsing file /workspace/out/tmp/tlc-10696038955517553988/Bags.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Bags.tla)
+Parsing file /workspace/out/tmp/tlc-10696038955517553988/TLC.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/TLC.tla)
+Parsing file /workspace/out/cases/baseline-v03-code-02/model/raw/ModelDomains.tla
+Parsing file /workspace/out/tmp/tlc-10696038955517553988/TLCExt.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/TLCExt.tla)
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module Bags
+Semantic processing of module base
+Semantic processing of module Json
+Semantic processing of module TLCExt
+Semantic processing of module _TLCTrace
+Semantic processing of module ModelDomains
+Semantic processing of module LocalActions
+Semantic errors:
+
+*** Errors: 4
+
+line 59, col 1 to line 61, col 119 of module LocalActions
+
+Operator Msg already defined or declared.
+
+
+line 64, col 4 to line 64, col 7 of module LocalActions
+
+Unknown operator: `PMsg'.
+
+
+line 147, col 14 to line 147, col 17 of module LocalActions
+
+Unknown operator: `PMsg'.
+
+
+line 148, col 47 to line 148, col 50 of module LocalActions
+
+Unknown operator: `PMsg'.
+
+
+*** Warnings: 1
+
+line 59, col 1 to line 61, col 119 of module LocalActions
+
+Multiple declarations or definitions for symbol Msg.  
+This duplicates the one at line 28, col 1 to line 30, col 79 of module LocalActions.
+
+
+
+Linting of module base
+Linting of module Json
+Linting of module TLCExt
+Linting of module _TLCTrace
+Linting of module ModelDomains
+Linting of module LocalActions
+Starting... (2026-09-22 18:43:38)
+Error: Parsing or semantic analysis failed.
+Finished in 00s at (2026-09-22 18:43:38)
+

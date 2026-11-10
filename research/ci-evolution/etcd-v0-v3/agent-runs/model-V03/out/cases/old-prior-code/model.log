@@ -1,0 +1,46 @@
+TLC2 Version 2.20 of Day Month 20?? (rev: ${git.shortRevision})
+Running breadth-first search Model-Checking with fp 33 and seed 855367549376919557 with 1 worker on 96 cores with 1963MB heap and 64MB offheap memory [pid: 3988] (Linux 6.8.0-1044-azure amd64, Ubuntu 21.0.11 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /workspace/out/cases/old-prior-code/model/raw/LocalActions.tla
+Parsing file /workspace/out/cases/old-prior-code/model/raw/base.tla
+Parsing file /workspace/out/tmp/tlc-13757882971613763959/Json.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Json.tla)
+Parsing file /workspace/out/tmp/tlc-13757882971613763959/_TLCTrace.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/_TLCTrace.tla)
+Parsing file /workspace/out/tmp/tlc-13757882971613763959/Naturals.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Naturals.tla)
+Parsing file /workspace/out/tmp/tlc-13757882971613763959/Integers.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Integers.tla)
+Parsing file /workspace/out/tmp/tlc-13757882971613763959/Sequences.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Sequences.tla)
+Parsing file /workspace/out/tmp/tlc-13757882971613763959/FiniteSets.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/FiniteSets.tla)
+Parsing file /workspace/out/tmp/tlc-13757882971613763959/Bags.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Bags.tla)
+Parsing file /workspace/out/tmp/tlc-13757882971613763959/TLC.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/TLC.tla)
+Parsing file /workspace/out/cases/old-prior-code/model/raw/ModelDomains.tla
+Parsing file /workspace/out/tmp/tlc-13757882971613763959/TLCExt.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/TLCExt.tla)
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module Bags
+Semantic processing of module base
+Semantic processing of module Json
+Semantic processing of module TLCExt
+Semantic processing of module _TLCTrace
+Semantic processing of module ModelDomains
+Semantic processing of module LocalActions
+Semantic errors:
+
+*** Errors: 1
+
+line 13, col 56 to line 13, col 59 of module LocalActions
+
+Unknown operator: `Snap'.
+
+
+
+Linting of module base
+Linting of module Json
+Linting of module TLCExt
+Linting of module _TLCTrace
+Linting of module ModelDomains
+Linting of module LocalActions
+Starting... (2026-09-22 18:43:05)
+Error: Parsing or semantic analysis failed.
+Finished in 00s at (2026-09-22 18:43:05)
+

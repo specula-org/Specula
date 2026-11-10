@@ -1,0 +1,116 @@
+=== RUN   TestBugA_V2PendingCampaignDisruptsLeader
+raft2026/09/22 20:42:57 INFO: 1 switched to configuration voters=()
+raft2026/09/22 20:42:57 INFO: 1 became follower at term 0
+raft2026/09/22 20:42:57 INFO: newRaft 1 [peers: [], term: 0, commit: 0, applied: 0, lastindex: 0, lastterm: 0]
+raft2026/09/22 20:42:57 INFO: 1 became follower at term 1
+raft2026/09/22 20:42:57 INFO: 1 switched to configuration voters=(1)
+raft2026/09/22 20:42:57 INFO: 1 switched to configuration voters=(1 2)
+raft2026/09/22 20:42:57 INFO: 1 switched to configuration voters=(1 2 3)
+raft2026/09/22 20:42:57 INFO: 2 switched to configuration voters=()
+raft2026/09/22 20:42:57 INFO: 2 became follower at term 0
+raft2026/09/22 20:42:57 INFO: newRaft 2 [peers: [], term: 0, commit: 0, applied: 0, lastindex: 0, lastterm: 0]
+raft2026/09/22 20:42:57 INFO: 2 became follower at term 1
+raft2026/09/22 20:42:57 INFO: 2 switched to configuration voters=(1)
+raft2026/09/22 20:42:57 INFO: 2 switched to configuration voters=(1 2)
+raft2026/09/22 20:42:57 INFO: 2 switched to configuration voters=(1 2 3)
+raft2026/09/22 20:42:57 INFO: 3 switched to configuration voters=()
+raft2026/09/22 20:42:57 INFO: 3 became follower at term 0
+raft2026/09/22 20:42:57 INFO: newRaft 3 [peers: [], term: 0, commit: 0, applied: 0, lastindex: 0, lastterm: 0]
+raft2026/09/22 20:42:57 INFO: 3 became follower at term 1
+raft2026/09/22 20:42:57 INFO: 3 switched to configuration voters=(1)
+raft2026/09/22 20:42:57 INFO: 3 switched to configuration voters=(1 2)
+raft2026/09/22 20:42:57 INFO: 3 switched to configuration voters=(1 2 3)
+raft2026/09/22 20:42:57 INFO: 1 switched to configuration voters=(1 2 3)
+raft2026/09/22 20:42:57 INFO: 1 switched to configuration voters=(1 2 3)
+raft2026/09/22 20:42:57 INFO: 1 switched to configuration voters=(1 2 3)
+raft2026/09/22 20:42:57 INFO: 2 switched to configuration voters=(1 2 3)
+raft2026/09/22 20:42:57 INFO: 2 switched to configuration voters=(1 2 3)
+raft2026/09/22 20:42:57 INFO: 2 switched to configuration voters=(1 2 3)
+raft2026/09/22 20:42:57 INFO: 3 switched to configuration voters=(1 2 3)
+raft2026/09/22 20:42:57 INFO: 3 switched to configuration voters=(1 2 3)
+raft2026/09/22 20:42:57 INFO: 3 switched to configuration voters=(1 2 3)
+raft2026/09/22 20:42:57 INFO: 1 is starting a new election at term 1
+raft2026/09/22 20:42:57 INFO: 1 became candidate at term 2
+raft2026/09/22 20:42:57 INFO: 1 received MsgVoteResp from 1 at term 2
+raft2026/09/22 20:42:57 INFO: 1 [logterm: 1, index: 3] sent MsgVote request to 2 at term 2
+raft2026/09/22 20:42:57 INFO: 1 [logterm: 1, index: 3] sent MsgVote request to 3 at term 2
+raft2026/09/22 20:42:57 INFO: 2 [term: 1] received a MsgVote message with higher term from 1 [term: 2]
+raft2026/09/22 20:42:57 INFO: 2 became follower at term 2
+raft2026/09/22 20:42:57 INFO: 2 [logterm: 1, index: 3, vote: 0] cast MsgVote for 1 [logterm: 1, index: 3] at term 2
+raft2026/09/22 20:42:57 INFO: 1 received MsgVoteResp from 2 at term 2
+raft2026/09/22 20:42:57 INFO: 1 has received 2 MsgVoteResp votes and 0 vote rejections
+raft2026/09/22 20:42:57 INFO: 1 became leader at term 2
+raft2026/09/22 20:42:57 INFO: 3 [term: 1] received a MsgVote message with higher term from 1 [term: 2]
+raft2026/09/22 20:42:57 INFO: 3 became follower at term 2
+raft2026/09/22 20:42:57 INFO: 3 [logterm: 1, index: 3, vote: 0] cast MsgVote for 1 [logterm: 1, index: 3] at term 2
+BRANCH before campaign node2={id:2 state:StateFollower term:2 vote:1 commit:5 applied:4 lead:1} hasReady=true activeReady=false pendingEntry=EntryConfChangeV2@5
+raft2026/09/22 20:42:57 INFO: 2 is starting a new election at term 2
+raft2026/09/22 20:42:57 INFO: 2 became candidate at term 3
+raft2026/09/22 20:42:57 INFO: 2 received MsgVoteResp from 2 at term 3
+raft2026/09/22 20:42:57 INFO: 2 [logterm: 2, index: 5] sent MsgVote request to 1 at term 3
+raft2026/09/22 20:42:57 INFO: 2 [logterm: 2, index: 5] sent MsgVote request to 3 at term 3
+CAMPAIGN after node2={id:2 state:StateCandidate term:3 vote:2 commit:5 applied:4 lead:0} emittedVotes=[2->1 MsgVote term=3 index=5 logTerm=2 commit=0 entries=0 reject=false, 2->3 MsgVote term=3 index=5 logTerm=2 commit=0 entries=0 reject=false] allMessages=[2->1 MsgAppResp term=2 index=5 logTerm=0 commit=0 entries=0 reject=false, 2->1 MsgVote term=3 index=5 logTerm=2 commit=0 entries=0 reject=false, 2->3 MsgVote term=3 index=5 logTerm=2 commit=0 entries=0 reject=false]
+raft2026/09/22 20:42:57 INFO: 1 [term: 2] received a MsgVote message with higher term from 2 [term: 3]
+raft2026/09/22 20:42:57 INFO: 1 became follower at term 3
+raft2026/09/22 20:42:57 INFO: 1 [logterm: 2, index: 5, vote: 0] cast MsgVote for 2 [logterm: 2, index: 5] at term 3
+CONSEQUENCE leaderBefore={id:1 state:StateLeader term:2 vote:1 commit:5 applied:5 lead:1} leaderAfterVote={id:1 state:StateFollower term:3 vote:2 commit:5 applied:5 lead:0}
+raft2026/09/22 20:42:57 INFO: 2 switched to configuration voters=(1 2 4)&&(1 2 3) autoleave
+raft2026/09/22 20:42:57 INFO: 2 received MsgVoteResp from 1 at term 3
+raft2026/09/22 20:42:57 INFO: 2 has received 2 MsgVoteResp votes and 0 vote rejections
+raft2026/09/22 20:42:57 INFO: 2 became leader at term 3
+raft2026/09/22 20:42:57 INFO: 1 switched to configuration voters=(1 2 4)&&(1 2 3) autoleave
+RESULT reproduced=true finalNode1={id:1 state:StateFollower term:3 vote:2 commit:5 applied:5 lead:0} finalNode2={id:2 state:StateLeader term:3 vote:2 commit:5 applied:5 lead:2} voteResponses=[1->2 MsgVoteResp term=3 index=0 logTerm=0 commit=0 entries=0 reject=false]
+--- PASS: TestBugA_V2PendingCampaignDisruptsLeader (0.00s)
+=== RUN   TestControl_LegacyPendingConfBlocksCampaign
+raft2026/09/22 20:42:57 INFO: 1 switched to configuration voters=()
+raft2026/09/22 20:42:57 INFO: 1 became follower at term 0
+raft2026/09/22 20:42:57 INFO: newRaft 1 [peers: [], term: 0, commit: 0, applied: 0, lastindex: 0, lastterm: 0]
+raft2026/09/22 20:42:57 INFO: 1 became follower at term 1
+raft2026/09/22 20:42:57 INFO: 1 switched to configuration voters=(1)
+raft2026/09/22 20:42:57 INFO: 1 switched to configuration voters=(1 2)
+raft2026/09/22 20:42:57 INFO: 1 switched to configuration voters=(1 2 3)
+raft2026/09/22 20:42:57 INFO: 2 switched to configuration voters=()
+raft2026/09/22 20:42:57 INFO: 2 became follower at term 0
+raft2026/09/22 20:42:57 INFO: newRaft 2 [peers: [], term: 0, commit: 0, applied: 0, lastindex: 0, lastterm: 0]
+raft2026/09/22 20:42:57 INFO: 2 became follower at term 1
+raft2026/09/22 20:42:57 INFO: 2 switched to configuration voters=(1)
+raft2026/09/22 20:42:57 INFO: 2 switched to configuration voters=(1 2)
+raft2026/09/22 20:42:57 INFO: 2 switched to configuration voters=(1 2 3)
+raft2026/09/22 20:42:57 INFO: 3 switched to configuration voters=()
+raft2026/09/22 20:42:57 INFO: 3 became follower at term 0
+raft2026/09/22 20:42:57 INFO: newRaft 3 [peers: [], term: 0, commit: 0, applied: 0, lastindex: 0, lastterm: 0]
+raft2026/09/22 20:42:57 INFO: 3 became follower at term 1
+raft2026/09/22 20:42:57 INFO: 3 switched to configuration voters=(1)
+raft2026/09/22 20:42:57 INFO: 3 switched to configuration voters=(1 2)
+raft2026/09/22 20:42:57 INFO: 3 switched to configuration voters=(1 2 3)
+raft2026/09/22 20:42:57 INFO: 1 switched to configuration voters=(1 2 3)
+raft2026/09/22 20:42:57 INFO: 1 switched to configuration voters=(1 2 3)
+raft2026/09/22 20:42:57 INFO: 1 switched to configuration voters=(1 2 3)
+raft2026/09/22 20:42:57 INFO: 2 switched to configuration voters=(1 2 3)
+raft2026/09/22 20:42:57 INFO: 2 switched to configuration voters=(1 2 3)
+raft2026/09/22 20:42:57 INFO: 2 switched to configuration voters=(1 2 3)
+raft2026/09/22 20:42:57 INFO: 3 switched to configuration voters=(1 2 3)
+raft2026/09/22 20:42:57 INFO: 3 switched to configuration voters=(1 2 3)
+raft2026/09/22 20:42:57 INFO: 3 switched to configuration voters=(1 2 3)
+raft2026/09/22 20:42:57 INFO: 1 is starting a new election at term 1
+raft2026/09/22 20:42:57 INFO: 1 became candidate at term 2
+raft2026/09/22 20:42:57 INFO: 1 received MsgVoteResp from 1 at term 2
+raft2026/09/22 20:42:57 INFO: 1 [logterm: 1, index: 3] sent MsgVote request to 2 at term 2
+raft2026/09/22 20:42:57 INFO: 1 [logterm: 1, index: 3] sent MsgVote request to 3 at term 2
+raft2026/09/22 20:42:57 INFO: 2 [term: 1] received a MsgVote message with higher term from 1 [term: 2]
+raft2026/09/22 20:42:57 INFO: 2 became follower at term 2
+raft2026/09/22 20:42:57 INFO: 2 [logterm: 1, index: 3, vote: 0] cast MsgVote for 1 [logterm: 1, index: 3] at term 2
+raft2026/09/22 20:42:57 INFO: 1 received MsgVoteResp from 2 at term 2
+raft2026/09/22 20:42:57 INFO: 1 has received 2 MsgVoteResp votes and 0 vote rejections
+raft2026/09/22 20:42:57 INFO: 1 became leader at term 2
+raft2026/09/22 20:42:57 INFO: 3 [term: 1] received a MsgVote message with higher term from 1 [term: 2]
+raft2026/09/22 20:42:57 INFO: 3 became follower at term 2
+raft2026/09/22 20:42:57 INFO: 3 [logterm: 1, index: 3, vote: 0] cast MsgVote for 1 [logterm: 1, index: 3] at term 2
+raft2026/09/22 20:42:57 INFO: 1 switched to configuration voters=(1 2 3 4)
+raft2026/09/22 20:42:57 WARN: 2 cannot campaign at term 2 since there are still 1 pending configuration changes to apply
+CONTROL legacy before={id:2 state:StateFollower term:2 vote:1 commit:5 applied:4 lead:1} afterCampaign={id:2 state:StateFollower term:2 vote:1 commit:5 applied:4 lead:1} emittedVotes=[] allMessages=[2->1 MsgAppResp term=2 index=5 logTerm=0 commit=0 entries=0 reject=false]
+raft2026/09/22 20:42:57 INFO: 2 switched to configuration voters=(1 2 3 4)
+CONTROL_RESULT legacyBlocked=true leader={id:1 state:StateLeader term:2 vote:1 commit:5 applied:5 lead:1} node2={id:2 state:StateFollower term:2 vote:1 commit:5 applied:5 lead:1}
+--- PASS: TestControl_LegacyPendingConfBlocksCampaign (0.00s)
+PASS
+ok  	bugA/repro	0.002s

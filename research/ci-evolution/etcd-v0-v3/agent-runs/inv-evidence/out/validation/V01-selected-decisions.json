@@ -1,0 +1,115 @@
+[
+  {
+    "name": "ConfigurationTransitionSafety",
+    "decision": "modify",
+    "change": [
+      "representation_or_observer_migration"
+    ],
+    "evidence": [
+      "old/spec/base.tla:1161; MaybeCommit:125",
+      "old/source/README.md:193",
+      "new/source/raftpb/raft.proto:139; new/source/quorum/joint.go:49"
+    ],
+    "proposed_predicate": "For every newly committed configuration entry except proven constructor bootstrap, require the committing voter configuration to equal its predecessor configuration's complete (I,O), and require supporting majorities of both components. Enter commits under the predecessor simple config; leave commits under the predecessor joint config. Do not skip auto-generated entries because request id is zero; ignore A/L/N only for quorum equality.",
+    "disagreement_witness": {
+      "state_or_transition": "Enter at index 10 yields I={1,2},O={2,3}. AutoLeave entry 11 has internal id=0 and is committed using only acknowledgements {1,2}.",
+      "old": "Can PASS by id=0 exemption, or by projecting voters to I/union",
+      "proposed": "FAIL: missing outgoing majority"
+    },
+    "note": "Preserve predecessor-config safety; do not replace it with the tautology 'the quorum equals whatever configuration the implementation used'."
+  },
+  {
+    "name": "QuorumAccounting",
+    "decision": "modify",
+    "change": [
+      "representation_or_observer_migration"
+    ],
+    "evidence": [
+      "old/spec/base.tla:1169; Won:110; MaybeCommit:125; BecomeLeader:165",
+      "new/source/tracker/tracker.go:165,178,230; new/source/quorum/joint.go:49"
+    ],
+    "proposed_predicate": "Record full C on each actual win/commit, require nonempty I, JointWon(C,yes/matches), and matches subset U(C). Preserve current-term commitment in the core/commit decision observer. Empty O is neutral, never a replacement for a nonempty I.",
+    "disagreement_witness": {
+      "state_or_transition": "I={1,2},O={2,3}, matching/voting IDs={1,2}. Both incoming and union majorities hold but outgoing majority does not.",
+      "old": "PASS under either common flat projection",
+      "proposed": "FAIL"
+    },
+    "note": "Quorum helpers already support joint sets in old/source; the old TLA observer does not."
+  },
+  {
+    "name": "AckPreservation",
+    "decision": "modify",
+    "change": [
+      "semantic_requirement_change",
+      "representation_or_observer_migration"
+    ],
+    "evidence": [
+      "old/spec/base.tla:1184; AdvanceCore:966; ProtocolAdvance:978",
+      "new/source/raft.go:554; new/source/log_unstable.go:77"
+    ],
+    "proposed_predicate": "Retain exact captured applied cursor and snapshot/stable endpoint protection. Normally afterHist=beforeHist; only an eligible, successfully admitted automatic leave may yield afterHist=beforeHist concatenated with exactly one V2 leave entry at last+1/currentTerm with causal origin. Preserve all old entries exactly. Check eligibility, quota, outstanding leave and pending barrier independently; merely requiring Covers is too weak.",
+    "disagreement_witness": {
+      "state_or_transition": "Leader term 4, valid AutoLeave joint config, enter index 10 applied by this Ready, no outstanding leave, available quota, history length 10: Advance appends leave entry 11.",
+      "old": "FAIL because before!=after",
+      "proposed": "PASS; appending a normal entry, rewriting index 9, or appending a second outstanding leave still FAILS"
+    }
+  },
+  {
+    "name": "CampaignDecisionEligibility",
+    "decision": "modify",
+    "change": [
+      "representation_or_observer_migration"
+    ],
+    "evidence": [
+      "old/spec/base.tla:576,585,697; ConfKinds:65",
+      "new/source/raft.go:769,897,1580; new/source/raft_test.go:3064,3918"
+    ],
+    "proposed_predicate": "Keep promotability, due-tick, pending-applied scan and exact request/role/term contracts. Observe full C, use U(C) for recipients, JointWon(C,{self}) for immediate election, and IsConf for all committed-but-unapplied entries. Do not imitate numOfPendingConf's V1-only filter.",
+    "disagreement_witness": {
+      "state_or_transition": "Node 1 is promotable, term 4, applied=9, commit=10; entry 10 is V2 EnterJoint and has not been applied. Hup starts term 5 and sends votes.",
+      "old": "Old ConfKinds/legacy observation can miss V2 and permit campaigning",
+      "proposed": "FAIL: pending V2 must block Hup; source presently appears to violate this"
+    }
+  },
+  {
+    "name": "RequestCorrelatedConfigurationEffects",
+    "decision": "modify",
+    "change": [
+      "semantic_requirement_change",
+      "representation_or_observer_migration"
+    ],
+    "evidence": [
+      "old/spec/base.tla:622,629,699; ConfigAfter:468",
+      "new/source/confchange/confchange.go:49,95,133,186,213,240",
+      "new/source/raftpb/confchange.go:48,74,101; new/source/raft_test.go:3098",
+      "new/source/rawnode_test.go:104 TestRawNodeProposeAndConfChange"
+    ],
+    "proposed_predicate": "Observe every V1/V2 application with complete before/after config, committed entry, original request/batch, version/context and outcome. For valid success require exactly the shared atomic configuration_effect/apply_ops result. Client identity must match the entire ordered batch/context and handoff; bootstrap and automatic leave require explicit provenance. Preserve deterministic per-operation NodeID=0 cancellation without confusing an empty V2 with cancellation. Invalid direct applications obey ConfigurationChangeValidation, not a fabricated successful fold.",
+    "disagreement_witness": {
+      "state_or_transition": "From I={1,2}, apply committed legacy AddLearner(2): correct result I={1},L={2}. Also Auto V2 [AddVoter(2),AddLearner(1)] from {1} yields I={2},O={1},N={1},A=TRUE.",
+      "old": "FAIL correct simple demotion (old contract requires no-op); cannot express atomic joint batch",
+      "proposed": "PASS correct demotion/joint batch; FAIL omitted/reordered operation or lost context"
+    },
+    "note": "Demotion and idempotent unknown removal are semantic changes supported by tests. Ordinary AddVoter, promotion, duplicate add, Update and zero-ID no-op requirements remain."
+  },
+  {
+    "name": "AutoLeaveProgress",
+    "decision": "add",
+    "change": [
+      "semantic_requirement_change",
+      "new_coverage_for_required_behavior"
+    ],
+    "evidence": [
+      "new/source/raft.go:561,573,581",
+      "new/source/tracker/tracker.go:28; new/source/raftpb/raft.proto:80",
+      "old/spec/MC.tla:ManagementProgress"
+    ],
+    "proposed_predicate": "Under continuing fair caller, persistence, network and ticks, an eligible surviving voter leader, stable legal configuration, and eventually available quorums of both sides and quota, an AutoLeave joint configuration eventually has its one leave entry proposed, committed and applied, ending with O=N={} and A=FALSE. No further client write may be required as a hidden premise. Retry failed admission and resume after leader change; JointExplicit has no autonomous-exit obligation.",
+    "disagreement_witness": {
+      "state_or_transition": "At the first eligible Advance: enter entry at 10 consumes all quota (8/8), no later entries, cursor=10,pending=10. Zero V2 serializes to 2 bytes. Auto append fails, then Advance debits the entry and quota becomes 0. No new client writes; heartbeats keep both quorums live.",
+      "old": "Existing properties can all tolerate remaining joint forever; ManagementProgress only applies an already committed client request",
+      "proposed": "FAIL if no retry ever occurs; PASS eventual single committed/applied exit"
+    },
+    "note": "This is a temporal obligation, not established by a finite safety check."
+  }
+]

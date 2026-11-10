@@ -1,0 +1,303 @@
+[
+  {
+    "name": "AutoLeaveAdvance",
+    "decision": "modify",
+    "change_classification": [
+      "semantic_requirement_strengthening",
+      "observer_migration",
+      "pre_existing_property_defect_repair"
+    ],
+    "reason": "The old effect check is too weak even if corrected code passes it. Replace its retry alternative, check pending on success, and prohibit appending on non-crossing Advances. Separately repair the old observer, which did not record oldApplied/oldPending and omitted cursor>0 from eligibility.",
+    "evidence": [
+      "old/spec/base.tla:1088-1135 (AdvanceCore and autoLeaveChecks)",
+      "old/spec/base.tla:1355-1362",
+      "old/source/raft.go:557-585",
+      "new/source/raft.go:556-592",
+      "new/source/rawnode_test.go:319-332",
+      "new/source/testdata/confchange_v2_add_double_auto.txt:238-279,331-341"
+    ],
+    "proposed_predicate": "For every valid Advance, let trigger = before.role=Leader AND before.config.autoLeave AND cursor>0 AND before.applied<before.pendingConf AND before.pendingConf<=cursor. If trigger, afterHist = beforeHist concatenated with exactly one entry whose index=beforeLast+1, term=before.term, kind=V2, id=0, changes=<<>>, transition=Auto and payload weight=0; after.pendingConf=beforeLast+1; no quota rejection or fatal is permitted. If not trigger, afterHist=beforeHist and after.pendingConf=before.pendingConf. The applied cursor and preservation requirements remain in AckPreservation. Require quotaAfter=max(0,quotaBefore-Weight(batch.committed)).",
+    "disagreement_witness": [
+      {
+        "kind": "distinguishing_transition",
+        "state": "Leader in auto-leaving joint config; applied=5, pendingConf=6, last=8, Ready cursor=6.",
+        "transition": "Append leave at 9 but leave pendingConf=6.",
+        "old_property": "Passes: one empty-change V2 was appended; successful pending cursor is unchecked.",
+        "proposed_property": "Fails: pendingConf must be 9.",
+        "validation": "Static prediction only; not executed."
+      },
+      {
+        "kind": "distinguishing_transition",
+        "state": "Same joint episode, after the previous old transition: applied=6, pendingConf=6, last=9; next Ready cursor=8.",
+        "transition": "Append a second leave at 10.",
+        "old_property": "Passes again: the old eligibility and one-entry alternative permit this duplicate.",
+        "proposed_property": "Fails: oldApplied<pendingConf is false; no leave may be appended.",
+        "validation": "Static prediction only; not executed."
+      },
+      {
+        "kind": "distinguishing_transition",
+        "state": "Leader in auto joint state, applied=5, pending=6, last=8, cursor=6; quota=5 and cap=3.",
+        "transition": "Do not append; report DropQuota and pendingConf=8.",
+        "old_property": "Passes the explicit quota-retry alternative.",
+        "proposed_property": "Fails: the leave has zero payload and must append.",
+        "validation": "Static prediction only; not executed."
+      },
+      {
+        "kind": "distinguishing_transition",
+        "state": "Auto joint leader, oldApplied=pendingConf=6, last=9, cursor=8.",
+        "transition": "Correctly advance without appending.",
+        "old_property": "Fails old eligible=>append-or-retry rule.",
+        "proposed_property": "Passes the crossing-based rule.",
+        "validation": "Static prediction only; not executed."
+      }
+    ],
+    "observer_maintenance": "Record raw beforeApplied, beforePending, cursor, beforeConfig, beforeRole, beforeTerm, beforeHist, quotaBefore, batch committed entries and actual afterHist/pending/quota/fatal. Compute eligibility in the predicate, not as a protocol-produced verdict. Do not use a stale r.decision value as evidence of this Advance rejecting."
+  },
+  {
+    "name": "AutoLeaveCompletion",
+    "decision": "add",
+    "change_classification": [
+      "unchanged_requirement_extended_coverage",
+      "temporal_obligation"
+    ],
+    "reason": "Automatic transition out of an implicit joint configuration is still required. A crossing-only Advance predicate must not silently excuse a joint configuration stranded by an allowed early-Advance/application order.",
+    "evidence": [
+      "new/source/raftpb/raft.proto:85-91,111-113,164-168",
+      "new/source/node.go:151-157",
+      "old/spec/base.tla:1080-1086,1112-1116,1149-1173",
+      "new/source/raft.go:563-583",
+      "old/spec/MC.tla:118-121"
+    ],
+    "proposed_predicate": "For an applied auto-leaving joint configuration, if an eligible leader remains stable, both joint majorities and storage remain available, communication/ticks/Ready/application callbacks are fairly serviced, and no conflicting external configuration request intervenes, the configuration eventually leaves joint state. This includes legal schedules in which the configuration callback runs after Advance has already acknowledged its entry. The local implementation must arrange a leave proposal once the applied configuration permits it; requiring the applied cursor to cross the same pending index again is not an acceptable liveness premise. Existing ManagementProgress only concerns already committed request IDs and does not establish internal auto-leave initiation.",
+    "observer_maintenance": "Identify the applied joint-configuration episode and its entry index independently from the raft applied cursor; retain ordered application jobs and separate Advance/ApplyEntry actions. Do not force EarlyAdvance=false to eliminate the schedule.",
+    "disagreement_witness": {
+      "kind": "possible_source_regression_and_retained_requirement_gap",
+      "state": "A committed enter-joint entry is at index 6, pendingConf=6, raft.applied=5, and the caller has queued its Ready application but has not called ApplyConfChange yet.",
+      "transition": "Advance first sets applied=6 while AutoLeave is still false; then ApplyEntry installs AutoLeave=true. Later a normal entry 7 is committed and advanced; leader/quorums/services remain healthy. The new crossing guard sees oldApplied>=pendingConf forever and does not initiate a leave.",
+      "old_property": "The old AutoLeaveAdvance demands append-or-retry on the later cursor-7 Advance; simply replacing it with a crossing-only rule would lose this obligation. Old code can append on that later Advance with sufficient quota.",
+      "proposed_property": "AutoLeaveCompletion still rejects an infinite healthy execution that remains joint. Whether this caller ordering is excluded by a stricter documented configuration-callback contract must be resolved; ordinary early Advance is allowed by Node documentation.",
+      "validation": "Static proposed schedule; not executed or proved reachable."
+    }
+  },
+  {
+    "name": "OutcomeSoundness",
+    "decision": "modify",
+    "change_classification": [
+      "semantic_requirement_change"
+    ],
+    "reason": "The new test explicitly requires empty entries to remain admissible above the cap. This does not authorize exempting every configuration entry from the payload limit.",
+    "evidence": [
+      "old/spec/base.tla:900-917,1392-1399",
+      "new/source/raft.go:1610-1627",
+      "new/source/raft_test.go:235-268",
+      "new/source/util.go:159-161"
+    ],
+    "proposed_predicate": "Keep all role, membership, forwarding and transfer branches of ExpectedDecision. In its eligible-leader branch use DropQuota iff quota>0 AND effectivePayloadWeight>0 AND quota+effectivePayloadWeight>MaxUncommitted; otherwise Accepted. Weight is the sum of len(Data) after configuration rewriting, not encoded Entry size. A nonempty message containing zero-payload entries is distinct from an empty MsgProp.",
+    "disagreement_witness": [
+      {
+        "kind": "distinguishing_transition",
+        "state": "Eligible leader, cap=3, quota=5 after an allowed oversized first proposal; next proposal has one empty normal entry, weight=0.",
+        "transition": "Accept it and leave quota=5.",
+        "old_property": "Fails: ExpectedDecision predicts DropQuota.",
+        "proposed_property": "Passes.",
+        "validation": "Static prediction only; not executed."
+      },
+      {
+        "kind": "distinguishing_transition",
+        "state": "Eligible leader, cap=3, quota=5; proposal has payload weight=1.",
+        "transition": "DropQuota without appending.",
+        "old_property": "Passes.",
+        "proposed_property": "Passes: positive payload is still limited.",
+        "validation": "Static prediction only; not executed."
+      }
+    ]
+  },
+  {
+    "name": "ProposalConfigurationDecisions",
+    "decision": "modify",
+    "change_classification": [
+      "semantic_requirement_change",
+      "observer_migration",
+      "pre_existing_property_coverage_repair"
+    ],
+    "reason": "The added admission guards must be checked in both directions and per batch position. The old observer collapses incoming/outgoing membership into a union, which cannot determine joint state. Preserve the public LeaveJoint classification despite a conflicting new source guard.",
+    "evidence": [
+      "old/spec/base.tla:730-767,772-786",
+      "old/spec/base.tla:331-350",
+      "new/source/raft.go:1021-1079",
+      "new/source/testdata/confchange_v2_add_single_explicit.txt:100-120,165-178",
+      "new/source/raftpb/confchange.go:49-57,71-106",
+      "new/source/raftpb/raft.proto:164-168",
+      "new/source/raft_test.go:3055-3077"
+    ],
+    "proposed_predicate": "Observe the full pre-configuration, pre-pending cursor and the ordered input entry batch. For an eligible leader, process entries left to right using a local pending cursor P initially equal to before.pendingConf and the unchanged pre-application configuration C. A configuration entry is rewritten to an empty normal entry iff P>applied OR (C is joint AND the entry is not an actual LeaveJoint) OR (C is not joint AND the entry is an actual LeaveJoint). Actual LeaveJoint means V2, no changes, Transition=Auto, ignoring Context; legacy AsV2 always contains one change, including NodeID=0. Rewriting must not advance P. Otherwise preserve the configuration entry and set P=beforeLast+batchPosition. Preserve normal entries. Decide quota from the whole effective batch using the positive-weight condition in OutcomeSoundness. On Accepted append exactly that batch, preserving content, payload weight and encoded size, assigning current term and consecutive indices; after.pendingConf=P. On quota drop the log is unchanged (the separate pending-on-drop concern remains unresolved). Retain the old role/forwarding/transfer behavior. Do not redefine LeaveJoint as merely len(Changes)=0.",
+    "disagreement_witness": [
+      {
+        "kind": "distinguishing_transition",
+        "state": "Joint C: incoming={1,2}, outgoing={1}; leader 1 has applied=pending=4, last=4, enough quota.",
+        "transition": "Propose V2 AddVoter(3); append an empty normal entry at 5, pending remains 4.",
+        "old_property": "Fails: old ProposalContract expects the configuration payload to survive.",
+        "proposed_property": "Passes.",
+        "validation": "Static prediction only; not executed."
+      },
+      {
+        "kind": "distinguishing_transition",
+        "state": "Same C and cursors.",
+        "transition": "In one MsgProp submit [V2 AddVoter(3), V2 empty Auto]. Correct result is [normal no-op, actual leave] with pending=6.",
+        "old_property": "Fails: old rule keeps the first and rewrites any later configuration entry.",
+        "proposed_property": "Passes. A rejected first configuration must not fence the valid second one.",
+        "validation": "Static prediction only; not executed."
+      },
+      {
+        "kind": "distinguishing_transition",
+        "state": "Non-joint C={1,2}, no pending change.",
+        "transition": "Propose empty V2 Auto and append a normal no-op.",
+        "old_property": "Fails: old content oracle expects V2.",
+        "proposed_property": "Passes.",
+        "validation": "Static prediction only; not executed."
+      },
+      {
+        "kind": "distinguishing_transition",
+        "state": "Non-joint nonempty C, no pending change; empty V2 with Transition=JointExplicit.",
+        "transition": "New source rewrites it to a normal entry because len(Changes)=0.",
+        "old_property": "Fails old oracle, which preserves it.",
+        "proposed_property": "Fails proposed oracle too: EnterJoint supports this request; this source disagreement is not an authorized weakening.",
+        "validation": "Static prediction only; not executed."
+      }
+    ],
+    "observer_maintenance": "Add config (including outgoing), beforeTerm and actual afterPending to ProposalObservation; observe effective bytes/weights independently. The old outcomes weight calls protocol RewriteConf, so OutcomeSoundness alone cannot independently validate rewriting. Keep the content oracle separate from protocol RewriteConf."
+  },
+  {
+    "name": "CampaignDecisionEligibility",
+    "decision": "modify",
+    "change_classification": [
+      "pre_existing_property_defect_repair",
+      "unchanged_requirement"
+    ],
+    "reason": "Sorting campaign recipients does not change election eligibility. The self-quorum shortcut is a separate, statically identifiable defect in the old property, not a requirement change.",
+    "evidence": [
+      "old/spec/base.tla:658-692",
+      "old/spec/base.tla:250-269",
+      "new/source/raft.go:775-817,907-927,1652-1660",
+      "new/source/quorum/joint.go:28-75",
+      "new/source/testdata/campaign.txt"
+    ],
+    "proposed_predicate": "Retain CampaignContract, including exact request multiplicity/recipients, current log freshness, learner/nonvoter rejection, tick eligibility, and blocking on all unapplied ConfKinds. Replace its singleton shortcut IsSingleton(o.config) with selfWins=JointWon(o.config,{o.node}) on an eligible nonempty configuration. When selfWins, a permitted Hup/pre-campaign reaches Leader and increments term once without remote requests. Message order remains outside this bag-based safety predicate.",
+    "disagreement_witness": [
+      {
+        "kind": "distinguishing_transition",
+        "state": "Follower 1, term=2, preVote=true; fully applied joint config incoming={1}, outgoing={1}; no unapplied configuration entries.",
+        "transition": "Hup self-wins pre-vote and election; becomes Leader at term 3.",
+        "old_property": "Fails: IsSingleton excludes every joint config and predicts PreCandidate.",
+        "proposed_property": "Passes: both singleton joint halves self-win.",
+        "validation": "Static prediction only; not executed."
+      },
+      {
+        "kind": "distinguishing_transition",
+        "state": "Follower 1 has committed but unapplied V2 configuration entry at index 6; applied=5.",
+        "transition": "Hup emits campaign requests.",
+        "old_property": "Fails because the old property already scans ConfKinds.",
+        "proposed_property": "Still fails. Do not narrow to LegacyConfKinds to match numOfPendingConf.",
+        "validation": "Static prediction only; not executed."
+      }
+    ]
+  },
+  {
+    "name": "ConfigurationTransitionSafety",
+    "decision": "modify",
+    "change_classification": [
+      "pre_existing_property_coverage_repair",
+      "unchanged_requirement"
+    ],
+    "reason": "The old comment describes bootstrap exemptions, but its expression also exempts every automatic leave. The update increases the importance of this pre-existing coverage hole; the predecessor-configuration requirement itself is unchanged.",
+    "evidence": [
+      "old/spec/base.tla:1308-1313",
+      "old/spec/base.tla:1091 (automatic leave id=0)",
+      "new/source/raftpb/raft.proto:145-168",
+      "new/source/rawnode_test.go:355-369",
+      "new/source/testdata/confchange_v2_add_double_auto.txt:281-341"
+    ],
+    "proposed_predicate": "For every newly committed configuration entry e at k in a commit-use observation c, require c.config=ConfigOf(prefix(c.hist,k-1)). Exempt only actual constructor bootstrap entries: the matching BootLog position, term=1, kind=AddVoter, id=0 and corresponding BootPeers target. Do not exempt an automatically generated V2 leave merely because id=0. Keep joint quorum evidence in QuorumAccounting.",
+    "disagreement_witness": {
+      "kind": "distinguishing_transition",
+      "state": "A history prefix through index 8 has incoming={1}, outgoing={1,2,3}; index 9 is automatic V2 leave with id=0.",
+      "transition": "Record committing entry 9 using configuration incoming={1}, outgoing={} and only acknowledgment {1}.",
+      "old_property": "Passes this old property because every id=0 configuration entry is exempt.",
+      "proposed_property": "Fails: entry 9 must be committed under the joint predecessor configuration.",
+      "validation": "Static prediction only; not executed."
+    }
+  },
+  {
+    "name": "JointSnapshotMemberAcceptance",
+    "decision": "modify",
+    "change_classification": [
+      "observer_migration",
+      "pre_existing_property_defect_repair",
+      "unchanged_requirement"
+    ],
+    "reason": "Repair a pre-existing false-positive path without removing the still-required full joint-member acceptance obligation.",
+    "evidence": [
+      "old/spec/base.tla:939-951,1378-1383",
+      "old/spec/base.tla:473-490",
+      "new/source/raft.go:867-903,1415-1487",
+      "new/source/confchange/restore.go:119-154",
+      "new/source/confchange/restore_test.go:125-131"
+    ],
+    "proposed_predicate": "For every actual restore invocation after message term/role dispatch, if snapshot.index>beforeRestore.commit, beforeRestore.role=Follower, the snapshot is valid, the recipient belongs to incoming union outgoing union learners, and the snapshot index/term does not match the local log, require after.commit=snapshot.index and after.config=snapshot.config. Record whether restore was dispatched; do not impose restore acceptance on ignored stale-term MsgSnap. Keep outgoing-only members and staged learners in the antecedent; learnersNext is already a subset of outgoing.",
+    "disagreement_witness": [
+      {
+        "kind": "distinguishing_transition",
+        "state": "Follower term=5, commit=3; receive MsgSnap at message term=4, snapshot index=10, valid incoming membership including receiver, no matching log.",
+        "transition": "Step ignores stale snapshot; commit stays 3.",
+        "old_property": "Fails: restoreChecks records fresh/follower/fullMember/matches but not message term or dispatch.",
+        "proposed_property": "Passes: there was no restore invocation.",
+        "validation": "Static prediction only; not executed."
+      },
+      {
+        "kind": "distinguishing_transition",
+        "state": "Follower 3 term=5, commit=3; valid term-5 snapshot index=10 with incoming={1,2}, outgoing={1,2,3}, learnersNext={3}; local log does not match.",
+        "transition": "Source rejects snapshot because 3 is absent from incoming/current learners.",
+        "old_property": "Fails.",
+        "proposed_property": "Still fails. The observer repair must not replace fullMember with sourceMember.",
+        "validation": "Static prediction only; not executed."
+      }
+    ],
+    "observer_maintenance": "Record term-dispatch acceptance and the state at entry to restore, including follower role after candidate/higher-term dispatch. Keep fullMember independent of the source membership guard."
+  },
+  {
+    "name": "TransferCancellationOnConfigurationChange",
+    "decision": "add",
+    "change_classification": [
+      "semantic_requirement_strengthening",
+      "new_observer"
+    ],
+    "reason": "The new demotion test requires cancellation at configuration installation; request-time eligibility and eventual timeout do not enforce it.",
+    "evidence": [
+      "new/source/raft.go:1537-1571",
+      "old/source/raft.go:1527-1530",
+      "new/source/raft_test.go:3617-3647",
+      "old/spec/base.tla:567-585,694-710",
+      "old/spec/MC.tla:122-126"
+    ],
+    "proposed_predicate": "After an applied configuration switch on a leader that remains an eligible voter and has a nonempty incoming voter set, any nonzero prior transfer target must be cleared iff it is absent from the updated incoming union outgoing voter set; otherwise preserve it. A target in learnersNext is still an outgoing voter and must not be canceled merely for being staged. Observe the configuration callback, not just transfer requests. Self-removed/demoted-leader early-return behavior is a separately unresolved case.",
+    "disagreement_witness": [
+      {
+        "kind": "distinguishing_transition",
+        "state": "Leader 1, incoming={1,2}, outgoing={1,2,3}, learnersNext={3}, transfer=3; leader 1 remains a voter.",
+        "transition": "Apply the committed leave-joint entry: updated learners={3}, voters={1,2}; leave transfer=3.",
+        "old_property": "TransferDecisionEligibility has no ApplyEntry observation; eventual TransferSettlement can still pass after timeout.",
+        "proposed_property": "Fails: transfer must immediately become 0.",
+        "validation": "Static prediction only; not executed."
+      },
+      {
+        "kind": "distinguishing_transition",
+        "state": "Leader 1, voters={1,2,3}, transfer=3.",
+        "transition": "Enter joint demotion of 3: incoming={1,2}, outgoing={1,2,3}, learnersNext={3}; retain transfer=3.",
+        "old_property": "No new requirement enforced.",
+        "proposed_property": "Passes: outgoing voters remain eligible until leaving joint.",
+        "validation": "Static prediction only; not executed."
+      }
+    ],
+    "observer_maintenance": "Extend configuration-effect observations with before/after transfer, role, local membership, and the full new config. Do not globally require transfer membership on leaders in the source early-return branch without separately resolving that contract."
+  }
+]

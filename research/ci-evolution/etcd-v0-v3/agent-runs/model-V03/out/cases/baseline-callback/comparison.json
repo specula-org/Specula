@@ -1,0 +1,121 @@
+{
+  "protocol": "action-validation/v1",
+  "route": "code-to-model",
+  "spec": "new/spec",
+  "counts": {
+    "adapter_error": 8
+  },
+  "total": 8,
+  "commands": [
+    {
+      "engine": "implementation",
+      "command": [
+        "python3",
+        "out/framework/adapters/go/run.py",
+        "--input",
+        "/workspace/out/cases/v03-callback-inputs.json",
+        "--output",
+        "/workspace/out/cases/baseline-callback/implementation.jsonl",
+        "--work",
+        "/workspace/out/cases/baseline-callback/implementation"
+      ],
+      "duration_seconds": 1.2666831482201815,
+      "exit_code": 0
+    },
+    {
+      "engine": "model",
+      "command": [
+        "python3",
+        "out/framework/adapters/tla/run.py",
+        "--input",
+        "/workspace/out/cases/v03-callback-inputs.json",
+        "--output",
+        "/workspace/out/cases/baseline-callback/model.jsonl",
+        "--spec",
+        "/workspace/new/spec",
+        "--work",
+        "/workspace/out/cases/baseline-callback/model"
+      ],
+      "duration_seconds": 2.82191489264369,
+      "exit_code": 1
+    }
+  ],
+  "results": [
+    {
+      "id": "v03-callback-legacy-remove-self",
+      "action": "callback_node",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "v03-callback-v2-leave-remove-self",
+      "action": "callback_node",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "v03-callback-v2-staged-self",
+      "action": "callback_node",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "v03-callback-demote-self",
+      "action": "callback_node",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "v03-callback-demote-transfer",
+      "action": "callback_node",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "v03-callback-leave-demote-transfer",
+      "action": "callback_node",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "v03-callback-new-peer",
+      "action": "callback_node",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "v03-callback-removed-before",
+      "action": "callback_node",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    }
+  ],
+  "extra_results": {
+    "implementation": [],
+    "model": []
+  }
+}

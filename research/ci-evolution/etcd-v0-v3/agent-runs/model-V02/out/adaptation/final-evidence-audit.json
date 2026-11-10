@@ -1,0 +1,7 @@
+{
+  "evidence_links_ok": true,
+  "result_identity_counts_ok": true,
+  "no_extra_results": true,
+  "no_final_failed_adapters": true,
+  "all_disagreements_had_equal_pre_and_input_mappings": true
+}

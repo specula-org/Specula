@@ -1,0 +1,11 @@
+--- out/repaired-spec/base.tla
++++ future-observer-phase/base.tla
+@@ -1117,7 +1117,7 @@
+               readsBefore |-> r.readStates, readsAfter |-> a.readStates,
+               ssBefore |-> r.prevSS, ssAfter |-> a.prevSS]},
+             !.autoLeaveChecks=@\cup
+-            {[eligible |-> r.config.autoLeave /\ b.cursor>=r.pendingConf /\ r.role="Leader",
++            {[eligible |-> b.cursor>0 /\ r.config.autoLeave /\ b.cursor>=r.pendingConf /\ r.role="Leader",
+               beforeLast |-> Last(r), afterHist |-> Hist(a), pending |-> a.pendingConf,
+               decision |-> a.decision]}],raft',disk,"Advance")
+     /\ ready'=[ready EXCEPT ![n]=EmptyReady]

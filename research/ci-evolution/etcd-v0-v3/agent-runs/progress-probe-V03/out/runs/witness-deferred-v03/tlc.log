@@ -1,0 +1,50 @@
+TLC2 Version 2.20 of Day Month 20?? (rev: ${git.shortRevision})
+Running breadth-first search Model-Checking with fp 101 and seed 6328001144520567781 with 1 worker on 96 cores with 4096MB heap and 64MB offheap memory [pid: 5281] (Linux 6.8.0-1044-azure amd64, Ubuntu 21.0.11 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /workspace/out/runs/witness-deferred-v03/C03Progress.tla
+Parsing file /workspace/out/runs/witness-deferred-v03/Trace.tla
+Parsing file /tmp/tlc-14321884231010877990/_JsonTrace.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/_JsonTrace.tla)
+Parsing file /tmp/tlc-14321884231010877990/_TLCTrace.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/_TLCTrace.tla)
+Parsing file /workspace/out/runs/witness-deferred-v03/base.tla
+Parsing file /tmp/tlc-14321884231010877990/Json.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Json.tla)
+Parsing file /tmp/tlc-14321884231010877990/IOUtils.tla (jar:file:/tools/CommunityModules.jar!/IOUtils.tla)
+Parsing file /tmp/tlc-14321884231010877990/Naturals.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Naturals.tla)
+Parsing file /tmp/tlc-14321884231010877990/Integers.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Integers.tla)
+Parsing file /tmp/tlc-14321884231010877990/Sequences.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Sequences.tla)
+Parsing file /tmp/tlc-14321884231010877990/FiniteSets.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/FiniteSets.tla)
+Parsing file /tmp/tlc-14321884231010877990/Bags.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Bags.tla)
+Parsing file /tmp/tlc-14321884231010877990/TLC.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/TLC.tla)
+Parsing file /tmp/tlc-14321884231010877990/TLCExt.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/TLCExt.tla)
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module Bags
+Semantic processing of module base
+Semantic processing of module Json
+Semantic processing of module IOUtils
+Semantic processing of module Trace
+Semantic processing of module TLCExt
+Semantic processing of module _JsonTrace
+Semantic processing of module _TLCTrace
+Semantic processing of module C03Progress
+Linting of module base
+Linting of module Json
+Linting of module IOUtils
+Linting of module Trace
+Linting of module TLCExt
+Linting of module _JsonTrace
+Linting of module _TLCTrace
+Linting of module C03Progress
+Starting... (2026-09-22 20:35:08)
+Computing initial states...
+Finished computing initial states: 1 distinct state generated at 2026-09-22 20:35:09.
+Progress(291) at 2026-09-22 20:35:12: 1,341 states generated (8,046 s/min), 459 distinct states found (2,754 ds/min), 3 states left on queue.
+Model checking completed. No error has been found.
+  Estimates of the probability that TLC did not check all reachable states
+  because two distinct states had the same fingerprint:
+  calculated (optimistic):  val = 2.4E-13
+4692 states generated, 1324 distinct states found, 0 states left on queue.
+The depth of the complete state graph search is 575.
+The average outdegree of the complete state graph is 1 (minimum is 0, the maximum 2 and the 95th percentile is 1).
+Finished in 12s at (2026-09-22 20:35:20)

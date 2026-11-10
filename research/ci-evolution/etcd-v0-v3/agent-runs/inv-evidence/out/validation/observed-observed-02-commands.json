@@ -1,0 +1,59 @@
+[
+  {
+    "command": [
+      "python3",
+      "out/framework/runner.py",
+      "--manifest",
+      "out/validation/manifest-V01-observed.json",
+      "--cases",
+      "out/validation/cases.json",
+      "--output",
+      "out/validation/replay-V01-observed-02",
+      "--spec",
+      "out/revised-spec/V01",
+      "--route",
+      "code-to-model"
+    ],
+    "duration_seconds": 11.53008183836937,
+    "exit_code": 0,
+    "output": "{\"total\": 38, \"counts\": {\"match\": 38}}\n"
+  },
+  {
+    "command": [
+      "python3",
+      "out/framework/runner.py",
+      "--manifest",
+      "out/validation/manifest-V02-observed.json",
+      "--cases",
+      "out/validation/cases.json",
+      "--output",
+      "out/validation/replay-V02-observed-02",
+      "--spec",
+      "out/revised-spec/V02",
+      "--route",
+      "code-to-model"
+    ],
+    "duration_seconds": 12.282869907096028,
+    "exit_code": 0,
+    "output": "{\"total\": 38, \"counts\": {\"match\": 38}}\n"
+  },
+  {
+    "command": [
+      "python3",
+      "out/framework/runner.py",
+      "--manifest",
+      "out/validation/manifest-V03-observed.json",
+      "--cases",
+      "out/validation/cases.json",
+      "--output",
+      "out/validation/replay-V03-observed-02",
+      "--spec",
+      "out/revised-spec/V03",
+      "--route",
+      "code-to-model"
+    ],
+    "duration_seconds": 12.231644836254418,
+    "exit_code": 0,
+    "output": "{\"total\": 38, \"counts\": {\"match\": 38}}\n"
+  }
+]

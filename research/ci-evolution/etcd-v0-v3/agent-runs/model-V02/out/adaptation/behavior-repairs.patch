@@ -1,0 +1,30 @@
+--- new/spec/base.tla
++++ out/repaired-spec/base.tla
+@@ -523,7 +523,8 @@
+       [] OTHER -> cfg
+ ApplyChanges(cfg,changes) ==
+     IF changes= <<>> THEN cfg ELSE ApplyChanges(ApplySingle(cfg,Head(changes)),Tail(changes))
+-IsLeave(e) == e.kind="V2" /\ e.changes= <<>>
++\* Behavior repair R1: raftpb/confchange.go:103-107 requires zero Transition.
++IsLeave(e) == e.kind="V2" /\ e.changes= <<>> /\ e.transition="Auto"
+ EntersJoint(e) == e.kind="V2" /\ ~IsLeave(e) /\
+                   (e.transition#"Auto" \/ Len(e.changes)>1)
+ AutoLeaves(e) == EntersJoint(e) /\ e.transition\in {"Auto","JointImplicit"}
+@@ -971,7 +972,7 @@
+ ProtocolReady(n) ==
+     /\ Live(n) /\ ~ready[n].active
+     /\ LET r==raft[n] b==NewReady(r) IN
+-       /\ ContainsUpdates(b)
++       /\ (ContainsUpdates(b) \/ n\in RawNodes)
+        /\ ready'=[ready EXCEPT ![n]=b]
+        \* rawnode.go:119-146 accepts public RawNode.Ready immediately;
+        \* node.go:306-320,385-387 accepts only after channel delivery.
+@@ -1090,7 +1091,7 @@
+ AdvanceCore(r,b,n) ==
+     LET a==AppliedTo(r,b.cursor)
+         leave==V2Entry(0,0,0,<<>>,"Auto",AutoLeaveWeight,AutoLeaveEncoded)
+-        auto==a.fatal="" /\ a.config.autoLeave /\ b.cursor>=a.pendingConf /\ a.role="Leader"
++        auto==a.fatal="" /\ b.cursor>0 /\ a.config.autoLeave /\ b.cursor>=a.pendingConf /\ a.role="Leader"
+         b0==IF auto THEN AppendEntry(a,<<leave>>) ELSE a
+         b1==IF auto /\ b0.decision="DropQuota" THEN [b0 EXCEPT !.pendingConf=Last(b0)] ELSE b0
+         last==IF b.entries= <<>> THEN MissingEntry(0) ELSE b.entries[Len(b.entries)]

@@ -1,0 +1,1618 @@
+{
+  "protocol": "action-validation/v1",
+  "route": "model-to-code",
+  "spec": "versions/V01/spec",
+  "counts": {
+    "adapter_error": 174
+  },
+  "total": 174,
+  "commands": [
+    {
+      "engine": "model",
+      "command": [
+        "python3",
+        "out/framework/adapters/tla/run.py",
+        "--input",
+        "/workspace/model-seeds.json",
+        "--output",
+        "/workspace/out/V01-model-to-code/model.jsonl",
+        "--spec",
+        "/workspace/versions/V01/spec",
+        "--work",
+        "/workspace/out/V01-model-to-code/model",
+        "--generate"
+      ],
+      "duration_seconds": 6.128104880452156,
+      "exit_code": 0
+    },
+    {
+      "engine": "implementation",
+      "command": [
+        "python3",
+        "out/framework/adapters/go/run.py",
+        "--input",
+        "/workspace/out/V01-model-to-code/generated-cases.json",
+        "--output",
+        "/workspace/out/V01-model-to-code/implementation.jsonl",
+        "--work",
+        "/workspace/out/V01-model-to-code/implementation",
+        "--source",
+        "versions/V01/source"
+      ],
+      "duration_seconds": 0.21459855046123266,
+      "exit_code": 1
+    }
+  ],
+  "results": [
+    {
+      "id": "tlc-ack-joint-1",
+      "action": "readack",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-advance-raw-True-2-0-Leader-2-0-0",
+      "action": "advance_raw",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-advance-raw-True-2-0-Leader-2-0-16",
+      "action": "advance_raw",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-advance-raw-True-2-0-Leader-2-2-0",
+      "action": "advance_raw",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-advance-raw-True-2-0-Leader-2-2-16",
+      "action": "advance_raw",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-advance-v02-raw-empty",
+      "action": "advance_raw",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-advance-v02-raw-multiple-0-0",
+      "action": "advance_raw",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-advance-v02-raw-multiple-0-16",
+      "action": "advance_raw",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-advance-v02-raw-multiple-2-0",
+      "action": "advance_raw",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-advance-v02-raw-multiple-2-16",
+      "action": "advance_raw",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-apply-joint-demote-Auto-0",
+      "action": "apply",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-apply-joint-demote-Auto-1",
+      "action": "apply",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-apply-joint-demote-JointExplicit-0",
+      "action": "apply",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-apply-joint-demote-JointExplicit-1",
+      "action": "apply",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-apply-joint-demote-JointImplicit-0",
+      "action": "apply",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-apply-joint-demote-JointImplicit-1",
+      "action": "apply",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-apply-legacy-demote",
+      "action": "apply",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-apply-reduced-quorum-commit",
+      "action": "apply",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-apply-simple-demote-Auto-0",
+      "action": "apply",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-apply-simple-demote-Auto-1",
+      "action": "apply",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-apply-simple-demote-JointExplicit-0",
+      "action": "apply",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-apply-simple-demote-JointExplicit-1",
+      "action": "apply",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-apply-simple-demote-JointImplicit-0",
+      "action": "apply",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-apply-simple-demote-JointImplicit-1",
+      "action": "apply",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-hup-V2-False-1-FALSE",
+      "action": "hup",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-hup-V2-False-1-TRUE",
+      "action": "hup",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-hup-V2-False-2-FALSE",
+      "action": "hup",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-hup-V2-False-2-TRUE",
+      "action": "hup",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-hup-v02-learner-False-1-FALSE",
+      "action": "hup",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-hup-v02-learner-False-1-TRUE",
+      "action": "hup",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-hup-v02-learner-False-2-FALSE",
+      "action": "hup",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-hup-v02-learner-False-2-TRUE",
+      "action": "hup",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-proposal-V2-0-0-0-0-0",
+      "action": "proposal",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-proposal-V2-0-0-0-0-15",
+      "action": "proposal",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-proposal-V2-0-0-0-0-16",
+      "action": "proposal",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-proposal-V2-0-0-0-2-0",
+      "action": "proposal",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-proposal-V2-0-0-0-2-15",
+      "action": "proposal",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-proposal-V2-0-0-0-2-16",
+      "action": "proposal",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-quorum-joint-0-2",
+      "action": "checkquorum",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-quorum-joint-0-3",
+      "action": "checkquorum",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-quorum-joint-0-4",
+      "action": "checkquorum",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-read-joint-single-False-1",
+      "action": "read",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-read-joint-single-False-2",
+      "action": "read",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-ready-raw-False-2-1-Leader-2",
+      "action": "ready_raw",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-ready-v02-raw-empty",
+      "action": "ready_raw",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-receive-joint-outgoing-only-False",
+      "action": "receive",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-receive-learner-ignored-False",
+      "action": "receive",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-receive-voter-wins-False",
+      "action": "receive",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-restart-joint",
+      "action": "restart",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-restart-v02-full",
+      "action": "restart",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-restart-v02-learner-self",
+      "action": "restart",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-restart-v02-staged-self",
+      "action": "restart",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-restore-joint-2",
+      "action": "restore",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-restore-joint-3",
+      "action": "restore",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-restore-v02-full-2",
+      "action": "restore",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-restore-v02-full-3",
+      "action": "restore",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-restore-v02-staged-self-2",
+      "action": "restore",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-restore-v02-staged-self-3",
+      "action": "restore",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-advance-after-drop-raw-14",
+      "action": "advance_raw",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-advance-raw-cross-17-0",
+      "action": "advance_raw",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-advance-raw-cross-17-1",
+      "action": "advance_raw",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-advance-raw-cross-17-2",
+      "action": "advance_raw",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-advance-raw-cross-17-3",
+      "action": "advance_raw",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-after-demote-self-proposal",
+      "action": "apply_then_step",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-after-new-voter-app-reject",
+      "action": "apply_then_step",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-apply-demote-Leader",
+      "action": "apply",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-apply-leave-demote-Leader-Auto-0",
+      "action": "apply",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-apply-leave-demote-Leader-Auto-1",
+      "action": "apply",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-apply-leave-demote-Leader-JointExplicit-0",
+      "action": "apply",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-apply-leave-demote-Leader-JointExplicit-1",
+      "action": "apply",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-apply-leave-demote-Leader-JointImplicit-0",
+      "action": "apply",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-apply-leave-demote-Leader-JointImplicit-1",
+      "action": "apply",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-apply-new-voter-Leader",
+      "action": "apply",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-apply-remove-readd-learner-Leader-Auto-0",
+      "action": "apply",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-apply-remove-readd-learner-Leader-Auto-1",
+      "action": "apply",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-apply-remove-readd-learner-Leader-JointExplicit-0",
+      "action": "apply",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-apply-remove-readd-learner-Leader-JointExplicit-1",
+      "action": "apply",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-apply-remove-readd-learner-Leader-JointImplicit-0",
+      "action": "apply",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-apply-remove-readd-learner-Leader-JointImplicit-1",
+      "action": "apply",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-bootstrap-123",
+      "action": "bootstrap",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-bootstrap_hup-123",
+      "action": "bootstrap_hup",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-compacted-2-new",
+      "action": "apply",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-config-broadcast-panic-before-transfer",
+      "action": "apply",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-construct-joint-2",
+      "action": "construct",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-empty-log-Follower-apply_then_step",
+      "action": "apply_then_step",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-empty-log-Leader-apply",
+      "action": "apply",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-empty-log-Leader-apply_then_step",
+      "action": "apply_then_step",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-probe-existing-next-zero",
+      "action": "apply",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-probe-existing-self-probe",
+      "action": "apply",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-prop-joint-0-empty-explicit-0-0",
+      "action": "proposal",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-prop-joint-0-empty-explicit-0-15",
+      "action": "proposal",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-prop-joint-0-empty-explicit-0-16",
+      "action": "proposal",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-prop-joint-0-empty-explicit-2-0",
+      "action": "proposal",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-prop-joint-0-empty-explicit-2-15",
+      "action": "proposal",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-prop-joint-0-empty-explicit-2-16",
+      "action": "proposal",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-prop-joint-0-v2-0-0",
+      "action": "proposal",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-prop-joint-0-v2-0-15",
+      "action": "proposal",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-prop-joint-0-v2-0-16",
+      "action": "proposal",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-prop-joint-0-v2-2-0",
+      "action": "proposal",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-prop-joint-0-v2-2-15",
+      "action": "proposal",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-prop-joint-0-v2-2-16",
+      "action": "proposal",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-prop-simple-0-empty-auto-0-0",
+      "action": "proposal",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-prop-simple-0-empty-auto-0-15",
+      "action": "proposal",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-prop-simple-0-empty-auto-0-16",
+      "action": "proposal",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-prop-simple-0-empty-auto-2-0",
+      "action": "proposal",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-prop-simple-0-empty-auto-2-15",
+      "action": "proposal",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-prop-simple-0-empty-auto-2-16",
+      "action": "proposal",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-propose-apply-joint-JointExplicit",
+      "action": "propose_then_apply",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-propose-apply-simple-JointExplicit",
+      "action": "propose_then_apply",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-quota-17-two-empty-0",
+      "action": "proposal",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-quota-17-two-empty-16",
+      "action": "proposal",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-quota-17-two-empty-17",
+      "action": "proposal",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-snapshot-advance-raw-cross-0",
+      "action": "advance_raw",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-snapshot-advance-raw-cross-2",
+      "action": "advance_raw",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-snapshot-advance-raw-cross-3",
+      "action": "advance_raw",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-snapshot-advance-raw-cross-4",
+      "action": "advance_raw",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-vote-learner-MsgPreVote-grant-1-1-0",
+      "action": "vote",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-vote-learner-MsgPreVote-grant-1-1-3",
+      "action": "vote",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-vote-learner-MsgPreVote-grant-1-2-0",
+      "action": "vote",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-vote-learner-MsgPreVote-grant-1-2-3",
+      "action": "vote",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-vote-learner-MsgPreVote-grant-2-1-0",
+      "action": "vote",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-vote-learner-MsgPreVote-grant-2-1-3",
+      "action": "vote",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-vote-learner-MsgPreVote-grant-2-2-0",
+      "action": "vote",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-vote-learner-MsgPreVote-grant-2-2-3",
+      "action": "vote",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-vote-learner-MsgPreVote-grant-3-1-0",
+      "action": "vote",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-vote-learner-MsgPreVote-grant-3-1-3",
+      "action": "vote",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-vote-learner-MsgPreVote-grant-3-2-0",
+      "action": "vote",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-vote-learner-MsgPreVote-grant-3-2-3",
+      "action": "vote",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-vote-learner-MsgVote-grant-1-1-0",
+      "action": "vote",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-vote-learner-MsgVote-grant-1-1-3",
+      "action": "vote",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-vote-learner-MsgVote-grant-1-2-0",
+      "action": "vote",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-vote-learner-MsgVote-grant-1-2-3",
+      "action": "vote",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-vote-learner-MsgVote-grant-2-1-0",
+      "action": "vote",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-vote-learner-MsgVote-grant-2-1-3",
+      "action": "vote",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-vote-learner-MsgVote-grant-2-2-0",
+      "action": "vote",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-vote-learner-MsgVote-grant-2-2-3",
+      "action": "vote",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-vote-learner-MsgVote-grant-3-1-0",
+      "action": "vote",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-vote-learner-MsgVote-grant-3-1-3",
+      "action": "vote",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-vote-learner-MsgVote-grant-3-2-0",
+      "action": "vote",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-vote-learner-MsgVote-grant-3-2-3",
+      "action": "vote",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-vote-staged-MsgVote-grant-1-1-0",
+      "action": "vote",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-vote-staged-MsgVote-grant-1-1-3",
+      "action": "vote",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-vote-staged-MsgVote-grant-1-2-0",
+      "action": "vote",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-vote-staged-MsgVote-grant-1-2-3",
+      "action": "vote",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-vote-staged-MsgVote-grant-2-1-0",
+      "action": "vote",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-vote-staged-MsgVote-grant-2-1-3",
+      "action": "vote",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-vote-staged-MsgVote-grant-2-2-0",
+      "action": "vote",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-vote-staged-MsgVote-grant-2-2-3",
+      "action": "vote",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-vote-staged-MsgVote-grant-3-1-0",
+      "action": "vote",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-vote-staged-MsgVote-grant-3-1-3",
+      "action": "vote",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-vote-staged-MsgVote-grant-3-2-0",
+      "action": "vote",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-vote-staged-MsgVote-grant-3-2-3",
+      "action": "vote",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-advance-node-True-2-0-Leader-2-0-0",
+      "action": "advance_node",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-advance-node-True-2-0-Leader-2-0-16",
+      "action": "advance_node",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-advance-node-True-2-0-Leader-2-2-0",
+      "action": "advance_node",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-advance-node-True-2-0-Leader-2-2-16",
+      "action": "advance_node",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-advance-v02-node-multiple-0-0",
+      "action": "advance_node",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-advance-v02-node-multiple-0-16",
+      "action": "advance_node",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-advance-v02-node-multiple-2-0",
+      "action": "advance_node",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-advance-v02-node-multiple-2-16",
+      "action": "advance_node",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-ready-node-False-2-1-Leader-2",
+      "action": "ready_node",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-advance-after-drop-node-17",
+      "action": "advance_node",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-advance-node-empty-0-0",
+      "action": "advance_node",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-advance-node-empty-0-16",
+      "action": "advance_node",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-advance-node-empty-2-0",
+      "action": "advance_node",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-advance-node-empty-2-16",
+      "action": "advance_node",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-advance-node-equal-old-17-0",
+      "action": "advance_node",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-advance-node-equal-old-17-1",
+      "action": "advance_node",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-advance-node-equal-old-17-2",
+      "action": "advance_node",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-advance-node-equal-old-17-3",
+      "action": "advance_node",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-callback-demote-transfer",
+      "action": "callback_node",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-callback-new-peer",
+      "action": "callback_node",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-callback-v2-leave-remove-self",
+      "action": "callback_node",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "tlc-v03-ready-node-empty",
+      "action": "ready_node",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    }
+  ],
+  "extra_results": {
+    "implementation": [],
+    "model": []
+  }
+}

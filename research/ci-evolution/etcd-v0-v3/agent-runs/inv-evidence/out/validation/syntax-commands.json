@@ -1,0 +1,44 @@
+[
+  {
+    "version": "V01",
+    "command": [
+      "java",
+      "-cp",
+      "/tools/tla2tools.jar",
+      "tla2sany.SANY",
+      "Maintenance.tla"
+    ],
+    "cwd": "out/revised-spec/V01",
+    "seconds": 0.4643162488937378,
+    "exit_code": 0,
+    "semantic_error": false
+  },
+  {
+    "version": "V02",
+    "command": [
+      "java",
+      "-cp",
+      "/tools/tla2tools.jar",
+      "tla2sany.SANY",
+      "Maintenance.tla"
+    ],
+    "cwd": "out/revised-spec/V02",
+    "seconds": 0.4582193251699209,
+    "exit_code": 0,
+    "semantic_error": true
+  },
+  {
+    "version": "V03",
+    "command": [
+      "java",
+      "-cp",
+      "/tools/tla2tools.jar",
+      "tla2sany.SANY",
+      "Maintenance.tla"
+    ],
+    "cwd": "out/revised-spec/V03",
+    "seconds": 0.48102421779185534,
+    "exit_code": 0,
+    "semantic_error": true
+  }
+]

@@ -1,0 +1,3586 @@
+[
+  {
+    "protocol": "action-validation/v1",
+    "id": "ready-raw-False-2-1-Leader-2",
+    "action": "ready_raw",
+    "pre": {
+      "config": {
+        "voters": [
+          1,
+          2,
+          3
+        ],
+        "outgoing": [],
+        "learners": [],
+        "learnersNext": [],
+        "autoLeave": false
+      },
+      "role": "Leader",
+      "term": 2,
+      "vote": 0,
+      "lead": 1,
+      "commit": 2,
+      "applied": 0,
+      "pending": 2,
+      "quota": 1,
+      "transfer": 0,
+      "log": [
+        {
+          "kind": "Normal",
+          "target": 0,
+          "changes": [],
+          "transition": "Legacy",
+          "weight": 0,
+          "encoded": 8,
+          "term": 2,
+          "index": 1
+        },
+        {
+          "kind": "Normal",
+          "target": 0,
+          "changes": [],
+          "transition": "Legacy",
+          "weight": 1,
+          "encoded": 9,
+          "term": 2,
+          "index": 2
+        }
+      ],
+      "uoff": 1,
+      "prs": [
+        {
+          "id": 1,
+          "match": 2,
+          "next": 3,
+          "mode": "Replicate",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        },
+        {
+          "id": 2,
+          "match": 0,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        },
+        {
+          "id": 3,
+          "match": 0,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        }
+      ],
+      "messages": [
+        {
+          "type": "MsgHeartbeat",
+          "fromId": 1,
+          "to": 2,
+          "term": 2,
+          "index": 0,
+          "logTerm": 0,
+          "commit": 0,
+          "reject": false,
+          "hint": 0,
+          "context": 0,
+          "entries": [],
+          "forced": false
+        }
+      ],
+      "reads": [
+        {
+          "id": 7,
+          "index": 2
+        }
+      ],
+      "readQueue": [],
+      "preVote": false,
+      "elapsed": 0,
+      "heartbeat": 0,
+      "prevHS": {
+        "term": 1,
+        "vote": 0,
+        "commit": 0
+      },
+      "prevSS": {
+        "role": "Follower",
+        "lead": 0
+      },
+      "checkQuorum": false,
+      "votes": []
+    },
+    "input": {
+      "entries": [],
+      "entry": {
+        "kind": "V2",
+        "target": 0,
+        "changes": [],
+        "transition": "Auto",
+        "weight": 2,
+        "encoded": 10,
+        "term": 0,
+        "index": 0
+      },
+      "snapshot": {
+        "index": 3,
+        "term": 3,
+        "config": {
+          "voters": [
+            1,
+            2,
+            3
+          ],
+          "outgoing": [],
+          "learners": [],
+          "learnersNext": [],
+          "autoLeave": false
+        }
+      },
+      "fromId": 2,
+      "context": 7,
+      "message": {
+        "type": "MsgHup",
+        "fromId": 2,
+        "to": 1,
+        "term": 2,
+        "index": 0,
+        "logTerm": 0,
+        "commit": 0,
+        "reject": false,
+        "hint": 0,
+        "context": 0,
+        "forced": false,
+        "entries": []
+      },
+      "between": []
+    },
+    "meta": {
+      "origin": "code",
+      "reachability": "locally valid injected state; no cluster trace claimed",
+      "version": "V02"
+    }
+  },
+  {
+    "protocol": "action-validation/v1",
+    "id": "ready-node-False-2-1-Leader-2",
+    "action": "ready_node",
+    "pre": {
+      "config": {
+        "voters": [
+          1,
+          2,
+          3
+        ],
+        "outgoing": [],
+        "learners": [],
+        "learnersNext": [],
+        "autoLeave": false
+      },
+      "role": "Leader",
+      "term": 2,
+      "vote": 0,
+      "lead": 1,
+      "commit": 2,
+      "applied": 0,
+      "pending": 2,
+      "quota": 1,
+      "transfer": 0,
+      "log": [
+        {
+          "kind": "Normal",
+          "target": 0,
+          "changes": [],
+          "transition": "Legacy",
+          "weight": 0,
+          "encoded": 8,
+          "term": 2,
+          "index": 1
+        },
+        {
+          "kind": "Normal",
+          "target": 0,
+          "changes": [],
+          "transition": "Legacy",
+          "weight": 1,
+          "encoded": 9,
+          "term": 2,
+          "index": 2
+        }
+      ],
+      "uoff": 1,
+      "prs": [
+        {
+          "id": 1,
+          "match": 2,
+          "next": 3,
+          "mode": "Replicate",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        },
+        {
+          "id": 2,
+          "match": 0,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        },
+        {
+          "id": 3,
+          "match": 0,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        }
+      ],
+      "messages": [
+        {
+          "type": "MsgHeartbeat",
+          "fromId": 1,
+          "to": 2,
+          "term": 2,
+          "index": 0,
+          "logTerm": 0,
+          "commit": 0,
+          "reject": false,
+          "hint": 0,
+          "context": 0,
+          "entries": [],
+          "forced": false
+        }
+      ],
+      "reads": [
+        {
+          "id": 7,
+          "index": 2
+        }
+      ],
+      "readQueue": [],
+      "preVote": false,
+      "elapsed": 0,
+      "heartbeat": 0,
+      "prevHS": {
+        "term": 1,
+        "vote": 0,
+        "commit": 0
+      },
+      "prevSS": {
+        "role": "Follower",
+        "lead": 0
+      },
+      "checkQuorum": false,
+      "votes": []
+    },
+    "input": {
+      "entries": [],
+      "entry": {
+        "kind": "V2",
+        "target": 0,
+        "changes": [],
+        "transition": "Auto",
+        "weight": 2,
+        "encoded": 10,
+        "term": 0,
+        "index": 0
+      },
+      "snapshot": {
+        "index": 3,
+        "term": 3,
+        "config": {
+          "voters": [
+            1,
+            2,
+            3
+          ],
+          "outgoing": [],
+          "learners": [],
+          "learnersNext": [],
+          "autoLeave": false
+        }
+      },
+      "fromId": 2,
+      "context": 7,
+      "message": {
+        "type": "MsgHup",
+        "fromId": 2,
+        "to": 1,
+        "term": 2,
+        "index": 0,
+        "logTerm": 0,
+        "commit": 0,
+        "reject": false,
+        "hint": 0,
+        "context": 0,
+        "forced": false,
+        "entries": []
+      },
+      "between": []
+    },
+    "meta": {
+      "origin": "code",
+      "reachability": "locally valid injected state; no cluster trace claimed",
+      "version": "V02"
+    }
+  },
+  {
+    "protocol": "action-validation/v1",
+    "id": "restore-joint",
+    "action": "restore",
+    "pre": {
+      "config": {
+        "voters": [
+          1,
+          2,
+          3
+        ],
+        "outgoing": [],
+        "learners": [],
+        "learnersNext": [],
+        "autoLeave": false
+      },
+      "role": "Follower",
+      "term": 2,
+      "vote": 0,
+      "lead": 0,
+      "commit": 2,
+      "applied": 2,
+      "pending": 0,
+      "quota": 0,
+      "transfer": 0,
+      "log": [
+        {
+          "kind": "Normal",
+          "target": 0,
+          "changes": [],
+          "transition": "Legacy",
+          "weight": 0,
+          "encoded": 8,
+          "term": 2,
+          "index": 1
+        },
+        {
+          "kind": "Normal",
+          "target": 0,
+          "changes": [],
+          "transition": "Legacy",
+          "weight": 1,
+          "encoded": 9,
+          "term": 2,
+          "index": 2
+        }
+      ],
+      "uoff": 3,
+      "prs": [
+        {
+          "id": 1,
+          "match": 2,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        },
+        {
+          "id": 2,
+          "match": 0,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        },
+        {
+          "id": 3,
+          "match": 0,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        }
+      ],
+      "messages": [],
+      "reads": [],
+      "readQueue": [],
+      "preVote": false,
+      "elapsed": 0,
+      "heartbeat": 0,
+      "prevHS": {
+        "term": 2,
+        "vote": 0,
+        "commit": 2
+      },
+      "prevSS": {
+        "role": "Follower",
+        "lead": 0
+      },
+      "checkQuorum": false,
+      "votes": []
+    },
+    "input": {
+      "entries": [],
+      "entry": {
+        "kind": "V2",
+        "target": 0,
+        "changes": [],
+        "transition": "Auto",
+        "weight": 2,
+        "encoded": 10,
+        "term": 0,
+        "index": 0
+      },
+      "snapshot": {
+        "index": 3,
+        "term": 3,
+        "config": {
+          "voters": [
+            1,
+            2
+          ],
+          "outgoing": [
+            1,
+            2,
+            3
+          ],
+          "learners": [],
+          "learnersNext": [
+            3
+          ],
+          "autoLeave": true
+        }
+      },
+      "fromId": 2,
+      "context": 7,
+      "message": {
+        "type": "MsgHup",
+        "fromId": 2,
+        "to": 1,
+        "term": 2,
+        "index": 0,
+        "logTerm": 0,
+        "commit": 0,
+        "reject": false,
+        "hint": 0,
+        "context": 0,
+        "forced": false,
+        "entries": []
+      },
+      "between": []
+    },
+    "meta": {
+      "origin": "code",
+      "reachability": "locally valid injected state; no cluster trace claimed",
+      "version": "V02"
+    }
+  },
+  {
+    "protocol": "action-validation/v1",
+    "id": "restart-joint",
+    "action": "restart",
+    "pre": {
+      "config": {
+        "voters": [
+          1,
+          2,
+          3
+        ],
+        "outgoing": [],
+        "learners": [],
+        "learnersNext": [],
+        "autoLeave": false
+      },
+      "role": "Follower",
+      "term": 2,
+      "vote": 0,
+      "lead": 0,
+      "commit": 2,
+      "applied": 2,
+      "pending": 0,
+      "quota": 0,
+      "transfer": 0,
+      "log": [
+        {
+          "kind": "Normal",
+          "target": 0,
+          "changes": [],
+          "transition": "Legacy",
+          "weight": 0,
+          "encoded": 8,
+          "term": 2,
+          "index": 1
+        },
+        {
+          "kind": "Normal",
+          "target": 0,
+          "changes": [],
+          "transition": "Legacy",
+          "weight": 1,
+          "encoded": 9,
+          "term": 2,
+          "index": 2
+        }
+      ],
+      "uoff": 3,
+      "prs": [
+        {
+          "id": 1,
+          "match": 2,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        },
+        {
+          "id": 2,
+          "match": 0,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        },
+        {
+          "id": 3,
+          "match": 0,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        }
+      ],
+      "messages": [],
+      "reads": [],
+      "readQueue": [],
+      "preVote": false,
+      "elapsed": 0,
+      "heartbeat": 0,
+      "prevHS": {
+        "term": 2,
+        "vote": 0,
+        "commit": 2
+      },
+      "prevSS": {
+        "role": "Follower",
+        "lead": 0
+      },
+      "checkQuorum": false,
+      "votes": []
+    },
+    "input": {
+      "entries": [],
+      "entry": {
+        "kind": "V2",
+        "target": 0,
+        "changes": [],
+        "transition": "Auto",
+        "weight": 2,
+        "encoded": 10,
+        "term": 0,
+        "index": 0
+      },
+      "snapshot": {
+        "index": 3,
+        "term": 3,
+        "config": {
+          "voters": [
+            1,
+            2
+          ],
+          "outgoing": [
+            1,
+            2,
+            3
+          ],
+          "learners": [],
+          "learnersNext": [
+            3
+          ],
+          "autoLeave": true
+        }
+      },
+      "fromId": 2,
+      "context": 7,
+      "message": {
+        "type": "MsgHup",
+        "fromId": 2,
+        "to": 1,
+        "term": 2,
+        "index": 0,
+        "logTerm": 0,
+        "commit": 0,
+        "reject": false,
+        "hint": 0,
+        "context": 0,
+        "forced": false,
+        "entries": []
+      },
+      "between": []
+    },
+    "meta": {
+      "origin": "code",
+      "reachability": "locally valid injected state; no cluster trace claimed",
+      "version": "V02"
+    }
+  },
+  {
+    "protocol": "action-validation/v1",
+    "id": "restore-outgoing-only",
+    "action": "restore",
+    "pre": {
+      "config": {
+        "voters": [
+          1,
+          2,
+          3
+        ],
+        "outgoing": [],
+        "learners": [],
+        "learnersNext": [],
+        "autoLeave": false
+      },
+      "role": "Follower",
+      "term": 2,
+      "vote": 0,
+      "lead": 0,
+      "commit": 2,
+      "applied": 2,
+      "pending": 0,
+      "quota": 0,
+      "transfer": 0,
+      "log": [
+        {
+          "kind": "Normal",
+          "target": 0,
+          "changes": [],
+          "transition": "Legacy",
+          "weight": 0,
+          "encoded": 8,
+          "term": 2,
+          "index": 1
+        },
+        {
+          "kind": "Normal",
+          "target": 0,
+          "changes": [],
+          "transition": "Legacy",
+          "weight": 1,
+          "encoded": 9,
+          "term": 2,
+          "index": 2
+        }
+      ],
+      "uoff": 3,
+      "prs": [
+        {
+          "id": 1,
+          "match": 2,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        },
+        {
+          "id": 2,
+          "match": 0,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        },
+        {
+          "id": 3,
+          "match": 0,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        }
+      ],
+      "messages": [],
+      "reads": [],
+      "readQueue": [],
+      "preVote": false,
+      "elapsed": 0,
+      "heartbeat": 0,
+      "prevHS": {
+        "term": 2,
+        "vote": 0,
+        "commit": 2
+      },
+      "prevSS": {
+        "role": "Follower",
+        "lead": 0
+      },
+      "checkQuorum": false,
+      "votes": []
+    },
+    "input": {
+      "entries": [],
+      "entry": {
+        "kind": "V2",
+        "target": 0,
+        "changes": [],
+        "transition": "Auto",
+        "weight": 2,
+        "encoded": 10,
+        "term": 0,
+        "index": 0
+      },
+      "snapshot": {
+        "index": 3,
+        "term": 3,
+        "config": {
+          "voters": [
+            2,
+            3
+          ],
+          "outgoing": [
+            1,
+            2,
+            3
+          ],
+          "learners": [],
+          "learnersNext": [],
+          "autoLeave": false
+        }
+      },
+      "fromId": 2,
+      "context": 7,
+      "message": {
+        "type": "MsgHup",
+        "fromId": 2,
+        "to": 1,
+        "term": 2,
+        "index": 0,
+        "logTerm": 0,
+        "commit": 0,
+        "reject": false,
+        "hint": 0,
+        "context": 0,
+        "forced": false,
+        "entries": []
+      },
+      "between": []
+    },
+    "meta": {
+      "origin": "code",
+      "reachability": "locally valid injected state; no cluster trace claimed",
+      "version": "V02"
+    }
+  },
+  {
+    "protocol": "action-validation/v1",
+    "id": "restart-outgoing-only",
+    "action": "restart",
+    "pre": {
+      "config": {
+        "voters": [
+          1,
+          2,
+          3
+        ],
+        "outgoing": [],
+        "learners": [],
+        "learnersNext": [],
+        "autoLeave": false
+      },
+      "role": "Follower",
+      "term": 2,
+      "vote": 0,
+      "lead": 0,
+      "commit": 2,
+      "applied": 2,
+      "pending": 0,
+      "quota": 0,
+      "transfer": 0,
+      "log": [
+        {
+          "kind": "Normal",
+          "target": 0,
+          "changes": [],
+          "transition": "Legacy",
+          "weight": 0,
+          "encoded": 8,
+          "term": 2,
+          "index": 1
+        },
+        {
+          "kind": "Normal",
+          "target": 0,
+          "changes": [],
+          "transition": "Legacy",
+          "weight": 1,
+          "encoded": 9,
+          "term": 2,
+          "index": 2
+        }
+      ],
+      "uoff": 3,
+      "prs": [
+        {
+          "id": 1,
+          "match": 2,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        },
+        {
+          "id": 2,
+          "match": 0,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        },
+        {
+          "id": 3,
+          "match": 0,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        }
+      ],
+      "messages": [],
+      "reads": [],
+      "readQueue": [],
+      "preVote": false,
+      "elapsed": 0,
+      "heartbeat": 0,
+      "prevHS": {
+        "term": 2,
+        "vote": 0,
+        "commit": 2
+      },
+      "prevSS": {
+        "role": "Follower",
+        "lead": 0
+      },
+      "checkQuorum": false,
+      "votes": []
+    },
+    "input": {
+      "entries": [],
+      "entry": {
+        "kind": "V2",
+        "target": 0,
+        "changes": [],
+        "transition": "Auto",
+        "weight": 2,
+        "encoded": 10,
+        "term": 0,
+        "index": 0
+      },
+      "snapshot": {
+        "index": 3,
+        "term": 3,
+        "config": {
+          "voters": [
+            2,
+            3
+          ],
+          "outgoing": [
+            1,
+            2,
+            3
+          ],
+          "learners": [],
+          "learnersNext": [],
+          "autoLeave": false
+        }
+      },
+      "fromId": 2,
+      "context": 7,
+      "message": {
+        "type": "MsgHup",
+        "fromId": 2,
+        "to": 1,
+        "term": 2,
+        "index": 0,
+        "logTerm": 0,
+        "commit": 0,
+        "reject": false,
+        "hint": 0,
+        "context": 0,
+        "forced": false,
+        "entries": []
+      },
+      "between": []
+    },
+    "meta": {
+      "origin": "code",
+      "reachability": "locally valid injected state; no cluster trace claimed",
+      "version": "V02"
+    }
+  },
+  {
+    "protocol": "action-validation/v1",
+    "id": "vote-learner-MsgVote-grant",
+    "action": "vote",
+    "pre": {
+      "config": {
+        "voters": [
+          2,
+          3
+        ],
+        "outgoing": [],
+        "learners": [
+          1
+        ],
+        "learnersNext": [],
+        "autoLeave": false
+      },
+      "role": "Follower",
+      "term": 2,
+      "vote": 0,
+      "lead": 0,
+      "commit": 2,
+      "applied": 2,
+      "pending": 0,
+      "quota": 0,
+      "transfer": 0,
+      "log": [
+        {
+          "kind": "Normal",
+          "target": 0,
+          "changes": [],
+          "transition": "Legacy",
+          "weight": 0,
+          "encoded": 8,
+          "term": 2,
+          "index": 1
+        },
+        {
+          "kind": "Normal",
+          "target": 0,
+          "changes": [],
+          "transition": "Legacy",
+          "weight": 1,
+          "encoded": 9,
+          "term": 2,
+          "index": 2
+        }
+      ],
+      "uoff": 3,
+      "prs": [
+        {
+          "id": 1,
+          "match": 2,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        },
+        {
+          "id": 2,
+          "match": 0,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        },
+        {
+          "id": 3,
+          "match": 0,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        }
+      ],
+      "messages": [],
+      "reads": [],
+      "readQueue": [],
+      "preVote": false,
+      "elapsed": 4,
+      "heartbeat": 0,
+      "prevHS": {
+        "term": 2,
+        "vote": 0,
+        "commit": 2
+      },
+      "prevSS": {
+        "role": "Follower",
+        "lead": 0
+      },
+      "checkQuorum": false,
+      "votes": []
+    },
+    "input": {
+      "entries": [],
+      "entry": {
+        "kind": "V2",
+        "target": 0,
+        "changes": [],
+        "transition": "Auto",
+        "weight": 2,
+        "encoded": 10,
+        "term": 0,
+        "index": 0
+      },
+      "snapshot": {
+        "index": 3,
+        "term": 3,
+        "config": {
+          "voters": [
+            1,
+            2,
+            3
+          ],
+          "outgoing": [],
+          "learners": [],
+          "learnersNext": [],
+          "autoLeave": false
+        }
+      },
+      "fromId": 2,
+      "context": 7,
+      "message": {
+        "type": "MsgVote",
+        "fromId": 2,
+        "to": 1,
+        "term": 3,
+        "index": 2,
+        "logTerm": 2,
+        "commit": 0,
+        "reject": false,
+        "hint": 0,
+        "context": 0,
+        "forced": false,
+        "entries": []
+      },
+      "between": []
+    },
+    "meta": {
+      "origin": "code",
+      "reachability": "locally valid injected state; no cluster trace claimed",
+      "version": "V02"
+    }
+  },
+  {
+    "protocol": "action-validation/v1",
+    "id": "vote-learner-MsgVote-forced",
+    "action": "vote",
+    "pre": {
+      "config": {
+        "voters": [
+          2,
+          3
+        ],
+        "outgoing": [],
+        "learners": [
+          1
+        ],
+        "learnersNext": [],
+        "autoLeave": false
+      },
+      "role": "Follower",
+      "term": 2,
+      "vote": 0,
+      "lead": 3,
+      "commit": 2,
+      "applied": 2,
+      "pending": 0,
+      "quota": 0,
+      "transfer": 0,
+      "log": [
+        {
+          "kind": "Normal",
+          "target": 0,
+          "changes": [],
+          "transition": "Legacy",
+          "weight": 0,
+          "encoded": 8,
+          "term": 2,
+          "index": 1
+        },
+        {
+          "kind": "Normal",
+          "target": 0,
+          "changes": [],
+          "transition": "Legacy",
+          "weight": 1,
+          "encoded": 9,
+          "term": 2,
+          "index": 2
+        }
+      ],
+      "uoff": 3,
+      "prs": [
+        {
+          "id": 1,
+          "match": 2,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        },
+        {
+          "id": 2,
+          "match": 0,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        },
+        {
+          "id": 3,
+          "match": 0,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        }
+      ],
+      "messages": [],
+      "reads": [],
+      "readQueue": [],
+      "preVote": false,
+      "elapsed": 4,
+      "heartbeat": 0,
+      "prevHS": {
+        "term": 2,
+        "vote": 0,
+        "commit": 2
+      },
+      "prevSS": {
+        "role": "Follower",
+        "lead": 0
+      },
+      "checkQuorum": true,
+      "votes": []
+    },
+    "input": {
+      "entries": [],
+      "entry": {
+        "kind": "V2",
+        "target": 0,
+        "changes": [],
+        "transition": "Auto",
+        "weight": 2,
+        "encoded": 10,
+        "term": 0,
+        "index": 0
+      },
+      "snapshot": {
+        "index": 3,
+        "term": 3,
+        "config": {
+          "voters": [
+            1,
+            2,
+            3
+          ],
+          "outgoing": [],
+          "learners": [],
+          "learnersNext": [],
+          "autoLeave": false
+        }
+      },
+      "fromId": 2,
+      "context": 7,
+      "message": {
+        "type": "MsgVote",
+        "fromId": 2,
+        "to": 1,
+        "term": 3,
+        "index": 2,
+        "logTerm": 2,
+        "commit": 0,
+        "reject": false,
+        "hint": 0,
+        "context": 0,
+        "forced": true,
+        "entries": []
+      },
+      "between": []
+    },
+    "meta": {
+      "origin": "code",
+      "reachability": "locally valid injected state; no cluster trace claimed",
+      "version": "V02"
+    }
+  },
+  {
+    "protocol": "action-validation/v1",
+    "id": "vote-learner-MsgPreVote-grant",
+    "action": "vote",
+    "pre": {
+      "config": {
+        "voters": [
+          2,
+          3
+        ],
+        "outgoing": [],
+        "learners": [
+          1
+        ],
+        "learnersNext": [],
+        "autoLeave": false
+      },
+      "role": "Follower",
+      "term": 2,
+      "vote": 0,
+      "lead": 0,
+      "commit": 2,
+      "applied": 2,
+      "pending": 0,
+      "quota": 0,
+      "transfer": 0,
+      "log": [
+        {
+          "kind": "Normal",
+          "target": 0,
+          "changes": [],
+          "transition": "Legacy",
+          "weight": 0,
+          "encoded": 8,
+          "term": 2,
+          "index": 1
+        },
+        {
+          "kind": "Normal",
+          "target": 0,
+          "changes": [],
+          "transition": "Legacy",
+          "weight": 1,
+          "encoded": 9,
+          "term": 2,
+          "index": 2
+        }
+      ],
+      "uoff": 3,
+      "prs": [
+        {
+          "id": 1,
+          "match": 2,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        },
+        {
+          "id": 2,
+          "match": 0,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        },
+        {
+          "id": 3,
+          "match": 0,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        }
+      ],
+      "messages": [],
+      "reads": [],
+      "readQueue": [],
+      "preVote": false,
+      "elapsed": 4,
+      "heartbeat": 0,
+      "prevHS": {
+        "term": 2,
+        "vote": 0,
+        "commit": 2
+      },
+      "prevSS": {
+        "role": "Follower",
+        "lead": 0
+      },
+      "checkQuorum": false,
+      "votes": []
+    },
+    "input": {
+      "entries": [],
+      "entry": {
+        "kind": "V2",
+        "target": 0,
+        "changes": [],
+        "transition": "Auto",
+        "weight": 2,
+        "encoded": 10,
+        "term": 0,
+        "index": 0
+      },
+      "snapshot": {
+        "index": 3,
+        "term": 3,
+        "config": {
+          "voters": [
+            1,
+            2,
+            3
+          ],
+          "outgoing": [],
+          "learners": [],
+          "learnersNext": [],
+          "autoLeave": false
+        }
+      },
+      "fromId": 2,
+      "context": 7,
+      "message": {
+        "type": "MsgPreVote",
+        "fromId": 2,
+        "to": 1,
+        "term": 3,
+        "index": 2,
+        "logTerm": 2,
+        "commit": 0,
+        "reject": false,
+        "hint": 0,
+        "context": 0,
+        "forced": false,
+        "entries": []
+      },
+      "between": []
+    },
+    "meta": {
+      "origin": "code",
+      "reachability": "locally valid injected state; no cluster trace claimed",
+      "version": "V02"
+    }
+  },
+  {
+    "protocol": "action-validation/v1",
+    "id": "hup-v02-learner-False",
+    "action": "hup",
+    "pre": {
+      "config": {
+        "voters": [
+          2,
+          3
+        ],
+        "outgoing": [],
+        "learners": [
+          1
+        ],
+        "learnersNext": [],
+        "autoLeave": false
+      },
+      "role": "Follower",
+      "term": 2,
+      "vote": 0,
+      "lead": 0,
+      "commit": 2,
+      "applied": 2,
+      "pending": 0,
+      "quota": 0,
+      "transfer": 0,
+      "log": [
+        {
+          "kind": "Normal",
+          "target": 0,
+          "changes": [],
+          "transition": "Legacy",
+          "weight": 0,
+          "encoded": 8,
+          "term": 2,
+          "index": 1
+        },
+        {
+          "kind": "Normal",
+          "target": 0,
+          "changes": [],
+          "transition": "Legacy",
+          "weight": 1,
+          "encoded": 9,
+          "term": 2,
+          "index": 2
+        }
+      ],
+      "uoff": 3,
+      "prs": [
+        {
+          "id": 1,
+          "match": 2,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        },
+        {
+          "id": 2,
+          "match": 0,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        },
+        {
+          "id": 3,
+          "match": 0,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        }
+      ],
+      "messages": [],
+      "reads": [],
+      "readQueue": [],
+      "preVote": false,
+      "elapsed": 0,
+      "heartbeat": 0,
+      "prevHS": {
+        "term": 2,
+        "vote": 0,
+        "commit": 2
+      },
+      "prevSS": {
+        "role": "Follower",
+        "lead": 0
+      },
+      "checkQuorum": false,
+      "votes": []
+    },
+    "input": {
+      "entries": [],
+      "entry": {
+        "kind": "V2",
+        "target": 0,
+        "changes": [],
+        "transition": "Auto",
+        "weight": 2,
+        "encoded": 10,
+        "term": 0,
+        "index": 0
+      },
+      "snapshot": {
+        "index": 3,
+        "term": 3,
+        "config": {
+          "voters": [
+            1,
+            2,
+            3
+          ],
+          "outgoing": [],
+          "learners": [],
+          "learnersNext": [],
+          "autoLeave": false
+        }
+      },
+      "fromId": 2,
+      "context": 7,
+      "message": {
+        "type": "MsgHup",
+        "fromId": 2,
+        "to": 1,
+        "term": 2,
+        "index": 0,
+        "logTerm": 0,
+        "commit": 0,
+        "reject": false,
+        "hint": 0,
+        "context": 0,
+        "forced": false,
+        "entries": []
+      },
+      "between": []
+    },
+    "meta": {
+      "origin": "code",
+      "reachability": "locally valid injected state; no cluster trace claimed",
+      "version": "V02"
+    }
+  },
+  {
+    "protocol": "action-validation/v1",
+    "id": "hup-v02-staged-False",
+    "action": "hup",
+    "pre": {
+      "config": {
+        "voters": [
+          2,
+          3
+        ],
+        "outgoing": [
+          1,
+          2,
+          3
+        ],
+        "learners": [],
+        "learnersNext": [
+          1
+        ],
+        "autoLeave": true
+      },
+      "role": "Follower",
+      "term": 2,
+      "vote": 0,
+      "lead": 0,
+      "commit": 2,
+      "applied": 2,
+      "pending": 0,
+      "quota": 0,
+      "transfer": 0,
+      "log": [
+        {
+          "kind": "Normal",
+          "target": 0,
+          "changes": [],
+          "transition": "Legacy",
+          "weight": 0,
+          "encoded": 8,
+          "term": 2,
+          "index": 1
+        },
+        {
+          "kind": "Normal",
+          "target": 0,
+          "changes": [],
+          "transition": "Legacy",
+          "weight": 1,
+          "encoded": 9,
+          "term": 2,
+          "index": 2
+        }
+      ],
+      "uoff": 3,
+      "prs": [
+        {
+          "id": 1,
+          "match": 2,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        },
+        {
+          "id": 2,
+          "match": 0,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        },
+        {
+          "id": 3,
+          "match": 0,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        }
+      ],
+      "messages": [],
+      "reads": [],
+      "readQueue": [],
+      "preVote": false,
+      "elapsed": 0,
+      "heartbeat": 0,
+      "prevHS": {
+        "term": 2,
+        "vote": 0,
+        "commit": 2
+      },
+      "prevSS": {
+        "role": "Follower",
+        "lead": 0
+      },
+      "checkQuorum": false,
+      "votes": []
+    },
+    "input": {
+      "entries": [],
+      "entry": {
+        "kind": "V2",
+        "target": 0,
+        "changes": [],
+        "transition": "Auto",
+        "weight": 2,
+        "encoded": 10,
+        "term": 0,
+        "index": 0
+      },
+      "snapshot": {
+        "index": 3,
+        "term": 3,
+        "config": {
+          "voters": [
+            1,
+            2,
+            3
+          ],
+          "outgoing": [],
+          "learners": [],
+          "learnersNext": [],
+          "autoLeave": false
+        }
+      },
+      "fromId": 2,
+      "context": 7,
+      "message": {
+        "type": "MsgHup",
+        "fromId": 2,
+        "to": 1,
+        "term": 2,
+        "index": 0,
+        "logTerm": 0,
+        "commit": 0,
+        "reject": false,
+        "hint": 0,
+        "context": 0,
+        "forced": false,
+        "entries": []
+      },
+      "between": []
+    },
+    "meta": {
+      "origin": "code",
+      "reachability": "locally valid injected state; no cluster trace claimed",
+      "version": "V02"
+    }
+  },
+  {
+    "protocol": "action-validation/v1",
+    "id": "advance-v02-raw-readack",
+    "action": "advance_raw",
+    "pre": {
+      "config": {
+        "voters": [
+          1,
+          2,
+          3
+        ],
+        "outgoing": [],
+        "learners": [],
+        "learnersNext": [],
+        "autoLeave": false
+      },
+      "role": "Leader",
+      "term": 2,
+      "vote": 0,
+      "lead": 1,
+      "commit": 2,
+      "applied": 1,
+      "pending": 0,
+      "quota": 0,
+      "transfer": 0,
+      "log": [
+        {
+          "kind": "Normal",
+          "target": 0,
+          "changes": [],
+          "transition": "Legacy",
+          "weight": 0,
+          "encoded": 8,
+          "term": 2,
+          "index": 1
+        },
+        {
+          "kind": "Normal",
+          "target": 0,
+          "changes": [],
+          "transition": "Legacy",
+          "weight": 1,
+          "encoded": 9,
+          "term": 2,
+          "index": 2
+        }
+      ],
+      "uoff": 2,
+      "prs": [
+        {
+          "id": 1,
+          "match": 2,
+          "next": 3,
+          "mode": "Replicate",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        },
+        {
+          "id": 2,
+          "match": 0,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        },
+        {
+          "id": 3,
+          "match": 0,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        }
+      ],
+      "messages": [
+        {
+          "type": "MsgHeartbeat",
+          "fromId": 1,
+          "to": 2,
+          "term": 2,
+          "index": 0,
+          "logTerm": 0,
+          "commit": 0,
+          "reject": false,
+          "hint": 0,
+          "context": 0,
+          "forced": false,
+          "entries": []
+        },
+        {
+          "type": "MsgHeartbeat",
+          "fromId": 1,
+          "to": 2,
+          "term": 2,
+          "index": 0,
+          "logTerm": 0,
+          "commit": 0,
+          "reject": false,
+          "hint": 0,
+          "context": 0,
+          "forced": false,
+          "entries": []
+        }
+      ],
+      "reads": [
+        {
+          "id": 7,
+          "index": 2
+        },
+        {
+          "id": 7,
+          "index": 2
+        }
+      ],
+      "readQueue": [
+        {
+          "id": 8,
+          "index": 2,
+          "fromId": 1,
+          "acks": [
+            1
+          ]
+        }
+      ],
+      "preVote": false,
+      "elapsed": 0,
+      "heartbeat": 0,
+      "prevHS": {
+        "term": 2,
+        "vote": 0,
+        "commit": 2
+      },
+      "prevSS": {
+        "role": "Follower",
+        "lead": 0
+      },
+      "checkQuorum": false,
+      "votes": []
+    },
+    "input": {
+      "entries": [],
+      "entry": {
+        "kind": "V2",
+        "target": 0,
+        "changes": [],
+        "transition": "Auto",
+        "weight": 2,
+        "encoded": 10,
+        "term": 0,
+        "index": 0
+      },
+      "snapshot": {
+        "index": 3,
+        "term": 3,
+        "config": {
+          "voters": [
+            1,
+            2,
+            3
+          ],
+          "outgoing": [],
+          "learners": [],
+          "learnersNext": [],
+          "autoLeave": false
+        }
+      },
+      "fromId": 2,
+      "context": 7,
+      "message": {
+        "type": "MsgHup",
+        "fromId": 2,
+        "to": 1,
+        "term": 2,
+        "index": 0,
+        "logTerm": 0,
+        "commit": 0,
+        "reject": false,
+        "hint": 0,
+        "context": 0,
+        "forced": false,
+        "entries": []
+      },
+      "between": [
+        {
+          "type": "MsgHeartbeatResp",
+          "fromId": 2,
+          "to": 1,
+          "term": 0,
+          "index": 0,
+          "logTerm": 0,
+          "commit": 0,
+          "reject": false,
+          "hint": 0,
+          "context": 8,
+          "forced": false,
+          "entries": []
+        }
+      ]
+    },
+    "meta": {
+      "origin": "code",
+      "reachability": "locally valid injected state; no cluster trace claimed",
+      "version": "V02"
+    }
+  },
+  {
+    "protocol": "action-validation/v1",
+    "id": "advance-v02-raw-multiple",
+    "action": "advance_raw",
+    "pre": {
+      "config": {
+        "voters": [
+          1,
+          2,
+          3
+        ],
+        "outgoing": [],
+        "learners": [],
+        "learnersNext": [],
+        "autoLeave": false
+      },
+      "role": "Leader",
+      "term": 2,
+      "vote": 0,
+      "lead": 1,
+      "commit": 2,
+      "applied": 1,
+      "pending": 0,
+      "quota": 0,
+      "transfer": 0,
+      "log": [
+        {
+          "kind": "Normal",
+          "target": 0,
+          "changes": [],
+          "transition": "Legacy",
+          "weight": 0,
+          "encoded": 8,
+          "term": 2,
+          "index": 1
+        },
+        {
+          "kind": "Normal",
+          "target": 0,
+          "changes": [],
+          "transition": "Legacy",
+          "weight": 1,
+          "encoded": 9,
+          "term": 2,
+          "index": 2
+        }
+      ],
+      "uoff": 2,
+      "prs": [
+        {
+          "id": 1,
+          "match": 2,
+          "next": 3,
+          "mode": "Replicate",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        },
+        {
+          "id": 2,
+          "match": 0,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        },
+        {
+          "id": 3,
+          "match": 0,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        }
+      ],
+      "messages": [
+        {
+          "type": "MsgHeartbeat",
+          "fromId": 1,
+          "to": 2,
+          "term": 2,
+          "index": 0,
+          "logTerm": 0,
+          "commit": 0,
+          "reject": false,
+          "hint": 0,
+          "context": 0,
+          "forced": false,
+          "entries": []
+        },
+        {
+          "type": "MsgHeartbeat",
+          "fromId": 1,
+          "to": 2,
+          "term": 2,
+          "index": 0,
+          "logTerm": 0,
+          "commit": 0,
+          "reject": false,
+          "hint": 0,
+          "context": 0,
+          "forced": false,
+          "entries": []
+        }
+      ],
+      "reads": [
+        {
+          "id": 7,
+          "index": 2
+        },
+        {
+          "id": 7,
+          "index": 2
+        }
+      ],
+      "readQueue": [
+        {
+          "id": 8,
+          "index": 2,
+          "fromId": 1,
+          "acks": [
+            1
+          ]
+        }
+      ],
+      "preVote": false,
+      "elapsed": 0,
+      "heartbeat": 0,
+      "prevHS": {
+        "term": 2,
+        "vote": 0,
+        "commit": 2
+      },
+      "prevSS": {
+        "role": "Follower",
+        "lead": 0
+      },
+      "checkQuorum": false,
+      "votes": []
+    },
+    "input": {
+      "entries": [],
+      "entry": {
+        "kind": "V2",
+        "target": 0,
+        "changes": [],
+        "transition": "Auto",
+        "weight": 2,
+        "encoded": 10,
+        "term": 0,
+        "index": 0
+      },
+      "snapshot": {
+        "index": 3,
+        "term": 3,
+        "config": {
+          "voters": [
+            1,
+            2,
+            3
+          ],
+          "outgoing": [],
+          "learners": [],
+          "learnersNext": [],
+          "autoLeave": false
+        }
+      },
+      "fromId": 2,
+      "context": 7,
+      "message": {
+        "type": "MsgHup",
+        "fromId": 2,
+        "to": 1,
+        "term": 2,
+        "index": 0,
+        "logTerm": 0,
+        "commit": 0,
+        "reject": false,
+        "hint": 0,
+        "context": 0,
+        "forced": false,
+        "entries": []
+      },
+      "between": [
+        {
+          "type": "MsgBeat",
+          "fromId": 1,
+          "to": 1,
+          "term": 0,
+          "index": 0,
+          "logTerm": 0,
+          "commit": 0,
+          "reject": false,
+          "hint": 0,
+          "context": 0,
+          "forced": false,
+          "entries": []
+        },
+        {
+          "type": "MsgProp",
+          "fromId": 1,
+          "to": 1,
+          "term": 0,
+          "index": 0,
+          "logTerm": 0,
+          "commit": 0,
+          "reject": false,
+          "hint": 0,
+          "context": 0,
+          "forced": false,
+          "entries": [
+            {
+              "kind": "Normal",
+              "target": 0,
+              "changes": [],
+              "transition": "Legacy",
+              "weight": 2,
+              "encoded": 10,
+              "term": 0,
+              "index": 0
+            }
+          ]
+        },
+        {
+          "type": "MsgHeartbeatResp",
+          "fromId": 2,
+          "to": 1,
+          "term": 0,
+          "index": 0,
+          "logTerm": 0,
+          "commit": 0,
+          "reject": false,
+          "hint": 0,
+          "context": 8,
+          "forced": false,
+          "entries": []
+        },
+        {
+          "type": "MsgHeartbeat",
+          "fromId": 2,
+          "to": 1,
+          "term": 3,
+          "index": 0,
+          "logTerm": 0,
+          "commit": 2,
+          "reject": false,
+          "hint": 0,
+          "context": 0,
+          "forced": false,
+          "entries": []
+        }
+      ]
+    },
+    "meta": {
+      "origin": "code",
+      "reachability": "locally valid injected state; no cluster trace claimed",
+      "version": "V02"
+    }
+  },
+  {
+    "protocol": "action-validation/v1",
+    "id": "advance-v02-node-readack",
+    "action": "advance_node",
+    "pre": {
+      "config": {
+        "voters": [
+          1,
+          2,
+          3
+        ],
+        "outgoing": [],
+        "learners": [],
+        "learnersNext": [],
+        "autoLeave": false
+      },
+      "role": "Leader",
+      "term": 2,
+      "vote": 0,
+      "lead": 1,
+      "commit": 2,
+      "applied": 1,
+      "pending": 0,
+      "quota": 0,
+      "transfer": 0,
+      "log": [
+        {
+          "kind": "Normal",
+          "target": 0,
+          "changes": [],
+          "transition": "Legacy",
+          "weight": 0,
+          "encoded": 8,
+          "term": 2,
+          "index": 1
+        },
+        {
+          "kind": "Normal",
+          "target": 0,
+          "changes": [],
+          "transition": "Legacy",
+          "weight": 1,
+          "encoded": 9,
+          "term": 2,
+          "index": 2
+        }
+      ],
+      "uoff": 2,
+      "prs": [
+        {
+          "id": 1,
+          "match": 2,
+          "next": 3,
+          "mode": "Replicate",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        },
+        {
+          "id": 2,
+          "match": 0,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        },
+        {
+          "id": 3,
+          "match": 0,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        }
+      ],
+      "messages": [
+        {
+          "type": "MsgHeartbeat",
+          "fromId": 1,
+          "to": 2,
+          "term": 2,
+          "index": 0,
+          "logTerm": 0,
+          "commit": 0,
+          "reject": false,
+          "hint": 0,
+          "context": 0,
+          "forced": false,
+          "entries": []
+        },
+        {
+          "type": "MsgHeartbeat",
+          "fromId": 1,
+          "to": 2,
+          "term": 2,
+          "index": 0,
+          "logTerm": 0,
+          "commit": 0,
+          "reject": false,
+          "hint": 0,
+          "context": 0,
+          "forced": false,
+          "entries": []
+        }
+      ],
+      "reads": [
+        {
+          "id": 7,
+          "index": 2
+        },
+        {
+          "id": 7,
+          "index": 2
+        }
+      ],
+      "readQueue": [
+        {
+          "id": 8,
+          "index": 2,
+          "fromId": 1,
+          "acks": [
+            1
+          ]
+        }
+      ],
+      "preVote": false,
+      "elapsed": 0,
+      "heartbeat": 0,
+      "prevHS": {
+        "term": 2,
+        "vote": 0,
+        "commit": 2
+      },
+      "prevSS": {
+        "role": "Follower",
+        "lead": 0
+      },
+      "checkQuorum": false,
+      "votes": []
+    },
+    "input": {
+      "entries": [],
+      "entry": {
+        "kind": "V2",
+        "target": 0,
+        "changes": [],
+        "transition": "Auto",
+        "weight": 2,
+        "encoded": 10,
+        "term": 0,
+        "index": 0
+      },
+      "snapshot": {
+        "index": 3,
+        "term": 3,
+        "config": {
+          "voters": [
+            1,
+            2,
+            3
+          ],
+          "outgoing": [],
+          "learners": [],
+          "learnersNext": [],
+          "autoLeave": false
+        }
+      },
+      "fromId": 2,
+      "context": 7,
+      "message": {
+        "type": "MsgHup",
+        "fromId": 2,
+        "to": 1,
+        "term": 2,
+        "index": 0,
+        "logTerm": 0,
+        "commit": 0,
+        "reject": false,
+        "hint": 0,
+        "context": 0,
+        "forced": false,
+        "entries": []
+      },
+      "between": [
+        {
+          "type": "MsgHeartbeatResp",
+          "fromId": 2,
+          "to": 1,
+          "term": 0,
+          "index": 0,
+          "logTerm": 0,
+          "commit": 0,
+          "reject": false,
+          "hint": 0,
+          "context": 8,
+          "forced": false,
+          "entries": []
+        }
+      ]
+    },
+    "meta": {
+      "origin": "code",
+      "reachability": "locally valid injected state; no cluster trace claimed",
+      "version": "V02"
+    }
+  },
+  {
+    "protocol": "action-validation/v1",
+    "id": "advance-v02-node-multiple",
+    "action": "advance_node",
+    "pre": {
+      "config": {
+        "voters": [
+          1,
+          2,
+          3
+        ],
+        "outgoing": [],
+        "learners": [],
+        "learnersNext": [],
+        "autoLeave": false
+      },
+      "role": "Leader",
+      "term": 2,
+      "vote": 0,
+      "lead": 1,
+      "commit": 2,
+      "applied": 1,
+      "pending": 0,
+      "quota": 0,
+      "transfer": 0,
+      "log": [
+        {
+          "kind": "Normal",
+          "target": 0,
+          "changes": [],
+          "transition": "Legacy",
+          "weight": 0,
+          "encoded": 8,
+          "term": 2,
+          "index": 1
+        },
+        {
+          "kind": "Normal",
+          "target": 0,
+          "changes": [],
+          "transition": "Legacy",
+          "weight": 1,
+          "encoded": 9,
+          "term": 2,
+          "index": 2
+        }
+      ],
+      "uoff": 2,
+      "prs": [
+        {
+          "id": 1,
+          "match": 2,
+          "next": 3,
+          "mode": "Replicate",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        },
+        {
+          "id": 2,
+          "match": 0,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        },
+        {
+          "id": 3,
+          "match": 0,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        }
+      ],
+      "messages": [
+        {
+          "type": "MsgHeartbeat",
+          "fromId": 1,
+          "to": 2,
+          "term": 2,
+          "index": 0,
+          "logTerm": 0,
+          "commit": 0,
+          "reject": false,
+          "hint": 0,
+          "context": 0,
+          "forced": false,
+          "entries": []
+        },
+        {
+          "type": "MsgHeartbeat",
+          "fromId": 1,
+          "to": 2,
+          "term": 2,
+          "index": 0,
+          "logTerm": 0,
+          "commit": 0,
+          "reject": false,
+          "hint": 0,
+          "context": 0,
+          "forced": false,
+          "entries": []
+        }
+      ],
+      "reads": [
+        {
+          "id": 7,
+          "index": 2
+        },
+        {
+          "id": 7,
+          "index": 2
+        }
+      ],
+      "readQueue": [
+        {
+          "id": 8,
+          "index": 2,
+          "fromId": 1,
+          "acks": [
+            1
+          ]
+        }
+      ],
+      "preVote": false,
+      "elapsed": 0,
+      "heartbeat": 0,
+      "prevHS": {
+        "term": 2,
+        "vote": 0,
+        "commit": 2
+      },
+      "prevSS": {
+        "role": "Follower",
+        "lead": 0
+      },
+      "checkQuorum": false,
+      "votes": []
+    },
+    "input": {
+      "entries": [],
+      "entry": {
+        "kind": "V2",
+        "target": 0,
+        "changes": [],
+        "transition": "Auto",
+        "weight": 2,
+        "encoded": 10,
+        "term": 0,
+        "index": 0
+      },
+      "snapshot": {
+        "index": 3,
+        "term": 3,
+        "config": {
+          "voters": [
+            1,
+            2,
+            3
+          ],
+          "outgoing": [],
+          "learners": [],
+          "learnersNext": [],
+          "autoLeave": false
+        }
+      },
+      "fromId": 2,
+      "context": 7,
+      "message": {
+        "type": "MsgHup",
+        "fromId": 2,
+        "to": 1,
+        "term": 2,
+        "index": 0,
+        "logTerm": 0,
+        "commit": 0,
+        "reject": false,
+        "hint": 0,
+        "context": 0,
+        "forced": false,
+        "entries": []
+      },
+      "between": [
+        {
+          "type": "MsgBeat",
+          "fromId": 1,
+          "to": 1,
+          "term": 0,
+          "index": 0,
+          "logTerm": 0,
+          "commit": 0,
+          "reject": false,
+          "hint": 0,
+          "context": 0,
+          "forced": false,
+          "entries": []
+        },
+        {
+          "type": "MsgProp",
+          "fromId": 1,
+          "to": 1,
+          "term": 0,
+          "index": 0,
+          "logTerm": 0,
+          "commit": 0,
+          "reject": false,
+          "hint": 0,
+          "context": 0,
+          "forced": false,
+          "entries": [
+            {
+              "kind": "Normal",
+              "target": 0,
+              "changes": [],
+              "transition": "Legacy",
+              "weight": 2,
+              "encoded": 10,
+              "term": 0,
+              "index": 0
+            }
+          ]
+        },
+        {
+          "type": "MsgHeartbeatResp",
+          "fromId": 2,
+          "to": 1,
+          "term": 0,
+          "index": 0,
+          "logTerm": 0,
+          "commit": 0,
+          "reject": false,
+          "hint": 0,
+          "context": 8,
+          "forced": false,
+          "entries": []
+        },
+        {
+          "type": "MsgHeartbeat",
+          "fromId": 2,
+          "to": 1,
+          "term": 3,
+          "index": 0,
+          "logTerm": 0,
+          "commit": 2,
+          "reject": false,
+          "hint": 0,
+          "context": 0,
+          "forced": false,
+          "entries": []
+        }
+      ]
+    },
+    "meta": {
+      "origin": "code",
+      "reachability": "locally valid injected state; no cluster trace claimed",
+      "version": "V02"
+    }
+  },
+  {
+    "protocol": "action-validation/v1",
+    "id": "restore-v02-full",
+    "action": "restore",
+    "pre": {
+      "config": {
+        "voters": [
+          1,
+          2,
+          3
+        ],
+        "outgoing": [],
+        "learners": [],
+        "learnersNext": [],
+        "autoLeave": false
+      },
+      "role": "Follower",
+      "term": 2,
+      "vote": 0,
+      "lead": 0,
+      "commit": 2,
+      "applied": 2,
+      "pending": 0,
+      "quota": 0,
+      "transfer": 0,
+      "log": [
+        {
+          "kind": "Normal",
+          "target": 0,
+          "changes": [],
+          "transition": "Legacy",
+          "weight": 0,
+          "encoded": 8,
+          "term": 2,
+          "index": 1
+        },
+        {
+          "kind": "Normal",
+          "target": 0,
+          "changes": [],
+          "transition": "Legacy",
+          "weight": 1,
+          "encoded": 9,
+          "term": 2,
+          "index": 2
+        }
+      ],
+      "uoff": 3,
+      "prs": [
+        {
+          "id": 1,
+          "match": 2,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        },
+        {
+          "id": 2,
+          "match": 0,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        },
+        {
+          "id": 3,
+          "match": 0,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        }
+      ],
+      "messages": [],
+      "reads": [],
+      "readQueue": [],
+      "preVote": false,
+      "elapsed": 0,
+      "heartbeat": 0,
+      "prevHS": {
+        "term": 2,
+        "vote": 0,
+        "commit": 2
+      },
+      "prevSS": {
+        "role": "Follower",
+        "lead": 0
+      },
+      "checkQuorum": false,
+      "votes": []
+    },
+    "input": {
+      "entries": [],
+      "entry": {
+        "kind": "V2",
+        "target": 0,
+        "changes": [],
+        "transition": "Auto",
+        "weight": 2,
+        "encoded": 10,
+        "term": 0,
+        "index": 0
+      },
+      "snapshot": {
+        "index": 3,
+        "term": 3,
+        "config": {
+          "voters": [
+            1,
+            2
+          ],
+          "outgoing": [
+            1,
+            3
+          ],
+          "learners": [
+            4
+          ],
+          "learnersNext": [
+            3
+          ],
+          "autoLeave": true
+        }
+      },
+      "fromId": 2,
+      "context": 7,
+      "message": {
+        "type": "MsgHup",
+        "fromId": 2,
+        "to": 1,
+        "term": 2,
+        "index": 0,
+        "logTerm": 0,
+        "commit": 0,
+        "reject": false,
+        "hint": 0,
+        "context": 0,
+        "forced": false,
+        "entries": []
+      },
+      "between": []
+    },
+    "meta": {
+      "origin": "code",
+      "reachability": "locally valid injected state; no cluster trace claimed",
+      "version": "V02"
+    }
+  },
+  {
+    "protocol": "action-validation/v1",
+    "id": "restart-v02-full",
+    "action": "restart",
+    "pre": {
+      "config": {
+        "voters": [
+          1,
+          2,
+          3
+        ],
+        "outgoing": [],
+        "learners": [],
+        "learnersNext": [],
+        "autoLeave": false
+      },
+      "role": "Follower",
+      "term": 2,
+      "vote": 0,
+      "lead": 0,
+      "commit": 2,
+      "applied": 2,
+      "pending": 0,
+      "quota": 0,
+      "transfer": 0,
+      "log": [
+        {
+          "kind": "Normal",
+          "target": 0,
+          "changes": [],
+          "transition": "Legacy",
+          "weight": 0,
+          "encoded": 8,
+          "term": 2,
+          "index": 1
+        },
+        {
+          "kind": "Normal",
+          "target": 0,
+          "changes": [],
+          "transition": "Legacy",
+          "weight": 1,
+          "encoded": 9,
+          "term": 2,
+          "index": 2
+        }
+      ],
+      "uoff": 3,
+      "prs": [
+        {
+          "id": 1,
+          "match": 2,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        },
+        {
+          "id": 2,
+          "match": 0,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        },
+        {
+          "id": 3,
+          "match": 0,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        }
+      ],
+      "messages": [],
+      "reads": [],
+      "readQueue": [],
+      "preVote": false,
+      "elapsed": 0,
+      "heartbeat": 0,
+      "prevHS": {
+        "term": 2,
+        "vote": 0,
+        "commit": 2
+      },
+      "prevSS": {
+        "role": "Follower",
+        "lead": 0
+      },
+      "checkQuorum": false,
+      "votes": []
+    },
+    "input": {
+      "entries": [],
+      "entry": {
+        "kind": "V2",
+        "target": 0,
+        "changes": [],
+        "transition": "Auto",
+        "weight": 2,
+        "encoded": 10,
+        "term": 0,
+        "index": 0
+      },
+      "snapshot": {
+        "index": 3,
+        "term": 3,
+        "config": {
+          "voters": [
+            1,
+            2
+          ],
+          "outgoing": [
+            1,
+            3
+          ],
+          "learners": [
+            4
+          ],
+          "learnersNext": [
+            3
+          ],
+          "autoLeave": true
+        }
+      },
+      "fromId": 2,
+      "context": 7,
+      "message": {
+        "type": "MsgHup",
+        "fromId": 2,
+        "to": 1,
+        "term": 2,
+        "index": 0,
+        "logTerm": 0,
+        "commit": 0,
+        "reject": false,
+        "hint": 0,
+        "context": 0,
+        "forced": false,
+        "entries": []
+      },
+      "between": []
+    },
+    "meta": {
+      "origin": "code",
+      "reachability": "locally valid injected state; no cluster trace claimed",
+      "version": "V02"
+    }
+  },
+  {
+    "protocol": "action-validation/v1",
+    "id": "restore-v02-staged-self",
+    "action": "restore",
+    "pre": {
+      "config": {
+        "voters": [
+          1,
+          2,
+          3
+        ],
+        "outgoing": [],
+        "learners": [],
+        "learnersNext": [],
+        "autoLeave": false
+      },
+      "role": "Follower",
+      "term": 2,
+      "vote": 0,
+      "lead": 0,
+      "commit": 2,
+      "applied": 2,
+      "pending": 0,
+      "quota": 0,
+      "transfer": 0,
+      "log": [
+        {
+          "kind": "Normal",
+          "target": 0,
+          "changes": [],
+          "transition": "Legacy",
+          "weight": 0,
+          "encoded": 8,
+          "term": 2,
+          "index": 1
+        },
+        {
+          "kind": "Normal",
+          "target": 0,
+          "changes": [],
+          "transition": "Legacy",
+          "weight": 1,
+          "encoded": 9,
+          "term": 2,
+          "index": 2
+        }
+      ],
+      "uoff": 3,
+      "prs": [
+        {
+          "id": 1,
+          "match": 2,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        },
+        {
+          "id": 2,
+          "match": 0,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        },
+        {
+          "id": 3,
+          "match": 0,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        }
+      ],
+      "messages": [],
+      "reads": [],
+      "readQueue": [],
+      "preVote": false,
+      "elapsed": 0,
+      "heartbeat": 0,
+      "prevHS": {
+        "term": 2,
+        "vote": 0,
+        "commit": 2
+      },
+      "prevSS": {
+        "role": "Follower",
+        "lead": 0
+      },
+      "checkQuorum": false,
+      "votes": []
+    },
+    "input": {
+      "entries": [],
+      "entry": {
+        "kind": "V2",
+        "target": 0,
+        "changes": [],
+        "transition": "Auto",
+        "weight": 2,
+        "encoded": 10,
+        "term": 0,
+        "index": 0
+      },
+      "snapshot": {
+        "index": 3,
+        "term": 3,
+        "config": {
+          "voters": [
+            2,
+            3
+          ],
+          "outgoing": [
+            1,
+            2
+          ],
+          "learners": [
+            4
+          ],
+          "learnersNext": [
+            1
+          ],
+          "autoLeave": true
+        }
+      },
+      "fromId": 2,
+      "context": 7,
+      "message": {
+        "type": "MsgHup",
+        "fromId": 2,
+        "to": 1,
+        "term": 2,
+        "index": 0,
+        "logTerm": 0,
+        "commit": 0,
+        "reject": false,
+        "hint": 0,
+        "context": 0,
+        "forced": false,
+        "entries": []
+      },
+      "between": []
+    },
+    "meta": {
+      "origin": "code",
+      "reachability": "locally valid injected state; no cluster trace claimed",
+      "version": "V02"
+    }
+  },
+  {
+    "protocol": "action-validation/v1",
+    "id": "restart-v02-staged-self",
+    "action": "restart",
+    "pre": {
+      "config": {
+        "voters": [
+          1,
+          2,
+          3
+        ],
+        "outgoing": [],
+        "learners": [],
+        "learnersNext": [],
+        "autoLeave": false
+      },
+      "role": "Follower",
+      "term": 2,
+      "vote": 0,
+      "lead": 0,
+      "commit": 2,
+      "applied": 2,
+      "pending": 0,
+      "quota": 0,
+      "transfer": 0,
+      "log": [
+        {
+          "kind": "Normal",
+          "target": 0,
+          "changes": [],
+          "transition": "Legacy",
+          "weight": 0,
+          "encoded": 8,
+          "term": 2,
+          "index": 1
+        },
+        {
+          "kind": "Normal",
+          "target": 0,
+          "changes": [],
+          "transition": "Legacy",
+          "weight": 1,
+          "encoded": 9,
+          "term": 2,
+          "index": 2
+        }
+      ],
+      "uoff": 3,
+      "prs": [
+        {
+          "id": 1,
+          "match": 2,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        },
+        {
+          "id": 2,
+          "match": 0,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        },
+        {
+          "id": 3,
+          "match": 0,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        }
+      ],
+      "messages": [],
+      "reads": [],
+      "readQueue": [],
+      "preVote": false,
+      "elapsed": 0,
+      "heartbeat": 0,
+      "prevHS": {
+        "term": 2,
+        "vote": 0,
+        "commit": 2
+      },
+      "prevSS": {
+        "role": "Follower",
+        "lead": 0
+      },
+      "checkQuorum": false,
+      "votes": []
+    },
+    "input": {
+      "entries": [],
+      "entry": {
+        "kind": "V2",
+        "target": 0,
+        "changes": [],
+        "transition": "Auto",
+        "weight": 2,
+        "encoded": 10,
+        "term": 0,
+        "index": 0
+      },
+      "snapshot": {
+        "index": 3,
+        "term": 3,
+        "config": {
+          "voters": [
+            2,
+            3
+          ],
+          "outgoing": [
+            1,
+            2
+          ],
+          "learners": [
+            4
+          ],
+          "learnersNext": [
+            1
+          ],
+          "autoLeave": true
+        }
+      },
+      "fromId": 2,
+      "context": 7,
+      "message": {
+        "type": "MsgHup",
+        "fromId": 2,
+        "to": 1,
+        "term": 2,
+        "index": 0,
+        "logTerm": 0,
+        "commit": 0,
+        "reject": false,
+        "hint": 0,
+        "context": 0,
+        "forced": false,
+        "entries": []
+      },
+      "between": []
+    },
+    "meta": {
+      "origin": "code",
+      "reachability": "locally valid injected state; no cluster trace claimed",
+      "version": "V02"
+    }
+  },
+  {
+    "protocol": "action-validation/v1",
+    "id": "restore-v02-learner-self",
+    "action": "restore",
+    "pre": {
+      "config": {
+        "voters": [
+          1,
+          2,
+          3
+        ],
+        "outgoing": [],
+        "learners": [],
+        "learnersNext": [],
+        "autoLeave": false
+      },
+      "role": "Follower",
+      "term": 2,
+      "vote": 0,
+      "lead": 0,
+      "commit": 2,
+      "applied": 2,
+      "pending": 0,
+      "quota": 0,
+      "transfer": 0,
+      "log": [
+        {
+          "kind": "Normal",
+          "target": 0,
+          "changes": [],
+          "transition": "Legacy",
+          "weight": 0,
+          "encoded": 8,
+          "term": 2,
+          "index": 1
+        },
+        {
+          "kind": "Normal",
+          "target": 0,
+          "changes": [],
+          "transition": "Legacy",
+          "weight": 1,
+          "encoded": 9,
+          "term": 2,
+          "index": 2
+        }
+      ],
+      "uoff": 3,
+      "prs": [
+        {
+          "id": 1,
+          "match": 2,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        },
+        {
+          "id": 2,
+          "match": 0,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        },
+        {
+          "id": 3,
+          "match": 0,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        }
+      ],
+      "messages": [],
+      "reads": [],
+      "readQueue": [],
+      "preVote": false,
+      "elapsed": 0,
+      "heartbeat": 0,
+      "prevHS": {
+        "term": 2,
+        "vote": 0,
+        "commit": 2
+      },
+      "prevSS": {
+        "role": "Follower",
+        "lead": 0
+      },
+      "checkQuorum": false,
+      "votes": []
+    },
+    "input": {
+      "entries": [],
+      "entry": {
+        "kind": "V2",
+        "target": 0,
+        "changes": [],
+        "transition": "Auto",
+        "weight": 2,
+        "encoded": 10,
+        "term": 0,
+        "index": 0
+      },
+      "snapshot": {
+        "index": 3,
+        "term": 3,
+        "config": {
+          "voters": [
+            2,
+            3
+          ],
+          "outgoing": [
+            2,
+            4
+          ],
+          "learners": [
+            1
+          ],
+          "learnersNext": [
+            4
+          ],
+          "autoLeave": true
+        }
+      },
+      "fromId": 2,
+      "context": 7,
+      "message": {
+        "type": "MsgHup",
+        "fromId": 2,
+        "to": 1,
+        "term": 2,
+        "index": 0,
+        "logTerm": 0,
+        "commit": 0,
+        "reject": false,
+        "hint": 0,
+        "context": 0,
+        "forced": false,
+        "entries": []
+      },
+      "between": []
+    },
+    "meta": {
+      "origin": "code",
+      "reachability": "locally valid injected state; no cluster trace claimed",
+      "version": "V02"
+    }
+  },
+  {
+    "protocol": "action-validation/v1",
+    "id": "restart-v02-learner-self",
+    "action": "restart",
+    "pre": {
+      "config": {
+        "voters": [
+          1,
+          2,
+          3
+        ],
+        "outgoing": [],
+        "learners": [],
+        "learnersNext": [],
+        "autoLeave": false
+      },
+      "role": "Follower",
+      "term": 2,
+      "vote": 0,
+      "lead": 0,
+      "commit": 2,
+      "applied": 2,
+      "pending": 0,
+      "quota": 0,
+      "transfer": 0,
+      "log": [
+        {
+          "kind": "Normal",
+          "target": 0,
+          "changes": [],
+          "transition": "Legacy",
+          "weight": 0,
+          "encoded": 8,
+          "term": 2,
+          "index": 1
+        },
+        {
+          "kind": "Normal",
+          "target": 0,
+          "changes": [],
+          "transition": "Legacy",
+          "weight": 1,
+          "encoded": 9,
+          "term": 2,
+          "index": 2
+        }
+      ],
+      "uoff": 3,
+      "prs": [
+        {
+          "id": 1,
+          "match": 2,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        },
+        {
+          "id": 2,
+          "match": 0,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        },
+        {
+          "id": 3,
+          "match": 0,
+          "next": 3,
+          "mode": "Probe",
+          "probe": false,
+          "pending": 0,
+          "active": false,
+          "inflight": []
+        }
+      ],
+      "messages": [],
+      "reads": [],
+      "readQueue": [],
+      "preVote": false,
+      "elapsed": 0,
+      "heartbeat": 0,
+      "prevHS": {
+        "term": 2,
+        "vote": 0,
+        "commit": 2
+      },
+      "prevSS": {
+        "role": "Follower",
+        "lead": 0
+      },
+      "checkQuorum": false,
+      "votes": []
+    },
+    "input": {
+      "entries": [],
+      "entry": {
+        "kind": "V2",
+        "target": 0,
+        "changes": [],
+        "transition": "Auto",
+        "weight": 2,
+        "encoded": 10,
+        "term": 0,
+        "index": 0
+      },
+      "snapshot": {
+        "index": 3,
+        "term": 3,
+        "config": {
+          "voters": [
+            2,
+            3
+          ],
+          "outgoing": [
+            2,
+            4
+          ],
+          "learners": [
+            1
+          ],
+          "learnersNext": [
+            4
+          ],
+          "autoLeave": true
+        }
+      },
+      "fromId": 2,
+      "context": 7,
+      "message": {
+        "type": "MsgHup",
+        "fromId": 2,
+        "to": 1,
+        "term": 2,
+        "index": 0,
+        "logTerm": 0,
+        "commit": 0,
+        "reject": false,
+        "hint": 0,
+        "context": 0,
+        "forced": false,
+        "entries": []
+      },
+      "between": []
+    },
+    "meta": {
+      "origin": "code",
+      "reachability": "locally valid injected state; no cluster trace claimed",
+      "version": "V02"
+    }
+  }
+]

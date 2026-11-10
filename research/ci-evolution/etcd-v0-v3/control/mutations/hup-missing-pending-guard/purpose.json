@@ -1,0 +1,6 @@
+{
+  "purpose": "test framework detection of extra modeled behavior",
+  "synthetic": true,
+  "count_as_real_bug": false,
+  "change": "remove model pending-configuration campaign guard; implementation untouched"
+}

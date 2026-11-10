@@ -1,0 +1,20 @@
+{
+  "packet": "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/agent-runs/inv-judge-V03-1",
+  "model": "gpt-6-astra",
+  "effort": "xhigh",
+  "started_at": "2026-09-22T19:49:59.945315+00:00",
+  "status": "finished",
+  "log": "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/logs/inv-judge-V03-1-attempt-1.jsonl",
+  "pid": 1530280,
+  "exit_code": 0,
+  "seconds": 824.7723373286426,
+  "usage": [
+    {
+      "input_tokens": 1366496,
+      "cached_input_tokens": 1222016,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 26007,
+      "reasoning_output_tokens": 6449
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "packet": "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/agent-runs/progress-probe-V03",
+  "model": "gpt-6-astra",
+  "effort": "xhigh",
+  "started_at": "2026-09-22T20:24:52.277359+00:00",
+  "status": "finished",
+  "log": "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/logs/progress-probe-V03-attempt-1.jsonl",
+  "pid": 1628266,
+  "exit_code": 0,
+  "seconds": 2216.398025320843,
+  "usage": [
+    {
+      "input_tokens": 9179327,
+      "cached_input_tokens": 8839808,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 55906,
+      "reasoning_output_tokens": 24771
+    }
+  ]
+}

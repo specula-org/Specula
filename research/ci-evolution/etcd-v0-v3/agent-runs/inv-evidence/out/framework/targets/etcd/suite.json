@@ -1,0 +1,114 @@
+{
+  "protocol": "action-validation/v1",
+  "version": "V03",
+  "root": "Run from the supplied workspace root; all paths below are relative.",
+  "tools": {
+    "go": "/usr/local/go/bin/go",
+    "tlc": "/tools/tla2tools.jar",
+    "community_modules": "/tools/CommunityModules.jar",
+    "python": "python3",
+    "java": "/usr/bin/java"
+  },
+  "limits": {
+    "tlc_timeout_seconds": 80,
+    "tlc_workers": 1,
+    "tlc_heap_gb": 2,
+    "go_timeout_seconds": 90,
+    "GOMAXPROCS": 2,
+    "command_timeout_seconds": 180
+  },
+  "network": "disabled by GOPROXY=off/GOSUMDB=off; no downloads",
+  "cache": "out/go-cache",
+  "tmp": "out/tmp",
+  "runs": [
+    {
+      "label": "baseline-code",
+      "manifest": "out/framework/targets/etcd/manifest.json",
+      "cases": "out/cases/code-inputs.json",
+      "spec": "new/spec",
+      "route": "code-to-model"
+    },
+    {
+      "label": "baseline-model",
+      "manifest": "out/framework/targets/etcd/manifest.json",
+      "cases": "out/cases/model-seeds.json",
+      "spec": "new/spec",
+      "route": "model-to-code"
+    },
+    {
+      "label": "repaired-code",
+      "manifest": "out/framework/targets/etcd/manifest.json",
+      "cases": "out/cases/code-inputs.json",
+      "spec": "out/repaired-spec",
+      "route": "code-to-model"
+    },
+    {
+      "label": "repaired-model",
+      "manifest": "out/framework/targets/etcd/manifest.json",
+      "cases": "out/cases/model-seeds.json",
+      "spec": "out/repaired-spec",
+      "route": "model-to-code"
+    },
+    {
+      "label": "old-code",
+      "manifest": "out/framework/targets/etcd/manifest-old.json",
+      "cases": "out/cases/code-inputs.json",
+      "spec": "old/spec",
+      "route": "code-to-model"
+    },
+    {
+      "label": "old-model",
+      "manifest": "out/framework/targets/etcd/manifest-old.json",
+      "cases": "out/cases/model-seeds.json",
+      "spec": "old/spec",
+      "route": "model-to-code"
+    }
+  ],
+  "verification": [
+    {
+      "name": "generic-tests",
+      "command": [
+        "python3",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "out/framework",
+        "-p",
+        "test_runner.py",
+        "-v"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 20,
+      "expected_exit": 0
+    },
+    {
+      "name": "valid-input-audit",
+      "command": [
+        "python3",
+        "out/framework/targets/etcd/audit_inputs.py",
+        "out/cases/code-inputs.json",
+        "{output_root}/baseline-model/generated-cases.json"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 20,
+      "expected_exit": 0
+    }
+  ],
+  "regenerate_domains": [
+    "python3",
+    "out/framework/targets/etcd/build_v03.py"
+  ],
+  "rerun": [
+    "python3",
+    "out/framework/targets/etcd/replay.py"
+  ],
+  "repair_patch": "out/evidence/behavior-and-mapping.patch",
+  "claim": "bounded local action validation; no protocol safety, global conformance, or reachability proof",
+  "report_command": [
+    "python3",
+    "out/framework/targets/etcd/summarize.py",
+    "--run-root",
+    "{output_root}"
+  ]
+}

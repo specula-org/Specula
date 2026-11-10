@@ -1,0 +1,3883 @@
+{
+  "protocol": "action-validation/v1",
+  "route": "code-to-model",
+  "spec": "versions/V02/spec",
+  "counts": {
+    "match": 479
+  },
+  "total": 479,
+  "commands": [
+    {
+      "engine": "implementation",
+      "command": [
+        "python3",
+        "out/framework/adapters/go/run.py",
+        "--input",
+        "/workspace/code-inputs.json",
+        "--output",
+        "/workspace/out/V02-code-to-model-02/implementation.jsonl",
+        "--work",
+        "/workspace/out/V02-code-to-model-02/implementation",
+        "--source",
+        "versions/V02/source"
+      ],
+      "duration_seconds": 1.3167992513626814,
+      "exit_code": 0
+    },
+    {
+      "engine": "model",
+      "command": [
+        "python3",
+        "out/framework/adapters/tla/run.py",
+        "--input",
+        "/workspace/code-inputs.json",
+        "--output",
+        "/workspace/out/V02-code-to-model-02/model.jsonl",
+        "--spec",
+        "/workspace/versions/V02/spec",
+        "--work",
+        "/workspace/out/V02-code-to-model-02/model"
+      ],
+      "duration_seconds": 9.835500854998827,
+      "exit_code": 0
+    }
+  ],
+  "results": [
+    {
+      "id": "proposal-AddVoter-0-0-0",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "proposal-AddVoter-2-0-0",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "proposal-AddVoter-0-16-0",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "proposal-AddVoter-0-0-2",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "proposal-V2-0-0-0",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "proposal-V2-2-0-0",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "proposal-V2-0-16-0",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "proposal-V2-0-0-2",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "proposal-removed",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-simple-add",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-simple-demote",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-simple-replace",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-simple-leave",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-simple-empty-explicit",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-simple-empty-implicit",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-simple-zero-id",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-simple-remove-self",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-simple-remove-transfer",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-simple-remove-readd",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-joint-add",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-joint-demote",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-joint-replace",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-joint-leave",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-joint-empty-explicit",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-joint-empty-implicit",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-joint-zero-id",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-joint-remove-self",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-joint-remove-transfer",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-joint-remove-readd",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-last-voter",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-legacy-demote",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-unknown-remove",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-existing-voter",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-new-learner",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-promote-learner",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-update",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-self-demote",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "apply-reduced-quorum-commit",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "hup-Normal-False",
+      "action": "hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "hup-Normal-True",
+      "action": "hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "hup-AddVoter-False",
+      "action": "hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "hup-AddVoter-True",
+      "action": "hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "hup-V2-False",
+      "action": "hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "hup-V2-True",
+      "action": "hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "hup-singleton",
+      "action": "hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "hup-joint-single",
+      "action": "hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "hup-learner",
+      "action": "hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "hup-outgoing-self",
+      "action": "hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "read-simple-False",
+      "action": "read",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "read-simple-True",
+      "action": "read",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "quorum-simple-1",
+      "action": "checkquorum",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "quorum-simple-2",
+      "action": "checkquorum",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "quorum-simple-0",
+      "action": "checkquorum",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "read-singleton-False",
+      "action": "read",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "read-singleton-True",
+      "action": "read",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "quorum-singleton-1",
+      "action": "checkquorum",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "quorum-singleton-2",
+      "action": "checkquorum",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "quorum-singleton-0",
+      "action": "checkquorum",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "read-joint-False",
+      "action": "read",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "read-joint-True",
+      "action": "read",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "quorum-joint-1",
+      "action": "checkquorum",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "quorum-joint-2",
+      "action": "checkquorum",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "quorum-joint-0",
+      "action": "checkquorum",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "read-joint-single-False",
+      "action": "read",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "read-joint-single-True",
+      "action": "read",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "quorum-joint-single-1",
+      "action": "checkquorum",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "quorum-joint-single-2",
+      "action": "checkquorum",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "quorum-joint-single-0",
+      "action": "checkquorum",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "ack-joint-1",
+      "action": "readack",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "ack-joint-2",
+      "action": "readack",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "ready-raw-False-2-1-Leader-2",
+      "action": "ready_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "advance-raw-False-2-1-Leader-2",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "ready-raw-True-2-0-Leader-2",
+      "action": "ready_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "advance-raw-True-2-0-Leader-2",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "ready-raw-True-2-16-Leader-2",
+      "action": "ready_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "advance-raw-True-2-16-Leader-2",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "ready-raw-True-0-0-Leader-0",
+      "action": "ready_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "advance-raw-True-0-0-Leader-0",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "ready-raw-True-2-0-Follower-2",
+      "action": "ready_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "advance-raw-True-2-0-Follower-2",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "ready-raw-True-2-0-Leader-3",
+      "action": "ready_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "advance-raw-True-2-0-Leader-3",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "ready-node-False-2-1-Leader-2",
+      "action": "ready_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "advance-node-False-2-1-Leader-2",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "ready-node-True-2-0-Leader-2",
+      "action": "ready_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "advance-node-True-2-0-Leader-2",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "ready-node-True-2-16-Leader-2",
+      "action": "ready_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "advance-node-True-2-16-Leader-2",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "ready-node-True-0-0-Leader-0",
+      "action": "ready_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "advance-node-True-0-0-Leader-0",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "ready-node-True-2-0-Follower-2",
+      "action": "ready_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "advance-node-True-2-0-Follower-2",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "ready-node-True-2-0-Leader-3",
+      "action": "ready_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "advance-node-True-2-0-Leader-3",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "restore-simple",
+      "action": "restore",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "restart-simple",
+      "action": "restart",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "restore-joint",
+      "action": "restore",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "restart-joint",
+      "action": "restart",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "restore-outgoing-only",
+      "action": "restore",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "restart-outgoing-only",
+      "action": "restart",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "restore-learner",
+      "action": "restore",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "restart-learner",
+      "action": "restart",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "restore-stale",
+      "action": "restore",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "restore-fast-forward",
+      "action": "restore",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "restore-non-follower",
+      "action": "restore",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-learner-MsgVote-grant",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-learner-MsgVote-stale-log",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-learner-MsgVote-short-log",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-learner-MsgVote-higher-log",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-learner-MsgVote-past-term",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-learner-MsgVote-same-term",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-learner-MsgVote-already-voted",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-learner-MsgVote-repeat-vote",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-learner-MsgVote-lease",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-learner-MsgVote-lease-expired",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-learner-MsgVote-forced",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-learner-MsgVote-nonmember-candidate",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-learner-MsgPreVote-grant",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-learner-MsgPreVote-stale-log",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-learner-MsgPreVote-short-log",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-learner-MsgPreVote-higher-log",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-learner-MsgPreVote-past-term",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-learner-MsgPreVote-same-term",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-learner-MsgPreVote-already-voted",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-learner-MsgPreVote-repeat-vote",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-learner-MsgPreVote-lease",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-learner-MsgPreVote-lease-expired",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-learner-MsgPreVote-forced",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-learner-MsgPreVote-nonmember-candidate",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-voter-MsgVote-grant",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-voter-MsgVote-stale-log",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-voter-MsgVote-short-log",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-voter-MsgVote-higher-log",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-voter-MsgVote-past-term",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-voter-MsgVote-same-term",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-voter-MsgVote-already-voted",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-voter-MsgVote-repeat-vote",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-voter-MsgVote-lease",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-voter-MsgVote-lease-expired",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-voter-MsgVote-forced",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-voter-MsgVote-nonmember-candidate",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-voter-MsgPreVote-grant",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-voter-MsgPreVote-stale-log",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-voter-MsgPreVote-short-log",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-voter-MsgPreVote-higher-log",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-voter-MsgPreVote-past-term",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-voter-MsgPreVote-same-term",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-voter-MsgPreVote-already-voted",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-voter-MsgPreVote-repeat-vote",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-voter-MsgPreVote-lease",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-voter-MsgPreVote-lease-expired",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-voter-MsgPreVote-forced",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-voter-MsgPreVote-nonmember-candidate",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-removed-MsgVote-grant",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-removed-MsgVote-stale-log",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-removed-MsgVote-short-log",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-removed-MsgVote-higher-log",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-removed-MsgVote-past-term",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-removed-MsgVote-same-term",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-removed-MsgVote-already-voted",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-removed-MsgVote-repeat-vote",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-removed-MsgVote-lease",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-removed-MsgVote-lease-expired",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-removed-MsgVote-forced",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-removed-MsgVote-nonmember-candidate",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-removed-MsgPreVote-grant",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-removed-MsgPreVote-stale-log",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-removed-MsgPreVote-short-log",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-removed-MsgPreVote-higher-log",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-removed-MsgPreVote-past-term",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-removed-MsgPreVote-same-term",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-removed-MsgPreVote-already-voted",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-removed-MsgPreVote-repeat-vote",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-removed-MsgPreVote-lease",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-removed-MsgPreVote-lease-expired",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-removed-MsgPreVote-forced",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-removed-MsgPreVote-nonmember-candidate",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-staged-MsgVote-grant",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-staged-MsgVote-stale-log",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-staged-MsgVote-short-log",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-staged-MsgVote-higher-log",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-staged-MsgVote-past-term",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-staged-MsgVote-same-term",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-staged-MsgVote-already-voted",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-staged-MsgVote-repeat-vote",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-staged-MsgVote-lease",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-staged-MsgVote-lease-expired",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-staged-MsgVote-forced",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-staged-MsgVote-nonmember-candidate",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-staged-MsgPreVote-grant",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-staged-MsgPreVote-stale-log",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-staged-MsgPreVote-short-log",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-staged-MsgPreVote-higher-log",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-staged-MsgPreVote-past-term",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-staged-MsgPreVote-same-term",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-staged-MsgPreVote-already-voted",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-staged-MsgPreVote-repeat-vote",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-staged-MsgPreVote-lease",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-staged-MsgPreVote-lease-expired",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-staged-MsgPreVote-forced",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-staged-MsgPreVote-nonmember-candidate",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "hup-v02-learner-False",
+      "action": "hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "hup-v02-learner-True",
+      "action": "hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "hup-v02-staged-False",
+      "action": "hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "hup-v02-staged-True",
+      "action": "hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "receive-learner-ignored-False",
+      "action": "receive",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "receive-learner-ignored-True",
+      "action": "receive",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "receive-voter-wins-False",
+      "action": "receive",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "receive-voter-wins-True",
+      "action": "receive",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "receive-joint-outgoing-only-False",
+      "action": "receive",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "receive-joint-outgoing-only-True",
+      "action": "receive",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "receive-joint-incoming-only-False",
+      "action": "receive",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "receive-joint-incoming-only-True",
+      "action": "receive",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "receive-staged-counts-False",
+      "action": "receive",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "receive-staged-counts-True",
+      "action": "receive",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "advance-v02-raw-heartbeat",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "advance-v02-raw-proposal",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "advance-v02-raw-readack",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "advance-v02-raw-term-change",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "advance-v02-raw-multiple",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "advance-v02-node-heartbeat",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "advance-v02-node-proposal",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "advance-v02-node-readack",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "advance-v02-node-term-change",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "advance-v02-node-multiple",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "ready-v02-raw-empty",
+      "action": "ready_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "advance-v02-raw-empty",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "restore-v02-full",
+      "action": "restore",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "restart-v02-full",
+      "action": "restart",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "restore-v02-full-explicit",
+      "action": "restore",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "restart-v02-full-explicit",
+      "action": "restart",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "restore-v02-staged-self",
+      "action": "restore",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "restart-v02-staged-self",
+      "action": "restart",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "restore-v02-learner-self",
+      "action": "restore",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "restart-v02-learner-self",
+      "action": "restart",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "restore-v02-disjoint",
+      "action": "restore",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "restart-v02-disjoint",
+      "action": "restart",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "restore-v02-removed-self",
+      "action": "restore",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "restart-v02-removed-self",
+      "action": "restart",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-simple-0-normal",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-simple-0-legacy-zero",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-simple-0-legacy",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-simple-0-v2",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-simple-0-empty-auto",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-simple-0-empty-nil",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-simple-0-empty-explicit",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-simple-0-empty-implicit",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-simple-2-normal",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-simple-2-legacy-zero",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-simple-2-legacy",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-simple-2-v2",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-simple-2-empty-auto",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-simple-2-empty-nil",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-simple-2-empty-explicit",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-simple-2-empty-implicit",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-simple-3-normal",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-simple-3-legacy-zero",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-simple-3-legacy",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-simple-3-v2",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-simple-3-empty-auto",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-simple-3-empty-nil",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-simple-3-empty-explicit",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-simple-3-empty-implicit",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-batch-simple-leave-then-add",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-batch-simple-add-then-leave",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-batch-simple-emptyexplicit-then-leave",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-batch-simple-normal-then-add",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-joint-0-normal",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-joint-0-legacy-zero",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-joint-0-legacy",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-joint-0-v2",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-joint-0-empty-auto",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-joint-0-empty-nil",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-joint-0-empty-explicit",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-joint-0-empty-implicit",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-joint-2-normal",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-joint-2-legacy-zero",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-joint-2-legacy",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-joint-2-v2",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-joint-2-empty-auto",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-joint-2-empty-nil",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-joint-2-empty-explicit",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-joint-2-empty-implicit",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-joint-3-normal",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-joint-3-legacy-zero",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-joint-3-legacy",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-joint-3-v2",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-joint-3-empty-auto",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-joint-3-empty-nil",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-joint-3-empty-explicit",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-joint-3-empty-implicit",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-batch-joint-leave-then-add",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-batch-joint-add-then-leave",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-batch-joint-emptyexplicit-then-leave",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-prop-batch-joint-normal-then-add",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-quota-0-empty",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-quota-0-two-empty",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-quota-0-one-byte",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-quota-0-large",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-quota-0-mixed",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-quota-0-v2-payload",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-quota-0-phase-rewrite",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-quota-0-pending-rewrite",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-quota-15-empty",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-quota-15-two-empty",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-quota-15-one-byte",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-quota-15-large",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-quota-15-mixed",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-quota-15-v2-payload",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-quota-15-phase-rewrite",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-quota-15-pending-rewrite",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-quota-16-empty",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-quota-16-two-empty",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-quota-16-one-byte",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-quota-16-large",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-quota-16-mixed",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-quota-16-v2-payload",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-quota-16-phase-rewrite",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-quota-16-pending-rewrite",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-quota-17-empty",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-quota-17-two-empty",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-quota-17-one-byte",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-quota-17-large",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-quota-17-mixed",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-quota-17-v2-payload",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-quota-17-phase-rewrite",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-quota-17-pending-rewrite",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-advance-raw-cross-0",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-advance-raw-cross-16",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-advance-raw-cross-17",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-advance-raw-below-0",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-advance-raw-below-16",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-advance-raw-below-17",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-advance-raw-equal-old-0",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-advance-raw-equal-old-16",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-advance-raw-equal-old-17",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-advance-raw-past-0",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-advance-raw-past-16",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-advance-raw-past-17",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-advance-raw-zero-cursor-0",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-advance-raw-zero-cursor-16",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-advance-raw-zero-cursor-17",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-advance-raw-term-change",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-advance-raw-new-proposal",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-advance-raw-ready-output",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-advance-node-cross-0",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-advance-node-cross-16",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-advance-node-cross-17",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-advance-node-below-0",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-advance-node-below-16",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-advance-node-below-17",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-advance-node-equal-old-0",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-advance-node-equal-old-16",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-advance-node-equal-old-17",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-advance-node-past-0",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-advance-node-past-16",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-advance-node-past-17",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-advance-node-zero-cursor-0",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-advance-node-zero-cursor-16",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-advance-node-zero-cursor-17",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-advance-node-term-change",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-advance-node-new-proposal",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-advance-node-ready-output",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-apply-new-voter-Leader",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-apply-new-voter-Follower",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-apply-new-learner-Leader",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-apply-new-learner-Follower",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-apply-demote-Leader",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-apply-demote-Follower",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-apply-staged-demote-Leader",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-apply-staged-demote-Follower",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-apply-leave-demote-Leader",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-apply-leave-demote-Follower",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-apply-remove-self-Leader",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-apply-remove-self-Follower",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-apply-demote-self-Leader",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-apply-demote-self-Follower",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-apply-outgoing-self-Leader",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-apply-outgoing-self-Follower",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-apply-promote-Leader",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-apply-promote-Follower",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-apply-idempotent-Leader",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-apply-idempotent-Follower",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-apply-unknown-remove-Leader",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-apply-unknown-remove-Follower",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-apply-update-Leader",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-apply-update-Follower",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-apply-remove-readd-learner-Leader",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-apply-remove-readd-learner-Follower",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-probe-existing-probe",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-probe-existing-probe-paused",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-probe-existing-replicate",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-probe-existing-replicate-full",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-probe-existing-snapshot",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-probe-existing-caught-up",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-probe-existing-self-probe",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-probe-existing-next-zero",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-after-new-voter-heartbeat",
+      "action": "apply_then_step",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-after-demote-heartbeat",
+      "action": "apply_then_step",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-after-leave-demote-heartbeat",
+      "action": "apply_then_step",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-after-demote-self-heartbeat",
+      "action": "apply_then_step",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-after-new-voter-app-reject",
+      "action": "apply_then_step",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-after-demote-app-reject",
+      "action": "apply_then_step",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-after-leave-demote-app-reject",
+      "action": "apply_then_step",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-after-demote-self-app-reject",
+      "action": "apply_then_step",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-after-new-voter-app-success",
+      "action": "apply_then_step",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-after-demote-app-success",
+      "action": "apply_then_step",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-after-leave-demote-app-success",
+      "action": "apply_then_step",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-after-demote-self-app-success",
+      "action": "apply_then_step",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-after-new-voter-readack",
+      "action": "apply_then_step",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-after-demote-readack",
+      "action": "apply_then_step",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-after-leave-demote-readack",
+      "action": "apply_then_step",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-after-demote-self-readack",
+      "action": "apply_then_step",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-after-new-voter-quorum",
+      "action": "apply_then_step",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-after-demote-quorum",
+      "action": "apply_then_step",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-after-leave-demote-quorum",
+      "action": "apply_then_step",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-after-demote-self-quorum",
+      "action": "apply_then_step",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-after-new-voter-transfer",
+      "action": "apply_then_step",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-after-demote-transfer",
+      "action": "apply_then_step",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-after-leave-demote-transfer",
+      "action": "apply_then_step",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-after-demote-self-transfer",
+      "action": "apply_then_step",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-after-new-voter-proposal",
+      "action": "apply_then_step",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-after-demote-proposal",
+      "action": "apply_then_step",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-after-leave-demote-proposal",
+      "action": "apply_then_step",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-after-demote-self-proposal",
+      "action": "apply_then_step",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-bootstrap-1",
+      "action": "bootstrap",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-bootstrap_hup-1",
+      "action": "bootstrap_hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-bootstrap_ready-1",
+      "action": "bootstrap_ready",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-bootstrap-123",
+      "action": "bootstrap",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-bootstrap_hup-123",
+      "action": "bootstrap_hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-bootstrap_ready-123",
+      "action": "bootstrap_ready",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-bootstrap-312",
+      "action": "bootstrap",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-bootstrap_hup-312",
+      "action": "bootstrap_hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-bootstrap_ready-312",
+      "action": "bootstrap_ready",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-construct-empty-0",
+      "action": "construct",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-construct-empty-2",
+      "action": "construct",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-construct-simple-0",
+      "action": "construct",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-construct-simple-2",
+      "action": "construct",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-construct-learner-0",
+      "action": "construct",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-construct-learner-2",
+      "action": "construct",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-construct-joint-0",
+      "action": "construct",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-construct-joint-2",
+      "action": "construct",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-restore-index-one",
+      "action": "restore",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-restart-index-one",
+      "action": "restart",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-compacted-1-new",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-compacted-1-existing",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-compacted-2-new",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-compacted-2-existing",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-ready-node-empty",
+      "action": "ready_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-advance-node-empty",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-callback-legacy-remove-self",
+      "action": "callback_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-callback-v2-leave-remove-self",
+      "action": "callback_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-callback-v2-staged-self",
+      "action": "callback_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-callback-demote-self",
+      "action": "callback_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-callback-demote-transfer",
+      "action": "callback_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-callback-leave-demote-transfer",
+      "action": "callback_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-callback-new-peer",
+      "action": "callback_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-callback-removed-before",
+      "action": "callback_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-snapshot-advance-raw-cross",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-snapshot-advance-raw-no-cross",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-snapshot-advance-raw-follower",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-snapshot-advance-node-cross",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-snapshot-advance-node-no-cross",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-snapshot-advance-node-follower",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-empty-log-Leader-apply",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-empty-log-Leader-apply_then_step",
+      "action": "apply_then_step",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-empty-log-Follower-apply",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-empty-log-Follower-apply_then_step",
+      "action": "apply_then_step",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-propose-apply-simple-Auto",
+      "action": "propose_then_apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-propose-apply-simple-JointExplicit",
+      "action": "propose_then_apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-propose-apply-simple-JointImplicit",
+      "action": "propose_then_apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-propose-apply-joint-Auto",
+      "action": "propose_then_apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-propose-apply-joint-JointExplicit",
+      "action": "propose_then_apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-propose-apply-joint-JointImplicit",
+      "action": "propose_then_apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-advance-after-drop-raw-14",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-advance-after-drop-raw-17",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-advance-after-drop-node-14",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-advance-after-drop-node-17",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-config-broadcast-panic-before-transfer",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    }
+  ],
+  "extra_results": {
+    "implementation": [],
+    "model": []
+  }
+}

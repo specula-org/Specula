@@ -1,0 +1,94 @@
+{
+  "scope": "Fixed local inputs and controlled schedules; deterministic projected outcome required. Two routes overlap; totals are execution instances, not independent reachable protocol traces.",
+  "matrix": [
+    {
+      "version": "V01",
+      "route": "code-to-model",
+      "output": "out/V01-code-to-model-02",
+      "exit_code": 0,
+      "seconds": 12.042169745080173,
+      "total": 479,
+      "counts": {
+        "match": 479
+      },
+      "base_sha256": "56bcc42634e80d9a089967d7b98e14502c4bc5b06ecc2aa5fa9b5ac148389bda"
+    },
+    {
+      "version": "V01",
+      "route": "model-to-code",
+      "output": "out/V01-model-to-code-02",
+      "exit_code": 0,
+      "seconds": 6.879085690714419,
+      "total": 174,
+      "counts": {
+        "match": 174
+      },
+      "base_sha256": "56bcc42634e80d9a089967d7b98e14502c4bc5b06ecc2aa5fa9b5ac148389bda"
+    },
+    {
+      "version": "V02",
+      "route": "code-to-model",
+      "output": "out/V02-code-to-model-02",
+      "exit_code": 0,
+      "seconds": 12.192122518084943,
+      "total": 479,
+      "counts": {
+        "match": 479
+      },
+      "base_sha256": "45105c68d53c632951511dec7817e8fd698c3be43cd05a6f3d4fec5d438f1c30"
+    },
+    {
+      "version": "V02",
+      "route": "model-to-code",
+      "output": "out/V02-model-to-code-02",
+      "exit_code": 0,
+      "seconds": 7.129330430179834,
+      "total": 174,
+      "counts": {
+        "match": 174
+      },
+      "base_sha256": "45105c68d53c632951511dec7817e8fd698c3be43cd05a6f3d4fec5d438f1c30"
+    },
+    {
+      "version": "V03",
+      "route": "code-to-model",
+      "exit_code": 0,
+      "seconds": 12.543783022090793,
+      "total": 479,
+      "counts": {
+        "match": 479
+      },
+      "base_sha256": "3aa10c0b1a96108e6a5525392eec4bf3d4deed6cea21bcc365085cda84067e21",
+      "output": "out/V03-code-to-model"
+    },
+    {
+      "version": "V03",
+      "route": "model-to-code",
+      "exit_code": 0,
+      "seconds": 7.280408387072384,
+      "total": 174,
+      "counts": {
+        "match": 174
+      },
+      "base_sha256": "3aa10c0b1a96108e6a5525392eec4bf3d4deed6cea21bcc365085cda84067e21",
+      "output": "out/V03-model-to-code"
+    }
+  ],
+  "original_source_integrity": {
+    "V01": {
+      "original_files_checked": 66,
+      "mismatches": []
+    },
+    "V02": {
+      "original_files_checked": 70,
+      "mismatches": []
+    },
+    "V03": {
+      "original_files_checked": 95,
+      "mismatches": []
+    }
+  },
+  "successor_guard": "../framework-uniqueness-02/out/results.json",
+  "initial_setup_failures": "results.json retains V01/V02 compile failure from an old experiment fixture; archived that fixture and reran in fresh *-02 directories. No original source edited.",
+  "runner_exit_semantics": "Diagnostic runner exit 0 means adapters ran; gate on counts.match == total and absence of unsupported/extra outputs, not process exit alone."
+}

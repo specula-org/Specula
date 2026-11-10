@@ -1,0 +1,28 @@
+[
+  {
+    "label": "v01-final-code",
+    "exit_code": 0,
+    "seconds": 11.577166837640107,
+    "raw_counts": {
+      "match": 479
+    },
+    "observable_counts": {
+      "match": 479
+    },
+    "total": 479,
+    "terminal_panic_cases": []
+  },
+  {
+    "label": "v01-final-model-inputs",
+    "exit_code": 0,
+    "seconds": 10.89445652347058,
+    "raw_counts": {
+      "match": 174
+    },
+    "observable_counts": {
+      "match": 174
+    },
+    "total": 174,
+    "terminal_panic_cases": []
+  }
+]

@@ -1,0 +1,31 @@
+{
+  "name": "focused-leadership-v02",
+  "version": "V02",
+  "module": "C03Progress",
+  "config": "leadership-v02.cfg",
+  "seconds_limit": 600,
+  "elapsed_seconds": 600.3515794277191,
+  "exit_code": 124,
+  "command": [
+    "timeout",
+    "--signal=TERM",
+    "--kill-after=5s",
+    "600s",
+    "java",
+    "-Xmx4g",
+    "-Dtlc2.TLC.progressInterval=10",
+    "-cp",
+    "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+    "tlc2.TLC",
+    "-workers",
+    "1",
+    "-nowarning",
+    "-dumpTrace",
+    "json",
+    "counterexample.json",
+    "-config",
+    "leadership-v02.cfg",
+    "C03Progress"
+  ],
+  "trace": "/workspace/out/joint-autoleave-prefix-inputs.ndjson"
+}

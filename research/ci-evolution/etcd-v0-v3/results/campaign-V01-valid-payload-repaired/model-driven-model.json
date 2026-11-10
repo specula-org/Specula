@@ -1,0 +1,628 @@
+[
+  {
+    "action": "StepHup",
+    "input": {
+      "kind": "AddVoter",
+      "applied": 3,
+      "pre_vote": false,
+      "learner": false
+    },
+    "output": {
+      "role": "Follower",
+      "term": 1,
+      "vote": 0,
+      "lead": 0,
+      "applied": 3,
+      "commit": 4,
+      "last": 4,
+      "messages": []
+    }
+  },
+  {
+    "action": "StepHup",
+    "input": {
+      "kind": "AddVoter",
+      "applied": 3,
+      "pre_vote": false,
+      "learner": true
+    },
+    "output": {
+      "role": "Follower",
+      "term": 1,
+      "vote": 0,
+      "lead": 0,
+      "applied": 3,
+      "commit": 4,
+      "last": 4,
+      "messages": []
+    }
+  },
+  {
+    "action": "StepHup",
+    "input": {
+      "kind": "AddVoter",
+      "applied": 3,
+      "pre_vote": true,
+      "learner": false
+    },
+    "output": {
+      "role": "Follower",
+      "term": 1,
+      "vote": 0,
+      "lead": 0,
+      "applied": 3,
+      "commit": 4,
+      "last": 4,
+      "messages": []
+    }
+  },
+  {
+    "action": "StepHup",
+    "input": {
+      "kind": "AddVoter",
+      "applied": 3,
+      "pre_vote": true,
+      "learner": true
+    },
+    "output": {
+      "role": "Follower",
+      "term": 1,
+      "vote": 0,
+      "lead": 0,
+      "applied": 3,
+      "commit": 4,
+      "last": 4,
+      "messages": []
+    }
+  },
+  {
+    "action": "StepHup",
+    "input": {
+      "kind": "AddVoter",
+      "applied": 4,
+      "pre_vote": false,
+      "learner": false
+    },
+    "output": {
+      "role": "Candidate",
+      "term": 2,
+      "vote": 1,
+      "lead": 0,
+      "applied": 4,
+      "commit": 4,
+      "last": 4,
+      "messages": [
+        {
+          "index": 4,
+          "term": 2,
+          "type": "MsgVote",
+          "from": 1,
+          "to": 2,
+          "logTerm": 1
+        },
+        {
+          "index": 4,
+          "term": 2,
+          "type": "MsgVote",
+          "from": 1,
+          "to": 3,
+          "logTerm": 1
+        }
+      ]
+    }
+  },
+  {
+    "action": "StepHup",
+    "input": {
+      "kind": "AddVoter",
+      "applied": 4,
+      "pre_vote": false,
+      "learner": true
+    },
+    "output": {
+      "role": "Follower",
+      "term": 1,
+      "vote": 0,
+      "lead": 0,
+      "applied": 4,
+      "commit": 4,
+      "last": 4,
+      "messages": []
+    }
+  },
+  {
+    "action": "StepHup",
+    "input": {
+      "kind": "AddVoter",
+      "applied": 4,
+      "pre_vote": true,
+      "learner": false
+    },
+    "output": {
+      "role": "PreCandidate",
+      "term": 1,
+      "vote": 0,
+      "lead": 0,
+      "applied": 4,
+      "commit": 4,
+      "last": 4,
+      "messages": [
+        {
+          "index": 4,
+          "term": 2,
+          "type": "MsgPreVote",
+          "from": 1,
+          "to": 2,
+          "logTerm": 1
+        },
+        {
+          "index": 4,
+          "term": 2,
+          "type": "MsgPreVote",
+          "from": 1,
+          "to": 3,
+          "logTerm": 1
+        }
+      ]
+    }
+  },
+  {
+    "action": "StepHup",
+    "input": {
+      "kind": "AddVoter",
+      "applied": 4,
+      "pre_vote": true,
+      "learner": true
+    },
+    "output": {
+      "role": "Follower",
+      "term": 1,
+      "vote": 0,
+      "lead": 0,
+      "applied": 4,
+      "commit": 4,
+      "last": 4,
+      "messages": []
+    }
+  },
+  {
+    "action": "StepHup",
+    "input": {
+      "kind": "V2",
+      "applied": 3,
+      "pre_vote": false,
+      "learner": false
+    },
+    "output": {
+      "role": "Candidate",
+      "term": 2,
+      "vote": 1,
+      "lead": 0,
+      "applied": 3,
+      "commit": 4,
+      "last": 4,
+      "messages": [
+        {
+          "index": 4,
+          "term": 2,
+          "type": "MsgVote",
+          "from": 1,
+          "to": 2,
+          "logTerm": 1
+        },
+        {
+          "index": 4,
+          "term": 2,
+          "type": "MsgVote",
+          "from": 1,
+          "to": 3,
+          "logTerm": 1
+        }
+      ]
+    }
+  },
+  {
+    "action": "StepHup",
+    "input": {
+      "kind": "V2",
+      "applied": 3,
+      "pre_vote": false,
+      "learner": true
+    },
+    "output": {
+      "role": "Follower",
+      "term": 1,
+      "vote": 0,
+      "lead": 0,
+      "applied": 3,
+      "commit": 4,
+      "last": 4,
+      "messages": []
+    }
+  },
+  {
+    "action": "StepHup",
+    "input": {
+      "kind": "V2",
+      "applied": 3,
+      "pre_vote": true,
+      "learner": false
+    },
+    "output": {
+      "role": "PreCandidate",
+      "term": 1,
+      "vote": 0,
+      "lead": 0,
+      "applied": 3,
+      "commit": 4,
+      "last": 4,
+      "messages": [
+        {
+          "index": 4,
+          "term": 2,
+          "type": "MsgPreVote",
+          "from": 1,
+          "to": 2,
+          "logTerm": 1
+        },
+        {
+          "index": 4,
+          "term": 2,
+          "type": "MsgPreVote",
+          "from": 1,
+          "to": 3,
+          "logTerm": 1
+        }
+      ]
+    }
+  },
+  {
+    "action": "StepHup",
+    "input": {
+      "kind": "V2",
+      "applied": 3,
+      "pre_vote": true,
+      "learner": true
+    },
+    "output": {
+      "role": "Follower",
+      "term": 1,
+      "vote": 0,
+      "lead": 0,
+      "applied": 3,
+      "commit": 4,
+      "last": 4,
+      "messages": []
+    }
+  },
+  {
+    "action": "StepHup",
+    "input": {
+      "kind": "V2",
+      "applied": 4,
+      "pre_vote": false,
+      "learner": false
+    },
+    "output": {
+      "role": "Candidate",
+      "term": 2,
+      "vote": 1,
+      "lead": 0,
+      "applied": 4,
+      "commit": 4,
+      "last": 4,
+      "messages": [
+        {
+          "index": 4,
+          "term": 2,
+          "type": "MsgVote",
+          "from": 1,
+          "to": 2,
+          "logTerm": 1
+        },
+        {
+          "index": 4,
+          "term": 2,
+          "type": "MsgVote",
+          "from": 1,
+          "to": 3,
+          "logTerm": 1
+        }
+      ]
+    }
+  },
+  {
+    "action": "StepHup",
+    "input": {
+      "kind": "V2",
+      "applied": 4,
+      "pre_vote": false,
+      "learner": true
+    },
+    "output": {
+      "role": "Follower",
+      "term": 1,
+      "vote": 0,
+      "lead": 0,
+      "applied": 4,
+      "commit": 4,
+      "last": 4,
+      "messages": []
+    }
+  },
+  {
+    "action": "StepHup",
+    "input": {
+      "kind": "V2",
+      "applied": 4,
+      "pre_vote": true,
+      "learner": false
+    },
+    "output": {
+      "role": "PreCandidate",
+      "term": 1,
+      "vote": 0,
+      "lead": 0,
+      "applied": 4,
+      "commit": 4,
+      "last": 4,
+      "messages": [
+        {
+          "index": 4,
+          "term": 2,
+          "type": "MsgPreVote",
+          "from": 1,
+          "to": 2,
+          "logTerm": 1
+        },
+        {
+          "index": 4,
+          "term": 2,
+          "type": "MsgPreVote",
+          "from": 1,
+          "to": 3,
+          "logTerm": 1
+        }
+      ]
+    }
+  },
+  {
+    "action": "StepHup",
+    "input": {
+      "kind": "V2",
+      "applied": 4,
+      "pre_vote": true,
+      "learner": true
+    },
+    "output": {
+      "role": "Follower",
+      "term": 1,
+      "vote": 0,
+      "lead": 0,
+      "applied": 4,
+      "commit": 4,
+      "last": 4,
+      "messages": []
+    }
+  },
+  {
+    "action": "StepHup",
+    "input": {
+      "kind": "Normal",
+      "applied": 3,
+      "pre_vote": false,
+      "learner": false
+    },
+    "output": {
+      "role": "Candidate",
+      "term": 2,
+      "vote": 1,
+      "lead": 0,
+      "applied": 3,
+      "commit": 4,
+      "last": 4,
+      "messages": [
+        {
+          "index": 4,
+          "term": 2,
+          "type": "MsgVote",
+          "from": 1,
+          "to": 2,
+          "logTerm": 1
+        },
+        {
+          "index": 4,
+          "term": 2,
+          "type": "MsgVote",
+          "from": 1,
+          "to": 3,
+          "logTerm": 1
+        }
+      ]
+    }
+  },
+  {
+    "action": "StepHup",
+    "input": {
+      "kind": "Normal",
+      "applied": 3,
+      "pre_vote": false,
+      "learner": true
+    },
+    "output": {
+      "role": "Follower",
+      "term": 1,
+      "vote": 0,
+      "lead": 0,
+      "applied": 3,
+      "commit": 4,
+      "last": 4,
+      "messages": []
+    }
+  },
+  {
+    "action": "StepHup",
+    "input": {
+      "kind": "Normal",
+      "applied": 3,
+      "pre_vote": true,
+      "learner": false
+    },
+    "output": {
+      "role": "PreCandidate",
+      "term": 1,
+      "vote": 0,
+      "lead": 0,
+      "applied": 3,
+      "commit": 4,
+      "last": 4,
+      "messages": [
+        {
+          "index": 4,
+          "term": 2,
+          "type": "MsgPreVote",
+          "from": 1,
+          "to": 2,
+          "logTerm": 1
+        },
+        {
+          "index": 4,
+          "term": 2,
+          "type": "MsgPreVote",
+          "from": 1,
+          "to": 3,
+          "logTerm": 1
+        }
+      ]
+    }
+  },
+  {
+    "action": "StepHup",
+    "input": {
+      "kind": "Normal",
+      "applied": 3,
+      "pre_vote": true,
+      "learner": true
+    },
+    "output": {
+      "role": "Follower",
+      "term": 1,
+      "vote": 0,
+      "lead": 0,
+      "applied": 3,
+      "commit": 4,
+      "last": 4,
+      "messages": []
+    }
+  },
+  {
+    "action": "StepHup",
+    "input": {
+      "kind": "Normal",
+      "applied": 4,
+      "pre_vote": false,
+      "learner": false
+    },
+    "output": {
+      "role": "Candidate",
+      "term": 2,
+      "vote": 1,
+      "lead": 0,
+      "applied": 4,
+      "commit": 4,
+      "last": 4,
+      "messages": [
+        {
+          "index": 4,
+          "term": 2,
+          "type": "MsgVote",
+          "from": 1,
+          "to": 2,
+          "logTerm": 1
+        },
+        {
+          "index": 4,
+          "term": 2,
+          "type": "MsgVote",
+          "from": 1,
+          "to": 3,
+          "logTerm": 1
+        }
+      ]
+    }
+  },
+  {
+    "action": "StepHup",
+    "input": {
+      "kind": "Normal",
+      "applied": 4,
+      "pre_vote": false,
+      "learner": true
+    },
+    "output": {
+      "role": "Follower",
+      "term": 1,
+      "vote": 0,
+      "lead": 0,
+      "applied": 4,
+      "commit": 4,
+      "last": 4,
+      "messages": []
+    }
+  },
+  {
+    "action": "StepHup",
+    "input": {
+      "kind": "Normal",
+      "applied": 4,
+      "pre_vote": true,
+      "learner": false
+    },
+    "output": {
+      "role": "PreCandidate",
+      "term": 1,
+      "vote": 0,
+      "lead": 0,
+      "applied": 4,
+      "commit": 4,
+      "last": 4,
+      "messages": [
+        {
+          "index": 4,
+          "term": 2,
+          "type": "MsgPreVote",
+          "from": 1,
+          "to": 2,
+          "logTerm": 1
+        },
+        {
+          "index": 4,
+          "term": 2,
+          "type": "MsgPreVote",
+          "from": 1,
+          "to": 3,
+          "logTerm": 1
+        }
+      ]
+    }
+  },
+  {
+    "action": "StepHup",
+    "input": {
+      "kind": "Normal",
+      "applied": 4,
+      "pre_vote": true,
+      "learner": true
+    },
+    "output": {
+      "role": "Follower",
+      "term": 1,
+      "vote": 0,
+      "lead": 0,
+      "applied": 4,
+      "commit": 4,
+      "last": 4,
+      "messages": []
+    }
+  }
+]

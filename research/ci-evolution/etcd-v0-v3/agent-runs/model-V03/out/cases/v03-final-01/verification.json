@@ -1,0 +1,31 @@
+[
+  {
+    "name": "generic-tests",
+    "command": [
+      "python3",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "out/framework",
+      "-p",
+      "test_runner.py",
+      "-v"
+    ],
+    "exit_code": 0,
+    "expected_exit": 0,
+    "duration_seconds": 0.064152292907238
+  },
+  {
+    "name": "valid-input-audit",
+    "command": [
+      "python3",
+      "out/framework/targets/etcd/audit_inputs.py",
+      "out/cases/code-inputs.json",
+      "/workspace/out/cases/v03-final-01/baseline-model/generated-cases.json"
+    ],
+    "exit_code": 0,
+    "expected_exit": 0,
+    "duration_seconds": 0.06436287425458431
+  }
+]

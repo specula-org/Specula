@@ -1,0 +1,59 @@
+[
+  {
+    "command": [
+      "python3",
+      "out/framework/runner.py",
+      "--manifest",
+      "out/validation/manifest-V01-observed.json",
+      "--cases",
+      "out/validation/cases.json",
+      "--output",
+      "out/validation/replay-V01-observed-04",
+      "--spec",
+      "out/revised-spec/V01",
+      "--route",
+      "code-to-model"
+    ],
+    "duration_seconds": 6.132860926911235,
+    "exit_code": 2,
+    "output": "{\"total\": 42, \"counts\": {\"adapter_error\": 42}}\n"
+  },
+  {
+    "command": [
+      "python3",
+      "out/framework/runner.py",
+      "--manifest",
+      "out/validation/manifest-V02-observed.json",
+      "--cases",
+      "out/validation/cases.json",
+      "--output",
+      "out/validation/replay-V02-observed-04",
+      "--spec",
+      "out/revised-spec/V02",
+      "--route",
+      "code-to-model"
+    ],
+    "duration_seconds": 6.535410405136645,
+    "exit_code": 2,
+    "output": "{\"total\": 42, \"counts\": {\"adapter_error\": 42}}\n"
+  },
+  {
+    "command": [
+      "python3",
+      "out/framework/runner.py",
+      "--manifest",
+      "out/validation/manifest-V03-observed.json",
+      "--cases",
+      "out/validation/cases.json",
+      "--output",
+      "out/validation/replay-V03-observed-04",
+      "--spec",
+      "out/revised-spec/V03",
+      "--route",
+      "code-to-model"
+    ],
+    "duration_seconds": 14.09500240162015,
+    "exit_code": 0,
+    "output": "{\"total\": 42, \"counts\": {\"match\": 42}}\n"
+  }
+]

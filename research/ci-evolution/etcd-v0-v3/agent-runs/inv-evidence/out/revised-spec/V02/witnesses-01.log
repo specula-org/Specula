@@ -1,0 +1,30 @@
+TLC2 Version 2.20 of Day Month 20?? (rev: ${git.shortRevision})
+Running breadth-first search Model-Checking with fp 75 and seed -3957984911483529370 with 1 worker on 96 cores with 1963MB heap and 64MB offheap memory [pid: 7088] (Linux 6.8.0-1044-azure amd64, Ubuntu 21.0.11 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /workspace/out/revised-spec/V02/Witnesses.tla
+***Parse Error***
+Encountered "|->" at line 54, column 2879 and token "]" 
+
+Residual stack trace follows:
+Some [] Form starting at line 54, column 2112.
+ExtendableExpr starting at line 54, column 2112.
+Expression starting at line 54, column 2112.
+Field Value starting at line 54, column 2099.
+Some [] Form starting at line 54, column 1315.
+
+
+Fatal errors while parsing TLA+ spec in file Witnesses
+
+In module Witnesses
+
+Could not parse module Witnesses from file Witnesses.tla
+*** Errors: 1
+
+In module Witnesses
+
+Could not parse module Witnesses from file Witnesses.tla
+
+
+
+Starting... (2026-09-22 20:19:38)
+Error: Parsing or semantic analysis failed.
+Finished in 00s at (2026-09-22 20:19:38)

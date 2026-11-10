@@ -1,0 +1,5 @@
+=== RUN   TestInteraction
+--- PASS: TestInteraction (0.00s)
+testing: warning: no tests to run
+PASS
+ok  	go.etcd.io/etcd/raft	0.003s [no tests to run]

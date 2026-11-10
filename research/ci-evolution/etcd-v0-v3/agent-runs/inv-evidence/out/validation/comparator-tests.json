@@ -1,0 +1,15 @@
+{
+  "command": [
+    "python3",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "out/framework",
+    "-p",
+    "test_runner.py"
+  ],
+  "tests_run": 8,
+  "passed": true,
+  "reported_test_seconds": 0.001
+}

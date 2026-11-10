@@ -1,0 +1,113 @@
+{
+  "protocol": "action-validation/v1",
+  "route": "code-to-model",
+  "spec": "out/repaired-spec",
+  "counts": {
+    "match": 8
+  },
+  "total": 8,
+  "commands": [
+    {
+      "engine": "implementation",
+      "command": [
+        "python3",
+        "out/framework/adapters/go/run.py",
+        "--input",
+        "/workspace/out/cases/v03-callback-inputs.json",
+        "--output",
+        "/workspace/out/cases/repaired-callback/implementation.jsonl",
+        "--work",
+        "/workspace/out/cases/repaired-callback/implementation"
+      ],
+      "duration_seconds": 0.4146582530811429,
+      "exit_code": 0
+    },
+    {
+      "engine": "model",
+      "command": [
+        "python3",
+        "out/framework/adapters/tla/run.py",
+        "--input",
+        "/workspace/out/cases/v03-callback-inputs.json",
+        "--output",
+        "/workspace/out/cases/repaired-callback/model.jsonl",
+        "--spec",
+        "/workspace/out/repaired-spec",
+        "--work",
+        "/workspace/out/cases/repaired-callback/model"
+      ],
+      "duration_seconds": 2.92063463665545,
+      "exit_code": 0
+    }
+  ],
+  "results": [
+    {
+      "id": "v03-callback-legacy-remove-self",
+      "action": "callback_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-callback-v2-leave-remove-self",
+      "action": "callback_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-callback-v2-staged-self",
+      "action": "callback_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-callback-demote-self",
+      "action": "callback_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-callback-demote-transfer",
+      "action": "callback_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-callback-leave-demote-transfer",
+      "action": "callback_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-callback-new-peer",
+      "action": "callback_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-callback-removed-before",
+      "action": "callback_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    }
+  ],
+  "extra_results": {
+    "implementation": [],
+    "model": []
+  }
+}

@@ -1,0 +1,93 @@
+TLC2 Version 2.20 of Day Month 20?? (rev: ${git.shortRevision})
+Running breadth-first search Model-Checking with fp 60 and seed 385896984360128159 with 1 worker on 96 cores with 4096MB heap and 64MB offheap memory [pid: 4472] (Linux 6.8.0-1044-azure amd64, Ubuntu 21.0.11 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /workspace/out/runs/deferred-v03/C03Progress.tla
+Parsing file /workspace/out/runs/deferred-v03/Trace.tla
+Parsing file /tmp/tlc-7746791476089626376/_JsonTrace.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/_JsonTrace.tla)
+Parsing file /tmp/tlc-7746791476089626376/_TLCTrace.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/_TLCTrace.tla)
+Parsing file /workspace/out/runs/deferred-v03/base.tla
+Parsing file /tmp/tlc-7746791476089626376/Json.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Json.tla)
+Parsing file /tmp/tlc-7746791476089626376/IOUtils.tla (jar:file:/tools/CommunityModules.jar!/IOUtils.tla)
+Parsing file /tmp/tlc-7746791476089626376/Naturals.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Naturals.tla)
+Parsing file /tmp/tlc-7746791476089626376/Integers.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Integers.tla)
+Parsing file /tmp/tlc-7746791476089626376/Sequences.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Sequences.tla)
+Parsing file /tmp/tlc-7746791476089626376/FiniteSets.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/FiniteSets.tla)
+Parsing file /tmp/tlc-7746791476089626376/Bags.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Bags.tla)
+Parsing file /tmp/tlc-7746791476089626376/TLC.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/TLC.tla)
+Parsing file /tmp/tlc-7746791476089626376/TLCExt.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/TLCExt.tla)
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module Bags
+Semantic processing of module base
+Semantic processing of module Json
+Semantic processing of module IOUtils
+Semantic processing of module Trace
+Semantic processing of module TLCExt
+Semantic processing of module _JsonTrace
+Semantic processing of module _TLCTrace
+Semantic processing of module C03Progress
+Linting of module base
+Linting of module Json
+Linting of module IOUtils
+Linting of module Trace
+Linting of module TLCExt
+Linting of module _JsonTrace
+Linting of module _TLCTrace
+Linting of module C03Progress
+Starting... (2026-09-22 20:32:22)
+Implied-temporal checking--satisfiability problem has 8 branches.
+Computing initial states...
+Finished computing initial states: 1 distinct state generated at 2026-09-22 20:32:22.
+Checking 8 branches of temporal properties for the current state space with 2544 total distinct states at (2026-09-22 20:32:25)
+Finished checking temporal properties in 00s at 2026-09-22 20:32:25
+Progress(316) at 2026-09-22 20:32:25: 620 states generated (3,720 s/min), 318 distinct states found (1,908 ds/min), 0 states left on queue.
+Checking 8 branches of temporal properties for the current state space with 7072 total distinct states at (2026-09-22 20:32:35)
+Finished checking temporal properties in 00s at 2026-09-22 20:32:35
+Progress(588) at 2026-09-22 20:32:35: 1,544 states generated (5,544 s/min), 884 distinct states found (3,396 ds/min), 5 states left on queue.
+Checking 8 branches of temporal properties for the current state space with 10648 total distinct states at (2026-09-22 20:32:45)
+Finished checking temporal properties in 00s at 2026-09-22 20:32:45
+Progress(684) at 2026-09-22 20:32:45: 2,377 states generated (4,998 s/min), 1,331 distinct states found (2,682 ds/min), 5 states left on queue.
+Checking 8 branches of temporal properties for the current state space with 14312 total distinct states at (2026-09-22 20:32:55)
+Finished checking temporal properties in 00s at 2026-09-22 20:32:56
+Progress(751) at 2026-09-22 20:32:56: 3,020 states generated (3,858 s/min), 1,789 distinct states found (2,748 ds/min), 6 states left on queue.
+Checking 8 branches of temporal properties for the current state space with 17808 total distinct states at (2026-09-22 20:33:06)
+Finished checking temporal properties in 00s at 2026-09-22 20:33:06
+Progress(862) at 2026-09-22 20:33:06: 3,588 states generated (3,408 s/min), 2,226 distinct states found (2,622 ds/min), 2 states left on queue.
+Checking 8 branches of temporal properties for the current state space with 20808 total distinct states at (2026-09-22 20:33:16)
+Finished checking temporal properties in 00s at 2026-09-22 20:33:16
+Progress(987) at 2026-09-22 20:33:16: 4,248 states generated (3,960 s/min), 2,601 distinct states found (2,250 ds/min), 2 states left on queue.
+Checking 8 branches of temporal properties for the current state space with 23504 total distinct states at (2026-09-22 20:33:26)
+Finished checking temporal properties in 00s at 2026-09-22 20:33:26
+Progress(1099) at 2026-09-22 20:33:26: 4,858 states generated (3,660 s/min), 2,938 distinct states found (2,022 ds/min), 2 states left on queue.
+Checking 8 branches of temporal properties for the current state space with 26008 total distinct states at (2026-09-22 20:33:36)
+Finished checking temporal properties in 00s at 2026-09-22 20:33:36
+Progress(1198) at 2026-09-22 20:33:36: 5,356 states generated (2,988 s/min), 3,251 distinct states found (1,878 ds/min), 5 states left on queue.
+Checking 8 branches of temporal properties for the current state space with 28632 total distinct states at (2026-09-22 20:33:46)
+Finished checking temporal properties in 00s at 2026-09-22 20:33:46
+Progress(1297) at 2026-09-22 20:33:46: 5,880 states generated (3,144 s/min), 3,579 distinct states found (1,968 ds/min), 2 states left on queue.
+Checking 8 branches of temporal properties for the current state space with 32232 total distinct states at (2026-09-22 20:33:57)
+Finished checking temporal properties in 00s at 2026-09-22 20:33:57
+Progress(1440) at 2026-09-22 20:33:57: 6,620 states generated (4,440 s/min), 4,029 distinct states found (2,700 ds/min), 2 states left on queue.
+Checking 8 branches of temporal properties for the current state space with 35912 total distinct states at (2026-09-22 20:34:07)
+Finished checking temporal properties in 00s at 2026-09-22 20:34:07
+Progress(1593) at 2026-09-22 20:34:07: 7,307 states generated (4,122 s/min), 4,489 distinct states found (2,760 ds/min), 2 states left on queue.
+Checking 8 branches of temporal properties for the current state space with 39576 total distinct states at (2026-09-22 20:34:17)
+Finished checking temporal properties in 00s at 2026-09-22 20:34:17
+Progress(1746) at 2026-09-22 20:34:17: 8,028 states generated (4,326 s/min), 4,947 distinct states found (2,748 ds/min), 2 states left on queue.
+Progress(1898) at 2026-09-22 20:34:27: 8,785 states generated (4,542 s/min), 5,403 distinct states found (2,736 ds/min), 3 states left on queue.
+Checking 8 branches of temporal properties for the current state space with 46840 total distinct states at (2026-09-22 20:34:37)
+Finished checking temporal properties in 00s at 2026-09-22 20:34:38
+Progress(2048) at 2026-09-22 20:34:38: 9,552 states generated (4,602 s/min), 5,855 distinct states found (2,712 ds/min), 2 states left on queue.
+Progress(2117) at 2026-09-22 20:34:42: 9,926 states generated, 6,061 distinct states found, 0 states left on queue.
+Checking 8 branches of temporal properties for the complete state space with 48488 total distinct states at (2026-09-22 20:34:42)
+Finished checking temporal properties in 00s at 2026-09-22 20:34:43
+Model checking completed. No error has been found.
+  Estimates of the probability that TLC did not check all reachable states
+  because two distinct states had the same fingerprint:
+  calculated (optimistic):  val = 1.3E-12
+9926 states generated, 6061 distinct states found, 0 states left on queue.
+The depth of the complete state graph search is 2117.
+The average outdegree of the complete state graph is 1 (minimum is 0, the maximum 2 and the 95th percentile is 1).
+Finished in 02min 21s at (2026-09-22 20:34:43)

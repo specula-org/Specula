@@ -1,0 +1,11 @@
+--- repaired/base.tla
++++ mutant/base.tla
+@@ -262,7 +262,7 @@
+ StepHup(r,timeout) ==
+     IF r.role="Leader" \/ ~Promotable(r) THEN r
+     ELSE IF r.applied+1<First(r) THEN Fatal(r,"Hup unapplied slice compacted")
+-    ELSE IF \E k \in (r.applied+1)..r.commit: Hist(r)[k].kind\in LegacyConfKinds THEN r
++    ELSE IF FALSE THEN r
+     ELSE IF r.preVote THEN CampaignPreElection(r,timeout)
+          ELSE CampaignElection(r,FALSE,timeout)
+ 

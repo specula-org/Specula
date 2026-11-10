@@ -1,0 +1,68 @@
+[
+  {
+    "version": "V01",
+    "route": "code-to-model",
+    "exit_code": 2,
+    "seconds": 19.40920990332961,
+    "total": 479,
+    "counts": {
+      "adapter_error": 479
+    },
+    "base_sha256": "56bcc42634e80d9a089967d7b98e14502c4bc5b06ecc2aa5fa9b5ac148389bda"
+  },
+  {
+    "version": "V01",
+    "route": "model-to-code",
+    "exit_code": 2,
+    "seconds": 6.429143738932908,
+    "total": 174,
+    "counts": {
+      "adapter_error": 174
+    },
+    "base_sha256": "56bcc42634e80d9a089967d7b98e14502c4bc5b06ecc2aa5fa9b5ac148389bda"
+  },
+  {
+    "version": "V02",
+    "route": "code-to-model",
+    "exit_code": 2,
+    "seconds": 10.288555910810828,
+    "total": 479,
+    "counts": {
+      "adapter_error": 479
+    },
+    "base_sha256": "45105c68d53c632951511dec7817e8fd698c3be43cd05a6f3d4fec5d438f1c30"
+  },
+  {
+    "version": "V02",
+    "route": "model-to-code",
+    "exit_code": 2,
+    "seconds": 6.528180903755128,
+    "total": 174,
+    "counts": {
+      "adapter_error": 174
+    },
+    "base_sha256": "45105c68d53c632951511dec7817e8fd698c3be43cd05a6f3d4fec5d438f1c30"
+  },
+  {
+    "version": "V03",
+    "route": "code-to-model",
+    "exit_code": 0,
+    "seconds": 12.543783022090793,
+    "total": 479,
+    "counts": {
+      "match": 479
+    },
+    "base_sha256": "3aa10c0b1a96108e6a5525392eec4bf3d4deed6cea21bcc365085cda84067e21"
+  },
+  {
+    "version": "V03",
+    "route": "model-to-code",
+    "exit_code": 0,
+    "seconds": 7.280408387072384,
+    "total": 174,
+    "counts": {
+      "match": 174
+    },
+    "base_sha256": "3aa10c0b1a96108e6a5525392eec4bf3d4deed6cea21bcc365085cda84067e21"
+  }
+]

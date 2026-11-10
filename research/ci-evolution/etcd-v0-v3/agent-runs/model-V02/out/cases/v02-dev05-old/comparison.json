@@ -1,0 +1,219 @@
+{
+  "protocol": "action-validation/v1",
+  "route": "code-to-model",
+  "spec": "old/spec",
+  "counts": {
+    "match": 21
+  },
+  "total": 21,
+  "commands": [
+    {
+      "engine": "implementation",
+      "command": [
+        "python3",
+        "out/framework/adapters/go/run.py",
+        "--input",
+        "/workspace/out/cases/version-inputs.json",
+        "--output",
+        "/workspace/out/cases/v02-dev05-old/implementation.jsonl",
+        "--work",
+        "/workspace/out/cases/v02-dev05-old/implementation",
+        "--source",
+        "old/source"
+      ],
+      "duration_seconds": 1.2167603997513652,
+      "exit_code": 0
+    },
+    {
+      "engine": "model",
+      "command": [
+        "python3",
+        "out/framework/adapters/tla/run.py",
+        "--input",
+        "/workspace/out/cases/version-inputs.json",
+        "--output",
+        "/workspace/out/cases/v02-dev05-old/model.jsonl",
+        "--spec",
+        "/workspace/old/spec",
+        "--work",
+        "/workspace/out/cases/v02-dev05-old/model"
+      ],
+      "duration_seconds": 2.169053964316845,
+      "exit_code": 0
+    }
+  ],
+  "results": [
+    {
+      "id": "ready-raw-False-2-1-Leader-2",
+      "action": "ready_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "ready-node-False-2-1-Leader-2",
+      "action": "ready_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "restore-joint",
+      "action": "restore",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "restart-joint",
+      "action": "restart",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "restore-outgoing-only",
+      "action": "restore",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "restart-outgoing-only",
+      "action": "restart",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-learner-MsgVote-grant",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-learner-MsgVote-forced",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "vote-learner-MsgPreVote-grant",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "hup-v02-learner-False",
+      "action": "hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "hup-v02-staged-False",
+      "action": "hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "advance-v02-raw-readack",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "advance-v02-raw-multiple",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "advance-v02-node-readack",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "advance-v02-node-multiple",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "restore-v02-full",
+      "action": "restore",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "restart-v02-full",
+      "action": "restart",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "restore-v02-staged-self",
+      "action": "restore",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "restart-v02-staged-self",
+      "action": "restart",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "restore-v02-learner-self",
+      "action": "restore",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "restart-v02-learner-self",
+      "action": "restart",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    }
+  ],
+  "extra_results": {
+    "implementation": [],
+    "model": []
+  }
+}

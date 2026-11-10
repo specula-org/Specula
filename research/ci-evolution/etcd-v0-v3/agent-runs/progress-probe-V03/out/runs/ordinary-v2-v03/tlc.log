@@ -1,0 +1,46 @@
+TLC2 Version 2.20 of Day Month 20?? (rev: ${git.shortRevision})
+Running breadth-first search Model-Checking with fp 101 and seed 3627167699266294015 with 1 worker on 96 cores with 6144MB heap and 64MB offheap memory [pid: 8153] (Linux 6.8.0-1044-azure amd64, Ubuntu 21.0.11 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /workspace/out/runs/ordinary-v2-v03/MC.tla
+Parsing file /workspace/out/runs/ordinary-v2-v03/base.tla
+Parsing file /tmp/tlc-8621203032028581133/_JsonTrace.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/_JsonTrace.tla)
+Parsing file /tmp/tlc-8621203032028581133/_TLCTrace.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/_TLCTrace.tla)
+Parsing file /tmp/tlc-8621203032028581133/Naturals.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Naturals.tla)
+Parsing file /tmp/tlc-8621203032028581133/Integers.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Integers.tla)
+Parsing file /tmp/tlc-8621203032028581133/Sequences.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Sequences.tla)
+Parsing file /tmp/tlc-8621203032028581133/FiniteSets.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/FiniteSets.tla)
+Parsing file /tmp/tlc-8621203032028581133/Bags.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Bags.tla)
+Parsing file /tmp/tlc-8621203032028581133/TLC.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/TLC.tla)
+Parsing file /tmp/tlc-8621203032028581133/TLCExt.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/TLCExt.tla)
+Parsing file /tmp/tlc-8621203032028581133/Json.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Json.tla)
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module Bags
+Semantic processing of module base
+Semantic processing of module TLCExt
+Semantic processing of module Json
+Semantic processing of module _JsonTrace
+Semantic processing of module _TLCTrace
+Semantic processing of module MC
+Linting of module base
+Linting of module TLCExt
+Linting of module Json
+Linting of module _JsonTrace
+Linting of module _TLCTrace
+Linting of module MC
+Starting... (2026-09-22 20:49:59)
+Computing initial states...
+Computed 2 initial states...
+Computed 4 initial states...
+Computed 8 initial states...
+Computed 16 initial states...
+Computed 32 initial states...
+Computed 64 initial states...
+Finished computing initial states: 81 distinct states generated at 2026-09-22 20:49:59.
+Progress(2) at 2026-09-22 20:50:02: 9,132 states generated (54,792 s/min), 9,060 distinct states found (54,360 ds/min), 9,059 states left on queue.
+Progress(2) at 2026-09-22 20:50:12: 40,668 states generated (189,216 s/min), 40,380 distinct states found (187,920 ds/min), 40,376 states left on queue.
+Progress(2) at 2026-09-22 20:50:22: 73,347 states generated (196,074 s/min), 72,915 distinct states found (195,210 ds/min), 72,908 states left on queue.
+Progress(2) at 2026-09-22 20:50:32: 105,600 states generated (193,518 s/min), 104,952 distinct states found (192,222 ds/min), 104,942 states left on queue.
+Progress(2) at 2026-09-22 20:50:42: 138,096 states generated (194,976 s/min), 137,232 distinct states found (193,680 ds/min), 137,220 states left on queue.

@@ -1,0 +1,142 @@
+{
+  "protocol": "action-validation/v1",
+  "route": "code-to-model",
+  "spec": "out/repaired-spec",
+  "counts": {
+    "behavioral_mismatch": 1
+  },
+  "total": 1,
+  "commands": [
+    {
+      "engine": "implementation",
+      "command": [
+        "python3",
+        "/workspace/out/framework/adapters/go/run.py",
+        "--input",
+        "/workspace/out/negative-controls/input.json",
+        "--output",
+        "/workspace/out/negative-controls/disabled-comparison/implementation.jsonl",
+        "--work",
+        "/workspace/out/negative-controls/disabled-comparison/implementation"
+      ],
+      "duration_seconds": 0.3146263202652335,
+      "exit_code": 0
+    },
+    {
+      "engine": "model",
+      "command": [
+        "python3",
+        "/workspace/out/negative-controls/disabled-adapter/run.py",
+        "--input",
+        "/workspace/out/negative-controls/input.json",
+        "--output",
+        "/workspace/out/negative-controls/disabled-comparison/model.jsonl",
+        "--spec",
+        "/workspace/out/repaired-spec",
+        "--work",
+        "/workspace/out/negative-controls/disabled-comparison/model"
+      ],
+      "duration_seconds": 1.0662547796964645,
+      "exit_code": 0
+    }
+  ],
+  "results": [
+    {
+      "id": "hup-Normal-False",
+      "action": "hup",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.messages",
+          "left": [
+            {
+              "commit": 0,
+              "context": 0,
+              "entries": [],
+              "fromId": 1,
+              "hint": 0,
+              "index": 2,
+              "logTerm": 2,
+              "reject": false,
+              "snapshot": {
+                "config": {
+                  "autoLeave": false,
+                  "learners": [],
+                  "learnersNext": [],
+                  "outgoing": [],
+                  "voters": []
+                },
+                "index": 0,
+                "term": 0
+              },
+              "term": 3,
+              "to": 2,
+              "type": "MsgVote"
+            },
+            {
+              "commit": 0,
+              "context": 0,
+              "entries": [],
+              "fromId": 1,
+              "hint": 0,
+              "index": 2,
+              "logTerm": 2,
+              "reject": false,
+              "snapshot": {
+                "config": {
+                  "autoLeave": false,
+                  "learners": [],
+                  "learnersNext": [],
+                  "outgoing": [],
+                  "voters": []
+                },
+                "index": 0,
+                "term": 0
+              },
+              "term": 3,
+              "to": 3,
+              "type": "MsgVote"
+            }
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.role",
+          "left": "Candidate",
+          "right": "Follower"
+        },
+        {
+          "path": "$.state.term",
+          "left": 3,
+          "right": 2
+        },
+        {
+          "path": "$.state.vote",
+          "left": 1,
+          "right": 0
+        },
+        {
+          "path": "$.state.votes",
+          "left": [
+            {
+              "id": 1,
+              "yes": true
+            }
+          ],
+          "right": []
+        },
+        {
+          "path": "$.status",
+          "left": "ok",
+          "right": "disabled"
+        }
+      ]
+    }
+  ],
+  "extra_results": {
+    "implementation": [],
+    "model": []
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "packet": "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/agent-runs/inv-rewrite-V03-1",
+  "model": "gpt-6-astra",
+  "effort": "xhigh",
+  "started_at": "2026-09-22T20:03:40.612401+00:00",
+  "status": "finished",
+  "log": "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/logs/inv-rewrite-V03-1-attempt-1.jsonl",
+  "pid": 1565070,
+  "exit_code": 0,
+  "seconds": 1157.9057584786788,
+  "usage": [
+    {
+      "input_tokens": 1417289,
+      "cached_input_tokens": 1281664,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 37036,
+      "reasoning_output_tokens": 8037
+    }
+  ]
+}

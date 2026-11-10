@@ -1,0 +1,252 @@
+[
+  {
+    "id": "joint-union-majority",
+    "kind": "semantic-witness",
+    "source": "Native old flat union projection; full joint state unrepresentable in V00"
+  },
+  {
+    "id": "joint-both-majorities",
+    "kind": "allowed-control",
+    "source": "Both joint voter halves acknowledge"
+  },
+  {
+    "id": "nonvoter-contribution",
+    "kind": "mutation-negative",
+    "source": "Deliberately fabricated nonvoter match; not an implementation bug"
+  },
+  {
+    "id": "leave-id-zero-wrong-predecessor",
+    "kind": "semantic-witness",
+    "source": "Constructed commit event from ConfigOf on explicit bootstrap/joint/leave log"
+  },
+  {
+    "id": "leave-joint-predecessor",
+    "kind": "allowed-control",
+    "source": "Predecessor is complete joint configuration"
+  },
+  {
+    "id": "actual-bootstrap-exemption",
+    "kind": "allowed-control",
+    "source": "Exact BootLog positions are constructor anchors"
+  },
+  {
+    "id": "joint-self-quorum-False",
+    "kind": "semantic-witness",
+    "source": "replay-V03-observed-05/joint-self-quorum-False"
+  },
+  {
+    "id": "joint-self-quorum-True",
+    "kind": "semantic-witness",
+    "source": "replay-V03-observed-05/joint-self-quorum-True"
+  },
+  {
+    "id": "pending-v2-retained-obligation-False",
+    "kind": "retained-negative",
+    "source": "replay-V03-observed-05/pending-v2-retained-obligation-False"
+  },
+  {
+    "id": "pending-v2-retained-obligation-True",
+    "kind": "retained-negative",
+    "source": "replay-V03-observed-05/pending-v2-retained-obligation-True"
+  },
+  {
+    "id": "valid-auto-append",
+    "kind": "semantic-witness",
+    "source": "replay-V03-observed-05/v03-advance-raw-cross-0"
+  },
+  {
+    "id": "prefix-only-is-too-weak",
+    "kind": "mutation-negative",
+    "source": "Append unrelated normal entry to valid actual Advance observation"
+  },
+  {
+    "id": "empty-v2-is-not-necessarily-leave",
+    "kind": "mutation-negative",
+    "source": "Change automatic leave Transition only"
+  },
+  {
+    "id": "captured-cursor-retained",
+    "kind": "mutation-negative",
+    "source": "Violate unchanged exact applied cursor obligation"
+  },
+  {
+    "id": "newer-snapshot-retained",
+    "kind": "mutation-negative",
+    "source": "Deliberately remove newer pending snapshot"
+  },
+  {
+    "id": "learner-grant",
+    "kind": "semantic-witness",
+    "source": "replay-V03-observed-05/vote-learner-MsgVote-grant"
+  },
+  {
+    "id": "learner-stale-log-cannot-grant",
+    "kind": "mutation-negative",
+    "source": "Flip the actual stale-log rejection; old silence requirement also rejects"
+  },
+  {
+    "id": "learner-grant-history",
+    "kind": "semantic-witness",
+    "source": "Constructed nonempty grant/campaign records; grant backed by learner-grant action"
+  },
+  {
+    "id": "learner-campaign-still-forbidden",
+    "kind": "mutation-negative",
+    "source": "Constructed forbidden learner campaign; not current code bug"
+  },
+  {
+    "id": "ready-acceptance",
+    "kind": "semantic-witness",
+    "source": "replay-V03-observed-05/ready-raw-False-2-1-Leader-2"
+  },
+  {
+    "id": "old-ready-retention-forbidden",
+    "kind": "old-behavior-control",
+    "source": "replay-V01-observed-05/ready-raw-False-2-1-Leader-2"
+  },
+  {
+    "id": "ready-quota-still-owned-by-advance",
+    "kind": "mutation-negative",
+    "source": "Alter quota on actual accepted Ready"
+  },
+  {
+    "id": "advance-later-output-survives",
+    "kind": "old-behavior-control",
+    "source": "replay-V01-observed-05/advance-v02-raw-readack"
+  },
+  {
+    "id": "advance-later-output-allowed",
+    "kind": "allowed-control",
+    "source": "replay-V03-observed-05/advance-v02-raw-readack"
+  },
+  {
+    "id": "false-lost-read-observer",
+    "kind": "observer-witness",
+    "source": "Old observer applied to real new pre/post read8, captured read7"
+  },
+  {
+    "id": "empty-batch-must-not-hide-read-loss",
+    "kind": "mutation-negative",
+    "source": "Constructed loss of real later read with no original batch reads"
+  },
+  {
+    "id": "old-auto-effect-not-enough",
+    "kind": "old-behavior-control",
+    "source": "replay-V02-observed-05/v03-advance-raw-cross-0"
+  },
+  {
+    "id": "auto-pending-barrier",
+    "kind": "mutation-negative",
+    "source": "Canonical nil-payload leave but omitted pending index update"
+  },
+  {
+    "id": "noncrossing-no-leave",
+    "kind": "semantic-witness",
+    "source": "replay-V03-observed-05/v03-advance-raw-equal-old-0"
+  },
+  {
+    "id": "v03-prop-simple-0-empty-auto",
+    "kind": "semantic-witness",
+    "source": "replay-V03-observed-05/v03-prop-simple-0-empty-auto"
+  },
+  {
+    "id": "old-behavior-v03-prop-simple-0-empty-auto",
+    "kind": "old-behavior-control",
+    "source": "replay-V02-observed-05/v03-prop-simple-0-empty-auto"
+  },
+  {
+    "id": "v03-prop-joint-0-v2",
+    "kind": "semantic-witness",
+    "source": "replay-V03-observed-05/v03-prop-joint-0-v2"
+  },
+  {
+    "id": "old-behavior-v03-prop-joint-0-v2",
+    "kind": "old-behavior-control",
+    "source": "replay-V02-observed-05/v03-prop-joint-0-v2"
+  },
+  {
+    "id": "v03-prop-batch-joint-add-then-leave",
+    "kind": "semantic-witness",
+    "source": "replay-V03-observed-05/v03-prop-batch-joint-add-then-leave"
+  },
+  {
+    "id": "old-behavior-v03-prop-batch-joint-add-then-leave",
+    "kind": "old-behavior-control",
+    "source": "replay-V02-observed-05/v03-prop-batch-joint-add-then-leave"
+  },
+  {
+    "id": "v03-prop-batch-simple-leave-then-add",
+    "kind": "semantic-witness",
+    "source": "replay-V03-observed-05/v03-prop-batch-simple-leave-then-add"
+  },
+  {
+    "id": "old-behavior-v03-prop-batch-simple-leave-then-add",
+    "kind": "old-behavior-control",
+    "source": "replay-V02-observed-05/v03-prop-batch-simple-leave-then-add"
+  },
+  {
+    "id": "v03-quota-17-empty",
+    "kind": "semantic-witness",
+    "source": "replay-V03-observed-05/v03-quota-17-empty"
+  },
+  {
+    "id": "old-behavior-v03-quota-17-empty",
+    "kind": "old-behavior-control",
+    "source": "replay-V02-observed-05/v03-quota-17-empty"
+  },
+  {
+    "id": "documented-leave-classification",
+    "kind": "actual-replay-requirement-failure",
+    "source": "replay-V03-observed-05/v03-prop-joint-0-empty-explicit"
+  },
+  {
+    "id": "zero-payload-outcome",
+    "kind": "semantic-witness",
+    "source": "replay-V03-observed-05/v03-quota-17-empty"
+  },
+  {
+    "id": "positive-payload-control",
+    "kind": "allowed-control",
+    "source": "replay-V03-observed-05/v03-quota-17-one-byte"
+  },
+  {
+    "id": "positive-payload-illegal-accept",
+    "kind": "mutation-negative",
+    "source": "Force acceptance of the real positive payload rejection"
+  },
+  {
+    "id": "v03-apply-demote-Leader",
+    "kind": "new-coverage",
+    "source": "replay-V03-observed-05/v03-apply-demote-Leader"
+  },
+  {
+    "id": "mutation-v03-apply-demote-Leader",
+    "kind": "mutation-negative",
+    "source": "Reverse actual cancel/preserve decision"
+  },
+  {
+    "id": "v03-apply-staged-demote-Leader",
+    "kind": "new-coverage",
+    "source": "replay-V03-observed-05/v03-apply-staged-demote-Leader"
+  },
+  {
+    "id": "mutation-v03-apply-staged-demote-Leader",
+    "kind": "mutation-negative",
+    "source": "Reverse actual cancel/preserve decision"
+  },
+  {
+    "id": "v03-apply-leave-demote-Leader",
+    "kind": "new-coverage",
+    "source": "replay-V03-observed-05/v03-apply-leave-demote-Leader"
+  },
+  {
+    "id": "mutation-v03-apply-leave-demote-Leader",
+    "kind": "mutation-negative",
+    "source": "Reverse actual cancel/preserve decision"
+  },
+  {
+    "id": "old-demotion-transfer-remains",
+    "kind": "old-behavior-control",
+    "source": "replay-V02-observed-05/v03-apply-demote-Leader"
+  }
+]

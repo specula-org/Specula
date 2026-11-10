@@ -1,0 +1,602 @@
+[
+  {
+    "version": "V01",
+    "files": [
+      {
+        "path": "bootstrap.go",
+        "added": 80,
+        "removed": 0,
+        "core_go_candidate": true
+      },
+      {
+        "path": "confchange/confchange.go",
+        "added": 424,
+        "removed": 0,
+        "core_go_candidate": true
+      },
+      {
+        "path": "confchange/datadriven_test.go",
+        "added": 109,
+        "removed": 0,
+        "core_go_candidate": false
+      },
+      {
+        "path": "confchange/quick_test.go",
+        "added": 191,
+        "removed": 0,
+        "core_go_candidate": false
+      },
+      {
+        "path": "confchange/testdata/joint_autoleave.txt",
+        "added": 29,
+        "removed": 0,
+        "core_go_candidate": false
+      },
+      {
+        "path": "confchange/testdata/joint_idempotency.txt",
+        "added": 23,
+        "removed": 0,
+        "core_go_candidate": false
+      },
+      {
+        "path": "confchange/testdata/joint_learners_next.txt",
+        "added": 24,
+        "removed": 0,
+        "core_go_candidate": false
+      },
+      {
+        "path": "confchange/testdata/joint_safety.txt",
+        "added": 81,
+        "removed": 0,
+        "core_go_candidate": false
+      },
+      {
+        "path": "confchange/testdata/simple_idempotency.txt",
+        "added": 69,
+        "removed": 0,
+        "core_go_candidate": false
+      },
+      {
+        "path": "confchange/testdata/simple_promote_demote.txt",
+        "added": 60,
+        "removed": 0,
+        "core_go_candidate": false
+      },
+      {
+        "path": "confchange/testdata/simple_safety.txt",
+        "added": 64,
+        "removed": 0,
+        "core_go_candidate": false
+      },
+      {
+        "path": "confchange/testdata/update.txt",
+        "added": 23,
+        "removed": 0,
+        "core_go_candidate": false
+      },
+      {
+        "path": "confchange/testdata/zero.txt",
+        "added": 6,
+        "removed": 0,
+        "core_go_candidate": false
+      },
+      {
+        "path": "node.go",
+        "added": 89,
+        "removed": 108,
+        "core_go_candidate": true
+      },
+      {
+        "path": "node_bench_test.go",
+        "added": 2,
+        "removed": 2,
+        "core_go_candidate": false
+      },
+      {
+        "path": "node_test.go",
+        "added": 49,
+        "removed": 82,
+        "core_go_candidate": false
+      },
+      {
+        "path": "quorum/majority.go",
+        "added": 10,
+        "removed": 0,
+        "core_go_candidate": true
+      },
+      {
+        "path": "raft.go",
+        "added": 79,
+        "removed": 67,
+        "core_go_candidate": true
+      },
+      {
+        "path": "raft_snap_test.go",
+        "added": 1,
+        "removed": 1,
+        "core_go_candidate": false
+      },
+      {
+        "path": "raft_test.go",
+        "added": 78,
+        "removed": 27,
+        "core_go_candidate": false
+      },
+      {
+        "path": "raftpb/confchange.go",
+        "added": 105,
+        "removed": 0,
+        "core_go_candidate": true
+      },
+      {
+        "path": "raftpb/raft.pb.go",
+        "added": 688,
+        "removed": 62,
+        "core_go_candidate": false
+      },
+      {
+        "path": "raftpb/raft.proto",
+        "added": 90,
+        "removed": 8,
+        "core_go_candidate": false
+      },
+      {
+        "path": "rawnode.go",
+        "added": 63,
+        "removed": 91,
+        "core_go_candidate": true
+      },
+      {
+        "path": "rawnode_test.go",
+        "added": 422,
+        "removed": 157,
+        "core_go_candidate": false
+      },
+      {
+        "path": "status.go",
+        "added": 18,
+        "removed": 10,
+        "core_go_candidate": true
+      },
+      {
+        "path": "tracker/inflights.go",
+        "added": 8,
+        "removed": 0,
+        "core_go_candidate": true
+      },
+      {
+        "path": "tracker/progress.go",
+        "added": 20,
+        "removed": 0,
+        "core_go_candidate": true
+      },
+      {
+        "path": "tracker/tracker.go",
+        "added": 53,
+        "removed": 61,
+        "core_go_candidate": true
+      }
+    ],
+    "core_patch_bytes": 58821
+  },
+  {
+    "version": "V02",
+    "files": [
+      {
+        "path": "confchange/confchange.go",
+        "added": 1,
+        "removed": 4,
+        "core_go_candidate": true
+      },
+      {
+        "path": "confchange/restore.go",
+        "added": 155,
+        "removed": 0,
+        "core_go_candidate": true
+      },
+      {
+        "path": "confchange/restore_test.go",
+        "added": 142,
+        "removed": 0,
+        "core_go_candidate": false
+      },
+      {
+        "path": "logger.go",
+        "added": 7,
+        "removed": 1,
+        "core_go_candidate": true
+      },
+      {
+        "path": "node.go",
+        "added": 16,
+        "removed": 17,
+        "core_go_candidate": true
+      },
+      {
+        "path": "node_bench_test.go",
+        "added": 2,
+        "removed": 2,
+        "core_go_candidate": false
+      },
+      {
+        "path": "node_test.go",
+        "added": 25,
+        "removed": 26,
+        "core_go_candidate": false
+      },
+      {
+        "path": "quorum/majority.go",
+        "added": 5,
+        "removed": 7,
+        "core_go_candidate": true
+      },
+      {
+        "path": "raft.go",
+        "added": 62,
+        "removed": 37,
+        "core_go_candidate": true
+      },
+      {
+        "path": "raft_snap_test.go",
+        "added": 2,
+        "removed": 2,
+        "core_go_candidate": false
+      },
+      {
+        "path": "raft_test.go",
+        "added": 26,
+        "removed": 21,
+        "core_go_candidate": false
+      },
+      {
+        "path": "raftpb/confstate.go",
+        "added": 45,
+        "removed": 0,
+        "core_go_candidate": true
+      },
+      {
+        "path": "raftpb/confstate_test.go",
+        "added": 58,
+        "removed": 0,
+        "core_go_candidate": false
+      },
+      {
+        "path": "raftpb/raft.pb.go",
+        "added": 104,
+        "removed": 88,
+        "core_go_candidate": false
+      },
+      {
+        "path": "raftpb/raft.proto",
+        "added": 6,
+        "removed": 6,
+        "core_go_candidate": false
+      },
+      {
+        "path": "rawnode.go",
+        "added": 11,
+        "removed": 26,
+        "core_go_candidate": true
+      },
+      {
+        "path": "rawnode_test.go",
+        "added": 63,
+        "removed": 29,
+        "core_go_candidate": false
+      },
+      {
+        "path": "storage_test.go",
+        "added": 2,
+        "removed": 2,
+        "core_go_candidate": false
+      },
+      {
+        "path": "tracker/tracker.go",
+        "added": 40,
+        "removed": 3,
+        "core_go_candidate": true
+      },
+      {
+        "path": "util.go",
+        "added": 8,
+        "removed": 7,
+        "core_go_candidate": true
+      }
+    ],
+    "core_patch_bytes": 26019
+  },
+  {
+    "version": "V03",
+    "files": [
+      {
+        "path": "README.md",
+        "added": 3,
+        "removed": 3,
+        "core_go_candidate": false
+      },
+      {
+        "path": "confchange/confchange.go",
+        "added": 8,
+        "removed": 7,
+        "core_go_candidate": true
+      },
+      {
+        "path": "confchange/testdata/joint_autoleave.txt",
+        "added": 7,
+        "removed": 7,
+        "core_go_candidate": false
+      },
+      {
+        "path": "confchange/testdata/joint_idempotency.txt",
+        "added": 7,
+        "removed": 7,
+        "core_go_candidate": false
+      },
+      {
+        "path": "confchange/testdata/joint_learners_next.txt",
+        "added": 5,
+        "removed": 5,
+        "core_go_candidate": false
+      },
+      {
+        "path": "confchange/testdata/joint_safety.txt",
+        "added": 14,
+        "removed": 14,
+        "core_go_candidate": false
+      },
+      {
+        "path": "confchange/testdata/simple_idempotency.txt",
+        "added": 15,
+        "removed": 15,
+        "core_go_candidate": false
+      },
+      {
+        "path": "confchange/testdata/simple_promote_demote.txt",
+        "added": 18,
+        "removed": 18,
+        "core_go_candidate": false
+      },
+      {
+        "path": "confchange/testdata/simple_safety.txt",
+        "added": 10,
+        "removed": 10,
+        "core_go_candidate": false
+      },
+      {
+        "path": "confchange/testdata/update.txt",
+        "added": 5,
+        "removed": 5,
+        "core_go_candidate": false
+      },
+      {
+        "path": "confchange/testdata/zero.txt",
+        "added": 1,
+        "removed": 1,
+        "core_go_candidate": false
+      },
+      {
+        "path": "interaction_test.go",
+        "added": 34,
+        "removed": 0,
+        "core_go_candidate": false
+      },
+      {
+        "path": "log_test.go",
+        "added": 5,
+        "removed": 5,
+        "core_go_candidate": false
+      },
+      {
+        "path": "log_unstable.go",
+        "added": 2,
+        "removed": 4,
+        "core_go_candidate": true
+      },
+      {
+        "path": "raft.go",
+        "added": 78,
+        "removed": 31,
+        "core_go_candidate": true
+      },
+      {
+        "path": "raft_snap_test.go",
+        "added": 0,
+        "removed": 120,
+        "core_go_candidate": false
+      },
+      {
+        "path": "raft_test.go",
+        "added": 46,
+        "removed": 1,
+        "core_go_candidate": false
+      },
+      {
+        "path": "raftpb/confchange.go",
+        "added": 70,
+        "removed": 5,
+        "core_go_candidate": true
+      },
+      {
+        "path": "rafttest/interaction_env.go",
+        "added": 90,
+        "removed": 0,
+        "core_go_candidate": false
+      },
+      {
+        "path": "rafttest/interaction_env_handler.go",
+        "added": 176,
+        "removed": 0,
+        "core_go_candidate": false
+      },
+      {
+        "path": "rafttest/interaction_env_handler_add_nodes.go",
+        "added": 136,
+        "removed": 0,
+        "core_go_candidate": false
+      },
+      {
+        "path": "rafttest/interaction_env_handler_campaign.go",
+        "added": 31,
+        "removed": 0,
+        "core_go_candidate": false
+      },
+      {
+        "path": "rafttest/interaction_env_handler_compact.go",
+        "added": 40,
+        "removed": 0,
+        "core_go_candidate": false
+      },
+      {
+        "path": "rafttest/interaction_env_handler_deliver_msgs.go",
+        "added": 94,
+        "removed": 0,
+        "core_go_candidate": false
+      },
+      {
+        "path": "rafttest/interaction_env_handler_log_level.go",
+        "added": 37,
+        "removed": 0,
+        "core_go_candidate": false
+      },
+      {
+        "path": "rafttest/interaction_env_handler_process_ready.go",
+        "added": 94,
+        "removed": 0,
+        "core_go_candidate": false
+      },
+      {
+        "path": "rafttest/interaction_env_handler_propose.go",
+        "added": 34,
+        "removed": 0,
+        "core_go_candidate": false
+      },
+      {
+        "path": "rafttest/interaction_env_handler_propose_conf_change.go",
+        "added": 82,
+        "removed": 0,
+        "core_go_candidate": false
+      },
+      {
+        "path": "rafttest/interaction_env_handler_raft_log.go",
+        "added": 60,
+        "removed": 0,
+        "core_go_candidate": false
+      },
+      {
+        "path": "rafttest/interaction_env_handler_stabilize.go",
+        "added": 94,
+        "removed": 0,
+        "core_go_candidate": false
+      },
+      {
+        "path": "rafttest/interaction_env_handler_status.go",
+        "added": 42,
+        "removed": 0,
+        "core_go_candidate": false
+      },
+      {
+        "path": "rafttest/interaction_env_handler_tick_heartbeat.go",
+        "added": 34,
+        "removed": 0,
+        "core_go_candidate": false
+      },
+      {
+        "path": "rafttest/interaction_env_logger.go",
+        "added": 107,
+        "removed": 0,
+        "core_go_candidate": false
+      },
+      {
+        "path": "rafttest/network.go",
+        "added": 5,
+        "removed": 3,
+        "core_go_candidate": false
+      },
+      {
+        "path": "rawnode_test.go",
+        "added": 20,
+        "removed": 7,
+        "core_go_candidate": false
+      },
+      {
+        "path": "storage.go",
+        "added": 2,
+        "removed": 0,
+        "core_go_candidate": true
+      },
+      {
+        "path": "storage_test.go",
+        "added": 2,
+        "removed": 2,
+        "core_go_candidate": false
+      },
+      {
+        "path": "testdata/campaign.txt",
+        "added": 117,
+        "removed": 0,
+        "core_go_candidate": false
+      },
+      {
+        "path": "testdata/campaign_learner_must_vote.txt",
+        "added": 152,
+        "removed": 0,
+        "core_go_candidate": false
+      },
+      {
+        "path": "testdata/confchange_v1_add_single.txt",
+        "added": 97,
+        "removed": 0,
+        "core_go_candidate": false
+      },
+      {
+        "path": "testdata/confchange_v1_remove_leader.txt",
+        "added": 224,
+        "removed": 0,
+        "core_go_candidate": false
+      },
+      {
+        "path": "testdata/confchange_v2_add_double_auto.txt",
+        "added": 407,
+        "removed": 0,
+        "core_go_candidate": false
+      },
+      {
+        "path": "testdata/confchange_v2_add_double_implicit.txt",
+        "added": 125,
+        "removed": 0,
+        "core_go_candidate": false
+      },
+      {
+        "path": "testdata/confchange_v2_add_single_auto.txt",
+        "added": 98,
+        "removed": 0,
+        "core_go_candidate": false
+      },
+      {
+        "path": "testdata/confchange_v2_add_single_explicit.txt",
+        "added": 206,
+        "removed": 0,
+        "core_go_candidate": false
+      },
+      {
+        "path": "testdata/snapshot_succeed_via_app_resp.txt",
+        "added": 156,
+        "removed": 0,
+        "core_go_candidate": false
+      },
+      {
+        "path": "tracker/progress.go",
+        "added": 2,
+        "removed": 0,
+        "core_go_candidate": true
+      },
+      {
+        "path": "util.go",
+        "added": 95,
+        "removed": 5,
+        "core_go_candidate": true
+      }
+    ],
+    "core_patch_bytes": 18375
+  }
+]

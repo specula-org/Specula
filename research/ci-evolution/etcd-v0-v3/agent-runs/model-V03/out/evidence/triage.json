@@ -1,0 +1,116 @@
+{
+  "initial_failures_preserved": [
+    {
+      "category": "version-binding adapter compile defect",
+      "evidence": "out/evidence/old-binding-initial/go.log",
+      "cause": "Inherited old/source branch assumed V01 Nodes/NodesJoint and newNode()/run(rn). Supplied V02 has Voters/VotersOutgoing and newNode(rn)/run().",
+      "repair": "Removed historical-path rewriting; both supplied trees use their actual common API. Final V02 controls execute successfully."
+    },
+    {
+      "category": "adapter syntax error",
+      "evidence": [
+        "out/cases/old-prior-code",
+        "out/cases/baseline-v03-code-initial"
+      ],
+      "cause": "New StorageSnap referenced Snap before its TLA definition.",
+      "repair": "Reordered adapter declarations."
+    },
+    {
+      "category": "adapter syntax error",
+      "evidence": [
+        "out/cases/baseline-v03-code-02",
+        "out/cases/old-v03-code-02"
+      ],
+      "cause": "An editing replacement also changed PMsg, producing a duplicate Msg definition.",
+      "repair": "Restored PMsg projection."
+    },
+    {
+      "category": "adapter level-check error",
+      "evidence": [
+        "out/cases/baseline-v03-code-03",
+        "out/cases/old-v03-code-03"
+      ],
+      "cause": "Parameterized Bootstrap instance received a state-level selected value for a constant-level substitution.",
+      "repair": "Enumerate constant cases and equate the selected case before invoking original InitialRaft."
+    },
+    {
+      "category": "adapter action framing error",
+      "evidence": [
+        "out/cases/baseline-callback",
+        "out/cases/old-callback"
+      ],
+      "cause": "Unparenthesized IF attached UNCHANGED framing only to the ELSE branch.",
+      "repair": "Parenthesized IF; original callback/proposal actions remain in use."
+    },
+    {
+      "category": "actual output-status mapping omission",
+      "evidence": "out/cases/old-boundary/comparison.json",
+      "case": "v03-empty-log-Follower-apply_then_step",
+      "cause": "TLC adapter did not classify original model DropNoLeader as a dropped proposal; it emitted ok. Go emitted ErrProposalDropped.",
+      "repair": "Added DropNoLeader and DropForwardDisabled to status projection; no transition change. Final V02 control matches this case."
+    },
+    {
+      "category": "Update view syntax error",
+      "evidence": "out/preflight/Update.log",
+      "cause": "ctx domain referred to id in the same quantified binding group.",
+      "repair": "Nested ctx quantifier; out/preflight-02 passes."
+    }
+  ],
+  "pre_input_mapping": {
+    "actual_discrepancies_observed": 0,
+    "note": "No executed successful code/model pair had a differing actual pre-state or input mapping. Do not relabel the status-mapping omission as a pre/input error. Failed TLC runs contributed no results under the unchanged runner."
+  },
+  "pre_existing_behavior_repairs": [
+    {
+      "operator": "ChangeProgress / ApplyConfCore",
+      "evidence": "out/cases/old-v03-code-04/comparison.json",
+      "cases": [
+        "v03-apply-remove-readd-learner-Leader",
+        "v03-apply-remove-readd-learner-Follower"
+      ],
+      "cause": "Inherited model retained a learner Progress across remove/re-add; actual Changer deletes and initializes it."
+    },
+    {
+      "operator": "ProtocolApplyEntry",
+      "evidence": "out/cases/old-callback-02/comparison.json",
+      "case": "v03-callback-v2-leave-remove-self",
+      "cause": "Inherited Node wrapper used entry.target; actual confc disables proposals on member-before/nonmember-after, including V2 leave."
+    },
+    {
+      "operator": "AppendQuotaExceeded / AdvanceCore",
+      "evidence": [
+        "out/cases/old-post-drop/comparison.json",
+        "out/cases/repaired-post-drop-initial/comparison.json"
+      ],
+      "cases": [
+        "v03-advance-after-drop-raw-14",
+        "v03-advance-after-drop-node-14"
+      ],
+      "cause": "Stale DropQuota observation from an intervening rejected proposal was used as a later append return; V02 could update pending incorrectly and the first V03 evolution could report an impossible panic. The actual per-call quota condition now governs behavior; the existing decision observation is preserved."
+    },
+    {
+      "operator": "ApplyConfCore",
+      "evidence": "out/cases/repaired-panic-order-initial/comparison.json",
+      "case": "v03-config-broadcast-panic-before-transfer",
+      "cause": "A configuration-triggered broadcast panic stops execution before transfer cancellation. Inherited model continued to cancel after its fatal result. Preserve the actual partial state (transfer remains 4). This is an injected progress boundary, not distributed reachability evidence."
+    }
+  ],
+  "disabled_classification": [
+    {
+      "cases": [
+        "v03-ready-node-empty",
+        "v03-advance-node-empty"
+      ],
+      "class": "explicit caller prerequisite and legitimate stuttering",
+      "reason": "Actual node.run does not deliver Ready when HasReady is false; finite model relation has no Ready successor. Mapped pre/input and disabled status are retained."
+    },
+    {
+      "cases": [
+        "v03-callback-legacy-remove-self",
+        "v03-callback-v2-leave-remove-self"
+      ],
+      "class": "explicit proposal-channel prerequisite after observable callback",
+      "reason": "Callback completes and changes membership; subsequent public Propose times out because propc is nil. Both callback post-state and disabled proposal status are retained. V2 original-model disagreement is a behavior repair, not a dropped case."
+    }
+  ]
+}

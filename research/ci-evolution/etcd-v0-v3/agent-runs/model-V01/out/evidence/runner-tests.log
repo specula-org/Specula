@@ -1,0 +1,13 @@
+test_drop (test_runner.RunnerTests.test_drop) ... ok
+test_input_mapping (test_runner.RunnerTests.test_input_mapping) ... ok
+test_missing (test_runner.RunnerTests.test_missing) ... ok
+test_multiplicity (test_runner.RunnerTests.test_multiplicity) ... ok
+test_pre_mapping (test_runner.RunnerTests.test_pre_mapping) ... ok
+test_sequence_order (test_runner.RunnerTests.test_sequence_order) ... ok
+test_set_permutation (test_runner.RunnerTests.test_set_permutation) ... ok
+test_side_effect (test_runner.RunnerTests.test_side_effect) ... ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 0.001s
+
+OK

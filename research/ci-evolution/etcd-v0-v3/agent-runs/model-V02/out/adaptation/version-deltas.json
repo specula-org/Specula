@@ -1,0 +1,1891 @@
+[
+  {
+    "id": "ready-raw-False-2-1-Leader-2",
+    "pre_differences": [],
+    "input_differences": [],
+    "differences": [
+      {
+        "path": "$.state.messages",
+        "left": [
+          {
+            "commit": 0,
+            "context": 0,
+            "entries": [],
+            "forced": false,
+            "fromId": 1,
+            "hint": 0,
+            "index": 0,
+            "logTerm": 0,
+            "reject": false,
+            "snapshot": {
+              "config": {
+                "autoLeave": false,
+                "learners": [],
+                "learnersNext": [],
+                "outgoing": [],
+                "voters": []
+              },
+              "index": 0,
+              "term": 0
+            },
+            "term": 2,
+            "to": 2,
+            "type": "MsgHeartbeat"
+          }
+        ],
+        "right": []
+      },
+      {
+        "path": "$.state.prevSS.lead",
+        "left": 0,
+        "right": 1
+      },
+      {
+        "path": "$.state.prevSS.role",
+        "left": "Follower",
+        "right": "Leader"
+      },
+      {
+        "path": "$.state.reads",
+        "left": [
+          {
+            "id": 7,
+            "index": 2
+          }
+        ],
+        "right": []
+      }
+    ]
+  },
+  {
+    "id": "ready-node-False-2-1-Leader-2",
+    "pre_differences": [],
+    "input_differences": [],
+    "differences": []
+  },
+  {
+    "id": "restore-joint",
+    "pre_differences": [],
+    "input_differences": [],
+    "differences": [
+      {
+        "path": "$.state.config.autoLeave",
+        "left": false,
+        "right": true
+      },
+      {
+        "path": "$.state.config.learnersNext",
+        "left": [],
+        "right": [
+          3
+        ]
+      },
+      {
+        "path": "$.state.config.outgoing",
+        "left": [],
+        "right": [
+          1,
+          2,
+          3
+        ]
+      },
+      {
+        "path": "$.state.prs",
+        "left": [
+          {
+            "active": true,
+            "id": 1,
+            "inflight": [],
+            "learner": false,
+            "match": 3,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          },
+          {
+            "active": true,
+            "id": 2,
+            "inflight": [],
+            "learner": false,
+            "match": 0,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          }
+        ],
+        "right": [
+          {
+            "active": true,
+            "id": 1,
+            "inflight": [],
+            "learner": false,
+            "match": 3,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          },
+          {
+            "active": true,
+            "id": 2,
+            "inflight": [],
+            "learner": false,
+            "match": 0,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          },
+          {
+            "active": true,
+            "id": 3,
+            "inflight": [],
+            "learner": false,
+            "match": 0,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "restart-joint",
+    "pre_differences": [],
+    "input_differences": [],
+    "differences": [
+      {
+        "path": "$.state.config.autoLeave",
+        "left": false,
+        "right": true
+      },
+      {
+        "path": "$.state.config.learnersNext",
+        "left": [],
+        "right": [
+          3
+        ]
+      },
+      {
+        "path": "$.state.config.outgoing",
+        "left": [],
+        "right": [
+          1,
+          2,
+          3
+        ]
+      },
+      {
+        "path": "$.state.prs",
+        "left": [
+          {
+            "active": false,
+            "id": 1,
+            "inflight": [],
+            "learner": false,
+            "match": 3,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          },
+          {
+            "active": false,
+            "id": 2,
+            "inflight": [],
+            "learner": false,
+            "match": 0,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          }
+        ],
+        "right": [
+          {
+            "active": false,
+            "id": 1,
+            "inflight": [],
+            "learner": false,
+            "match": 3,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          },
+          {
+            "active": false,
+            "id": 2,
+            "inflight": [],
+            "learner": false,
+            "match": 0,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          },
+          {
+            "active": false,
+            "id": 3,
+            "inflight": [],
+            "learner": false,
+            "match": 0,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "restore-outgoing-only",
+    "pre_differences": [],
+    "input_differences": [],
+    "differences": []
+  },
+  {
+    "id": "restart-outgoing-only",
+    "pre_differences": [],
+    "input_differences": [],
+    "differences": [
+      {
+        "path": "$.state.config.outgoing",
+        "left": [],
+        "right": [
+          1,
+          2,
+          3
+        ]
+      },
+      {
+        "path": "$.state.prs",
+        "left": [
+          {
+            "active": false,
+            "id": 2,
+            "inflight": [],
+            "learner": false,
+            "match": 0,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          },
+          {
+            "active": false,
+            "id": 3,
+            "inflight": [],
+            "learner": false,
+            "match": 0,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          }
+        ],
+        "right": [
+          {
+            "active": false,
+            "id": 1,
+            "inflight": [],
+            "learner": false,
+            "match": 3,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          },
+          {
+            "active": false,
+            "id": 2,
+            "inflight": [],
+            "learner": false,
+            "match": 0,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          },
+          {
+            "active": false,
+            "id": 3,
+            "inflight": [],
+            "learner": false,
+            "match": 0,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "vote-learner-MsgVote-grant",
+    "pre_differences": [],
+    "input_differences": [],
+    "differences": [
+      {
+        "path": "$.state.messages",
+        "left": [],
+        "right": [
+          {
+            "commit": 0,
+            "context": 0,
+            "entries": [],
+            "forced": false,
+            "fromId": 1,
+            "hint": 0,
+            "index": 0,
+            "logTerm": 0,
+            "reject": false,
+            "snapshot": {
+              "config": {
+                "autoLeave": false,
+                "learners": [],
+                "learnersNext": [],
+                "outgoing": [],
+                "voters": []
+              },
+              "index": 0,
+              "term": 0
+            },
+            "term": 3,
+            "to": 2,
+            "type": "MsgVoteResp"
+          }
+        ]
+      },
+      {
+        "path": "$.state.vote",
+        "left": 0,
+        "right": 2
+      }
+    ]
+  },
+  {
+    "id": "vote-learner-MsgVote-forced",
+    "pre_differences": [],
+    "input_differences": [],
+    "differences": [
+      {
+        "path": "$.state.messages",
+        "left": [],
+        "right": [
+          {
+            "commit": 0,
+            "context": 0,
+            "entries": [],
+            "forced": false,
+            "fromId": 1,
+            "hint": 0,
+            "index": 0,
+            "logTerm": 0,
+            "reject": false,
+            "snapshot": {
+              "config": {
+                "autoLeave": false,
+                "learners": [],
+                "learnersNext": [],
+                "outgoing": [],
+                "voters": []
+              },
+              "index": 0,
+              "term": 0
+            },
+            "term": 3,
+            "to": 2,
+            "type": "MsgVoteResp"
+          }
+        ]
+      },
+      {
+        "path": "$.state.vote",
+        "left": 0,
+        "right": 2
+      }
+    ]
+  },
+  {
+    "id": "vote-learner-MsgPreVote-grant",
+    "pre_differences": [],
+    "input_differences": [],
+    "differences": [
+      {
+        "path": "$.state.messages",
+        "left": [],
+        "right": [
+          {
+            "commit": 0,
+            "context": 0,
+            "entries": [],
+            "forced": false,
+            "fromId": 1,
+            "hint": 0,
+            "index": 0,
+            "logTerm": 0,
+            "reject": false,
+            "snapshot": {
+              "config": {
+                "autoLeave": false,
+                "learners": [],
+                "learnersNext": [],
+                "outgoing": [],
+                "voters": []
+              },
+              "index": 0,
+              "term": 0
+            },
+            "term": 3,
+            "to": 2,
+            "type": "MsgPreVoteResp"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "hup-v02-learner-False",
+    "pre_differences": [],
+    "input_differences": [],
+    "differences": []
+  },
+  {
+    "id": "hup-v02-staged-False",
+    "pre_differences": [],
+    "input_differences": [],
+    "differences": []
+  },
+  {
+    "id": "advance-v02-raw-readack",
+    "pre_differences": [
+      {
+        "path": "$.messages",
+        "left": [
+          {
+            "commit": 0,
+            "context": 0,
+            "entries": [],
+            "forced": false,
+            "fromId": 1,
+            "hint": 0,
+            "index": 0,
+            "logTerm": 0,
+            "reject": false,
+            "snapshot": {
+              "config": {
+                "autoLeave": false,
+                "learners": [],
+                "learnersNext": [],
+                "outgoing": [],
+                "voters": []
+              },
+              "index": 0,
+              "term": 0
+            },
+            "term": 2,
+            "to": 2,
+            "type": "MsgHeartbeat"
+          },
+          {
+            "commit": 0,
+            "context": 0,
+            "entries": [],
+            "forced": false,
+            "fromId": 1,
+            "hint": 0,
+            "index": 0,
+            "logTerm": 0,
+            "reject": false,
+            "snapshot": {
+              "config": {
+                "autoLeave": false,
+                "learners": [],
+                "learnersNext": [],
+                "outgoing": [],
+                "voters": []
+              },
+              "index": 0,
+              "term": 0
+            },
+            "term": 2,
+            "to": 2,
+            "type": "MsgHeartbeat"
+          },
+          {
+            "commit": 2,
+            "context": 0,
+            "entries": [],
+            "forced": false,
+            "fromId": 1,
+            "hint": 0,
+            "index": 2,
+            "logTerm": 2,
+            "reject": false,
+            "snapshot": {
+              "config": {
+                "autoLeave": false,
+                "learners": [],
+                "learnersNext": [],
+                "outgoing": [],
+                "voters": []
+              },
+              "index": 0,
+              "term": 0
+            },
+            "term": 2,
+            "to": 2,
+            "type": "MsgApp"
+          }
+        ],
+        "right": [
+          {
+            "commit": 2,
+            "context": 0,
+            "entries": [],
+            "forced": false,
+            "fromId": 1,
+            "hint": 0,
+            "index": 2,
+            "logTerm": 2,
+            "reject": false,
+            "snapshot": {
+              "config": {
+                "autoLeave": false,
+                "learners": [],
+                "learnersNext": [],
+                "outgoing": [],
+                "voters": []
+              },
+              "index": 0,
+              "term": 0
+            },
+            "term": 2,
+            "to": 2,
+            "type": "MsgApp"
+          }
+        ]
+      },
+      {
+        "path": "$.prevSS.lead",
+        "left": 0,
+        "right": 1
+      },
+      {
+        "path": "$.prevSS.role",
+        "left": "Follower",
+        "right": "Leader"
+      },
+      {
+        "path": "$.reads",
+        "left": [
+          {
+            "id": 7,
+            "index": 2
+          },
+          {
+            "id": 7,
+            "index": 2
+          },
+          {
+            "id": 8,
+            "index": 2
+          }
+        ],
+        "right": [
+          {
+            "id": 8,
+            "index": 2
+          }
+        ]
+      }
+    ],
+    "input_differences": [],
+    "differences": [
+      {
+        "path": "$.state.messages",
+        "left": [],
+        "right": [
+          {
+            "commit": 2,
+            "context": 0,
+            "entries": [],
+            "forced": false,
+            "fromId": 1,
+            "hint": 0,
+            "index": 2,
+            "logTerm": 2,
+            "reject": false,
+            "snapshot": {
+              "config": {
+                "autoLeave": false,
+                "learners": [],
+                "learnersNext": [],
+                "outgoing": [],
+                "voters": []
+              },
+              "index": 0,
+              "term": 0
+            },
+            "term": 2,
+            "to": 2,
+            "type": "MsgApp"
+          }
+        ]
+      },
+      {
+        "path": "$.state.reads",
+        "left": [],
+        "right": [
+          {
+            "id": 8,
+            "index": 2
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "advance-v02-raw-multiple",
+    "pre_differences": [
+      {
+        "path": "$.messages",
+        "left": [
+          {
+            "commit": 0,
+            "context": 0,
+            "entries": [],
+            "forced": false,
+            "fromId": 1,
+            "hint": 0,
+            "index": 0,
+            "logTerm": 0,
+            "reject": false,
+            "snapshot": {
+              "config": {
+                "autoLeave": false,
+                "learners": [],
+                "learnersNext": [],
+                "outgoing": [],
+                "voters": []
+              },
+              "index": 0,
+              "term": 0
+            },
+            "term": 2,
+            "to": 2,
+            "type": "MsgHeartbeat"
+          },
+          {
+            "commit": 0,
+            "context": 0,
+            "entries": [],
+            "forced": false,
+            "fromId": 1,
+            "hint": 0,
+            "index": 0,
+            "logTerm": 0,
+            "reject": false,
+            "snapshot": {
+              "config": {
+                "autoLeave": false,
+                "learners": [],
+                "learnersNext": [],
+                "outgoing": [],
+                "voters": []
+              },
+              "index": 0,
+              "term": 0
+            },
+            "term": 2,
+            "to": 2,
+            "type": "MsgHeartbeat"
+          },
+          {
+            "commit": 0,
+            "context": 0,
+            "entries": [],
+            "forced": false,
+            "fromId": 1,
+            "hint": 0,
+            "index": 0,
+            "logTerm": 0,
+            "reject": false,
+            "snapshot": {
+              "config": {
+                "autoLeave": false,
+                "learners": [],
+                "learnersNext": [],
+                "outgoing": [],
+                "voters": []
+              },
+              "index": 0,
+              "term": 0
+            },
+            "term": 3,
+            "to": 2,
+            "type": "MsgHeartbeatResp"
+          },
+          {
+            "commit": 0,
+            "context": 8,
+            "entries": [],
+            "forced": false,
+            "fromId": 1,
+            "hint": 0,
+            "index": 0,
+            "logTerm": 0,
+            "reject": false,
+            "snapshot": {
+              "config": {
+                "autoLeave": false,
+                "learners": [],
+                "learnersNext": [],
+                "outgoing": [],
+                "voters": []
+              },
+              "index": 0,
+              "term": 0
+            },
+            "term": 2,
+            "to": 2,
+            "type": "MsgHeartbeat"
+          },
+          {
+            "commit": 0,
+            "context": 8,
+            "entries": [],
+            "forced": false,
+            "fromId": 1,
+            "hint": 0,
+            "index": 0,
+            "logTerm": 0,
+            "reject": false,
+            "snapshot": {
+              "config": {
+                "autoLeave": false,
+                "learners": [],
+                "learnersNext": [],
+                "outgoing": [],
+                "voters": []
+              },
+              "index": 0,
+              "term": 0
+            },
+            "term": 2,
+            "to": 3,
+            "type": "MsgHeartbeat"
+          },
+          {
+            "commit": 2,
+            "context": 0,
+            "entries": [
+              {
+                "changes": [],
+                "encoded": 10,
+                "index": 3,
+                "kind": "Normal",
+                "target": 0,
+                "term": 2,
+                "transition": "Legacy",
+                "weight": 2
+              }
+            ],
+            "forced": false,
+            "fromId": 1,
+            "hint": 0,
+            "index": 2,
+            "logTerm": 2,
+            "reject": false,
+            "snapshot": {
+              "config": {
+                "autoLeave": false,
+                "learners": [],
+                "learnersNext": [],
+                "outgoing": [],
+                "voters": []
+              },
+              "index": 0,
+              "term": 0
+            },
+            "term": 2,
+            "to": 2,
+            "type": "MsgApp"
+          },
+          {
+            "commit": 2,
+            "context": 0,
+            "entries": [
+              {
+                "changes": [],
+                "encoded": 10,
+                "index": 3,
+                "kind": "Normal",
+                "target": 0,
+                "term": 2,
+                "transition": "Legacy",
+                "weight": 2
+              }
+            ],
+            "forced": false,
+            "fromId": 1,
+            "hint": 0,
+            "index": 2,
+            "logTerm": 2,
+            "reject": false,
+            "snapshot": {
+              "config": {
+                "autoLeave": false,
+                "learners": [],
+                "learnersNext": [],
+                "outgoing": [],
+                "voters": []
+              },
+              "index": 0,
+              "term": 0
+            },
+            "term": 2,
+            "to": 2,
+            "type": "MsgApp"
+          },
+          {
+            "commit": 2,
+            "context": 0,
+            "entries": [
+              {
+                "changes": [],
+                "encoded": 10,
+                "index": 3,
+                "kind": "Normal",
+                "target": 0,
+                "term": 2,
+                "transition": "Legacy",
+                "weight": 2
+              }
+            ],
+            "forced": false,
+            "fromId": 1,
+            "hint": 0,
+            "index": 2,
+            "logTerm": 2,
+            "reject": false,
+            "snapshot": {
+              "config": {
+                "autoLeave": false,
+                "learners": [],
+                "learnersNext": [],
+                "outgoing": [],
+                "voters": []
+              },
+              "index": 0,
+              "term": 0
+            },
+            "term": 2,
+            "to": 3,
+            "type": "MsgApp"
+          }
+        ],
+        "right": [
+          {
+            "commit": 0,
+            "context": 0,
+            "entries": [],
+            "forced": false,
+            "fromId": 1,
+            "hint": 0,
+            "index": 0,
+            "logTerm": 0,
+            "reject": false,
+            "snapshot": {
+              "config": {
+                "autoLeave": false,
+                "learners": [],
+                "learnersNext": [],
+                "outgoing": [],
+                "voters": []
+              },
+              "index": 0,
+              "term": 0
+            },
+            "term": 3,
+            "to": 2,
+            "type": "MsgHeartbeatResp"
+          },
+          {
+            "commit": 0,
+            "context": 8,
+            "entries": [],
+            "forced": false,
+            "fromId": 1,
+            "hint": 0,
+            "index": 0,
+            "logTerm": 0,
+            "reject": false,
+            "snapshot": {
+              "config": {
+                "autoLeave": false,
+                "learners": [],
+                "learnersNext": [],
+                "outgoing": [],
+                "voters": []
+              },
+              "index": 0,
+              "term": 0
+            },
+            "term": 2,
+            "to": 2,
+            "type": "MsgHeartbeat"
+          },
+          {
+            "commit": 0,
+            "context": 8,
+            "entries": [],
+            "forced": false,
+            "fromId": 1,
+            "hint": 0,
+            "index": 0,
+            "logTerm": 0,
+            "reject": false,
+            "snapshot": {
+              "config": {
+                "autoLeave": false,
+                "learners": [],
+                "learnersNext": [],
+                "outgoing": [],
+                "voters": []
+              },
+              "index": 0,
+              "term": 0
+            },
+            "term": 2,
+            "to": 3,
+            "type": "MsgHeartbeat"
+          },
+          {
+            "commit": 2,
+            "context": 0,
+            "entries": [
+              {
+                "changes": [],
+                "encoded": 10,
+                "index": 3,
+                "kind": "Normal",
+                "target": 0,
+                "term": 2,
+                "transition": "Legacy",
+                "weight": 2
+              }
+            ],
+            "forced": false,
+            "fromId": 1,
+            "hint": 0,
+            "index": 2,
+            "logTerm": 2,
+            "reject": false,
+            "snapshot": {
+              "config": {
+                "autoLeave": false,
+                "learners": [],
+                "learnersNext": [],
+                "outgoing": [],
+                "voters": []
+              },
+              "index": 0,
+              "term": 0
+            },
+            "term": 2,
+            "to": 2,
+            "type": "MsgApp"
+          },
+          {
+            "commit": 2,
+            "context": 0,
+            "entries": [
+              {
+                "changes": [],
+                "encoded": 10,
+                "index": 3,
+                "kind": "Normal",
+                "target": 0,
+                "term": 2,
+                "transition": "Legacy",
+                "weight": 2
+              }
+            ],
+            "forced": false,
+            "fromId": 1,
+            "hint": 0,
+            "index": 2,
+            "logTerm": 2,
+            "reject": false,
+            "snapshot": {
+              "config": {
+                "autoLeave": false,
+                "learners": [],
+                "learnersNext": [],
+                "outgoing": [],
+                "voters": []
+              },
+              "index": 0,
+              "term": 0
+            },
+            "term": 2,
+            "to": 2,
+            "type": "MsgApp"
+          },
+          {
+            "commit": 2,
+            "context": 0,
+            "entries": [
+              {
+                "changes": [],
+                "encoded": 10,
+                "index": 3,
+                "kind": "Normal",
+                "target": 0,
+                "term": 2,
+                "transition": "Legacy",
+                "weight": 2
+              }
+            ],
+            "forced": false,
+            "fromId": 1,
+            "hint": 0,
+            "index": 2,
+            "logTerm": 2,
+            "reject": false,
+            "snapshot": {
+              "config": {
+                "autoLeave": false,
+                "learners": [],
+                "learnersNext": [],
+                "outgoing": [],
+                "voters": []
+              },
+              "index": 0,
+              "term": 0
+            },
+            "term": 2,
+            "to": 3,
+            "type": "MsgApp"
+          }
+        ]
+      },
+      {
+        "path": "$.prevSS.lead",
+        "left": 0,
+        "right": 1
+      },
+      {
+        "path": "$.prevSS.role",
+        "left": "Follower",
+        "right": "Leader"
+      },
+      {
+        "path": "$.reads",
+        "left": [
+          {
+            "id": 7,
+            "index": 2
+          },
+          {
+            "id": 7,
+            "index": 2
+          },
+          {
+            "id": 8,
+            "index": 2
+          }
+        ],
+        "right": [
+          {
+            "id": 8,
+            "index": 2
+          }
+        ]
+      }
+    ],
+    "input_differences": [],
+    "differences": [
+      {
+        "path": "$.state.messages",
+        "left": [],
+        "right": [
+          {
+            "commit": 0,
+            "context": 0,
+            "entries": [],
+            "forced": false,
+            "fromId": 1,
+            "hint": 0,
+            "index": 0,
+            "logTerm": 0,
+            "reject": false,
+            "snapshot": {
+              "config": {
+                "autoLeave": false,
+                "learners": [],
+                "learnersNext": [],
+                "outgoing": [],
+                "voters": []
+              },
+              "index": 0,
+              "term": 0
+            },
+            "term": 3,
+            "to": 2,
+            "type": "MsgHeartbeatResp"
+          },
+          {
+            "commit": 0,
+            "context": 8,
+            "entries": [],
+            "forced": false,
+            "fromId": 1,
+            "hint": 0,
+            "index": 0,
+            "logTerm": 0,
+            "reject": false,
+            "snapshot": {
+              "config": {
+                "autoLeave": false,
+                "learners": [],
+                "learnersNext": [],
+                "outgoing": [],
+                "voters": []
+              },
+              "index": 0,
+              "term": 0
+            },
+            "term": 2,
+            "to": 2,
+            "type": "MsgHeartbeat"
+          },
+          {
+            "commit": 0,
+            "context": 8,
+            "entries": [],
+            "forced": false,
+            "fromId": 1,
+            "hint": 0,
+            "index": 0,
+            "logTerm": 0,
+            "reject": false,
+            "snapshot": {
+              "config": {
+                "autoLeave": false,
+                "learners": [],
+                "learnersNext": [],
+                "outgoing": [],
+                "voters": []
+              },
+              "index": 0,
+              "term": 0
+            },
+            "term": 2,
+            "to": 3,
+            "type": "MsgHeartbeat"
+          },
+          {
+            "commit": 2,
+            "context": 0,
+            "entries": [
+              {
+                "changes": [],
+                "encoded": 10,
+                "index": 3,
+                "kind": "Normal",
+                "target": 0,
+                "term": 2,
+                "transition": "Legacy",
+                "weight": 2
+              }
+            ],
+            "forced": false,
+            "fromId": 1,
+            "hint": 0,
+            "index": 2,
+            "logTerm": 2,
+            "reject": false,
+            "snapshot": {
+              "config": {
+                "autoLeave": false,
+                "learners": [],
+                "learnersNext": [],
+                "outgoing": [],
+                "voters": []
+              },
+              "index": 0,
+              "term": 0
+            },
+            "term": 2,
+            "to": 2,
+            "type": "MsgApp"
+          },
+          {
+            "commit": 2,
+            "context": 0,
+            "entries": [
+              {
+                "changes": [],
+                "encoded": 10,
+                "index": 3,
+                "kind": "Normal",
+                "target": 0,
+                "term": 2,
+                "transition": "Legacy",
+                "weight": 2
+              }
+            ],
+            "forced": false,
+            "fromId": 1,
+            "hint": 0,
+            "index": 2,
+            "logTerm": 2,
+            "reject": false,
+            "snapshot": {
+              "config": {
+                "autoLeave": false,
+                "learners": [],
+                "learnersNext": [],
+                "outgoing": [],
+                "voters": []
+              },
+              "index": 0,
+              "term": 0
+            },
+            "term": 2,
+            "to": 2,
+            "type": "MsgApp"
+          },
+          {
+            "commit": 2,
+            "context": 0,
+            "entries": [
+              {
+                "changes": [],
+                "encoded": 10,
+                "index": 3,
+                "kind": "Normal",
+                "target": 0,
+                "term": 2,
+                "transition": "Legacy",
+                "weight": 2
+              }
+            ],
+            "forced": false,
+            "fromId": 1,
+            "hint": 0,
+            "index": 2,
+            "logTerm": 2,
+            "reject": false,
+            "snapshot": {
+              "config": {
+                "autoLeave": false,
+                "learners": [],
+                "learnersNext": [],
+                "outgoing": [],
+                "voters": []
+              },
+              "index": 0,
+              "term": 0
+            },
+            "term": 2,
+            "to": 3,
+            "type": "MsgApp"
+          }
+        ]
+      },
+      {
+        "path": "$.state.reads",
+        "left": [],
+        "right": [
+          {
+            "id": 8,
+            "index": 2
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "advance-v02-node-readack",
+    "pre_differences": [],
+    "input_differences": [],
+    "differences": []
+  },
+  {
+    "id": "advance-v02-node-multiple",
+    "pre_differences": [],
+    "input_differences": [],
+    "differences": []
+  },
+  {
+    "id": "restore-v02-full",
+    "pre_differences": [],
+    "input_differences": [],
+    "differences": [
+      {
+        "path": "$.state.config.autoLeave",
+        "left": false,
+        "right": true
+      },
+      {
+        "path": "$.state.config.learnersNext",
+        "left": [],
+        "right": [
+          3
+        ]
+      },
+      {
+        "path": "$.state.config.outgoing",
+        "left": [],
+        "right": [
+          1,
+          3
+        ]
+      },
+      {
+        "path": "$.state.prs",
+        "left": [
+          {
+            "active": true,
+            "id": 1,
+            "inflight": [],
+            "learner": false,
+            "match": 3,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          },
+          {
+            "active": true,
+            "id": 2,
+            "inflight": [],
+            "learner": false,
+            "match": 0,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          },
+          {
+            "active": true,
+            "id": 4,
+            "inflight": [],
+            "learner": true,
+            "match": 0,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          }
+        ],
+        "right": [
+          {
+            "active": true,
+            "id": 1,
+            "inflight": [],
+            "learner": false,
+            "match": 3,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          },
+          {
+            "active": true,
+            "id": 2,
+            "inflight": [],
+            "learner": false,
+            "match": 0,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          },
+          {
+            "active": true,
+            "id": 3,
+            "inflight": [],
+            "learner": false,
+            "match": 0,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          },
+          {
+            "active": true,
+            "id": 4,
+            "inflight": [],
+            "learner": true,
+            "match": 0,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "restart-v02-full",
+    "pre_differences": [],
+    "input_differences": [],
+    "differences": [
+      {
+        "path": "$.state.config.autoLeave",
+        "left": false,
+        "right": true
+      },
+      {
+        "path": "$.state.config.learnersNext",
+        "left": [],
+        "right": [
+          3
+        ]
+      },
+      {
+        "path": "$.state.config.outgoing",
+        "left": [],
+        "right": [
+          1,
+          3
+        ]
+      },
+      {
+        "path": "$.state.prs",
+        "left": [
+          {
+            "active": false,
+            "id": 1,
+            "inflight": [],
+            "learner": false,
+            "match": 3,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          },
+          {
+            "active": false,
+            "id": 2,
+            "inflight": [],
+            "learner": false,
+            "match": 0,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          },
+          {
+            "active": false,
+            "id": 4,
+            "inflight": [],
+            "learner": true,
+            "match": 0,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          }
+        ],
+        "right": [
+          {
+            "active": false,
+            "id": 1,
+            "inflight": [],
+            "learner": false,
+            "match": 3,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          },
+          {
+            "active": false,
+            "id": 2,
+            "inflight": [],
+            "learner": false,
+            "match": 0,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          },
+          {
+            "active": false,
+            "id": 3,
+            "inflight": [],
+            "learner": false,
+            "match": 0,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          },
+          {
+            "active": false,
+            "id": 4,
+            "inflight": [],
+            "learner": true,
+            "match": 0,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "restore-v02-staged-self",
+    "pre_differences": [],
+    "input_differences": [],
+    "differences": []
+  },
+  {
+    "id": "restart-v02-staged-self",
+    "pre_differences": [],
+    "input_differences": [],
+    "differences": [
+      {
+        "path": "$.state.config.autoLeave",
+        "left": false,
+        "right": true
+      },
+      {
+        "path": "$.state.config.learnersNext",
+        "left": [],
+        "right": [
+          1
+        ]
+      },
+      {
+        "path": "$.state.config.outgoing",
+        "left": [],
+        "right": [
+          1,
+          2
+        ]
+      },
+      {
+        "path": "$.state.prs",
+        "left": [
+          {
+            "active": false,
+            "id": 2,
+            "inflight": [],
+            "learner": false,
+            "match": 0,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          },
+          {
+            "active": false,
+            "id": 3,
+            "inflight": [],
+            "learner": false,
+            "match": 0,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          },
+          {
+            "active": false,
+            "id": 4,
+            "inflight": [],
+            "learner": true,
+            "match": 0,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          }
+        ],
+        "right": [
+          {
+            "active": false,
+            "id": 1,
+            "inflight": [],
+            "learner": false,
+            "match": 3,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          },
+          {
+            "active": false,
+            "id": 2,
+            "inflight": [],
+            "learner": false,
+            "match": 0,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          },
+          {
+            "active": false,
+            "id": 3,
+            "inflight": [],
+            "learner": false,
+            "match": 0,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          },
+          {
+            "active": false,
+            "id": 4,
+            "inflight": [],
+            "learner": true,
+            "match": 0,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "restore-v02-learner-self",
+    "pre_differences": [],
+    "input_differences": [],
+    "differences": [
+      {
+        "path": "$.state.config.autoLeave",
+        "left": false,
+        "right": true
+      },
+      {
+        "path": "$.state.config.learnersNext",
+        "left": [],
+        "right": [
+          4
+        ]
+      },
+      {
+        "path": "$.state.config.outgoing",
+        "left": [],
+        "right": [
+          2,
+          4
+        ]
+      },
+      {
+        "path": "$.state.prs",
+        "left": [
+          {
+            "active": true,
+            "id": 1,
+            "inflight": [],
+            "learner": true,
+            "match": 3,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          },
+          {
+            "active": true,
+            "id": 2,
+            "inflight": [],
+            "learner": false,
+            "match": 0,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          },
+          {
+            "active": true,
+            "id": 3,
+            "inflight": [],
+            "learner": false,
+            "match": 0,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          }
+        ],
+        "right": [
+          {
+            "active": true,
+            "id": 1,
+            "inflight": [],
+            "learner": true,
+            "match": 3,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          },
+          {
+            "active": true,
+            "id": 2,
+            "inflight": [],
+            "learner": false,
+            "match": 0,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          },
+          {
+            "active": true,
+            "id": 3,
+            "inflight": [],
+            "learner": false,
+            "match": 0,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          },
+          {
+            "active": true,
+            "id": 4,
+            "inflight": [],
+            "learner": false,
+            "match": 0,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "restart-v02-learner-self",
+    "pre_differences": [],
+    "input_differences": [],
+    "differences": [
+      {
+        "path": "$.state.config.autoLeave",
+        "left": false,
+        "right": true
+      },
+      {
+        "path": "$.state.config.learnersNext",
+        "left": [],
+        "right": [
+          4
+        ]
+      },
+      {
+        "path": "$.state.config.outgoing",
+        "left": [],
+        "right": [
+          2,
+          4
+        ]
+      },
+      {
+        "path": "$.state.prs",
+        "left": [
+          {
+            "active": false,
+            "id": 1,
+            "inflight": [],
+            "learner": true,
+            "match": 3,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          },
+          {
+            "active": false,
+            "id": 2,
+            "inflight": [],
+            "learner": false,
+            "match": 0,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          },
+          {
+            "active": false,
+            "id": 3,
+            "inflight": [],
+            "learner": false,
+            "match": 0,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          }
+        ],
+        "right": [
+          {
+            "active": false,
+            "id": 1,
+            "inflight": [],
+            "learner": true,
+            "match": 3,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          },
+          {
+            "active": false,
+            "id": 2,
+            "inflight": [],
+            "learner": false,
+            "match": 0,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          },
+          {
+            "active": false,
+            "id": 3,
+            "inflight": [],
+            "learner": false,
+            "match": 0,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          },
+          {
+            "active": false,
+            "id": 4,
+            "inflight": [],
+            "learner": false,
+            "match": 0,
+            "mode": "Probe",
+            "next": 4,
+            "pending": 0,
+            "probe": false
+          }
+        ]
+      }
+    ]
+  }
+]

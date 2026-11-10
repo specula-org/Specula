@@ -1,0 +1,16 @@
+{
+  "command": [
+    "/usr/local/go/bin/go",
+    "test",
+    "-count=1",
+    "-run",
+    "^TestActionValidationCampaign$",
+    "-timeout",
+    "120s",
+    "."
+  ],
+  "cwd": "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/work/V02/source",
+  "exit_code": 0,
+  "seconds": 1.1162356659770012,
+  "log": "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/results/campaign-V02-baseline/code-driven-code.log"
+}

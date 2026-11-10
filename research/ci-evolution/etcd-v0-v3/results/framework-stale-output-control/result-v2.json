@@ -1,0 +1,31 @@
+{
+  "synthetic_test": true,
+  "purpose": "detect stale exported successor when current model relation is disabled",
+  "results": [
+    {
+      "label": "enabled-v2",
+      "exit_code": 0,
+      "exported_results": 1,
+      "statuses": [
+        "ok"
+      ]
+    },
+    {
+      "label": "disabled-reused-v2",
+      "exit_code": 0,
+      "exported_results": 1,
+      "statuses": [
+        "ok"
+      ]
+    },
+    {
+      "label": "disabled-fresh-v2",
+      "exit_code": 0,
+      "exported_results": 1,
+      "statuses": [
+        "unsupported"
+      ]
+    }
+  ],
+  "adapter_sha256": "7efa69a3bfe32c67f526a6eca7e4347acd4986b52b7a4c199a00d5aa941ba2ac"
+}

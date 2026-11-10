@@ -1,0 +1,99 @@
+{
+  "protocol": "action-validation/v1",
+  "route": "code-to-model",
+  "spec": "old/spec",
+  "counts": {
+    "match": 6
+  },
+  "total": 6,
+  "commands": [
+    {
+      "engine": "implementation",
+      "command": [
+        "python3",
+        "out/framework/adapters/go/run.py",
+        "--input",
+        "/workspace/out/cases/v03-chain-inputs.json",
+        "--output",
+        "/workspace/out/cases/old-chain/implementation.jsonl",
+        "--work",
+        "/workspace/out/cases/old-chain/implementation",
+        "--source",
+        "old/source"
+      ],
+      "duration_seconds": 1.066478113643825,
+      "exit_code": 0
+    },
+    {
+      "engine": "model",
+      "command": [
+        "python3",
+        "out/framework/adapters/tla/run.py",
+        "--input",
+        "/workspace/out/cases/v03-chain-inputs.json",
+        "--output",
+        "/workspace/out/cases/old-chain/model.jsonl",
+        "--spec",
+        "/workspace/old/spec",
+        "--work",
+        "/workspace/out/cases/old-chain/model"
+      ],
+      "duration_seconds": 2.7703876104205847,
+      "exit_code": 0
+    }
+  ],
+  "results": [
+    {
+      "id": "v03-propose-apply-simple-Auto",
+      "action": "propose_then_apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-propose-apply-simple-JointExplicit",
+      "action": "propose_then_apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-propose-apply-simple-JointImplicit",
+      "action": "propose_then_apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-propose-apply-joint-Auto",
+      "action": "propose_then_apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-propose-apply-joint-JointExplicit",
+      "action": "propose_then_apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-propose-apply-joint-JointImplicit",
+      "action": "propose_then_apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    }
+  ],
+  "extra_results": {
+    "implementation": [],
+    "model": []
+  }
+}

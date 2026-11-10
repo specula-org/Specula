@@ -1,0 +1,63 @@
+TLC2 Version 2.20 of Day Month 20?? (rev: ${git.shortRevision})
+Running breadth-first search Model-Checking with fp 2 and seed -8998269573693074059 with 1 worker on 96 cores with 1963MB heap and 64MB offheap memory [pid: 4927] (Linux 6.8.0-1044-azure amd64, Ubuntu 21.0.11 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /workspace/out/cases/v02-invalid-01/model/raw/LocalActions.tla
+Parsing file /workspace/out/cases/v02-invalid-01/model/raw/base.tla
+Parsing file /workspace/out/tmp/tlc-8829084679642025077/Json.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Json.tla)
+Parsing file /workspace/out/tmp/tlc-8829084679642025077/_TLCTrace.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/_TLCTrace.tla)
+Parsing file /workspace/out/tmp/tlc-8829084679642025077/Naturals.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Naturals.tla)
+Parsing file /workspace/out/tmp/tlc-8829084679642025077/Integers.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Integers.tla)
+Parsing file /workspace/out/tmp/tlc-8829084679642025077/Sequences.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Sequences.tla)
+Parsing file /workspace/out/tmp/tlc-8829084679642025077/FiniteSets.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/FiniteSets.tla)
+Parsing file /workspace/out/tmp/tlc-8829084679642025077/Bags.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Bags.tla)
+Parsing file /workspace/out/tmp/tlc-8829084679642025077/TLC.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/TLC.tla)
+Parsing file /workspace/out/cases/v02-invalid-01/model/raw/ModelDomains.tla
+Parsing file /workspace/out/tmp/tlc-8829084679642025077/TLCExt.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/TLCExt.tla)
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module Bags
+Semantic processing of module base
+Semantic processing of module Json
+Semantic processing of module TLCExt
+Semantic processing of module _TLCTrace
+Semantic processing of module ModelDomains
+Semantic processing of module LocalActions
+Linting of module base
+Linting of module Json
+Linting of module TLCExt
+Linting of module _TLCTrace
+Linting of module ModelDomains
+Linting of module LocalActions
+Starting... (2026-09-22 18:22:13)
+Computing initial states...
+Error: Attempted to evaluate an expression of form P /\ Q when P was
+a record.
+line 82, col 75 to line 85, col 94 of module LocalActions
+Error: The error occurred when TLC was evaluating the nested
+expressions at the following positions:
+0. Line 79, column 14 to line 89, column 65 in LocalActions
+1. Line 79, column 14 to line 81, column 77 in LocalActions
+2. Line 79, column 14 to line 80, column 23 in LocalActions
+3. Line 79, column 14 to line 79, column 80 in LocalActions
+4. Line 79, column 17 to line 79, column 80 in LocalActions
+5. Line 79, column 17 to line 79, column 33 in LocalActions
+6. Line 79, column 38 to line 79, column 80 in LocalActions
+7. Line 80, column 5 to line 80, column 23 in LocalActions
+8. Line 81, column 5 to line 81, column 77 in LocalActions
+9. Line 82, column 5 to line 89, column 65 in LocalActions
+10. Line 82, column 12 to line 89, column 65 in LocalActions
+11. Line 82, column 75 to line 89, column 65 in LocalActions
+12. Line 82, column 75 to line 89, column 41 in LocalActions
+13. Line 82, column 75 to line 89, column 17 in LocalActions
+14. Line 82, column 75 to line 88, column 47 in LocalActions
+15. Line 82, column 75 to line 87, column 42 in LocalActions
+16. Line 82, column 75 to line 86, column 38 in LocalActions
+17. Line 82, column 75 to line 85, column 94 in LocalActions
+
+
+0 states generated, 0 distinct states found, 0 states left on queue.
+The depth of the complete state graph search is 0.
+Finished in 00s at (2026-09-22 18:22:13)
+

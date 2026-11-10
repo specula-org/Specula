@@ -1,0 +1,34 @@
+ M .gitignore
+ D README.md
+ M case-studies
+ M scripts/infra/record_bug.py
+ M skills/bug-classification/SKILL.md
+ M skills/bug-classification/guide.md
+ M skills/bug-confirmation/guide.md
+ M skills/bug-confirmation/phases/02-reproduction.md
+ M skills/bug-confirmation/references/repair-request-format.md
+ M src/specula/confirmlib.py
+ M src/specula/phaselib.py
+ M src/specula/pipelinelib.py
+ M src/specula/prompts/confirmation/context.md
+ M tests/unit/test_confirmlib.py
+ M tests/unit/test_pipelinelib.py
+ M tests/unit/test_record_bug.py
+ M tests/unit/test_skill_install.py
+ M tools/SysMoBench
+ M tools/tlaplus
+?? .agents/
+?? CHANGELOG.md
+?? Report.md
+?? analysis/
+?? docs/BUG_RECORD_LOGIC_REVIEW.md
+?? docs/BUG_RECORD_MISSING_CANDIDATES.md
+?? docs/BUG_RECORD_MISSING_CANDIDATES_FINAL_SUMMARY.md
+?? docs/BUG_RECORD_MISSING_CANDIDATES_REVIEW.md
+?? effort_EXP/
+?? guidance_EXP/
+?? intro.md
+?? paper-outline.md
+?? scripts/exp/render_effort_bug_coverage.py
+?? scripts/render_effort_bug_coverage.py
+?? skills/incremental-modeling/

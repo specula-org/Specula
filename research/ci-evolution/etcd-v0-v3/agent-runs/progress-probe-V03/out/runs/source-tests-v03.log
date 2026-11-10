@@ -1,0 +1,6 @@
+ok  	go.etcd.io/etcd/raft	0.003s
+ok  	go.etcd.io/etcd/raft/confchange	0.002s [no tests to run]
+ok  	go.etcd.io/etcd/raft/quorum	0.002s [no tests to run]
+ok  	go.etcd.io/etcd/raft/raftpb	0.002s [no tests to run]
+ok  	go.etcd.io/etcd/raft/rafttest	0.002s [no tests to run]
+ok  	go.etcd.io/etcd/raft/tracker	0.002s [no tests to run]

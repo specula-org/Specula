@@ -1,0 +1,10 @@
+{
+ "$schema":"https://json-schema.org/draft/2020-12/schema",
+ "$id":"action-validation/v1",
+ "description":"Local action cases and adapter results. JSON Schema is documentation; the runner also checks case envelopes and IDs.",
+ "oneOf":[{"$ref":"#/$defs/case"},{"$ref":"#/$defs/result"}],
+ "$defs":{
+  "case":{"type":"object","required":["protocol","id","action","pre","input","meta"],"properties":{"protocol":{"const":"action-validation/v1"},"id":{"type":"string","pattern":"^[a-zA-Z0-9_.-]+$"},"action":{"type":"string"},"pre":{"type":"object"},"input":{"type":"object"},"meta":{"type":"object"}}},
+  "result":{"type":"object","required":["protocol","id","engine","adapter_status"],"properties":{"protocol":{"const":"action-validation/v1"},"id":{"type":"string"},"engine":{"type":"string"},"adapter_status":{"enum":["ok","error","unsupported"]},"testcase":{"$ref":"#/$defs/case"},"pre_observation":{},"input_observation":{},"observation":{"type":"object","required":["state","status","return"],"properties":{"state":{},"status":{"type":"string"},"return":{}}}},"allOf":[{"if":{"properties":{"adapter_status":{"const":"ok"}}},"then":{"required":["pre_observation","input_observation","observation"]}}]}
+ }
+}

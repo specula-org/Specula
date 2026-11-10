@@ -1,0 +1,46 @@
+{
+  "scope": "local, structurally valid mapped action cases; not global reachability or complete conformance",
+  "versions": [
+    {
+      "version": "V01",
+      "first_completed_code_instances": 105,
+      "first_completed_model_instances": 43,
+      "accepted_base_sha256": "56bcc42634e80d9a089967d7b98e14502c4bc5b06ecc2aa5fa9b5ac148389bda",
+      "result_path": "agent-runs/model-V01/out/results.json",
+      "backward_regression_instances": 653,
+      "final_historical_trace_regression": {
+        "passed": 8,
+        "total": 8,
+        "events": 4629,
+        "all_model_hashes_match": true,
+        "fresh_source_execution": false,
+        "result_path": "results/trace-V01-final-backward-repairs/summary.json"
+      }
+    },
+    {
+      "version": "V02",
+      "first_completed_code_instances": 239,
+      "first_completed_model_instances": 103,
+      "accepted_base_sha256": "45105c68d53c632951511dec7817e8fd698c3be43cd05a6f3d4fec5d438f1c30",
+      "result_path": "agent-runs/model-V02/out/results.json",
+      "backward_regression_instances": 653,
+      "final_historical_trace_regression": {
+        "passed": 11,
+        "total": 11,
+        "events": 5778,
+        "all_model_hashes_match": true,
+        "fresh_source_execution": false,
+        "result_path": "results/trace-V02-final-backward-repairs/summary.json"
+      }
+    },
+    {
+      "version": "V03",
+      "first_completed_code_instances": 479,
+      "first_completed_model_instances": 174,
+      "accepted_base_sha256": "3aa10c0b1a96108e6a5525392eec4bf3d4deed6cea21bcc365085cda84067e21",
+      "result_path": "agent-runs/model-V03/out/results.json",
+      "backward_regression_instances": null
+    }
+  ],
+  "terminal_panic_observation": "control/terminal-panic-observation.md"
+}

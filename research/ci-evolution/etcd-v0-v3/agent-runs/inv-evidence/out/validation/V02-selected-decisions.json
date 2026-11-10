@@ -1,0 +1,167 @@
+[
+  {
+    "name": "VoteDecisionEligibility",
+    "decision": "modify",
+    "classification": "semantic_requirement_change",
+    "semantic_or_representation_change": "semantic",
+    "evidence": [
+      "old/spec/base.tla:630-655 (VoteObservation and exact VoteContract)",
+      "old/source/raft_test.go:381 (TestLearnerCannotVote)",
+      "new/source/raft.go:924-971 (promotion-lag rationale and shared Vote/PreVote branch)",
+      "new/source/raft_test.go:381-396 (TestLearnerCanVote; assertion defect recorded separately)"
+    ],
+    "proposed_expression_or_predicate": "Retain VoteContract definitions lease, stale, reset, t, v, lead, fresh, can. Set grant = ~lease /\\ ~stale /\\ fresh /\\ can; silence = lease \\/ (stale /\\ m.type=\"MsgVote\"). Keep exact expected response type, term, recipient, reject flag and count=1, afterTerm=t, and afterVote=(IF grant /\\ m.type=\"MsgVote\" THEN m.from ELSE v). No voter-membership test on the receiver or candidate is introduced.",
+    "witness": {
+      "kind": "disagreement",
+      "state_or_transition": "Node 2 locally has voters={1}, learners={2}, term=1, vote=0, lead=0, lastTerm<=11, lastIndex<=11. Receive MsgVote(from=1,to=2,term=2,logTerm=11,index=11), with no lease suppression. Post: term=2, vote=1, exactly one MsgVoteResp(to=1,term=2,reject=false).",
+      "old_property_or_suite": "False: old VoteContract requires learner silence.",
+      "proposed_property": "True. Conversely, silence for this eligible request passes the old decision contract and fails the proposed one.",
+      "validation_scope": "local transition; not executed"
+    },
+    "reason": "The documented requirement now permits and requires eligible locally classified learners to respond, including PreVote. Vote freshness, one vote per term, leases and future-PreVote term behavior remain required.",
+    "observer_or_model_work": "Remove only the learner early return in the NEW reference StepVote. Keep the old model for comparison. Keep learner in VoteObservation as diagnostic evidence; do not suppress its observation."
+  },
+  {
+    "name": "LearnerEligibility",
+    "decision": "modify",
+    "classification": "semantic_requirement_change",
+    "semantic_or_representation_change": "semantic",
+    "evidence": [
+      "old/spec/base.tla:1289-1290 (grant and campaign conjuncts)",
+      "new/source/raft.go:933-948; new/source/raft.go:1456-1460",
+      "new/source/raft_test.go:311-326; new/source/raft_test.go:3921-3950"
+    ],
+    "proposed_expression_or_predicate": "\\A x \\in history.campaigns : ~x.learner. Delete only the blanket no-learner-grants conjunct. Retain VoteDecisionEligibility for grant legality and QuorumAccounting/ReadBasis for voter-only counting.",
+    "witness": {
+      "kind": "disagreement",
+      "state_or_transition": "Node 2 locally has voters={1}, learners={2}, term=1, vote=0, lead=0, lastTerm<=11, lastIndex<=11. Receive MsgVote(from=1,to=2,term=2,logTerm=11,index=11), with no lease suppression. Post: term=2, vote=1, exactly one MsgVoteResp(to=1,term=2,reject=false).",
+      "old_property_or_suite": "False: old VoteContract requires learner silence.",
+      "proposed_property": "True. Conversely, silence for this eligible request passes the old decision contract and fails the proposed one.",
+      "validation_scope": "local transition; not executed"
+    },
+    "reason": "A learner may vote for an up-to-date candidate but may not start Hup, timeout or transfer-triggered campaigns while locally a learner. LearnersNext are outgoing voters until leave, not active learners."
+  },
+  {
+    "name": "CampaignDecisionEligibility",
+    "decision": "modify",
+    "classification": "pre_existing_property_repair",
+    "semantic_or_representation_change": "neither",
+    "evidence": [
+      "old/spec/base.tla:673-692 (CampaignContract uses IsSingleton)",
+      "old/spec/base.tla:131-141; old/spec/base.tla:250-261",
+      "new/source/raft.go:770-809 (self poll under joint quorum)",
+      "new/source/tracker/tracker.go:156-159 (read fast-path IsSingleton)"
+    ],
+    "proposed_expression_or_predicate": "In CampaignContract replace its local singleton test by selfWins = JointWon(o.config,{o.node}); use selfWins in expected requests, afterRole and afterTerm. Retain ignore/due tests, freshness and multiplicity checks, and pending scan over ALL ConfKinds, including V2. Do not change the global IsSingleton used for reads.",
+    "witness": {
+      "kind": "disagreement",
+      "state_or_transition": "Eligible follower 1, applied=commit, voters={1}, outgoing={1}, learners={}, PreVote enabled. Hup yields Leader at term+1 with no external vote requests.",
+      "old_property_or_suite": "False: IsSingleton is false for a nonempty outgoing half, so old contract expects PreCandidate at the same term.",
+      "proposed_property": "True: self wins both halves.",
+      "validation_scope": "local transition; not executed"
+    },
+    "reason": "The source already used joint self-voting before this patch. This repairs an old oracle defect made relevant by restoring joint configurations; it is not permission to campaign over unapplied V2 entries."
+  },
+  {
+    "name": "ReadyOwnership",
+    "decision": "modify",
+    "classification": "semantic_requirement_change",
+    "semantic_or_representation_change": "semantic",
+    "evidence": [
+      "old/spec/base.tla:955-983; old/spec/base.tla:1321-1326",
+      "old/source/rawnode.go:122-158,183-191",
+      "new/source/rawnode.go:119-145,170-176",
+      "new/source/node.go:306-319,385-391; new/source/rawnode_test.go:928-960"
+    ],
+    "proposed_expression_or_predicate": "At EVERY accepted Ready (RawNode.Ready return or Node channel handoff): quotaAfter=quotaBefore, returnedMessages=outBefore, returnedReads=readsBefore, outAfter=EmptyBag, readsAfter=<<>>; prevSoftAfter equals returned SoftState when present, otherwise prevSoftBefore. Ready acceptance leaves prevHardState, log stability and applied cursor unchanged. Remove the old raw/nonraw difference. A preview is not acceptance.",
+    "witness": {
+      "kind": "disagreement",
+      "state_or_transition": "RawNode has out={m1}, readStates=<<r1>>, quota=q and a new SoftState. RawNode.Ready returns those values and leaves out={}, readStates=<<>>, prevSoftSt equal to the returned SoftState, quota=q.",
+      "old_property_or_suite": "False: the old raw branch requires out and readStates to remain pending.",
+      "proposed_property": "True; leaving m1/r1 in the core after delivery is now a failure.",
+      "validation_scope": "local transition; not executed"
+    },
+    "reason": "RawNode.Ready now accepts ownership immediately and its result must be handled and advanced. Node speculative preparation must remain read-only.",
+    "observer_or_model_work": "Extend readyChecks with the returned batch and before/after soft/hard/cursor fields. New ProtocolReady must accept for both wrappers. Move RawNode acceptance out of AdvanceCore; keep one outstanding accepted batch and caller persistence/publication obligations."
+  },
+  {
+    "name": "ReadyAccounting",
+    "decision": "modify",
+    "classification": "representation_migration",
+    "semantic_or_representation_change": "representation",
+    "evidence": [
+      "old/spec/base.tla:1096-1113 (lostReads observer)",
+      "old/spec/base.tla:1313-1320 (predicate)",
+      "new/source/rawnode.go:138-145,170-176"
+    ],
+    "proposed_expression_or_predicate": "Keep the ReadyAccounting invariant expression (history.lostReads={} and existing pagination/cursor checks). Repair the Advance observer: detect actual removals from pre-Advance pending readStates to post-Advance pending readStates on EVERY Advance, independent of b.raw and whether b.reads was empty. Retain sequence/multiplicity evidence for exact preservation; pending reads not in the old batch are not lost merely because they have not yet been handed to the caller.",
+    "witness": {
+      "kind": "disagreement",
+      "state_or_transition": "Ready B delivered r1; while B is outstanding, r2 is produced. Advance(B) preserves pending readStates=<<r2>>, and application.reads contains r1 only.",
+      "old_property_or_suite": "False under the old observer: b.reads is nonempty and r2 is absent from application.reads, so it records r2 as lost even when preserved.",
+      "proposed_property": "True. Conversely, B.reads=<<>> followed by r2 production and erroneous clearing at Advance is missed by the old guard but rejected by the repaired observer.",
+      "validation_scope": "local transition; not executed"
+    },
+    "reason": "The no-lost-reads and page-boundary requirements are unchanged. This is a pre-existing observer defect exposed by the new legal interleavings, not a weaker read contract.",
+    "observer_or_model_work": "Compute loss from actual pre/post output evidence, not from membership in the application queue. The separate AdvancePreservesPendingOutput property also checks exact sequence equality and messages."
+  },
+  {
+    "name": "AdvancePreservesPendingOutput",
+    "decision": "add",
+    "classification": "unchanged_requirement_coverage_gap",
+    "semantic_or_representation_change": "neither",
+    "evidence": [
+      "new/source/rawnode_test.go:928-960 (m1/Ready/m2/Advance witness)",
+      "new/source/rawnode.go:170-176; new/source/raft.go:556-593",
+      "old/spec/base.tla:1078-1095; old/spec/base.tla:1307-1326"
+    ],
+    "proposed_expression_or_predicate": "For each successful Advance of the outstanding accepted batch, outAfter=outBeforeAdvance, readStatesAfter=readStatesBeforeAdvance, and prevSoftAfter=prevSoftBeforeAdvance. prevHardAfter is the batch HardState if nonempty, otherwise unchanged. Acknowledgement may stabilize only batch entries/snapshot and advance only its applied cursor; later pending work must be available to a subsequent Ready.",
+    "witness": {
+      "kind": "disagreement",
+      "state_or_transition": "Ready B owns message m1. Receive a heartbeat while B is outstanding, producing distinct m2. Advance(B) incorrectly empties the message buffer.",
+      "old_property_or_suite": "Old AckPreservation checks log/snapshot/applied state, ReadyAccounting checks reads, and ReadyOwnership checks only Ready; none detects this message loss.",
+      "proposed_property": "False: m2 must survive. New source TestRawNodeConsumeReady specifies this behavior.",
+      "validation_scope": "local transition; not executed"
+    },
+    "reason": "A direct gap remains even after fixing ReadyOwnership: a mutant can accept Ready correctly but still clear newer messages at Advance. Old RawNode documentation excluded Step interleavings; the new API/test expressly supports preserving this work."
+  },
+  {
+    "name": "AutoLeaveAdvance",
+    "decision": "modify",
+    "classification": "pre_existing_property_repair",
+    "semantic_or_representation_change": "neither",
+    "evidence": [
+      "old/spec/base.tla:1078-1109,1327-1333",
+      "new/source/raft.go:556-583 (unchanged index>0 outer guard)",
+      "new/source/tracker/tracker.go:29-33"
+    ],
+    "proposed_expression_or_predicate": "Retain AutoLeaveAdvance effect predicate. Repair eligible observation to include b.cursor>0 in addition to pre-Advance autoLeave, cursor>=pendingConf and Leader; check normal/nonfatal Advance states. Do not infer eligibility from successful append. Eligible attempts still must append a leave or record the quota retry cursor.",
+    "witness": {
+      "kind": "disagreement",
+      "state_or_transition": "Construct a local Advance fixture: Leader with valid joint config, AutoLeave=true, pendingConf=0, Ready cursor=0 and no entries/snapshot, enough quota. No append occurs.",
+      "old_property_or_suite": "False: old observer sets eligible=true although AdvanceCore and source explicitly skip cursor zero.",
+      "proposed_property": "True: ineligible. For cursor=5, pendingConf=5 and enough quota, a no-append transition remains false.",
+      "validation_scope": "local function fixture; reachability from bounded MCInit is unresolved"
+    },
+    "reason": "This is a pre-existing mismatch between observer and unchanged source guard. Full preservation of AutoLeave during restore is already required; do not weaken positive-cursor obligations."
+  },
+  {
+    "name": "AutoLeaveAttemptExactness",
+    "decision": "add",
+    "classification": "unchanged_requirement_coverage_gap",
+    "semantic_or_representation_change": "neither",
+    "evidence": [
+      "new/source/raft.go:561-585; new/source/raftpb/confchange.go:98-104",
+      "old/spec/base.tla:77-82,184-190,1328-1333"
+    ],
+    "proposed_expression_or_predicate": "For an eligible normal Advance, compute quotaBlocked from PRE-attempt quota>0 and quota+AutoLeaveWeight>MaxUncommitted. If blocked, history is unchanged and pendingConf becomes pre-attempt Last. Otherwise append exactly one fresh entry at Last+1 in current term with kind=V2, changes=<<>>, transition=Auto, id=0 and canonical serialized payload; preserve the old prefix. Ineligible Advance appends no automatic leave. Apply the existing committed-entry quota reduction after the attempt. Do not require zero payload weight.",
+    "witness": {
+      "kind": "disagreement",
+      "state_or_transition": "Eligible Advance with sufficient quota appends V2(changes=<<>>,transition=JointExplicit) at Last+1; or appends nothing while a stale decision=DropQuota and pending=Last remain from an earlier call.",
+      "old_property_or_suite": "AutoLeaveAdvance accepts the first because it checks only kind and empty changes, and can accept the second via stale decision.",
+      "proposed_property": "False in both cases; the entry must satisfy IsLeave, or a quota refusal must be justified by this attempt.",
+      "validation_scope": "local transition; not executed"
+    },
+    "reason": "The old property remains useful but cannot establish a genuine leave or a genuine quota refusal. The canonical empty V2 is nonzero-sized in this revision. Repeated successful automatic exits and eventual exit remain separately flagged."
+  }
+]

@@ -1,0 +1,1330 @@
+{
+  "protocol": "action-validation/v1",
+  "route": "model-to-code",
+  "spec": "new/spec",
+  "counts": {
+    "match": 93,
+    "behavioral_mismatch": 10
+  },
+  "total": 103,
+  "commands": [
+    {
+      "engine": "model",
+      "command": [
+        "python3",
+        "out/framework/adapters/tla/run.py",
+        "--input",
+        "/workspace/out/framework/targets/etcd/model-seeds.json",
+        "--output",
+        "/workspace/out/cases/v02-final-02/baseline-model/model.jsonl",
+        "--spec",
+        "/workspace/new/spec",
+        "--work",
+        "/workspace/out/cases/v02-final-02/baseline-model/model",
+        "--generate"
+      ],
+      "duration_seconds": 2.3187386859208345,
+      "exit_code": 0
+    },
+    {
+      "engine": "implementation",
+      "command": [
+        "python3",
+        "out/framework/adapters/go/run.py",
+        "--input",
+        "/workspace/out/cases/v02-final-02/baseline-model/generated-cases.json",
+        "--output",
+        "/workspace/out/cases/v02-final-02/baseline-model/implementation.jsonl",
+        "--work",
+        "/workspace/out/cases/v02-final-02/baseline-model/implementation"
+      ],
+      "duration_seconds": 0.36486163828521967,
+      "exit_code": 0
+    }
+  ],
+  "results": [
+    {
+      "id": "tlc-ack-joint-1",
+      "action": "readack",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-advance-raw-True-2-0-Leader-2-0-0",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-advance-raw-True-2-0-Leader-2-0-16",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-advance-raw-True-2-0-Leader-2-2-0",
+      "action": "advance_raw",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.last",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.log",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            }
+          ],
+          "right": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            },
+            {
+              "changes": [],
+              "encoded": 10,
+              "index": 3,
+              "kind": "V2",
+              "target": 0,
+              "term": 2,
+              "transition": "Auto",
+              "weight": 2
+            }
+          ]
+        },
+        {
+          "path": "$.state.prs[0].match",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.prs[0].next",
+          "left": 3,
+          "right": 4
+        },
+        {
+          "path": "$.state.quota",
+          "left": 0,
+          "right": 2
+        },
+        {
+          "path": "$.state.unstable",
+          "left": [],
+          "right": [
+            {
+              "changes": [],
+              "encoded": 10,
+              "index": 3,
+              "kind": "V2",
+              "target": 0,
+              "term": 2,
+              "transition": "Auto",
+              "weight": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tlc-advance-raw-True-2-0-Leader-2-2-16",
+      "action": "advance_raw",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.pending",
+          "left": 0,
+          "right": 3
+        }
+      ]
+    },
+    {
+      "id": "tlc-advance-v02-raw-empty",
+      "action": "advance_raw",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.return",
+          "left": {
+            "batchAfter": {
+              "committed": [],
+              "cursor": 0,
+              "entries": [],
+              "hs": {
+                "commit": 0,
+                "term": 0,
+                "vote": 0
+              },
+              "messages": [],
+              "mustSync": false,
+              "reads": [],
+              "snapshot": {
+                "config": {
+                  "autoLeave": false,
+                  "learners": [],
+                  "learnersNext": [],
+                  "outgoing": [],
+                  "voters": []
+                },
+                "index": 0,
+                "term": 0
+              },
+              "ss": null
+            }
+          },
+          "right": null
+        },
+        {
+          "path": "$.status",
+          "left": "ok",
+          "right": "disabled"
+        }
+      ]
+    },
+    {
+      "id": "tlc-advance-v02-raw-multiple-0-0",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-advance-v02-raw-multiple-0-16",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-advance-v02-raw-multiple-2-0",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-advance-v02-raw-multiple-2-16",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-apply-joint-demote-Auto-0",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-apply-joint-demote-Auto-1",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-apply-joint-demote-JointExplicit-0",
+      "action": "apply",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.return",
+          "left": null,
+          "right": {
+            "autoLeave": false,
+            "learners": [
+              3
+            ],
+            "learnersNext": [],
+            "outgoing": [],
+            "voters": [
+              1,
+              2
+            ]
+          }
+        },
+        {
+          "path": "$.state.config.autoLeave",
+          "left": true,
+          "right": false
+        },
+        {
+          "path": "$.state.config.learners",
+          "left": [],
+          "right": [
+            3
+          ]
+        },
+        {
+          "path": "$.state.config.learnersNext",
+          "left": [
+            3
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.config.outgoing",
+          "left": [
+            1,
+            2,
+            3
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.prs[2].learner",
+          "left": false,
+          "right": true
+        },
+        {
+          "path": "$.status",
+          "left": "panic",
+          "right": "ok"
+        }
+      ]
+    },
+    {
+      "id": "tlc-apply-joint-demote-JointExplicit-1",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-apply-joint-demote-JointImplicit-0",
+      "action": "apply",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.return",
+          "left": null,
+          "right": {
+            "autoLeave": false,
+            "learners": [
+              3
+            ],
+            "learnersNext": [],
+            "outgoing": [],
+            "voters": [
+              1,
+              2
+            ]
+          }
+        },
+        {
+          "path": "$.state.config.autoLeave",
+          "left": true,
+          "right": false
+        },
+        {
+          "path": "$.state.config.learners",
+          "left": [],
+          "right": [
+            3
+          ]
+        },
+        {
+          "path": "$.state.config.learnersNext",
+          "left": [
+            3
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.config.outgoing",
+          "left": [
+            1,
+            2,
+            3
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.prs[2].learner",
+          "left": false,
+          "right": true
+        },
+        {
+          "path": "$.status",
+          "left": "panic",
+          "right": "ok"
+        }
+      ]
+    },
+    {
+      "id": "tlc-apply-joint-demote-JointImplicit-1",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-apply-legacy-demote",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-apply-reduced-quorum-commit",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-apply-simple-demote-Auto-0",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-apply-simple-demote-Auto-1",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-apply-simple-demote-JointExplicit-0",
+      "action": "apply",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.return",
+          "left": {
+            "autoLeave": false,
+            "learners": [],
+            "learnersNext": [],
+            "outgoing": [
+              1,
+              2,
+              3
+            ],
+            "voters": [
+              1,
+              2,
+              3
+            ]
+          },
+          "right": null
+        },
+        {
+          "path": "$.state.config.outgoing",
+          "left": [
+            1,
+            2,
+            3
+          ],
+          "right": []
+        },
+        {
+          "path": "$.status",
+          "left": "ok",
+          "right": "panic"
+        }
+      ]
+    },
+    {
+      "id": "tlc-apply-simple-demote-JointExplicit-1",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-apply-simple-demote-JointImplicit-0",
+      "action": "apply",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.return",
+          "left": {
+            "autoLeave": true,
+            "learners": [],
+            "learnersNext": [],
+            "outgoing": [
+              1,
+              2,
+              3
+            ],
+            "voters": [
+              1,
+              2,
+              3
+            ]
+          },
+          "right": null
+        },
+        {
+          "path": "$.state.config.autoLeave",
+          "left": true,
+          "right": false
+        },
+        {
+          "path": "$.state.config.outgoing",
+          "left": [
+            1,
+            2,
+            3
+          ],
+          "right": []
+        },
+        {
+          "path": "$.status",
+          "left": "ok",
+          "right": "panic"
+        }
+      ]
+    },
+    {
+      "id": "tlc-apply-simple-demote-JointImplicit-1",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-hup-V2-False-1-FALSE",
+      "action": "hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-hup-V2-False-1-TRUE",
+      "action": "hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-hup-V2-False-2-FALSE",
+      "action": "hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-hup-V2-False-2-TRUE",
+      "action": "hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-hup-v02-learner-False-1-FALSE",
+      "action": "hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-hup-v02-learner-False-1-TRUE",
+      "action": "hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-hup-v02-learner-False-2-FALSE",
+      "action": "hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-hup-v02-learner-False-2-TRUE",
+      "action": "hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-proposal-V2-0-0-0-0-0",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-proposal-V2-0-0-0-0-15",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-proposal-V2-0-0-0-0-16",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-proposal-V2-0-0-0-2-0",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-proposal-V2-0-0-0-2-15",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-proposal-V2-0-0-0-2-16",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-quorum-joint-0-2",
+      "action": "checkquorum",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-quorum-joint-0-3",
+      "action": "checkquorum",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-quorum-joint-0-4",
+      "action": "checkquorum",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-read-joint-single-False-1",
+      "action": "read",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-read-joint-single-False-2",
+      "action": "read",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-ready-raw-False-2-1-Leader-2",
+      "action": "ready_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-ready-v02-raw-empty",
+      "action": "ready_raw",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.return",
+          "left": {
+            "committed": [],
+            "cursor": 0,
+            "entries": [],
+            "hs": {
+              "commit": 0,
+              "term": 0,
+              "vote": 0
+            },
+            "messages": [],
+            "mustSync": false,
+            "reads": [],
+            "snapshot": {
+              "config": {
+                "autoLeave": false,
+                "learners": [],
+                "learnersNext": [],
+                "outgoing": [],
+                "voters": []
+              },
+              "index": 0,
+              "term": 0
+            },
+            "ss": null
+          },
+          "right": null
+        },
+        {
+          "path": "$.status",
+          "left": "ok",
+          "right": "disabled"
+        }
+      ]
+    },
+    {
+      "id": "tlc-receive-joint-outgoing-only-False",
+      "action": "receive",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-receive-learner-ignored-False",
+      "action": "receive",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-receive-voter-wins-False",
+      "action": "receive",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-restart-joint",
+      "action": "restart",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-restart-v02-full",
+      "action": "restart",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-restart-v02-learner-self",
+      "action": "restart",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-restart-v02-staged-self",
+      "action": "restart",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-restore-joint-2",
+      "action": "restore",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-restore-joint-3",
+      "action": "restore",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-restore-v02-full-2",
+      "action": "restore",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-restore-v02-full-3",
+      "action": "restore",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-restore-v02-staged-self-2",
+      "action": "restore",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-restore-v02-staged-self-3",
+      "action": "restore",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-vote-learner-MsgPreVote-grant-1-1-0",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-vote-learner-MsgPreVote-grant-1-1-3",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-vote-learner-MsgPreVote-grant-1-2-0",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-vote-learner-MsgPreVote-grant-1-2-3",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-vote-learner-MsgPreVote-grant-2-1-0",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-vote-learner-MsgPreVote-grant-2-1-3",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-vote-learner-MsgPreVote-grant-2-2-0",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-vote-learner-MsgPreVote-grant-2-2-3",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-vote-learner-MsgPreVote-grant-3-1-0",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-vote-learner-MsgPreVote-grant-3-1-3",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-vote-learner-MsgPreVote-grant-3-2-0",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-vote-learner-MsgPreVote-grant-3-2-3",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-vote-learner-MsgVote-grant-1-1-0",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-vote-learner-MsgVote-grant-1-1-3",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-vote-learner-MsgVote-grant-1-2-0",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-vote-learner-MsgVote-grant-1-2-3",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-vote-learner-MsgVote-grant-2-1-0",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-vote-learner-MsgVote-grant-2-1-3",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-vote-learner-MsgVote-grant-2-2-0",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-vote-learner-MsgVote-grant-2-2-3",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-vote-learner-MsgVote-grant-3-1-0",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-vote-learner-MsgVote-grant-3-1-3",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-vote-learner-MsgVote-grant-3-2-0",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-vote-learner-MsgVote-grant-3-2-3",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-vote-staged-MsgVote-grant-1-1-0",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-vote-staged-MsgVote-grant-1-1-3",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-vote-staged-MsgVote-grant-1-2-0",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-vote-staged-MsgVote-grant-1-2-3",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-vote-staged-MsgVote-grant-2-1-0",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-vote-staged-MsgVote-grant-2-1-3",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-vote-staged-MsgVote-grant-2-2-0",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-vote-staged-MsgVote-grant-2-2-3",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-vote-staged-MsgVote-grant-3-1-0",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-vote-staged-MsgVote-grant-3-1-3",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-vote-staged-MsgVote-grant-3-2-0",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-vote-staged-MsgVote-grant-3-2-3",
+      "action": "vote",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-advance-node-True-2-0-Leader-2-0-0",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-advance-node-True-2-0-Leader-2-0-16",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-advance-node-True-2-0-Leader-2-2-0",
+      "action": "advance_node",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.last",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.log",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            }
+          ],
+          "right": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            },
+            {
+              "changes": [],
+              "encoded": 10,
+              "index": 3,
+              "kind": "V2",
+              "target": 0,
+              "term": 2,
+              "transition": "Auto",
+              "weight": 2
+            }
+          ]
+        },
+        {
+          "path": "$.state.prs[0].match",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.prs[0].next",
+          "left": 3,
+          "right": 4
+        },
+        {
+          "path": "$.state.quota",
+          "left": 0,
+          "right": 2
+        },
+        {
+          "path": "$.state.unstable",
+          "left": [],
+          "right": [
+            {
+              "changes": [],
+              "encoded": 10,
+              "index": 3,
+              "kind": "V2",
+              "target": 0,
+              "term": 2,
+              "transition": "Auto",
+              "weight": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tlc-advance-node-True-2-0-Leader-2-2-16",
+      "action": "advance_node",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.pending",
+          "left": 0,
+          "right": 3
+        }
+      ]
+    },
+    {
+      "id": "tlc-advance-v02-node-multiple-0-0",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-advance-v02-node-multiple-0-16",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-advance-v02-node-multiple-2-0",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-advance-v02-node-multiple-2-16",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-ready-node-False-2-1-Leader-2",
+      "action": "ready_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    }
+  ],
+  "extra_results": {
+    "implementation": [],
+    "model": []
+  }
+}

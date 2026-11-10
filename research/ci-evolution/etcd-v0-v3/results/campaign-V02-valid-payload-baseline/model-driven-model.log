@@ -1,0 +1,70 @@
+TLC2 Version 2.20 of Day Month 20?? (rev: ${git.shortRevision})
+Warning: Please run the Java VM, which executes TLC with a throughput optimized garbage collector, by passing the "-XX:+UseParallelGC" property.
+(Use the -nowarning option to disable this warning.)
+Running breadth-first search Model-Checking with fp 74 and seed -2786813837901400266 with 1 worker on 96 cores with 1024MB heap and 64MB offheap memory [pid: 1201546] (Linux 6.8.0-1044-azure amd64, Ubuntu 21.0.11 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/work/V02/spec/ActionCampaign.tla
+Parsing file /home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/work/V02/spec/base.tla
+Parsing file /tmp/tlc-13724480356819515087/Json.tla (jar:file:/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/dist/tla2tools.jar!/tla2sany/StandardModules/Json.tla)
+Parsing file /tmp/tlc-13724480356819515087/_TLCTrace.tla (jar:file:/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/dist/tla2tools.jar!/tla2sany/StandardModules/_TLCTrace.tla)
+Parsing file /tmp/tlc-13724480356819515087/Naturals.tla (jar:file:/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/dist/tla2tools.jar!/tla2sany/StandardModules/Naturals.tla)
+Parsing file /tmp/tlc-13724480356819515087/Integers.tla (jar:file:/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/dist/tla2tools.jar!/tla2sany/StandardModules/Integers.tla)
+Parsing file /tmp/tlc-13724480356819515087/Sequences.tla (jar:file:/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/dist/tla2tools.jar!/tla2sany/StandardModules/Sequences.tla)
+Parsing file /tmp/tlc-13724480356819515087/FiniteSets.tla (jar:file:/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/dist/tla2tools.jar!/tla2sany/StandardModules/FiniteSets.tla)
+Parsing file /tmp/tlc-13724480356819515087/Bags.tla (jar:file:/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/dist/tla2tools.jar!/tla2sany/StandardModules/Bags.tla)
+Parsing file /tmp/tlc-13724480356819515087/TLC.tla (jar:file:/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/dist/tla2tools.jar!/tla2sany/StandardModules/TLC.tla)
+Parsing file /tmp/tlc-13724480356819515087/TLCExt.tla (jar:file:/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/dist/tla2tools.jar!/tla2sany/StandardModules/TLCExt.tla)
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module Bags
+Semantic processing of module base
+Semantic processing of module Json
+Semantic processing of module TLCExt
+Semantic processing of module _TLCTrace
+Semantic processing of module ActionCampaign
+Linting of module base
+Linting of module Json
+Linting of module TLCExt
+Linting of module _TLCTrace
+Linting of module ActionCampaign
+Starting... (2026-09-22 17:43:18)
+Computing initial states...
+"AV_RESULT {\"action\":\"StepHup\",\"input\":{\"kind\":\"AddVoter\",\"applied\":3,\"pre_vote\":false,\"learner\":false},\"output\":{\"role\":\"Follower\",\"term\":1,\"vote\":0,\"lead\":0,\"applied\":3,\"commit\":4,\"last\":4,\"messages\":[]}}"
+"AV_RESULT {\"action\":\"StepHup\",\"input\":{\"kind\":\"AddVoter\",\"applied\":3,\"pre_vote\":false,\"learner\":true},\"output\":{\"role\":\"Follower\",\"term\":1,\"vote\":0,\"lead\":0,\"applied\":3,\"commit\":4,\"last\":4,\"messages\":[]}}"
+"AV_RESULT {\"action\":\"StepHup\",\"input\":{\"kind\":\"AddVoter\",\"applied\":3,\"pre_vote\":true,\"learner\":false},\"output\":{\"role\":\"Follower\",\"term\":1,\"vote\":0,\"lead\":0,\"applied\":3,\"commit\":4,\"last\":4,\"messages\":[]}}"
+Computed 2 initial states...
+"AV_RESULT {\"action\":\"StepHup\",\"input\":{\"kind\":\"AddVoter\",\"applied\":3,\"pre_vote\":true,\"learner\":true},\"output\":{\"role\":\"Follower\",\"term\":1,\"vote\":0,\"lead\":0,\"applied\":3,\"commit\":4,\"last\":4,\"messages\":[]}}"
+"AV_RESULT {\"action\":\"StepHup\",\"input\":{\"kind\":\"AddVoter\",\"applied\":4,\"pre_vote\":false,\"learner\":false},\"output\":{\"role\":\"Candidate\",\"term\":2,\"vote\":1,\"lead\":0,\"applied\":4,\"commit\":4,\"last\":4,\"messages\":[{\"index\":4,\"term\":2,\"type\":\"MsgVote\",\"from\":1,\"to\":2,\"logTerm\":1},{\"index\":4,\"term\":2,\"type\":\"MsgVote\",\"from\":1,\"to\":3,\"logTerm\":1}]}}"
+Computed 4 initial states...
+"AV_RESULT {\"action\":\"StepHup\",\"input\":{\"kind\":\"AddVoter\",\"applied\":4,\"pre_vote\":false,\"learner\":true},\"output\":{\"role\":\"Follower\",\"term\":1,\"vote\":0,\"lead\":0,\"applied\":4,\"commit\":4,\"last\":4,\"messages\":[]}}"
+"AV_RESULT {\"action\":\"StepHup\",\"input\":{\"kind\":\"AddVoter\",\"applied\":4,\"pre_vote\":true,\"learner\":false},\"output\":{\"role\":\"PreCandidate\",\"term\":1,\"vote\":0,\"lead\":0,\"applied\":4,\"commit\":4,\"last\":4,\"messages\":[{\"index\":4,\"term\":2,\"type\":\"MsgPreVote\",\"from\":1,\"to\":2,\"logTerm\":1},{\"index\":4,\"term\":2,\"type\":\"MsgPreVote\",\"from\":1,\"to\":3,\"logTerm\":1}]}}"
+"AV_RESULT {\"action\":\"StepHup\",\"input\":{\"kind\":\"AddVoter\",\"applied\":4,\"pre_vote\":true,\"learner\":true},\"output\":{\"role\":\"Follower\",\"term\":1,\"vote\":0,\"lead\":0,\"applied\":4,\"commit\":4,\"last\":4,\"messages\":[]}}"
+"AV_RESULT {\"action\":\"StepHup\",\"input\":{\"kind\":\"V2\",\"applied\":3,\"pre_vote\":false,\"learner\":false},\"output\":{\"role\":\"Candidate\",\"term\":2,\"vote\":1,\"lead\":0,\"applied\":3,\"commit\":4,\"last\":4,\"messages\":[{\"index\":4,\"term\":2,\"type\":\"MsgVote\",\"from\":1,\"to\":2,\"logTerm\":1},{\"index\":4,\"term\":2,\"type\":\"MsgVote\",\"from\":1,\"to\":3,\"logTerm\":1}]}}"
+Computed 8 initial states...
+"AV_RESULT {\"action\":\"StepHup\",\"input\":{\"kind\":\"V2\",\"applied\":3,\"pre_vote\":false,\"learner\":true},\"output\":{\"role\":\"Follower\",\"term\":1,\"vote\":0,\"lead\":0,\"applied\":3,\"commit\":4,\"last\":4,\"messages\":[]}}"
+"AV_RESULT {\"action\":\"StepHup\",\"input\":{\"kind\":\"V2\",\"applied\":3,\"pre_vote\":true,\"learner\":false},\"output\":{\"role\":\"PreCandidate\",\"term\":1,\"vote\":0,\"lead\":0,\"applied\":3,\"commit\":4,\"last\":4,\"messages\":[{\"index\":4,\"term\":2,\"type\":\"MsgPreVote\",\"from\":1,\"to\":2,\"logTerm\":1},{\"index\":4,\"term\":2,\"type\":\"MsgPreVote\",\"from\":1,\"to\":3,\"logTerm\":1}]}}"
+"AV_RESULT {\"action\":\"StepHup\",\"input\":{\"kind\":\"V2\",\"applied\":3,\"pre_vote\":true,\"learner\":true},\"output\":{\"role\":\"Follower\",\"term\":1,\"vote\":0,\"lead\":0,\"applied\":3,\"commit\":4,\"last\":4,\"messages\":[]}}"
+"AV_RESULT {\"action\":\"StepHup\",\"input\":{\"kind\":\"V2\",\"applied\":4,\"pre_vote\":false,\"learner\":false},\"output\":{\"role\":\"Candidate\",\"term\":2,\"vote\":1,\"lead\":0,\"applied\":4,\"commit\":4,\"last\":4,\"messages\":[{\"index\":4,\"term\":2,\"type\":\"MsgVote\",\"from\":1,\"to\":2,\"logTerm\":1},{\"index\":4,\"term\":2,\"type\":\"MsgVote\",\"from\":1,\"to\":3,\"logTerm\":1}]}}"
+"AV_RESULT {\"action\":\"StepHup\",\"input\":{\"kind\":\"V2\",\"applied\":4,\"pre_vote\":false,\"learner\":true},\"output\":{\"role\":\"Follower\",\"term\":1,\"vote\":0,\"lead\":0,\"applied\":4,\"commit\":4,\"last\":4,\"messages\":[]}}"
+"AV_RESULT {\"action\":\"StepHup\",\"input\":{\"kind\":\"V2\",\"applied\":4,\"pre_vote\":true,\"learner\":false},\"output\":{\"role\":\"PreCandidate\",\"term\":1,\"vote\":0,\"lead\":0,\"applied\":4,\"commit\":4,\"last\":4,\"messages\":[{\"index\":4,\"term\":2,\"type\":\"MsgPreVote\",\"from\":1,\"to\":2,\"logTerm\":1},{\"index\":4,\"term\":2,\"type\":\"MsgPreVote\",\"from\":1,\"to\":3,\"logTerm\":1}]}}"
+"AV_RESULT {\"action\":\"StepHup\",\"input\":{\"kind\":\"V2\",\"applied\":4,\"pre_vote\":true,\"learner\":true},\"output\":{\"role\":\"Follower\",\"term\":1,\"vote\":0,\"lead\":0,\"applied\":4,\"commit\":4,\"last\":4,\"messages\":[]}}"
+"AV_RESULT {\"action\":\"StepHup\",\"input\":{\"kind\":\"Normal\",\"applied\":3,\"pre_vote\":false,\"learner\":false},\"output\":{\"role\":\"Candidate\",\"term\":2,\"vote\":1,\"lead\":0,\"applied\":3,\"commit\":4,\"last\":4,\"messages\":[{\"index\":4,\"term\":2,\"type\":\"MsgVote\",\"from\":1,\"to\":2,\"logTerm\":1},{\"index\":4,\"term\":2,\"type\":\"MsgVote\",\"from\":1,\"to\":3,\"logTerm\":1}]}}"
+Computed 16 initial states...
+"AV_RESULT {\"action\":\"StepHup\",\"input\":{\"kind\":\"Normal\",\"applied\":3,\"pre_vote\":false,\"learner\":true},\"output\":{\"role\":\"Follower\",\"term\":1,\"vote\":0,\"lead\":0,\"applied\":3,\"commit\":4,\"last\":4,\"messages\":[]}}"
+"AV_RESULT {\"action\":\"StepHup\",\"input\":{\"kind\":\"Normal\",\"applied\":3,\"pre_vote\":true,\"learner\":false},\"output\":{\"role\":\"PreCandidate\",\"term\":1,\"vote\":0,\"lead\":0,\"applied\":3,\"commit\":4,\"last\":4,\"messages\":[{\"index\":4,\"term\":2,\"type\":\"MsgPreVote\",\"from\":1,\"to\":2,\"logTerm\":1},{\"index\":4,\"term\":2,\"type\":\"MsgPreVote\",\"from\":1,\"to\":3,\"logTerm\":1}]}}"
+"AV_RESULT {\"action\":\"StepHup\",\"input\":{\"kind\":\"Normal\",\"applied\":3,\"pre_vote\":true,\"learner\":true},\"output\":{\"role\":\"Follower\",\"term\":1,\"vote\":0,\"lead\":0,\"applied\":3,\"commit\":4,\"last\":4,\"messages\":[]}}"
+"AV_RESULT {\"action\":\"StepHup\",\"input\":{\"kind\":\"Normal\",\"applied\":4,\"pre_vote\":false,\"learner\":false},\"output\":{\"role\":\"Candidate\",\"term\":2,\"vote\":1,\"lead\":0,\"applied\":4,\"commit\":4,\"last\":4,\"messages\":[{\"index\":4,\"term\":2,\"type\":\"MsgVote\",\"from\":1,\"to\":2,\"logTerm\":1},{\"index\":4,\"term\":2,\"type\":\"MsgVote\",\"from\":1,\"to\":3,\"logTerm\":1}]}}"
+"AV_RESULT {\"action\":\"StepHup\",\"input\":{\"kind\":\"Normal\",\"applied\":4,\"pre_vote\":false,\"learner\":true},\"output\":{\"role\":\"Follower\",\"term\":1,\"vote\":0,\"lead\":0,\"applied\":4,\"commit\":4,\"last\":4,\"messages\":[]}}"
+"AV_RESULT {\"action\":\"StepHup\",\"input\":{\"kind\":\"Normal\",\"applied\":4,\"pre_vote\":true,\"learner\":false},\"output\":{\"role\":\"PreCandidate\",\"term\":1,\"vote\":0,\"lead\":0,\"applied\":4,\"commit\":4,\"last\":4,\"messages\":[{\"index\":4,\"term\":2,\"type\":\"MsgPreVote\",\"from\":1,\"to\":2,\"logTerm\":1},{\"index\":4,\"term\":2,\"type\":\"MsgPreVote\",\"from\":1,\"to\":3,\"logTerm\":1}]}}"
+"AV_RESULT {\"action\":\"StepHup\",\"input\":{\"kind\":\"Normal\",\"applied\":4,\"pre_vote\":true,\"learner\":true},\"output\":{\"role\":\"Follower\",\"term\":1,\"vote\":0,\"lead\":0,\"applied\":4,\"commit\":4,\"last\":4,\"messages\":[]}}"
+Finished computing initial states: 24 distinct states generated at 2026-09-22 17:43:18.
+Model checking completed. No error has been found.
+  Estimates of the probability that TLC did not check all reachable states
+  because two distinct states had the same fingerprint:
+  calculated (optimistic):  val = 3.1E-17
+48 states generated, 24 distinct states found, 0 states left on queue.
+The depth of the complete state graph search is 1.
+The average outdegree of the complete state graph is 0 (minimum is 0, the maximum 0 and the 95th percentile is 0).
+Finished in 00s at (2026-09-22 17:43:18)

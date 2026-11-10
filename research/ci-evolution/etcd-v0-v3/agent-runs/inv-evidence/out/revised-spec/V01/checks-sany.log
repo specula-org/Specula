@@ -1,0 +1,36 @@
+
+****** SANY2 Version 2.2 created 08 July 2020
+
+Parsing file /workspace/out/revised-spec/V01/Checks.tla
+Parsing file /workspace/out/revised-spec/V01/Maintenance.tla
+Parsing file /tmp/tlc-16894532334353879219/Json.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Json.tla)
+Parsing file /workspace/out/revised-spec/V01/base.tla
+Parsing file /tmp/tlc-16894532334353879219/Naturals.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Naturals.tla)
+Parsing file /tmp/tlc-16894532334353879219/Integers.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Integers.tla)
+Parsing file /tmp/tlc-16894532334353879219/Sequences.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Sequences.tla)
+Parsing file /tmp/tlc-16894532334353879219/FiniteSets.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/FiniteSets.tla)
+Parsing file /tmp/tlc-16894532334353879219/Bags.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Bags.tla)
+Parsing file /tmp/tlc-16894532334353879219/TLC.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/TLC.tla)
+Parsing file /workspace/out/revised-spec/V01/HistoricalV00.tla
+Parsing file /workspace/out/revised-spec/V01/HistoricalV01.tla
+Parsing file /workspace/out/revised-spec/V01/HistoricalV02.tla
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module Bags
+Semantic processing of module base
+Semantic processing of module Maintenance
+Semantic processing of module Json
+Semantic processing of module HistoricalV00
+Semantic processing of module HistoricalV01
+Semantic processing of module HistoricalV02
+Semantic processing of module Checks
+Linting of module base
+Linting of module Maintenance
+Linting of module Json
+Linting of module HistoricalV00
+Linting of module HistoricalV01
+Linting of module HistoricalV02
+Linting of module Checks

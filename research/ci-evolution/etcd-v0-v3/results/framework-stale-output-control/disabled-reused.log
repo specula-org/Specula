@@ -1,0 +1,27 @@
+WARNING: java.io.tmpdir directory does not exist
+TLC2 Version 2.20 of Day Month 20?? (rev: ${git.shortRevision})
+java.nio.file.NoSuchFileException: /workspace/out/tmp/tlc-5934560743664265158
+	at java.base/sun.nio.fs.UnixException.translateToIOException(UnixException.java:92)
+	at java.base/sun.nio.fs.UnixException.rethrowAsIOException(UnixException.java:106)
+	at java.base/sun.nio.fs.UnixException.rethrowAsIOException(UnixException.java:111)
+	at java.base/sun.nio.fs.UnixFileSystemProvider.createDirectory(UnixFileSystemProvider.java:462)
+	at java.base/java.nio.file.Files.createDirectory(Files.java:700)
+	at java.base/java.nio.file.TempFileHelper.create(TempFileHelper.java:134)
+	at java.base/java.nio.file.TempFileHelper.createTempDirectory(TempFileHelper.java:171)
+	at java.base/java.nio.file.Files.createTempDirectory(Files.java:1018)
+	at util.FilenameToStream.getTempDirectory(FilenameToStream.java:185)
+	at util.SimpleFilenameToStream.<init>(SimpleFilenameToStream.java:46)
+	at util.SimpleFilenameToStream.<init>(SimpleFilenameToStream.java:59)
+	at tlc2.TLC.main(TLC.java:347)
+Running breadth-first search Model-Checking with fp 105 and seed 3201646607602199394 with 1 worker on 96 cores with 1963MB heap and 64MB offheap memory [pid: 3] (Linux 6.8.0-1044-azure amd64, Ubuntu 21.0.11 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /workspace/reused/raw/LocalActions.tla
+Parsing file /workspace/reused/raw/base.tla
+
+Fatal errors while parsing TLA+ spec in file LocalActions
+
+java.lang.NullPointerException: Cannot invoke "java.nio.file.Path.resolve(String)" because "this.tmpDir" is null
+
+Starting... (2026-09-22 18:00:19)
+Error: Parsing or semantic analysis failed. Module-Table lookup failure for module name LocalActions derived from LocalActions file name.
+Finished in 00s at (2026-09-22 18:00:19)
+

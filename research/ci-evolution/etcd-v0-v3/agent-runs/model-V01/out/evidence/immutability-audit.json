@@ -1,0 +1,10 @@
+{
+  "changed_original_files": [],
+  "missing_original_files": [],
+  "added_files": [
+    "new/source/action_validation_test.go"
+  ],
+  "repair_only_three_behavioral_spans": true,
+  "other_repaired_file_differences": [],
+  "invariant_bodies_unchanged": true
+}

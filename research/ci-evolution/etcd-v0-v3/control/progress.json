@@ -1,0 +1,44 @@
+{
+  "updated_at": "2026-09-23T02:24:43.286678+00:00",
+  "phase": "3_exploration_and_confirmation_incomplete",
+  "status": "report_snapshot_incomplete",
+  "completed": [
+    "source_identity_283_files",
+    "StepHup_local_bidirectional_pilot",
+    "V01_scan_repair_in_experiment_copy",
+    "V01 historical trace regression 8/8,4629 events",
+    "V03 native preflight",
+    "V01 multi-action tests 105 code plus 43 model, 3 source-backed repairs",
+    "framework stale-output, disabled-action and failed-output negative controls",
+    "V01 final three-repair model passes all 8 historical traces, 4629 events",
+    "V02 239 code-derived and 103 model-derived matches; generic runner unchanged",
+    "V02 independent fresh replay exit 0 and all 239 Go cases pass race detector",
+    "V03 479 source and 174 model instances matched; independent replay and race check passed",
+    "Backward four model repairs tested on V01/V02; V01 terminal panic buffered-message order explicitly scoped",
+    "Model phase assets frozen for independent property decisions",
+    "Final backpatched V01/V02 historical correspondence passes 8/8 and 11/11 on exact final hashes",
+    "V01 independent invariant first judgment covers 4 preassessment rows; formulas not yet validated",
+    "All three invariant judgments frozen; V01/V02 core decisions detected, V03 progress partial/unresolved",
+    "Executed nonvacuous campaign-property differential: 4 code/model matches, repaired legal joint self-election, preserved V2 bug detection, rejected weakening",
+    "Final generic action framework now journals all outcomes and rejects ambiguous successors; six routes 1959 instances all match; 231 original source files intact"
+  ],
+  "active_agent": null,
+  "remaining": [
+    "B public-API reproduction and cross-version controls",
+    "extra findings code regression/classification",
+    "unified final artifact regression",
+    "matched exploration ablation"
+  ],
+  "clarifications": "resolved: A/B required; gpt-6-astra primary; gpt-5.5 reproduction; no cost cap",
+  "pending_backward_regressions": [],
+  "baseline_diagnostics": "V01/V03 telemetry-enabled MC OOM before Init; V03 no-coverage baseline now actually exploring. Not a search conclusion.",
+  "goal_status_at_report": "blocked",
+  "latest_report": "REPORT-20260923.md",
+  "latest_verified": {
+    "model": "V01/V02/V03 each 479 code +174 model instances match",
+    "inv": "12 edit groups;132 replay pairs;97 truth pairs;102 observer checks",
+    "A": "public API reproduced V01/V02/V03,3 repetitions each; V00 legacy control",
+    "B": "V03 fair liveness counterexample and V02 passing control; no code reproduction"
+  },
+  "interruption": "Main coordinator turn ended at 2026-09-22T20:33:40Z with platform cyber_policy error: possible cybersecurity risk. Started independent experiments completed afterwards."
+}

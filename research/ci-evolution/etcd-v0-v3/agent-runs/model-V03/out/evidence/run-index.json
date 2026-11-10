@@ -1,0 +1,1958 @@
+[
+  {
+    "path": "out/cases/baseline-boundary/comparison.json",
+    "total": 10,
+    "counts": {
+      "behavioral_mismatch": 8,
+      "match": 2
+    },
+    "commands": [
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/v03-boundary-inputs.json",
+          "--output",
+          "/workspace/out/cases/baseline-boundary/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/baseline-boundary/implementation"
+        ],
+        "duration_seconds": 1.2167400186881423,
+        "exit_code": 0
+      },
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/cases/v03-boundary-inputs.json",
+          "--output",
+          "/workspace/out/cases/baseline-boundary/model.jsonl",
+          "--spec",
+          "/workspace/new/spec",
+          "--work",
+          "/workspace/out/cases/baseline-boundary/model"
+        ],
+        "duration_seconds": 5.5270997155457735,
+        "exit_code": 0
+      }
+    ]
+  },
+  {
+    "path": "out/cases/baseline-callback/comparison.json",
+    "total": 8,
+    "counts": {
+      "adapter_error": 8
+    },
+    "commands": [
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/v03-callback-inputs.json",
+          "--output",
+          "/workspace/out/cases/baseline-callback/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/baseline-callback/implementation"
+        ],
+        "duration_seconds": 1.2666831482201815,
+        "exit_code": 0
+      },
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/cases/v03-callback-inputs.json",
+          "--output",
+          "/workspace/out/cases/baseline-callback/model.jsonl",
+          "--spec",
+          "/workspace/new/spec",
+          "--work",
+          "/workspace/out/cases/baseline-callback/model"
+        ],
+        "duration_seconds": 2.82191489264369,
+        "exit_code": 1
+      }
+    ]
+  },
+  {
+    "path": "out/cases/baseline-callback-02/comparison.json",
+    "total": 8,
+    "counts": {
+      "match": 4,
+      "behavioral_mismatch": 4
+    },
+    "commands": [
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/v03-callback-inputs.json",
+          "--output",
+          "/workspace/out/cases/baseline-callback-02/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/baseline-callback-02/implementation"
+        ],
+        "duration_seconds": 0.41483585722744465,
+        "exit_code": 0
+      },
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/cases/v03-callback-inputs.json",
+          "--output",
+          "/workspace/out/cases/baseline-callback-02/model.jsonl",
+          "--spec",
+          "/workspace/new/spec",
+          "--work",
+          "/workspace/out/cases/baseline-callback-02/model"
+        ],
+        "duration_seconds": 2.7703648349270225,
+        "exit_code": 0
+      }
+    ]
+  },
+  {
+    "path": "out/cases/baseline-chain/comparison.json",
+    "total": 6,
+    "counts": {
+      "behavioral_mismatch": 3,
+      "match": 3
+    },
+    "commands": [
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/v03-chain-inputs.json",
+          "--output",
+          "/workspace/out/cases/baseline-chain/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/baseline-chain/implementation"
+        ],
+        "duration_seconds": 1.2169682765379548,
+        "exit_code": 0
+      },
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/cases/v03-chain-inputs.json",
+          "--output",
+          "/workspace/out/cases/baseline-chain/model.jsonl",
+          "--spec",
+          "/workspace/new/spec",
+          "--work",
+          "/workspace/out/cases/baseline-chain/model"
+        ],
+        "duration_seconds": 2.720458830706775,
+        "exit_code": 0
+      }
+    ]
+  },
+  {
+    "path": "out/cases/baseline-prior-code/comparison.json",
+    "total": 239,
+    "counts": {
+      "match": 224,
+      "behavioral_mismatch": 15
+    },
+    "commands": [
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/prior-code-inputs.json",
+          "--output",
+          "/workspace/out/cases/baseline-prior-code/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/baseline-prior-code/implementation"
+        ],
+        "duration_seconds": 8.181470210663974,
+        "exit_code": 0
+      },
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/cases/prior-code-inputs.json",
+          "--output",
+          "/workspace/out/cases/baseline-prior-code/model.jsonl",
+          "--spec",
+          "/workspace/new/spec",
+          "--work",
+          "/workspace/out/cases/baseline-prior-code/model"
+        ],
+        "duration_seconds": 3.372495936229825,
+        "exit_code": 0
+      }
+    ]
+  },
+  {
+    "path": "out/cases/baseline-prior-model/comparison.json",
+    "total": 103,
+    "counts": {
+      "match": 93,
+      "behavioral_mismatch": 10
+    },
+    "commands": [
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/framework/targets/etcd/model-seeds.json",
+          "--output",
+          "/workspace/out/cases/baseline-prior-model/model.jsonl",
+          "--spec",
+          "/workspace/new/spec",
+          "--work",
+          "/workspace/out/cases/baseline-prior-model/model",
+          "--generate"
+        ],
+        "duration_seconds": 5.827978370711207,
+        "exit_code": 0
+      },
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/baseline-prior-model/generated-cases.json",
+          "--output",
+          "/workspace/out/cases/baseline-prior-model/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/baseline-prior-model/implementation"
+        ],
+        "duration_seconds": 0.36493351217359304,
+        "exit_code": 0
+      }
+    ]
+  },
+  {
+    "path": "out/cases/baseline-v03-code-02/comparison.json",
+    "total": 211,
+    "counts": {
+      "adapter_error": 211
+    },
+    "commands": [
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/v03-source-inputs.json",
+          "--output",
+          "/workspace/out/cases/baseline-v03-code-02/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/baseline-v03-code-02/implementation"
+        ],
+        "duration_seconds": 0.41467846743762493,
+        "exit_code": 0
+      },
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/cases/v03-source-inputs.json",
+          "--output",
+          "/workspace/out/cases/baseline-v03-code-02/model.jsonl",
+          "--spec",
+          "/workspace/new/spec",
+          "--work",
+          "/workspace/out/cases/baseline-v03-code-02/model"
+        ],
+        "duration_seconds": 0.5150339491665363,
+        "exit_code": 1
+      }
+    ]
+  },
+  {
+    "path": "out/cases/baseline-v03-code-03/comparison.json",
+    "total": 211,
+    "counts": {
+      "adapter_error": 211
+    },
+    "commands": [
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/v03-source-inputs.json",
+          "--output",
+          "/workspace/out/cases/baseline-v03-code-03/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/baseline-v03-code-03/implementation"
+        ],
+        "duration_seconds": 0.46480716578662395,
+        "exit_code": 0
+      },
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/cases/v03-source-inputs.json",
+          "--output",
+          "/workspace/out/cases/baseline-v03-code-03/model.jsonl",
+          "--spec",
+          "/workspace/new/spec",
+          "--work",
+          "/workspace/out/cases/baseline-v03-code-03/model"
+        ],
+        "duration_seconds": 0.5653145667165518,
+        "exit_code": 1
+      }
+    ]
+  },
+  {
+    "path": "out/cases/baseline-v03-code-04/comparison.json",
+    "total": 211,
+    "counts": {
+      "match": 122,
+      "behavioral_mismatch": 89
+    },
+    "commands": [
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/v03-source-inputs.json",
+          "--output",
+          "/workspace/out/cases/baseline-v03-code-04/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/baseline-v03-code-04/implementation"
+        ],
+        "duration_seconds": 0.4148291386663914,
+        "exit_code": 0
+      },
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/cases/v03-source-inputs.json",
+          "--output",
+          "/workspace/out/cases/baseline-v03-code-04/model.jsonl",
+          "--spec",
+          "/workspace/new/spec",
+          "--work",
+          "/workspace/out/cases/baseline-v03-code-04/model"
+        ],
+        "duration_seconds": 6.980206184089184,
+        "exit_code": 0
+      }
+    ]
+  },
+  {
+    "path": "out/cases/baseline-v03-code-initial/comparison.json",
+    "total": 211,
+    "counts": {
+      "adapter_error": 211
+    },
+    "commands": [
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/v03-source-inputs.json",
+          "--output",
+          "/workspace/out/cases/baseline-v03-code-initial/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/baseline-v03-code-initial/implementation"
+        ],
+        "duration_seconds": 1.3169457279145718,
+        "exit_code": 0
+      },
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/cases/v03-source-inputs.json",
+          "--output",
+          "/workspace/out/cases/baseline-v03-code-initial/model.jsonl",
+          "--spec",
+          "/workspace/new/spec",
+          "--work",
+          "/workspace/out/cases/baseline-v03-code-initial/model"
+        ],
+        "duration_seconds": 0.5652493881061673,
+        "exit_code": 1
+      }
+    ]
+  },
+  {
+    "path": "out/cases/baseline-v03-model/comparison.json",
+    "total": 50,
+    "counts": {
+      "behavioral_mismatch": 28,
+      "match": 22
+    },
+    "commands": [
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/cases/v03-model-seeds.json",
+          "--output",
+          "/workspace/out/cases/baseline-v03-model/model.jsonl",
+          "--spec",
+          "/workspace/new/spec",
+          "--work",
+          "/workspace/out/cases/baseline-v03-model/model",
+          "--generate"
+        ],
+        "duration_seconds": 5.729348387569189,
+        "exit_code": 0
+      },
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/baseline-v03-model/generated-cases.json",
+          "--output",
+          "/workspace/out/cases/baseline-v03-model/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/baseline-v03-model/implementation"
+        ],
+        "duration_seconds": 0.41670388262718916,
+        "exit_code": 0
+      }
+    ]
+  },
+  {
+    "path": "out/cases/old-boundary/comparison.json",
+    "total": 10,
+    "counts": {
+      "match": 9,
+      "behavioral_mismatch": 1
+    },
+    "commands": [
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/v03-boundary-inputs.json",
+          "--output",
+          "/workspace/out/cases/old-boundary/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/old-boundary/implementation",
+          "--source",
+          "old/source"
+        ],
+        "duration_seconds": 1.1163574233651161,
+        "exit_code": 0
+      },
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/cases/v03-boundary-inputs.json",
+          "--output",
+          "/workspace/out/cases/old-boundary/model.jsonl",
+          "--spec",
+          "/workspace/old/spec",
+          "--work",
+          "/workspace/out/cases/old-boundary/model"
+        ],
+        "duration_seconds": 5.529682426713407,
+        "exit_code": 0
+      }
+    ]
+  },
+  {
+    "path": "out/cases/old-callback/comparison.json",
+    "total": 8,
+    "counts": {
+      "adapter_error": 8
+    },
+    "commands": [
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/v03-callback-inputs.json",
+          "--output",
+          "/workspace/out/cases/old-callback/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/old-callback/implementation",
+          "--source",
+          "old/source"
+        ],
+        "duration_seconds": 1.1668905736878514,
+        "exit_code": 0
+      },
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/cases/v03-callback-inputs.json",
+          "--output",
+          "/workspace/out/cases/old-callback/model.jsonl",
+          "--spec",
+          "/workspace/old/spec",
+          "--work",
+          "/workspace/out/cases/old-callback/model"
+        ],
+        "duration_seconds": 2.7715475223958492,
+        "exit_code": 1
+      }
+    ]
+  },
+  {
+    "path": "out/cases/old-callback-02/comparison.json",
+    "total": 8,
+    "counts": {
+      "match": 7,
+      "behavioral_mismatch": 1
+    },
+    "commands": [
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/v03-callback-inputs.json",
+          "--output",
+          "/workspace/out/cases/old-callback-02/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/old-callback-02/implementation",
+          "--source",
+          "old/source"
+        ],
+        "duration_seconds": 0.36475374922156334,
+        "exit_code": 0
+      },
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/cases/v03-callback-inputs.json",
+          "--output",
+          "/workspace/out/cases/old-callback-02/model.jsonl",
+          "--spec",
+          "/workspace/old/spec",
+          "--work",
+          "/workspace/out/cases/old-callback-02/model"
+        ],
+        "duration_seconds": 2.721041563898325,
+        "exit_code": 0
+      }
+    ]
+  },
+  {
+    "path": "out/cases/old-chain/comparison.json",
+    "total": 6,
+    "counts": {
+      "match": 6
+    },
+    "commands": [
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/v03-chain-inputs.json",
+          "--output",
+          "/workspace/out/cases/old-chain/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/old-chain/implementation",
+          "--source",
+          "old/source"
+        ],
+        "duration_seconds": 1.066478113643825,
+        "exit_code": 0
+      },
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/cases/v03-chain-inputs.json",
+          "--output",
+          "/workspace/out/cases/old-chain/model.jsonl",
+          "--spec",
+          "/workspace/old/spec",
+          "--work",
+          "/workspace/out/cases/old-chain/model"
+        ],
+        "duration_seconds": 2.7703876104205847,
+        "exit_code": 0
+      }
+    ]
+  },
+  {
+    "path": "out/cases/old-post-drop/comparison.json",
+    "total": 4,
+    "counts": {
+      "behavioral_mismatch": 2,
+      "match": 2
+    },
+    "commands": [
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/v03-post-drop-inputs.json",
+          "--output",
+          "/workspace/out/cases/old-post-drop/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/old-post-drop/implementation",
+          "--source",
+          "old/source"
+        ],
+        "duration_seconds": 0.3145502442494035,
+        "exit_code": 0
+      },
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/cases/v03-post-drop-inputs.json",
+          "--output",
+          "/workspace/out/cases/old-post-drop/model.jsonl",
+          "--spec",
+          "/workspace/old/spec",
+          "--work",
+          "/workspace/out/cases/old-post-drop/model"
+        ],
+        "duration_seconds": 5.526534692384303,
+        "exit_code": 0
+      }
+    ]
+  },
+  {
+    "path": "out/cases/old-prior-code/comparison.json",
+    "total": 239,
+    "counts": {
+      "adapter_error": 239
+    },
+    "commands": [
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/prior-code-inputs.json",
+          "--output",
+          "/workspace/out/cases/old-prior-code/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/old-prior-code/implementation",
+          "--source",
+          "old/source"
+        ],
+        "duration_seconds": 1.1666865926235914,
+        "exit_code": 0
+      },
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/cases/prior-code-inputs.json",
+          "--output",
+          "/workspace/out/cases/old-prior-code/model.jsonl",
+          "--spec",
+          "/workspace/old/spec",
+          "--work",
+          "/workspace/out/cases/old-prior-code/model"
+        ],
+        "duration_seconds": 0.5150148989632726,
+        "exit_code": 1
+      }
+    ]
+  },
+  {
+    "path": "out/cases/old-prior-code-02/comparison.json",
+    "total": 239,
+    "counts": {
+      "match": 239
+    },
+    "commands": [
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/prior-code-inputs.json",
+          "--output",
+          "/workspace/out/cases/old-prior-code-02/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/old-prior-code-02/implementation",
+          "--source",
+          "old/source"
+        ],
+        "duration_seconds": 0.36512467078864574,
+        "exit_code": 0
+      },
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/cases/prior-code-inputs.json",
+          "--output",
+          "/workspace/out/cases/old-prior-code-02/model.jsonl",
+          "--spec",
+          "/workspace/old/spec",
+          "--work",
+          "/workspace/out/cases/old-prior-code-02/model"
+        ],
+        "duration_seconds": 6.77845046017319,
+        "exit_code": 0
+      }
+    ]
+  },
+  {
+    "path": "out/cases/old-prior-model/comparison.json",
+    "total": 103,
+    "counts": {
+      "match": 103
+    },
+    "commands": [
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/framework/targets/etcd/model-seeds.json",
+          "--output",
+          "/workspace/out/cases/old-prior-model/model.jsonl",
+          "--spec",
+          "/workspace/old/spec",
+          "--work",
+          "/workspace/out/cases/old-prior-model/model",
+          "--generate"
+        ],
+        "duration_seconds": 5.827490101568401,
+        "exit_code": 0
+      },
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/old-prior-model/generated-cases.json",
+          "--output",
+          "/workspace/out/cases/old-prior-model/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/old-prior-model/implementation",
+          "--source",
+          "old/source"
+        ],
+        "duration_seconds": 0.3648775862529874,
+        "exit_code": 0
+      }
+    ]
+  },
+  {
+    "path": "out/cases/old-v03-code-02/comparison.json",
+    "total": 211,
+    "counts": {
+      "adapter_error": 211
+    },
+    "commands": [
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/v03-source-inputs.json",
+          "--output",
+          "/workspace/out/cases/old-v03-code-02/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/old-v03-code-02/implementation",
+          "--source",
+          "old/source"
+        ],
+        "duration_seconds": 0.4651136612519622,
+        "exit_code": 0
+      },
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/cases/v03-source-inputs.json",
+          "--output",
+          "/workspace/out/cases/old-v03-code-02/model.jsonl",
+          "--spec",
+          "/workspace/old/spec",
+          "--work",
+          "/workspace/out/cases/old-v03-code-02/model"
+        ],
+        "duration_seconds": 0.5150831714272499,
+        "exit_code": 1
+      }
+    ]
+  },
+  {
+    "path": "out/cases/old-v03-code-03/comparison.json",
+    "total": 211,
+    "counts": {
+      "adapter_error": 211
+    },
+    "commands": [
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/v03-source-inputs.json",
+          "--output",
+          "/workspace/out/cases/old-v03-code-03/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/old-v03-code-03/implementation",
+          "--source",
+          "old/source"
+        ],
+        "duration_seconds": 0.46495727077126503,
+        "exit_code": 0
+      },
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/cases/v03-source-inputs.json",
+          "--output",
+          "/workspace/out/cases/old-v03-code-03/model.jsonl",
+          "--spec",
+          "/workspace/old/spec",
+          "--work",
+          "/workspace/out/cases/old-v03-code-03/model"
+        ],
+        "duration_seconds": 0.5652651889249682,
+        "exit_code": 1
+      }
+    ]
+  },
+  {
+    "path": "out/cases/old-v03-code-04/comparison.json",
+    "total": 211,
+    "counts": {
+      "match": 209,
+      "behavioral_mismatch": 2
+    },
+    "commands": [
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/v03-source-inputs.json",
+          "--output",
+          "/workspace/out/cases/old-v03-code-04/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/old-v03-code-04/implementation",
+          "--source",
+          "old/source"
+        ],
+        "duration_seconds": 0.46497561410069466,
+        "exit_code": 0
+      },
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/cases/v03-source-inputs.json",
+          "--output",
+          "/workspace/out/cases/old-v03-code-04/model.jsonl",
+          "--spec",
+          "/workspace/old/spec",
+          "--work",
+          "/workspace/out/cases/old-v03-code-04/model"
+        ],
+        "duration_seconds": 6.831176061183214,
+        "exit_code": 0
+      }
+    ]
+  },
+  {
+    "path": "out/cases/repaired-boundary/comparison.json",
+    "total": 10,
+    "counts": {
+      "match": 10
+    },
+    "commands": [
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/v03-boundary-inputs.json",
+          "--output",
+          "/workspace/out/cases/repaired-boundary/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/repaired-boundary/implementation"
+        ],
+        "duration_seconds": 0.31473109498620033,
+        "exit_code": 0
+      },
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/cases/v03-boundary-inputs.json",
+          "--output",
+          "/workspace/out/cases/repaired-boundary/model.jsonl",
+          "--spec",
+          "/workspace/out/repaired-spec",
+          "--work",
+          "/workspace/out/cases/repaired-boundary/model"
+        ],
+        "duration_seconds": 5.827224055305123,
+        "exit_code": 0
+      }
+    ]
+  },
+  {
+    "path": "out/cases/repaired-callback/comparison.json",
+    "total": 8,
+    "counts": {
+      "match": 8
+    },
+    "commands": [
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/v03-callback-inputs.json",
+          "--output",
+          "/workspace/out/cases/repaired-callback/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/repaired-callback/implementation"
+        ],
+        "duration_seconds": 0.4146582530811429,
+        "exit_code": 0
+      },
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/cases/v03-callback-inputs.json",
+          "--output",
+          "/workspace/out/cases/repaired-callback/model.jsonl",
+          "--spec",
+          "/workspace/out/repaired-spec",
+          "--work",
+          "/workspace/out/cases/repaired-callback/model"
+        ],
+        "duration_seconds": 2.92063463665545,
+        "exit_code": 0
+      }
+    ]
+  },
+  {
+    "path": "out/cases/repaired-panic-order-initial/comparison.json",
+    "total": 1,
+    "counts": {
+      "behavioral_mismatch": 1
+    },
+    "commands": [
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/v03-panic-order-inputs.json",
+          "--output",
+          "/workspace/out/cases/repaired-panic-order-initial/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/repaired-panic-order-initial/implementation"
+        ],
+        "duration_seconds": 0.3146547982469201,
+        "exit_code": 0
+      },
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/cases/v03-panic-order-inputs.json",
+          "--output",
+          "/workspace/out/cases/repaired-panic-order-initial/model.jsonl",
+          "--spec",
+          "/workspace/out/repaired-spec",
+          "--work",
+          "/workspace/out/cases/repaired-panic-order-initial/model"
+        ],
+        "duration_seconds": 2.820845822803676,
+        "exit_code": 0
+      }
+    ]
+  },
+  {
+    "path": "out/cases/repaired-post-drop-initial/comparison.json",
+    "total": 4,
+    "counts": {
+      "behavioral_mismatch": 4
+    },
+    "commands": [
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/v03-post-drop-inputs.json",
+          "--output",
+          "/workspace/out/cases/repaired-post-drop-initial/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/repaired-post-drop-initial/implementation"
+        ],
+        "duration_seconds": 0.36466781608760357,
+        "exit_code": 0
+      },
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/cases/v03-post-drop-inputs.json",
+          "--output",
+          "/workspace/out/cases/repaired-post-drop-initial/model.jsonl",
+          "--spec",
+          "/workspace/out/repaired-spec",
+          "--work",
+          "/workspace/out/cases/repaired-post-drop-initial/model"
+        ],
+        "duration_seconds": 5.727647404186428,
+        "exit_code": 0
+      }
+    ]
+  },
+  {
+    "path": "out/cases/repaired-prior-code/comparison.json",
+    "total": 239,
+    "counts": {
+      "match": 239
+    },
+    "commands": [
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/prior-code-inputs.json",
+          "--output",
+          "/workspace/out/cases/repaired-prior-code/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/repaired-prior-code/implementation"
+        ],
+        "duration_seconds": 0.3647202802821994,
+        "exit_code": 0
+      },
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/cases/prior-code-inputs.json",
+          "--output",
+          "/workspace/out/cases/repaired-prior-code/model.jsonl",
+          "--spec",
+          "/workspace/out/repaired-spec",
+          "--work",
+          "/workspace/out/cases/repaired-prior-code/model"
+        ],
+        "duration_seconds": 7.180099907331169,
+        "exit_code": 0
+      }
+    ]
+  },
+  {
+    "path": "out/cases/repaired-v03-code-01/comparison.json",
+    "total": 211,
+    "counts": {
+      "match": 209,
+      "behavioral_mismatch": 2
+    },
+    "commands": [
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/v03-source-inputs.json",
+          "--output",
+          "/workspace/out/cases/repaired-v03-code-01/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/repaired-v03-code-01/implementation"
+        ],
+        "duration_seconds": 0.5149499801918864,
+        "exit_code": 0
+      },
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/cases/v03-source-inputs.json",
+          "--output",
+          "/workspace/out/cases/repaired-v03-code-01/model.jsonl",
+          "--spec",
+          "/workspace/out/repaired-spec",
+          "--work",
+          "/workspace/out/cases/repaired-v03-code-01/model"
+        ],
+        "duration_seconds": 7.129391639493406,
+        "exit_code": 0
+      }
+    ]
+  },
+  {
+    "path": "out/cases/v03-final-01/baseline-code/comparison.json",
+    "total": 474,
+    "counts": {
+      "match": 355,
+      "behavioral_mismatch": 119
+    },
+    "commands": [
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/code-inputs.json",
+          "--output",
+          "/workspace/out/cases/v03-final-01/baseline-code/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/v03-final-01/baseline-code/implementation"
+        ],
+        "duration_seconds": 0.5652718096971512,
+        "exit_code": 0
+      },
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/cases/code-inputs.json",
+          "--output",
+          "/workspace/out/cases/v03-final-01/baseline-code/model.jsonl",
+          "--spec",
+          "/workspace/new/spec",
+          "--work",
+          "/workspace/out/cases/v03-final-01/baseline-code/model"
+        ],
+        "duration_seconds": 9.53701523784548,
+        "exit_code": 0
+      }
+    ]
+  },
+  {
+    "path": "out/cases/v03-final-01/baseline-model/comparison.json",
+    "total": 171,
+    "counts": {
+      "match": 120,
+      "behavioral_mismatch": 51
+    },
+    "commands": [
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/cases/model-seeds.json",
+          "--output",
+          "/workspace/out/cases/v03-final-01/baseline-model/model.jsonl",
+          "--spec",
+          "/workspace/new/spec",
+          "--work",
+          "/workspace/out/cases/v03-final-01/baseline-model/model",
+          "--generate"
+        ],
+        "duration_seconds": 5.978381900116801,
+        "exit_code": 0
+      },
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/v03-final-01/baseline-model/generated-cases.json",
+          "--output",
+          "/workspace/out/cases/v03-final-01/baseline-model/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/v03-final-01/baseline-model/implementation"
+        ],
+        "duration_seconds": 0.46518910862505436,
+        "exit_code": 0
+      }
+    ]
+  },
+  {
+    "path": "out/cases/v03-final-01/old-code/comparison.json",
+    "total": 474,
+    "counts": {
+      "match": 471,
+      "behavioral_mismatch": 3
+    },
+    "commands": [
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/code-inputs.json",
+          "--output",
+          "/workspace/out/cases/v03-final-01/old-code/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/v03-final-01/old-code/implementation",
+          "--source",
+          "old/source"
+        ],
+        "duration_seconds": 0.5654241805896163,
+        "exit_code": 0
+      },
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/cases/code-inputs.json",
+          "--output",
+          "/workspace/out/cases/v03-final-01/old-code/model.jsonl",
+          "--spec",
+          "/workspace/old/spec",
+          "--work",
+          "/workspace/out/cases/v03-final-01/old-code/model"
+        ],
+        "duration_seconds": 9.488754462450743,
+        "exit_code": 0
+      }
+    ]
+  },
+  {
+    "path": "out/cases/v03-final-01/old-model/comparison.json",
+    "total": 171,
+    "counts": {
+      "match": 167,
+      "behavioral_mismatch": 4
+    },
+    "commands": [
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/cases/model-seeds.json",
+          "--output",
+          "/workspace/out/cases/v03-final-01/old-model/model.jsonl",
+          "--spec",
+          "/workspace/old/spec",
+          "--work",
+          "/workspace/out/cases/v03-final-01/old-model/model",
+          "--generate"
+        ],
+        "duration_seconds": 5.827937807887793,
+        "exit_code": 0
+      },
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/v03-final-01/old-model/generated-cases.json",
+          "--output",
+          "/workspace/out/cases/v03-final-01/old-model/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/v03-final-01/old-model/implementation",
+          "--source",
+          "old/source"
+        ],
+        "duration_seconds": 0.46512327902019024,
+        "exit_code": 0
+      }
+    ]
+  },
+  {
+    "path": "out/cases/v03-final-01/repaired-code/comparison.json",
+    "total": 474,
+    "counts": {
+      "match": 474
+    },
+    "commands": [
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/code-inputs.json",
+          "--output",
+          "/workspace/out/cases/v03-final-01/repaired-code/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/v03-final-01/repaired-code/implementation"
+        ],
+        "duration_seconds": 0.5652472097426653,
+        "exit_code": 0
+      },
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/cases/code-inputs.json",
+          "--output",
+          "/workspace/out/cases/v03-final-01/repaired-code/model.jsonl",
+          "--spec",
+          "/workspace/out/repaired-spec",
+          "--work",
+          "/workspace/out/cases/v03-final-01/repaired-code/model"
+        ],
+        "duration_seconds": 9.786824126727879,
+        "exit_code": 0
+      }
+    ]
+  },
+  {
+    "path": "out/cases/v03-final-01/repaired-model/comparison.json",
+    "total": 171,
+    "counts": {
+      "match": 171
+    },
+    "commands": [
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/cases/model-seeds.json",
+          "--output",
+          "/workspace/out/cases/v03-final-01/repaired-model/model.jsonl",
+          "--spec",
+          "/workspace/out/repaired-spec",
+          "--work",
+          "/workspace/out/cases/v03-final-01/repaired-model/model",
+          "--generate"
+        ],
+        "duration_seconds": 6.228682949207723,
+        "exit_code": 0
+      },
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/v03-final-01/repaired-model/generated-cases.json",
+          "--output",
+          "/workspace/out/cases/v03-final-01/repaired-model/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/v03-final-01/repaired-model/implementation"
+        ],
+        "duration_seconds": 0.46512720454484224,
+        "exit_code": 0
+      }
+    ]
+  },
+  {
+    "path": "out/cases/v03-final-02/baseline-code/comparison.json",
+    "total": 478,
+    "counts": {
+      "match": 355,
+      "behavioral_mismatch": 123
+    },
+    "commands": [
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/code-inputs.json",
+          "--output",
+          "/workspace/out/cases/v03-final-02/baseline-code/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/v03-final-02/baseline-code/implementation"
+        ],
+        "duration_seconds": 0.5652022864669561,
+        "exit_code": 0
+      },
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/cases/code-inputs.json",
+          "--output",
+          "/workspace/out/cases/v03-final-02/baseline-code/model.jsonl",
+          "--spec",
+          "/workspace/new/spec",
+          "--work",
+          "/workspace/out/cases/v03-final-02/baseline-code/model"
+        ],
+        "duration_seconds": 9.486736762337387,
+        "exit_code": 0
+      }
+    ]
+  },
+  {
+    "path": "out/cases/v03-final-02/baseline-model/comparison.json",
+    "total": 173,
+    "counts": {
+      "match": 120,
+      "behavioral_mismatch": 53
+    },
+    "commands": [
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/cases/model-seeds.json",
+          "--output",
+          "/workspace/out/cases/v03-final-02/baseline-model/model.jsonl",
+          "--spec",
+          "/workspace/new/spec",
+          "--work",
+          "/workspace/out/cases/v03-final-02/baseline-model/model",
+          "--generate"
+        ],
+        "duration_seconds": 5.978504350408912,
+        "exit_code": 0
+      },
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/v03-final-02/baseline-model/generated-cases.json",
+          "--output",
+          "/workspace/out/cases/v03-final-02/baseline-model/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/v03-final-02/baseline-model/implementation"
+        ],
+        "duration_seconds": 0.46510949172079563,
+        "exit_code": 0
+      }
+    ]
+  },
+  {
+    "path": "out/cases/v03-final-02/old-code/comparison.json",
+    "total": 478,
+    "counts": {
+      "match": 473,
+      "behavioral_mismatch": 5
+    },
+    "commands": [
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/code-inputs.json",
+          "--output",
+          "/workspace/out/cases/v03-final-02/old-code/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/v03-final-02/old-code/implementation",
+          "--source",
+          "old/source"
+        ],
+        "duration_seconds": 0.5653521856293082,
+        "exit_code": 0
+      },
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/cases/code-inputs.json",
+          "--output",
+          "/workspace/out/cases/v03-final-02/old-code/model.jsonl",
+          "--spec",
+          "/workspace/old/spec",
+          "--work",
+          "/workspace/out/cases/v03-final-02/old-code/model"
+        ],
+        "duration_seconds": 9.8387645278126,
+        "exit_code": 0
+      }
+    ]
+  },
+  {
+    "path": "out/cases/v03-final-02/old-model/comparison.json",
+    "total": 173,
+    "counts": {
+      "match": 168,
+      "behavioral_mismatch": 5
+    },
+    "commands": [
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/cases/model-seeds.json",
+          "--output",
+          "/workspace/out/cases/v03-final-02/old-model/model.jsonl",
+          "--spec",
+          "/workspace/old/spec",
+          "--work",
+          "/workspace/out/cases/v03-final-02/old-model/model",
+          "--generate"
+        ],
+        "duration_seconds": 5.877099068835378,
+        "exit_code": 0
+      },
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/v03-final-02/old-model/generated-cases.json",
+          "--output",
+          "/workspace/out/cases/v03-final-02/old-model/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/v03-final-02/old-model/implementation",
+          "--source",
+          "old/source"
+        ],
+        "duration_seconds": 0.46502959076315165,
+        "exit_code": 0
+      }
+    ]
+  },
+  {
+    "path": "out/cases/v03-final-02/repaired-code/comparison.json",
+    "total": 478,
+    "counts": {
+      "match": 478
+    },
+    "commands": [
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/code-inputs.json",
+          "--output",
+          "/workspace/out/cases/v03-final-02/repaired-code/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/v03-final-02/repaired-code/implementation"
+        ],
+        "duration_seconds": 0.5653821090236306,
+        "exit_code": 0
+      },
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/cases/code-inputs.json",
+          "--output",
+          "/workspace/out/cases/v03-final-02/repaired-code/model.jsonl",
+          "--spec",
+          "/workspace/out/repaired-spec",
+          "--work",
+          "/workspace/out/cases/v03-final-02/repaired-code/model"
+        ],
+        "duration_seconds": 9.888178754597902,
+        "exit_code": 0
+      }
+    ]
+  },
+  {
+    "path": "out/cases/v03-final-02/repaired-model/comparison.json",
+    "total": 173,
+    "counts": {
+      "match": 173
+    },
+    "commands": [
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/cases/model-seeds.json",
+          "--output",
+          "/workspace/out/cases/v03-final-02/repaired-model/model.jsonl",
+          "--spec",
+          "/workspace/out/repaired-spec",
+          "--work",
+          "/workspace/out/cases/v03-final-02/repaired-model/model",
+          "--generate"
+        ],
+        "duration_seconds": 6.279218440875411,
+        "exit_code": 0
+      },
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/v03-final-02/repaired-model/generated-cases.json",
+          "--output",
+          "/workspace/out/cases/v03-final-02/repaired-model/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/v03-final-02/repaired-model/implementation"
+        ],
+        "duration_seconds": 0.4650323251262307,
+        "exit_code": 0
+      }
+    ]
+  },
+  {
+    "path": "out/cases/v03-final-03/baseline-code/comparison.json",
+    "total": 479,
+    "counts": {
+      "match": 355,
+      "behavioral_mismatch": 124
+    },
+    "commands": [
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/code-inputs.json",
+          "--output",
+          "/workspace/out/cases/v03-final-03/baseline-code/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/v03-final-03/baseline-code/implementation"
+        ],
+        "duration_seconds": 0.5655159028246999,
+        "exit_code": 0
+      },
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/cases/code-inputs.json",
+          "--output",
+          "/workspace/out/cases/v03-final-03/baseline-code/model.jsonl",
+          "--spec",
+          "/workspace/new/spec",
+          "--work",
+          "/workspace/out/cases/v03-final-03/baseline-code/model"
+        ],
+        "duration_seconds": 9.486970022320747,
+        "exit_code": 0
+      }
+    ]
+  },
+  {
+    "path": "out/cases/v03-final-03/baseline-model/comparison.json",
+    "total": 174,
+    "counts": {
+      "match": 120,
+      "behavioral_mismatch": 54
+    },
+    "commands": [
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/cases/model-seeds.json",
+          "--output",
+          "/workspace/out/cases/v03-final-03/baseline-model/model.jsonl",
+          "--spec",
+          "/workspace/new/spec",
+          "--work",
+          "/workspace/out/cases/v03-final-03/baseline-model/model",
+          "--generate"
+        ],
+        "duration_seconds": 5.928308909758925,
+        "exit_code": 0
+      },
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/v03-final-03/baseline-model/generated-cases.json",
+          "--output",
+          "/workspace/out/cases/v03-final-03/baseline-model/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/v03-final-03/baseline-model/implementation"
+        ],
+        "duration_seconds": 0.4652107572183013,
+        "exit_code": 0
+      }
+    ]
+  },
+  {
+    "path": "out/cases/v03-final-03/old-code/comparison.json",
+    "total": 479,
+    "counts": {
+      "match": 473,
+      "behavioral_mismatch": 6
+    },
+    "commands": [
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/code-inputs.json",
+          "--output",
+          "/workspace/out/cases/v03-final-03/old-code/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/v03-final-03/old-code/implementation",
+          "--source",
+          "old/source"
+        ],
+        "duration_seconds": 0.5654564443975687,
+        "exit_code": 0
+      },
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/cases/code-inputs.json",
+          "--output",
+          "/workspace/out/cases/v03-final-03/old-code/model.jsonl",
+          "--spec",
+          "/workspace/old/spec",
+          "--work",
+          "/workspace/out/cases/v03-final-03/old-code/model"
+        ],
+        "duration_seconds": 9.536920667625964,
+        "exit_code": 0
+      }
+    ]
+  },
+  {
+    "path": "out/cases/v03-final-03/old-model/comparison.json",
+    "total": 174,
+    "counts": {
+      "match": 168,
+      "behavioral_mismatch": 6
+    },
+    "commands": [
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/cases/model-seeds.json",
+          "--output",
+          "/workspace/out/cases/v03-final-03/old-model/model.jsonl",
+          "--spec",
+          "/workspace/old/spec",
+          "--work",
+          "/workspace/out/cases/v03-final-03/old-model/model",
+          "--generate"
+        ],
+        "duration_seconds": 5.878327370621264,
+        "exit_code": 0
+      },
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/v03-final-03/old-model/generated-cases.json",
+          "--output",
+          "/workspace/out/cases/v03-final-03/old-model/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/v03-final-03/old-model/implementation",
+          "--source",
+          "old/source"
+        ],
+        "duration_seconds": 0.465107130818069,
+        "exit_code": 0
+      }
+    ]
+  },
+  {
+    "path": "out/cases/v03-final-03/repaired-code/comparison.json",
+    "total": 479,
+    "counts": {
+      "match": 479
+    },
+    "commands": [
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/code-inputs.json",
+          "--output",
+          "/workspace/out/cases/v03-final-03/repaired-code/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/v03-final-03/repaired-code/implementation"
+        ],
+        "duration_seconds": 0.5652301656082273,
+        "exit_code": 0
+      },
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/cases/code-inputs.json",
+          "--output",
+          "/workspace/out/cases/v03-final-03/repaired-code/model.jsonl",
+          "--spec",
+          "/workspace/out/repaired-spec",
+          "--work",
+          "/workspace/out/cases/v03-final-03/repaired-code/model"
+        ],
+        "duration_seconds": 9.786408264189959,
+        "exit_code": 0
+      }
+    ]
+  },
+  {
+    "path": "out/cases/v03-final-03/repaired-model/comparison.json",
+    "total": 174,
+    "counts": {
+      "match": 174
+    },
+    "commands": [
+      {
+        "engine": "model",
+        "command": [
+          "python3",
+          "out/framework/adapters/tla/run.py",
+          "--input",
+          "/workspace/out/cases/model-seeds.json",
+          "--output",
+          "/workspace/out/cases/v03-final-03/repaired-model/model.jsonl",
+          "--spec",
+          "/workspace/out/repaired-spec",
+          "--work",
+          "/workspace/out/cases/v03-final-03/repaired-model/model",
+          "--generate"
+        ],
+        "duration_seconds": 6.278952330350876,
+        "exit_code": 0
+      },
+      {
+        "engine": "implementation",
+        "command": [
+          "python3",
+          "out/framework/adapters/go/run.py",
+          "--input",
+          "/workspace/out/cases/v03-final-03/repaired-model/generated-cases.json",
+          "--output",
+          "/workspace/out/cases/v03-final-03/repaired-model/implementation.jsonl",
+          "--work",
+          "/workspace/out/cases/v03-final-03/repaired-model/implementation"
+        ],
+        "duration_seconds": 0.46510421484708786,
+        "exit_code": 0
+      }
+    ]
+  }
+]

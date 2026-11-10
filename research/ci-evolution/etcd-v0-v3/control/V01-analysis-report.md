@@ -1,0 +1,460 @@
+# Code Analysis Audit: etcd-raft V00
+
+## 0. Run identity, method, and result status
+
+This is the code-analysis handoff for the supplied V00 source, not a completed formal-verification baseline. The primary deliverable is [modeling-brief.md](modeling-brief.md). No implementation defect is reported as operationally reproduced or model-checker confirmed. Source-verified branches and open composition questions are distinguished below.
+
+| Item | Record |
+|---|---|
+| Source directory | `/home/ubuntu/specula-etcd-ci-init-20260912.FNeLj3NS/ci-clean/runs/20260912-155814-e83f/etcd-raft/source` |
+| Output directory | `/home/ubuntu/specula-etcd-ci-init-20260912.FNeLj3NS/ci-clean/runs/20260912-155814-e83f/etcd-raft/.specula-output` |
+| Upstream input | `d58d5d159ae1a1f644a10003f2d8b3b807cd0b3a` |
+| Actual checkout | `98047a97b87252c328c9c6eee3fe72671d23a785`; direct diff from V00 contains only `go.mod` and `go.sum` (360 added lines). This is the authorized build adaptation, not a mismatch. |
+| Local status | Preexisting untracked `.codex/` was observed and left untouched; no production source edits were made. |
+| Instructions | Run root AGENTS.md; source instructions supplied in the conversation; this run's effective guidance at `ci-init/inputs/a0a2dc45fc5704db41ec2cad347acff005191b3aac4707d7fd190a2a74ab3427/effective-guidance.md`. |
+| Pinned methodology | `Specula/skills/code_analysis/SKILL.md` (directory uses underscore), full `guide.md`, shared deep-analysis, distributed-analysis, bug-archaeology, and modeling-brief-format references; bundled hashicorp example read for format only, not used as target evidence or scope. No shared skill copy or account memory was used. |
+| Category | **A — Distributed / Message-Passing**. The core is serialized, but safety crosses asynchronous delivery, stable-storage obligations, configuration application, and crash recovery (`node.go:313-427`, `rawnode.go:31-33`, `storage.go:40-69`). Category B and BFT overlays do not apply. |
+
+The four-phase methodology was applied within the explicit information boundary. Phase 1 mapped modules and atomicity; Phase 2 was assessed and its historical collection excluded by that boundary; Phase 3 read core source fully with parallel reviewers and rechecked candidates against callers and compensation; Phase 4 grouped mechanisms into six connected Scenarios and produced the brief. A blocked archaeology operation was not replaced by unapproved research or invented counts. Current supplied regression comments were read as source text; their issue links and historical claims were not followed or independently verified.
+
+| Evidence/check category | Count or outcome |
+|---|---|
+| Historical bug-fix commits mined/analyzed | **0 / 0** — excluded, not sampled |
+| GitHub issues collected/deeply read/confirmed/excluded as false | **0 / 0 / 0 / 0** — excluded |
+| Open bug-fix PRs collected/reviewed | **0 / 0** — excluded |
+| Target source revision inspection | HEAD identity and V00→build-only diff only; no bug-history traversal |
+| Library files fully read | 18 implementation Go files, 4,774 lines including comments; additionally doc.go 300, README 197, design 57, raft.proto 95 |
+| Supplied test inventory | 21 Go test files; 228 named Test declarations, one Example, four Benchmark declarations. These are inventory counts, not coverage percentages. |
+| Complete test-file reading | 12 test files: node/rawnode, log/log_unstable/storage, tracker progress/inflights, quorum quick/datadriven, raft_flow_control, raft_snap, util. Additional selected full test bodies from raft_test.go; raft_paper_test.go declarations inventoried, not all bodies read. |
+| Parallel deep review | Four subagents total: interfaces/read lifecycle, storage/log, quorum/progress, independent election/transfer review; at most three alongside the root. Root fully read raft.go and reread all reported paths and compensators. |
+| Ordinary tests | `go test -mod=readonly -p 8 -count=1 ./...`, Go 1.23.5 linux/amd64, exit 0. Four packages passed; raftpb has no test files. Log: [code-analysis-tests.log](code-analysis-tests.log). No claim that the Example without output or benchmarks were executed. |
+| Test resources | GOMAXPROCS=8; TMPDIR/GOTMPDIR, GOCACHE, GOMODCACHE and GOPATH under this run's `tmp/code-analysis/`. Pinned dependencies downloaded; source module files unchanged. No system `/tmp` test state. |
+| New targeted tests / operational reproducers | **0 / 0**. No exploit payload, operational vulnerability reproducer, or candidate-specific execution was generated. |
+| Formal syntax / trace validation / negative-trace checks / bounded TLC | **Not performed** in this phase; no formal model yet. No timeout or unexamined behavior is labeled passing. |
+| CI publication/state | No push, issue, publication, `current` update, verdict alteration, or property deletion. |
+
+The unit suite's success demonstrates that the unchanged source builds with this run's build-only adaptation and passes its supplied tests. It does not confirm the open interleavings, establish legal public-interface reachability of a candidate, measure branch coverage, or replace model/trace validation. Initial coverage and the plan for validation are in the brief §3.1 and this report §§6–8.
+
+## 1. Phase 1 — structural reconnaissance
+
+### 1.1 Core module inventory
+
+All production/schema entries below were read completely, including nonprotocol helpers where they affect observation or failure behavior. Line references throughout this report are relative to `../source/` at the supplied revision.
+
+| Module | Size and responsibility | Important boundaries/dependencies |
+|---|---|---|
+| `raft.go` | 1,576 lines: config, state, elections, sends, replication, reads, snapshots, membership | `Step` term dispatch then role handler; sends accumulate in mailbox; `applyConfChange` is a separate core call; storage reads occur within core processing |
+| `node.go` | 604: channel wrapper, startup/restart, Ready contract/lifecycle, user calls | One run goroutine; pending Ready blocks only the next Ready; incoming messages/ticks/configuration callbacks continue (`328-425`) |
+| `rawnode.go` | 282: caller-driven wrapper, construction, Ready/Advance and status | Thread-unsafe (`31`); serialized method execution with legal inputs between Ready and Advance; caller owns batch discipline |
+| `log.go`, `log_unstable.go` | 372 + 159: effective stable/unstable log, commit/instruction cursor, bounds, truncation, snapshot overlay | Unstable can replace a stable suffix; acknowledgement uses matching `(index,term)`; snapshot has its own exact-index acknowledgement |
+| `storage.go` | 271: public storage contract and MemoryStorage implementation | MemoryStorage methods mostly mutex-protected; individual methods do not form a multi-call transaction; persistence/application are caller responsibilities |
+| `tracker/{tracker,progress,inflights,state}.go` | 259 + 237 + 124 + 42: local voter/learner sets, votes, per-peer progress and quota | Quorum evidence differs from optimistic Next/quota; active-voter configuration changes only at callbacks or full restore |
+| `quorum/{majority,joint,quorum,voteresult_string}.go` | 202 + 75 + 58 + 26: majority order statistic, vote outcomes, joint arithmetic and formatting | Joint helper exists; production never populates the second voter half; empty-majority conventions require careful abstraction |
+| `read_only.go` | 121: context-keyed pending map, ordered queue, ack sets, ReadState | Queue-prefix completion; pending state reset on Raft reset, delivery differs between wrappers |
+| `util.go`, `status.go`, `logger.go` | 142 + 98 + 126: message classes, payload/batch sizing, observations, fatal behavior | Status omits quota; local/response filtering changes entry-path semantics; DefaultLogger panics/terminates for fatal paths |
+| `raftpb/raft.proto` | 95: Entry, Message, HardState, Snapshot, ConfState, ConfChange | 19 message types; one ConfChange entry kind; Nodes/Learners only, no joint configuration schema |
+
+Documentation read: README.md, design.md, and doc.go in full. The analysis also read `rafttest/node.go` and `example_test.go` for caller-loop context; these are not complete durable-storage/application adapters. `rafttest/node.go:74-92` persists into an in-memory object, sends asynchronously, and advances without modeling state-machine application; its restart reuses that object (`131-144`). `example_test.go:21-24` uses empty placeholder persistence/application methods. Neither is sufficient by itself for crash-durability or read-result verification.
+
+### 1.2 Concurrency and atomicity map
+
+| Unit | Atomic in the proposed model | Can interleave outside it | Evidence |
+|---|---|---|---|
+| Core Step/tick/config callback | One serialized core transition, including state, mailbox and progress updates | Other nodes; next local core input; caller storage operations where storage-read observations cross separate calls | `node.go:354-425`, `rawnode.go:31-33` |
+| Full snapshot core restore | Log overlay and complete protocol-config replacement within one handler | Subsequent persistence, application, message publication, timers | `raft.go:1327-1393`; do not split its per-member rebuild into artificial network-visible steps |
+| Ready extraction | Capture batch contents/endpoints and wrapper-specific output removal | Persistent writes, transport, actual app/config application, next core inputs | `node.go:386-408`, `rawnode.go:185-190` |
+| Persistence | Chosen adapter's logical write/completion boundary, not every Go field assignment | Crash, other components, permitted same-batch sends | `README.md:114-124`, `node.go:58-89`, `storage.go:40-69` |
+| MemoryStorage call | Mutex-protected method operation except initialization read | Different calls, compaction, Raft reads on adjacent calls | `storage.go:75-78,95-104,108-167,172-270`; `log.go:315-327` |
+| Application | Ordered command/configuration operation or snapshot application completion | Further Raft processing and early Advance; later batches may be delivered but cannot apply ahead | `node.go:145-157`, `README.md:120-122` |
+| Advance | Acknowledge captured entry/snapshot and released application cursor | Current unstable suffix may already differ; application may remain unfinished | `node.go:409-419`, `rawnode.go:44-69`, `log_unstable.go:77-89,111-114` |
+| Client handoff/result | Separate handoff, core decision, API return, and application-defined result events | Cancellation or Stop between handoff and return; replication/commit/application continue | `node.go:358-365,473-509` |
+
+Do not give heartbeats an independent Raft goroutine: they share the same state machine as replication here (`raft.go:629-653`, `node.go:384-385`). Independent transport/storage/application scheduling is real. Conversely, treating an entire core call plus all its Ready effects as one atomic success removes the main crash and interleaving questions.
+
+Separate storage calls within a core operation require an explicit abstraction decision. Example: `maybeSendAppend` obtains predecessor term and entries separately (`raft.go:453-454`), and `raftLog.slice` checks bounds before calling Storage.Entries (`log.go:305-327`); compaction can occur between them. Model the resulting legal error/observation alternatives, or split at these calls when the chosen trace/harness exposes that concurrency. Do not assume MemoryStorage's per-method mutex serializes the entire protocol operation with the caller.
+
+## 2. Phase 2 — bounded archaeology and reference comparison
+
+Historical mining and issue/PR collection would require information explicitly excluded for this run. Those steps were therefore not executed. No historical hotspot ranking, production impact, bug age, known-fix status, or issue confirmation is inferred. The zero counts in §0 make this limitation auditable. The provided GitHub name was an identity reference, not authorization to inspect live repository pages.
+
+Current-source developer signals were searched across nongenerated production files with TODO/FIXME/HACK/XXX/BUG/WARN patterns. The meaningful groups were reread with their callers:
+
+| Signal group | Source evidence | Disposition |
+|---|---|---|
+| Initialization and unstable bootstrap | `rawnode.go:85-88`; `node.go:211-238`; `raft.go:327-336` | Preserve distinct bootstrap/join/recovery and unstable committed bootstrap; MC-5 plus constructor atomicity exclusion FP-5 |
+| Learner voting / campaign guards | `raft.go:887`; `raft.go:729-736` | Preserve current learner rule and campaign path differences; MC-6, not an assumed corrected policy |
+| Removed leader | `raft.go:945-946,1464-1474` | Actual retained role is acknowledged in code; it is not itself an MC finding. Investigate operation consequences under general read/history/progress properties (MC-2/6) |
+| Snapshot status/restore | `raft.go:1126-1129,1388-1389`; `node.go:180` | Distinguish status from replica ACK, verify compensators, record text mismatch; no isolated "TODO proves bug" claim |
+| Progress and quota | `raft.go:169`; `tracker/progress.go:178`; `tracker/tracker.go:105` | Retain decision-relevant batching/quota/backtracking; allocation details omitted |
+| Joint-consensus future sketch | `tracker/tracker.go:36-72` | Comment-only future state; no live joint transition to model |
+| Unexpected errors/bounds | `log.go:67,71,183,194,235,269,322`; `storage.go:237`; `raft.go:472` | Preserve actual error distinctions and caller data-continuity contract; MC-3/4, CR-4 and exclusions below |
+| API/error/documentation | `node.go:355-357,449`; `status.go:72`; logger/debug messages | Core proposal neutralization is semantic; unknown network-local return difference is modeled; formatting/metrics are not protocol targets |
+
+Reference comparison was restricted to supplied algorithm documentation. Raft's election/log/current-term commitment is recognizable in `raft.go:664-770,885-920` and `log.go:88-114,273-296`. Specific implementation departures from a minimal paper model are documented and modeled: application-time single-node membership changes committed under the old config (`README.md:193-197`, `doc.go:174-195`); optional PreVote/CheckQuorum/transfer (`raft.go:173-193,629-653,731-770`); separate heartbeat commit cap (`raft.go:507-523`); progress/quota batching (`design.md:3-57`); caller-managed durability and early Advance (`README.md:114-124`); quorum-based ReadIndex (`raft.go:995-1029,1093-1121`). No paper PDF, other implementation, prior TLA+ model, future target revision, or external research report was fetched.
+
+Some local documentation is approximate. `design.md:46` describes initial Next as last index, but reset uses `lastIndex()+1` (`raft.go:582`). `doc.go:245-252`'s vote prose does not precisely describe current common-term dispatch and last-log freshness. The source uses explicit PreVote/lease exceptions and `log.isUpToDate` (`raft.go:784-920`, `log.go:279-280`). Source transitions take precedence; differences belong in the correspondence audit, not invented fixes.
+
+## 3. Phase 3 — source and interface correspondence
+
+### 3.1 Persistent, volatile, released, and applied state
+
+| State/view | Source semantics | Required model distinction |
+|---|---|---|
+| Term/Vote/commit | `raft.hardState` packages volatile fields (`raft.go:392-397`); loadState loads supplied HS (`1497-1503`) | Current fields versus emitted HS, storage-visible record, and successfully durable record |
+| Effective log | Stable log plus unstable override; unstable offset can precede storage last index (`log_unstable.go:19-22,123-142`) | Keep both representations and logical merge; do not make intervals permanently disjoint |
+| Commit | Leader uses local Match immediately after volatile append (`raft.go:611-615`); majority candidate must have current term (`log.go:291-296`) | Volatile commit may exceed local durable endpoint; promise/data backing is a separate safety obligation |
+| Raft applied cursor | Highest instructed/released position (`log.go:35-38`), advanced from returned entries or snapshot (`node.go:115-122`) | `raftApplied` is not actual state-machine completion or configuration callback completion |
+| Protocol configuration | Initialized from Storage.ConfState, mutated by callbacks, replaced during full restore (`raft.go:325-368,1377-1385,1403-1494`) | Local effective voters/learners, actual applied config history, and recoverable config must be observable separately |
+| Snapshot | Pending unstable overlay versus Storage snapshot versus actually applied state-machine snapshot | Metadata/index/term/configuration and symbolic prefix witness at each stage |
+| ReadState | Index/context output, only for the requesting read (`read_only.go:19-26`, `node.go:63-67`) | Evidence offered to caller, actual application fence, and user response are separate |
+
+Caller obligations have different strengths; ambiguous text is not permission to assume away a failing trace:
+
+| ID | Requirement or unresolved interpretation | Basis and modeling consequence |
+|---|---|---|
+| A1 | Nonzero stable identities; no reuse after removal; coherent initial cluster/joins | `README.md:83-87,186-189`; `raft.go:210-236`. Ordinary duplicate additions to an existing member remain allowed (`raft.go:1419-1422`). Do not fabricate incompatible initial configurations or reuse removed IDs. |
+| A2 | Serialized RawNode calls; ordered read-only Ready batches | `rawnode.go:31-33`, `node.go:49-51,142-157`. Permit sequential core calls during one pending batch, demonstrated by `rawnode_test.go:115-130`; disallow concurrent RawNode method races and arbitrary overlapping Ready acknowledgments. |
+| A3 | Persistence in returned order; suffix replacement; prior batch entries and latest HS before messages | `README.md:116-118`, `doc.go:75-85`. Logical HS record atomicity is retained; successfully completed persistence survives crash. No invented byte-level torn record or silent corruption. |
+| U1 | Same-batch entry persistence/publication allowance is ambiguous | README `118`/doc.go `79-85` allow overlap, explaining leader parallel disk writes; `node.go:69-82` requires Entries before Messages without a role distinction. Keep strict-batch, leader-append-overlap, and any literal broad reading separately labeled. The broad reading must not silently become the accepted caller contract; the conservative variant cannot stand in for all allowed orders either. MC-4 reports the dependency. |
+| U2 | Recoverable snapshot transaction versus HS ordering needs a concrete adapter | README `116` says Entries→HS→Snapshot or atomic; full restore emits snapshot with raised commit (`raft.go:1377`; `node.go:582-586`); restart rejects commit beyond available data (`raft.go:1497-1500`). Capture actual durable stages, incomplete transaction recovery, and backing checks. Neither universal atomicity nor a usable partially installed snapshot is provided by this library. |
+| A4 | Apply all committed configuration entries, possibly deterministically canceled; application batches finish in Ready order | `README.md:120-122`, `node.go:135-157`. Cancellation uses NodeID=0 based only on state-machine state. Early Advance may precede actual application; do not impose same-time callbacks absent a contract. |
+| A5/U3 | Storage returns contiguous valid entries and snapshot/configuration history; restart Applied agrees with recovered app state | `storage.go:40-69,188-215`, `log.go:126-127`, `node.go:249-252`. MemoryStorage.InitialState returns snapshot config (`storage.go:95-96`), while Config.Applied skips old entries (`raft.go:146-150,373-375`). Show how skipped config changes are recovered; no built-in replay of them exists. CR-2 remains open until an adapter does this. |
+| A6 | Transport handles actual emitted messages; local control messages come from appropriate APIs | `util.go:49-55`, wrapper Step filters. Model drop/delay/duplicate/reorder of valid traffic, including messages from prior incarnations and configuration views; no fabricated terms, entries, vote identities, or altered snapshot contents. |
+| A7 | Report transport snapshot failure so the sender can resume | `node.go:178-187`, `raft.go:1122-1143`. Transport completion alone is not receiver durability/application evidence; failures and receiver ACKs are independent events. |
+| A8/U4 | Caller correlates a ReadState to its request and waits for actual application | `read_only.go:19-23`, `node.go:63-66,168-172`. Use unique contexts in normal harness, but nonempty is not explicitly required in inspected API text (TV-3). Text says applied “greater than/further than”; inclusive prefix coverage at index i is a reasonable formal candidate but must be explicitly justified or separately checked, not silently substituted. |
+| A9 | No exactly-once promise; cancellation/timeout can leave uncertain effects | `node.go:132-134,473-509`, `README.md:170`. Retried commands need caller-defined IDs/deduplication if exactly-once service is desired; that service is not supplied by Raft. |
+| A10 | Unexpected storage failures stop the affected instance pending caller recovery | `storage.go:43-45`; actual panic branches in `log.go:305-323`, `raft.go:467-475`. Retryable compaction/snapshot-unavailability are separate from fatal storage faults. Do not continue after a fatal logger branch as if it returned success. |
+| A11 | Quiesced ticks require a caller-established inactive/equal-state group and return to effective Tick | `rawnode.go:124-134`. Retain only the documented use; ordinary liveness requires effective ticks, not an infinite sequence of TickQuiesced calls. No OS timer-rate promise. |
+
+These caller constraints describe legal inputs and external responsibilities. ElectionSafety, durable promise preservation, configuration-transition safety, matching history, and read linearizability remain targets; they are never assumptions restricting protocol actions. Every later run must name its U1–U4 choices and remaining gaps.
+
+### 3.2 Election, term dispatch, and leadership transfer
+
+Wrapper entry filtering precedes core term processing: Node drops unknown response senders inside run and silently ignores externally supplied local-message types (`node.go:366-370,446-451`); RawNode returns explicit local/unknown-response errors (`rawnode.go:173-182`). `MsgReadIndexResp` is not in `IsResponseMsg` (`util.go:54-55`); model this classification as written, while retaining valid-message provenance. Requests from nodes outside a receiver's local configuration can be real delayed traffic, so a blanket membership filter would strengthen the implementation.
+
+| Incoming term/event | Actual decision | Source |
+|---|---|---|
+| Term zero | Treat as local/forwarded input for core term handling; forwarded proposal/read intentionally keep zero | `raft.go:423-429,787-788` |
+| Higher Vote/PreVote, recent leader and CheckQuorum | Ignore unless transfer force context; do not update term | `raft.go:790-799` |
+| Higher PreVote request or granted PreVoteResp | Do not update term; rejection at a higher term follows normal follower reset | `raft.go:801-818` |
+| Other higher-term message | Become follower, remembering sender as leader only for append/heartbeat/snapshot | `raft.go:810-817` |
+| Lower append/heartbeat with PreVote or CheckQuorum | Send own-term AppResp to bring old leader forward; then return | `raft.go:820-843` |
+| Lower PreVote | Explicit rejection at current term; other lower messages generally ignored | `raft.go:844-856` |
+| Vote grant | Local nonlearner plus existing/safe new vote or future PreVote and last-log freshness; actual Vote resets election timer and records Vote | `raft.go:885-920`, `log.go:273-280` |
+| Candidate response | Accept phase-appropriate response type; first response per ID; count current voter IDs | `raft.go:1188-1225`, `tracker/tracker.go:229-258`, `quorum/majority.go:170-201` |
+
+`becomePreCandidate` preserves Term and Vote and resets tally/leader knowledge (`raft.go:677-689`); `reset` clears Vote only on term change (`565-569`). Elected leader resets progress, gives self Replicate, conservatively reserves pendingConfIndex at the old log tail, and appends a no-op (`693-726`). Keep the no-op and current-term commitment gate rather than treating election as immediately safe for arbitrary reads.
+
+Hup requires promotability and scans committed entries beyond `raftLog.applied` for pending ConfChanges (`raft.go:859-880`). Follower TimeoutNow checks promotability only and calls transfer campaign directly (`1264-1272`). A successful PreVote continuation also calls campaign directly (`1215-1217`); campaign logs an unpromotable state without returning (`729-736`). Local configuration callbacks can occur between events. These source-verified differences motivate MC-6; they are not proof of a triggerable fault. Do not encode campaign eligibility as a universal action guard that erases the continuation paths.
+
+Transfer checks progress existence and learner status, handles self/repeated/replaced targets differently, freezes new leader proposals, waits for target Match to reach log tail, then emits TimeoutNow (`raft.go:966-975,1032-1037,1086-1089,1151-1181`). Repeated requests to the same transferee do not restart its timeout; another target replaces the attempt. Tick aborts an unfinished attempt at electionTimeout (`634-642`), higher-term transition resets it (`565-576`), and applicable configuration changes abort when the target disappears (`1489-1491`). Removing the leader itself returns earlier (`1464-1474`), which must remain expressible. An API handoff is an attempted management operation, not an election result.
+
+CheckQuorum uses a recent-activity window, not instantaneous reachability. Self is marked active if still tracked; nonself activity is cleared after each check (`raft.go:940-960`). Added/promoted peers start active as a grace (`1432-1435`). Learners never count toward the active quorum (`tracker/tracker.go:189-198`). The model must keep these options even though clock-based lease reads are excluded.
+
+### 3.3 Membership, callbacks, and API outcomes
+
+Active membership is a per-node applied voter set plus learners. `MakeProgressTracker` initializes empty halves and `InitProgress` adds voters only to Voters[0] (`tracker/tracker.go:99-114,168-177`); a production writer search found no insertion into Voters[1]. The second half's empty quorum arithmetic is identity behavior, not an enter/leave-joint protocol (`quorum/joint.go:49-75`, `quorum/majority.go:119-124,171-175`). Only the schema's single ConfChange forms are reachable through current APIs (`raftpb/raft.proto:78-95`).
+
+| Membership operation | Actual effect/guard | Modeling implication |
+|---|---|---|
+| Propose ConfChange while pendingConfIndex > raftApplied | Rewrite that entry to empty EntryNormal, not a configuration-success result | `raft.go:977-987`; outcome/entry-kind instrumentation required |
+| First eligible ConfChange in proposal | Reserve index before append's quota check | `raft.go:985-991`; TV-2; no assumption that rejection rolls back all bookkeeping |
+| Add new voter/learner | New progress Match=0, Next=log tail+1, initially active | `raft.go:1407-1409,1432-1435`; learner catch-up and changed quorum compose |
+| Add existing same role | Return from local add helper; redundant bootstrap additions are intentional | `raft.go:1419-1422`; no duplicate voter count |
+| Promote learner | Preserve existing progress, change role to voter | `raft.go:1425-1429`; do not reset replicated evidence or manufacture catch-up |
+| AddLearner on existing voter | Ignore; live demotion unsupported | `raft.go:1411-1416`; synthetic restore tests do not authorize live ID reuse |
+| Remove | Unconditional tracked-peer helper, update local learner flag; leader self-removal returns without resignation | `raft.go:1445-1474`, `tracker/tracker.go:142-163`; CR-4 contract question |
+| Remove other voter while remaining leader | Recompute commit under reduced set, broadcast if advanced; possibly abort transfer | `raft.go:1477-1492`; retains old/new quorum interaction |
+| UpdateNode or NodeID zero | No membership mutation; deterministic canceled application still completes callback | `raft.go:1438-1452`; cancellation choice belongs to deterministic application state |
+
+Vote recipients do not test candidate membership and locally removed nonlearners may vote (`raft.go:885-920,1460-1462`). Counting uses each decision maker's current voter configuration, so learner/unknown IDs do not become votes merely by appearing in the response map (`tracker/tracker.go:257`, `quorum/majority.go:181-201`). Voter-role and quorum predicates must be operation-specific; `leader => self in voters` is false for known source behavior.
+
+`pendingConfIndex` may conservatively equal a normal entry's index immediately after election (`raft.go:709-714`). It is not an exact pointer that always names a configuration entry. Application-time effect is intended (`README.md:193-195`), but the guards use the released cursor rather than actual callback progress. The model must permit early Advance, in-order delayed callbacks, and elections/transfers while configurations differ; safety of that composition is MC-1/6 rather than an environment assumption.
+
+Node.Propose waits for Step's core result via a buffered result channel; ProposeConfChange and nonproposal methods generally acknowledge channel handoff (`node.go:358-365,442-460,473-509`). RawNode proposal methods return core errors directly (`rawnode.go:143-164`). No-leader Node proposal delivery can wait, whereas RawNode can immediately return ErrProposalDropped; follower forwarding can be disabled; a leader drops new proposals after removal, during transfer or under quota (`node.go:339-350`, `raft.go:966-975,990-991,1199-1201,1235-1244`). These outcomes and their guards must be observed, not inferred from absence of log changes.
+
+Cancellation after handoff does not undo a core effect. The one-element result channel allows Node.run to finish a reply even after caller cancellation (`node.go:487,499-507,363`). Stop terminates the loop without flushing or committing outstanding work (`node.go:301-311,422-424`). ApplyConfChange/Status can return empty values after stop (`521-541`); they are not successful live configuration events. Proposal loss and retry are documented (`node.go:132-134`, `README.md:170`), so a lost proposal alone is not a new safety finding.
+
+### 3.4 Log replication, progress, flow control, and snapshots
+
+`raftLog.maybeAppend` first checks predecessor term, finds the first term conflict, panics if it conflicts with committed history, appends only the conflicting/new suffix, and commits at most the message's last new index (`log.go:88-114`). The follower handles an append below its commit by acknowledging its committed index (`raft.go:1291-1303`). The actual source panic is a model outcome if its premise becomes reachable; do not replace it with a precondition forbidding the transition.
+
+Leader commit candidate is the majority order statistic of voter Match (`tracker/tracker.go:123-140`, `quorum/majority.go:118-163`) and only advances when the candidate entry has the leader's current term (`raft.go:560-562`, `log.go:291-296`). Self Match follows volatile append (`raft.go:613`); there is no implicit disk write there. A heartbeat sends min(peer Match, leader commit) and receiver commits directly to its advertised bound (`raft.go:508-519,1306-1308`). The cap compensates for the absence of append matching in heartbeat reception; whether Match's history backing remains valid across failures is still a general property.
+
+| Progress event | Source semantics | Retain / avoid |
+|---|---|---|
+| Send append | Pause in ProbeSent/full Replicate/Snapshot; get term at Next-1 and size-limited suffix | `raft.go:445-459`, `tracker/progress.go:202-212`; keep data-availability outcomes |
+| Nonempty append | Replicate advances Next optimistically and consumes an endpoint quota; Probe sets ProbeSent | `raft.go:489-501`; empty append does neither |
+| Successful AppResp advancing Match | Move Probe→Replicate; Snapshot→Probe→Replicate if pending index covered; otherwise free cumulative quota; commit/broadcast/refill and transfer check | `raft.go:1052-1091`; identity of sent/acked data required |
+| Rejection in Replicate | Ignore rejected index ≤ Match; otherwise backtrack to Match+1 and become Probe | `tracker/progress.go:170-180`, `raft.go:1042-1050` |
+| Rejection in other progress state | Require rejected == Next-1; set Next=max(1,min(rejected,hint+1)), clear ProbeSent | `tracker/progress.go:183-193`; no universal Next>Match property |
+| HeartbeatResp | Mark active, clear ProbeSent, free one slot if full, maybe append; never advances Match itself | `raft.go:1093-1103`; quota is not durable replication proof or the complete network-message set |
+| Unreachable | Replicate→Probe | `raft.go:1144-1150`; retries remain possible |
+| Snapshot send | Only when append data unavailable and peer recently active; temporary snapshot absence retries; nonempty snapshot required; enter Snapshot | `raft.go:459-482`; no automatic reliable transfer |
+| Snapshot status success/failure | While Snapshot, go Probe; failure clears pending index first; set ProbeSent=true | `raft.go:1122-1143`; status does not advance Match, and heartbeat/ACK resumes sending |
+
+The inflight ring can be abstracted as a bounded ordered sequence of endpoints. Preserve capacity, count, cumulative freeing, and heartbeat's first-slot release (`tracker/inflights.go:43-124`). Ring allocation/growth/layout does not decide protocol outcomes. Size limits need two concepts: PayloadSize counts only Data (`util.go:101-104`) for uncommitted quota; message/Ready limiting uses encoded Entry.Size and always returns at least the first entry (`util.go:129-142`). `increaseUncommittedSize` permits an arbitrarily large batch when current usage is zero; once over limit even zero-payload proposals may be rejected because usage+s remains too large (`raft.go:1530-1543`). Quota is reduced at Ready extraction, resets on role resets, and saturates at zero (`node.go:407`, `rawnode.go:189`, `raft.go:591-592,1548-1565`); it is an estimate, not exact bytes in the current uncommitted suffix.
+
+Snapshot restore has four outcomes: obsolete index ignored (`raft.go:1328-1330`); recipient absent from ConfState refused (`1344-1365`); matching local index/term fast-forwards commit while retaining log/config for normal application (`1370-1374`); otherwise full restore replaces effective log through unstable snapshot and rebuilds protocol configuration immediately (`1377-1389`). The follower role check is defensive; valid append/snapshot term dispatch and candidate fallback reach it as follower (`784-857,1208-1210,1253-1256`). Model both actual handler outcomes and provenance of sent snapshots, not arbitrary manufactured ConfStates.
+
+A full restore sets effective first index to snapshot index+1 and commit to snapshot index, but leaves the old Raft applied cursor until Advance (`log.go:299-303`, `log_unstable.go:35-38,117-120`, `node.go:409-418`). `nextEnts` clamps its start to firstIndex (`log.go:151-158`); Hup's unapplied-config scan does not (`raft.go:866-868`). Node continues ticks and incoming messages with Ready outstanding (`node.go:328-385`). This contrast is the precise source premise for MC-3; a complete legal execution and practical impact have not been established here.
+
+MemoryStorage snapshot creation records index/term, supplied ConfState, and state-machine data without compaction (`storage.go:188-210`). ApplySnapshot replaces the storage log with a dummy boundary entry (`170-185`); compaction separately preserves boundary term and the remaining suffix (`213-232`). Caller must stay within applied/available bounds and retain recovery-capable state; do not compact merely because Raft released application work when its actual state is not recoverable. Keep snapshot payload as symbolic command/configuration history, preserving missing-prefix observations despite byte abstraction.
+
+Storage errors are not a single fault class. Out-of-effective-range `raftLog.term` returns `(0,nil)` (`log.go:231-237`), in-range storage term can return ErrCompacted/ErrUnavailable (`243-249`), `matchTerm` treats errors as mismatch (`283-288`), slice propagates compaction but panics on unavailable requested ranges/unexpected errors (`305-323`), and `allEntries` retries racing compaction (`260-270`). Snapshot send retries ErrSnapshotTemporarilyUnavailable, but unexpected snapshot errors are fatal (`raft.go:467-475`). `loadState` rejects recovered commit outside the current retained log boundary (`1497-1503`). Preserve these effects explicitly; do not fabricate successful error recovery that the implementation lacks.
+
+### 3.5 ReadIndex protocol and delivery
+
+Non-singleton ReadOnlySafe drops a request if the committed entry's term is not current, otherwise captures commit, adds the context-keyed request, self-acks, and broadcasts heartbeat context (`raft.go:995-1012`). A singleton bypasses that gate and broadcast (`1021-1026`); `IsSingleton` checks only voter cardinalities (`tracker/tracker.go:119-120`). Heartbeat ACKs use the current voter configuration, and a confirmed queue position releases every earlier pending request (`raft.go:1105-1120`, `read_only.go:78-111`). `readIndexStatus` stores request/index/acks, no fixed configuration (`read_only.go:29-37`). The model must retain membership changes during a read; demanding independent explicit quorum ACKs for every earlier context would incorrectly reject intended batching.
+
+Followers forward reads to known leader or drop them without one; valid-format read responses create ReadState (`raft.go:1274-1286`). Terms still pass common Step handling. Proposals and reads forwarded by send remain term zero (`raft.go:423-429`), while responses carry sender's current term. Reset clears pending read queue but does not itself equate previously established read results with stale data (`raft.go:593`); a completed read barrier can retain a valid linearization point even if leadership changes before the caller finishes. Therefore do not require the serving node to be current leader at user response time.
+
+Read contexts identify requests (`read_only.go:19-23`); duplicate contexts already pending are ignored (`56-62`), unknown ACK contexts return nil (`68-72`), and empty heartbeat context skips read handling (`raft.go:1105-1106`). Normal harness contexts should be unique and nonempty; this is a declared test choice, not a proven full public API restriction. TV-3 keeps the empty-context progress question visible.
+
+Node clears emitted readStates at Ready delivery (`node.go:405-406`); RawNode.Ready clears messages but retains readStates, and Advance clears the entire current buffer if the acknowledged batch contained any (`rawnode.go:67-69,185-190`). Other sequential core calls may produce further results during that pending batch. TV-1 is the verified ownership difference; no lost-result operational reproducer or stale-read conclusion was produced. Caller retry is possible, but does not justify silently omitting the buffer lifecycle from a faithful model.
+
+The caller's actual read completion needs correlated request, valid captured leadership/commit basis, and sufficient actual application. Raft's instruction cursor and API nil return provide neither of the latter automatically (`node.go:63-66,168-172`, `rawnode.go:276-281`). Use invocation/response history and snapshot prefix witnesses so a general linearizability predicate can expose stale results or unjustified fast-path outcomes without assuming the right answer.
+
+## 4. Verified premises and findings pending verification
+
+Every entry below was reread at the cited source and traced through relevant caller/compensation paths. “Verified premise” means the code does what is described; it does not mean a violation is reachable through a complete contract-compliant execution. No severity or operational consequence is assigned without that further evidence. The seven MC entries retain open questions whose resolution could establish general history, recovery, management, or read contracts; none merely asks whether an acknowledged TODO or already-fixed historical defense exists.
+
+| ID / category | Verified premise and suspected interaction | Compensators / remaining uncertainty | Verification disposition |
+|---|---|---|---|
+| MC-1 — model | Early Advance is permitted and updates instruction cursor, while conf admission and Hup inspect that cursor (`node.go:154-157,410-412`; `raft.go:866-872,977-987`) | Applications must finish batches in order and call ApplyConfChange; source pending-conf guard exists, but does not observe actual callback completion. No complete unsafe history established. | Check ConfigurationTransitionSafety/ElectionSafety/CommittedHistory with actual config progress independent of released cursor; preserve allowed early Advance. |
+| MC-2 — model | Removed leader keeps role, write path blocks proposals, read paths lack corresponding self-membership gate; singleton helper is count-only (`raft.go:966-970,995-1026,1464-1474`; `tracker/tracker.go:119`) | Non-singleton reads require current-term commit and quorum ACKs; callers wait for actual apply. Node blocks proposals on removal, not reads (`node.go:371-377,569`). No completed stale read demonstrated. | Check general ReadBasis with configuration transitions and queue-prefix confirmation; do not report retained leader role alone as a bug. |
+| MC-3 — model | Full restore changes log lower bound and commit but not instruction cursor; Hup scan differs from nextEnts clamp (`raft.go:866-868,1377`; `log.go:151-158,299-303`) | Advance later repairs cursor; promotable checks membership/learner only; pending Ready does not block ticks/Step (`node.go:328-385`). No concrete runtime reproduction. | Check NoUnexpectedFatal and recovery progress; represent the source's error branch as an outcome rather than silently clamping/guarding it in the reference. |
+| MC-4 — model / contract-dependent | Caller-controlled publication/durability, same-batch overlap text, logical snapshot commit before persistence, commit-only asynchronous allowance (`README.md:116-118`; `node.go:58-89,595-604`; `raft.go:1377,1497-1503`) | Latest HS and prior batches are barriers; exact old-Ready ACK protects replacements. Concrete storage adapter and U1/U2 interpretations are unresolved; a bad caller is not automatically a Raft defect. | Check PromiseBacking/RecoveryBacking in explicitly named caller variants. Report dependence on unresolved text rather than selecting only the passing interpretation. |
+| MC-5 — model | NewRawNode loads state then treats LastIndex==0 as new and resets to term 1 (`rawnode.go:77-90`), with reset replacing different term and clearing vote (`raft.go:565-569`) | Normal RestartNode preserves loaded state; supplied normal raw restart tests use nonempty log or snapshot. Empty-peer joins are supported, but full legal saved-obligation/recovery history is not established here. | Preserve constructor branch and check VoteRecovery over legal generated histories; no invented initial inconsistent disk state, no claim of downstream consensus violation. |
+| MC-6 — model | Hup/TimeoutNow/PreVote continuation differ in guards; learner promotion/removal changes local participation between events (`raft.go:729-736,859-880,1215-1217,1264-1272,1403-1494`) | Log freshness, first-vote counting, local voter quorum, term handling, transfer timeout and learner checks compensate. Do not conflate receiver vote eligibility with candidate eligibility. | Check election/history/NoUnexpectedFatal and conditional management progress, preserving all paths and nonidentical local configs. |
+| MC-7 — model | Optimistic Next/quota, state-specific backtracking, snapshot status versus receiver ACK, concurrent compaction and heartbeat recovery interact (`raft.go:445-504,1039-1150`; `tracker/progress.go:169-193`) | Successful Match advancement, stale-reply checks, heartbeat unpause, temporary-snapshot retry and failure reporting are present. No permanent catch-up loss or data inconsistency demonstrated. | General ReplicationEvidence/SnapshotBacking/CatchupProgress across finite interactions; fair recovery premises must not exclude paused states whose recovery is being checked. |
+| TV-1 — test/review | RawNode's Advance clears whole current readStates based on earlier Ready content (`rawnode.go:67-69`), unlike Node emission clearing (`node.go:406`) | Input between Ready and Advance is demonstrated in supplied tests; pending reads can be retried and leadership resets may legally discard work. Buffer ownership difference is exact; client impact/contract unsettled. | Local lifecycle review and permissible ordinary checks; no candidate-specific operational reproducer in this run. |
+| TV-2 — test/review | pendingConfIndex reserved before append can fail quota (`raft.go:977-991`) | Later normal/no-op entries, cursor advancement and leadership reset can remove conservative blockage; proposals are not guaranteed to commit. A retry that is neutralized is not by itself an infinite-progress violation. | Review legality of acceptance/neutralization and accounting after rejection; do not escalate a deliberate conservative reservation or finite retry into an unsupported safety claim. |
+| TV-3 — test/review | Empty context is a map key but heartbeat read processing excludes empty context (`read_only.go:56-62`; `raft.go:1105-1106`) | Nonempty unique contexts avoid this; a later confirmed context can release earlier queued requests. API documents uniqueness/correlation, not explicit nonempty context. | Clarify edge-case progress contract; ordinary functional coverage only, no stale-read claim. |
+| CR-1 — review | Documentation differs on send ordering, committed durability, read-fence wording, and SnapshotFinish no-op (`README.md:116-118`; `node.go:63-89,180`; `raft.go:1130-1143`) | Code and sample loops explain some behavior but do not fully resolve allowed caller schedules. | Carry U1/U2/U4 choices forward; clarify/review text separately from model transitions. |
+| CR-2 — review | Config.Applied suppresses replay, constructor loads only supplied ConfState, MemoryStorage exposes snapshot config (`raft.go:325-340,373-375`; `storage.go:95-96`) | A correct adapter can recover latest configuration or arrange replay; library does not do skipped-entry replay automatically. | Require demonstrable adapter coherence; not a confirmed protocol bug and not an implicit new startup action. |
+| CR-3 — review | FreeFirstOne claims empty no-op but evaluates `buffer[start]` before FreeLE's count guard (`tracker/inflights.go:108-110,79-82`) | Sole Raft caller is StateReplicate && Full; capacity must be positive (`raft.go:1098-1099,237-239`). No valid in-protocol empty-buffer call found. | Keep helper API contract candidate for later review despite no known protocol impact; no reproduction executed. |
+| CR-4 — review | RemoveNode invokes RemoveAny even if no tracked entry; helper expressly requires tracking (`raft.go:1445-1447`; `tracker/tracker.go:142-158`) | Public API does not explicitly promise idempotency; deterministic cancellation can suppress inapplicable commands (`README.md:120`). Repeated/absent removal legal-use status unresolved. | Review caller validation/cancellation contract and appropriate benign handling; do not assume either universal idempotency or that every requested removal is invalid. |
+
+No candidate was operationally confirmed. If later confirmation would require an exploit payload or operational vulnerability reproducer, that work must stop at the run boundary and the limitation be recorded. Model checking, source correspondence review, ordinary tests, and non-exploitative trace validation remain the allowed verification methods. No request/model switching to bypass a refusal is authorized.
+
+## 5. Explicit false positives and unsuitable invariants
+
+The following **16 distinct excluded claims** were checked against source. They are source-analysis exclusions, not GitHub-issue false-positive counts. Several excluded simplistic claims leave a broader composition question open; that distinction is explicit.
+
+| ID | Excluded claim | Why it is excluded / correct modeling treatment |
+|---|---|---|
+| FP-1 | Advance of an old Ready blindly stabilizes newer replacement entries | Captured last `(index,term)` is checked against current unstable data (`node.go:390-393,414-415`; `rawnode.go:60-62`; `log_unstable.go:77-89`). Preserve this guard; broader durable-ordering question remains MC-4. |
+| FP-2 | Old snapshot acknowledgment clears a newer pending snapshot | Exact snapshot index must match (`log_unstable.go:111-114`). |
+| FP-3 | Pagination advances the released cursor all the way to HardState.Commit | appliedCursor uses last returned committed entry or snapshot, and both wrappers use it (`node.go:115-122,401-412`; `rawnode.go:52-58`). Existing pagination tests cover the distinction; historical comments are not current defects. |
+| FP-4 | Every committed index is already durable locally, so unstable committed entries are a bug | Bootstrap explicitly marks unstable initial entries committed; singleton leader uses volatile self Match (`node.go:224-240`; `raft.go:611-615`). Supplied expected Ready batches include identical Entries and CommittedEntries (`node_test.go:584-599`, `rawnode_test.go:316-331`). Check external/recoverable backing instead. |
+| FP-5 | Bootstrap's intermediate partial membership can interleave with an election before initialization finishes | Constructors complete append/config loops before starting Node.run or returning RawNode (`node.go:198-245`; `rawnode.go:89-116`). Do not invent such constructor interleaving. Other recovery classification remains MC-5. |
+| FP-6 | Canceling a waiting proposal blocks Node.run forever on its result channel | Result channel capacity is one (`node.go:487`), so core reply can complete after caller cancellation (`363`). Cancellation instead allows uncertain effects. |
+| FP-7 | Snapshot matching-log fast path must replace configuration immediately | It retains matching local history and commits it for normal application (`raft.go:1370-1374`; `README.md:120`). Full restore has different behavior; preserve both rather than inventing immediate config replacement in fast path. |
+| FP-8 | Direct heartbeat commit can independently commit unmatched history | Sender caps commit at recorded Match (`raft.go:508-519`); receiver uses that cap (`1306-1308`). Whether Match retains correct backing across failures is MC-7/4, not a missing cap. |
+| FP-9 | Joint helper implies reachable joint membership; live voter demotion is supported | Only first voter half is populated, schema lacks joint state, and live AddLearner-on-voter is ignored (`tracker/tracker.go:168-177`; `raftpb/raft.proto:78-95`; `raft.go:1411-1416`). Direct internal snapshot tests are not legal live-demotion provenance. |
+| FP-10 | Learner/unknown response IDs can satisfy quorum just by appearing in an ack map | Majority iterates current voter IDs (`quorum/majority.go:181-201`); commit uses voters; learner grant/campaign guards exist (`raft.go:885-890,1398-1400`). Avoid the different false assertion that every vote recipient/requester must be locally listed. |
+| FP-11 | Successful snapshot transport must immediately increase Match or resume Replicate | Status becomes Probe; receiver ACK and heartbeat retry paths provide later progress (`raft.go:1058-1066,1093-1103,1122-1143`). Do not erase the intermediate stage or call it permanent failure without testing recovery. |
+| FP-12 | Next must always exceed Match, and inflight quota equals all outstanding messages | Probe backtracking uses a different stale-rejection guard (`tracker/progress.go:183-193`); heartbeat can free quota without Match change (`raft.go:1093-1102`). Use matching-history and quota-operation properties, not these stronger identities. |
+| FP-13 | Every active-voter flag proves a recent received message | New/promoted peers are initially active intentionally (`raft.go:1432-1435`; `raft_test.go:3109-3138`). CheckQuorum is windowed activity with grace, not instantaneous contact proof. |
+| FP-14 | Self-removal must immediately imply follower role or no further vote grants | Code intentionally retains role and resets removed-node learner flag (`raft.go:1460-1474`). Model actual behavior and verify subsequent operation safety; automatic stepdown would hide MC-2/6. |
+| FP-15 | Each queued read needs its own explicit quorum ACK; nil API return or a ReadState is already read success | Queue-prefix release is intended (`read_only.go:78-111`); caller correlation/application required (`node.go:63-66,168-172`). Dropped proposals/reads during leadership transitions are documented, so verify conditional progress and real response histories. |
+| FP-16 | Unlocked InitialState or continuity TODO proves a legal-use race/data-corruption bug | Inspected production InitialState is construction before Node.run (`raft.go:324-325`; `node.go:253-258`); no concurrent lifecycle use established. Generated valid append ranges are continuous (`log.go:126-127`, `storage.go:236-268`). Fabricated gaps/out-of-contract compaction are not in-scope protocol counterexamples. |
+
+Also avoid treating VoteLost as “an absolute majority voted no”: the implementation means a yes majority is no longer possible, including an even-sized tie (`quorum/majority.go:194-201`). Avoid exact equality between pendingConfIndex and an unapplied configuration entry, since new leaders reserve the whole old tail (`raft.go:709-714`). Do not assume every accepted proposal eventually commits or add exactly-once request semantics absent a caller deduplication layer (`README.md:170`, `node.go:132-134`).
+
+## 6. General property design and nonvacuity obligations
+
+Properties must be formulated over independently retained histories/evidence. A branch returning nil or incrementing a field is not itself proof that the operation was legal. The names below match the brief; source citations give transition/contract bases, not claims that the properties already hold.
+
+Keep `logicalCommitEvents` for every implementation commit-cursor advance and check that a live incarnation never overwrites below that cursor. Separately retain `commitObligations` across crashes: independently observed durable voter-quorum replication with a current-term commitment witness (including its prefix), externally published protocol commitment assertions, and application-level successful completions. Published assertions create obligation records even if backing or configuration justification is invalid; PromiseBacking and ConfigurationTransitionSafety check those facts independently. The committing node's actual configuration supplies the claimed quorum, whose transition validity is separately checked. Mere Ready extraction or unexposed volatile self commitment does not itself establish durable consensus. Thus a crash may lose an unpersisted, unexposed singleton intermediate entry without a false historical-safety finding, while no crash clears a durable or published obligation. Do not require a property already to hold before recording its subject event. This distinction is required by `raft.go:586-588,611-615` and unstable bootstrap (`node.go:224-240`), not a restriction on allowed failures.
+
+| Safety property | Predicate/observation required | Contract/source basis and caveat |
+|---|---|---|
+| ElectionSafety | Ghost record of successful election `(node,term)` events has at most one identity per term | `raft.go:749-757,1215-1220`; do not check only currently live leaders, because a crash could erase the evidence |
+| LogMatching | Equal entry term at same index implies equal prefix identity; compacted prefix is represented by snapshot witness | `log.go:88-139,283-296`; message validity is environment provenance, prefix equality is checked |
+| LeaderCompleteness | Each later elected leader includes every prior commitment obligation, either retained or in its snapshot prefix witness | Freshness and current-term commit (`log.go:279-296`); use the independent obligation history above, not bare volatile cursor advancement |
+| CommittedHistory | No live overwrite below logical commit; legal future truncation/recovery never replaces a command covered by a durable or published commitment obligation | `log.go:94-114,199-206`; retain both logical events and protected obligation history through compaction, and the latter through crashes |
+| AppliedAgreement | Actual state-machine histories of replicas are prefix-compatible, including snapshot substitution; replay effects respect declared caller recovery model | `node.go:145-157`; distinguish index instruction from completed application |
+| VoteRecovery | Restart cannot lower successfully saved term/vote obligations or permit a conflicting externally published vote in the same term | `node.go:58-61,595-604`, `raft.go:885-920,1497-1503`; test RawNode construction as written, not ideal recovery |
+| RecoveryBacking | Recovered HS commit is backed by a coherent durable snapshot+log and recovered app/config view | `raft.go:1497-1503`, `storage.go:47-69`; incomplete storage transactions need an explicit adapter outcome, not automatic success |
+| PromiseBacking | Published positive vote/replication promises and application-level write success have required data/vote durability; leader's parallel append send is distinguished from a follower ACK | `README.md:116-118`, `node.go:58-89,595-604`; property depends on named U1/U2 interpretation, not on hidden barriers |
+| ConfigurationOrigin | Each local effective config comes from complete bootstrap, committed deterministic config application, or a valid snapshot; recovery reconstructs the chosen prefix | `raft.go:325-368,1377-1385,1403-1494`, `README.md:120,193` |
+| ConfigurationTransitionSafety | Sequential one-node effective changes and their commit decisions have the required predecessor/overlap basis despite differing local application progress | `README.md:193-197`, `node.go:135-157`, `raft.go:977-987`; compute from config-entry/commit/callback history, not pendingConfIndex alone |
+| LearnerEligibility | Local learner never originates an eligible campaign or grants vote; quorum decisions do not count learners as voters | `raft.go:885-890,1398-1400`, `tracker/tracker.go:189-198,238-258`; removed nonlearner grants are not automatically forbidden |
+| QuorumAccounting | Election/commit/read decision witnesses contain distinct identities appropriate to the deciding node's actual configuration at that event | `quorum/majority.go:118-201`; witness correctness does not by itself establish configuration-transition safety |
+| ReplicationEvidence | Remote response-derived Match increases correspond to real generated responses and matching log/snapshot history; local/self updates correspond to actual local history. Check durability at the relevant publication/commit-obligation boundary | `raft.go:586-588,611-615,1039-1091,1291-1321,1388-1389`; self credit may be volatile, and local restore updates need no response. Next, quota release and transport status success are not substitutes for Match evidence |
+| SnapshotBacking | Created/persisted/applied snapshot's index, term, configuration and symbolic data agree with its recoverable history; retained boundary term remains usable | `storage.go:53-68,188-232`, `raft.go:1327-1393`; actual application state is needed, not only metadata |
+| AckPreservation | An acknowledged old Ready removes only the corresponding current stable-compatible unstable prefix/snapshot and preserves later differing replacements | `log_unstable.go:77-89,111-114`; observe captured batch endpoints and newer current data |
+| ReadyAccounting | Batch release/acknowledgment covers exactly returned entries/snapshot; application pages have no gaps/reordering; later unreported completion records are preserved or have justified disposition | `node.go:115-122,386-419`, `rawnode.go:44-69`; read completion ownership may expose TV-1 |
+| QuotaIntegrity | Quota count remains bounded and endpoints ordered within a progress episode; reset/free/refill and payload estimate follow semantic accounting decisions | `tracker/inflights.go:43-124`, `raft.go:1530-1565`; no exact-byte equality or wire-message-count identity |
+| OutcomeSoundness | Every API/core admission, forwarding, drop, neutralization, cancellation and actual success has its documented/source justification and correct request association | `node.go:473-509`, `raft.go:962-994,1235-1244`; distinguish handoff success, accepted proposal and client success |
+| ReadBasis | A completed read can be linearized within its invocation-response interval using valid leadership/configuration and committed-prefix evidence | `raft.go:995-1026,1109-1120`; singleton identity, queue-prefix evidence and membership changes remain checked consequences |
+| ReadApplication / ReadCorrelation | Actual local state covers the required read prefix; response corresponds to the original invocation/context, including follower forwarding | `node.go:63-66,168-172`, `read_only.go:19-23`; U4 textual fence recorded; a node need not still lead at response time |
+| NoUnexpectedFatal | Under valid generated protocol inputs and contract-compliant nonfatal storage conditions, internal panic/bounds/role errors remain unreachable | `raft.go:665-697,866-868`, `log.go:305-370`, `tracker/tracker.go:142-177`; keep failure branches enabled, distinguish intended environment-fatal errors |
+
+The environment may issue ordinary operations, schedule legal persistence/application, drop or duplicate actual messages, and crash nodes. It must not choose “a correct leader,” “a safe quorum,” “a properly backed commit,” or “a read with valid evidence” as restrictions on implementation transitions. Ghost evidence can observe those events, but not decide which real actions are allowed. Likewise a trace wrapper must not advance missing implementation events merely to satisfy a property.
+
+Liveness is separate from safety:
+
+| Progress property | Sufficient premises to state and test | Do not promise |
+|---|---|---|
+| ElectionProgress | Eventually usable storage, sufficiently connected eligible voters, continuing effective ticks/service, application of required config work, and an eventual timing/scheduling interval in which some candidacy can finish | Fairness alone does not rule out perpetual split votes, endless crashes, or endlessly disruptive campaigns |
+| CatchupProgress | Stable enough leader/configuration, eventual delivery of repeatedly sent traffic, persisted/applicable snapshot or retained log, eventual storage/snapshot availability, continued heartbeat/response/status processing and application | Completion under an arbitrary partition, permanent missing snapshot, or caller that never reports failure |
+| ManagementProgress | Available required predecessor and successor quorums, deterministic valid changes/cancellation, ordered continuing config application, and fair service/retry without endless interference | Removal of an unavailable member from a stalled two-node cluster (`README.md:197`), every submitted ConfChange succeeding, or final nonempty cluster after removing all voters |
+| TransferSettlement | Effective ticks and processing, no endless replacement requests; success additionally requires eligible target catch-up and a usable election quorum | Every target must become leader; timeout/cancellation is a legitimate settlement (`raft.go:634-642,1156-1181`) |
+| ReadProgress | Stable eligible leadership/configuration, current-term commitment where needed, eventual quorum responses, correlated contexts, caller delivery/application and retry; U4 fence can actually be reached | Completion of each lost request through a leadership reset or a strict “greater than” application fence while an idle log never advances |
+
+For nonvacuity, later checking must record reachable events for each antecedent and each major alternative: an election win/loss and PreVote continuation; real/pending config admission and neutralization; early Advance with lagging app/config; log conflict repair above commit; full quota and release; snapshot fast/full restore and failures; actual restart with saved obligations; successful and dropped/deferred reads; real client completions. A safety invariant with no corresponding operation executed is not sufficient coverage. A progress property needs evidence that its stable-availability premises are reachable in the chosen bounded configuration.
+
+## 7. Abstraction and scenario composition plan
+
+The brief's six Scenarios are extensions of a single protocol model, sharing logs, membership, durability, requests, and observations. Start with source-faithful isolated action correspondence, then check their interactions. Scenario-specific configurations may restrict finite workload budgets, but must not change transition semantics or define one artificial adversary per suspected defect.
+
+| Abstraction | Retained | Omitted / impact and required validation |
+|---|---|---|
+| Node identities and network | Finite nonzero immutable IDs, voter/learner/removed/joining participation, a multiset or identity-tagged sequence of actual messages, duplication/drop/reorder and old-incarnation traffic | Physical transport/addresses and arbitrary forged traffic omitted. Keep enough IDs for a voter quorum plus learner/add/remove interactions; smaller configurations cannot claim larger membership coverage. |
+| Terms/indexes/commands | Finite ordered terms and index positions, entry term/type/command identity, no-op/config entries, snapshot boundary and full-prefix ghost witness | Payload bytes and machine integer overflow omitted. No artificial term wrap; bounds exhaustion is incomplete exploration, not a protocol deadlock or liveness pass. |
+| Stable/unstable log | Stable view, unstable suffix/offset overriding stable data, retained dummy term, commit and instruction/application cursors | Physical WAL layout omitted; this is not permission to merge atomicity stages. Log matching/recovery witnesses survive compaction/crash. |
+| Durability | Logical HS record, entry suffix write, snapshot write/install, optional atomic transaction, completed versus pending writes, volatile storage view | Byte tears/OS/cache mechanics omitted; each named caller variant must demonstrate its actual recovery contract. Commit-only MustSync=false can lag durable HS; don't classify all storage visibility as fsync. |
+| Core/storage concurrency | Serialized core calls and externally scheduled caller work; legal changes between separate storage reads | Individual Go statements usually omitted. For compaction races retain error alternatives or split storage-call observations; coarse atomic core assumption must be listed if such races are not yet represented. |
+| Membership | One applied voter set per node, learners, symbolic config entries, cancellation, promotion, per-node callback progress, full snapshot config and recovery reconstruction | Unreachable joint protocol, ConfChangeV2, and live voter demotion omitted based on source. Unknown-removal input contract remains CR-4 rather than a hidden blanket exclusion. |
+| Time/options | Finite election/heartbeat counters, randomized timeout choices, CheckQuorum windows/grace, transfer attempt deadline, PreVote options; conditional quiesced ticking | Wall-clock precision/performance and lease reads omitted. Liveness assumes eventual election opportunity and effective Tick, not probabilistic convergence from deterministic fairness. |
+| Flow control and batching | Progress mode, Match/Next, probe flag, snapshot index, ordered quota endpoints/capacity, empty versus nonempty sends, multiple sends per handler, committed-page boundaries | Ring buffer layout/allocations omitted. Payload weights and encoded-message weights are distinct; use finite classes that exercise below/at/above thresholds, zero payload, and oversized first batch. Correspondence must show actual trace batches fit the abstract rule. |
+| Application | Ordered symbolic command history, callback/result events, snapshot application stages, actual completion independent of Advance, optional saved application cursor and replay | KV/MVCC/transaction semantics omitted by scope. Application-defined read/write values can be a simple command sequence/register witness; do not claim full service semantics or exactly-once effects. |
+| Reads/results | Original request/context, captured index, phase/term/config evidence observations, ack set and queue-prefix release, Ready delivery and actual user result | Byte context representation omitted; uniqueness choice disclosed. No assumption that all accepted requests finish. Empty-context edge remains a separate coverage item. |
+| Errors | Explicit ignored/rejected/no-op/retry/fatal outcomes with reason; storage-unavailable and crash/recovery scheduling | Error strings/logger formatting omitted. Fatal outcomes may be checked or attributed to specified environment fault, never converted to success. |
+| Observability | Complete before/after core state needed for properties, batch/request/incarnation IDs, durable/app witnesses and transition reasons | Public Status alone is insufficient (`status.go:36-47,63-68`, `rawnode.go:245-255`). Observational instrumentation may be added later in workspace copies; it must not change production decisions. |
+
+Initial bounded configurations should include single-voter-with-learner and multi-voter groups, even-sized quorum behavior, at least one membership transition, distinct terms/log conflicts, nontrivial batch/quota capacity, one lagging replica needing a snapshot, and one crash/restart. Broader compositions must include election/transfer×configuration lag; replication/progress×durable storage×snapshot; Ready/Advance×application/config callbacks; and reads×leadership×configuration/application. These are coverage requirements, not a claim that one small bound covers every interaction. Retain property sets when reducing exploration budgets; record excluded bounds/compositions and incomplete runs.
+
+For future TLC runs, obey the run aggregate ceiling: explicit allocations per instance totaling at most 200 GiB heap plus direct memory and at most 60 workers across all instances, accounting for already running instances first. Place states and temporary files under this run's `tlc-states/` and `tmp/`. No TLC instance was started in this task, so no resource allocation or exploration result is claimed.
+
+## 8. Reusable harness, instrumentation, and validation handoff
+
+### 8.1 Public-interface harness families
+
+Use a deterministic caller/transport around real Node or externally serialized RawNode, with a caller-owned durable-state adapter distinct from MemoryStorage. Feed only messages previously emitted by those nodes; local controls use Tick/Campaign/TransferLeadership/TransferLeader/ReportSnapshot/ReportUnreachable/ReadIndex and configuration APIs. Do not copy test-only direct role changes, forced internal progress fields, fabricated response indexes, or arbitrary `restore` calls as trace events.
+
+| Family | Normal operation and legal schedule variations | Existing supplied evidence inspected / remaining gap |
+|---|---|---|
+| H1 Elections/options | Bootstrap, normal/pre-vote elections, quorum activity checks, valid partition/rejoin traffic, delayed persistence and recovery | Selected `raft_test.go:259-433,1726-1952`; declaration inventory in raft_paper_test.go. Public traces and option cross-product remain pending. |
+| H2 Transfer | Up-to-date/lagging target, retry, self/unknown/learner target, timeout/replacement, target removal through committed config | Transfer sections `raft_test.go:3319-3660`, source `raft.go:1151-1181`. Existing internal test transitions need replacement with real emitted traffic/callbacks. |
+| H3 Replication/history | Proposals through leader/follower, expected drops/forwarding, commit, uncommitted suffix repair following ordinary leadership changes | `raft_test.go:587-775,1210-1290`, source log guards; public durable/application trace missing. |
+| H4 Progress/batching | Small MaxSizePerMsg/MaxInflightMsgs/Ready pages, full quota, cumulative replies, duplicate/reordered valid replies, unreachable reports and heartbeat recovery | Full `raft_flow_control_test.go`, tracker test files, selected `raft_test.go:2392-2701`, wrapper pagination tests. No numeric throughput target. |
+| H5 Membership | Add learner, replicate, promote, one-node voter add/remove, deterministic cancellation, duplicate existing addition, no-op update, delayed ordered config application | Full wrapper tests, selected `raft_test.go:3018-3315`; supplied removal tests do not exercise leader self-removal or absent/repeated removal. Observe existing self-removal behavior as correspondence, not an operational vulnerability repro. |
+| H6 Snapshot/compaction | Create from actual app prefix/config, compact legally, lagging replica recovery, distinct obsolete/matching/full outcomes, transport success/failure and availability recovery | Full `raft_snap_test.go`, storage/log tests, ten restore/snapshot tests `raft_test.go:2703-3014`. Full public lifecycle and separate durable/application completion remain pending. |
+| H7 Ready lifecycle | Both wrappers with captured batches, ordinary inputs during pending Ready, persistence before Advance, optional early Advance, slow app/config callbacks, bounded application pages | Full `node_test.go`, `rawnode_test.go`; direct low-level injections inside some tests are not authorized transport behavior. No current trace checks. |
+| H8 Recovery | New/join/restart states, recovered log or snapshot, retained application state versus replay, coherent recovered config | Wrapper restart tests `node_test.go:641-724`, `rawnode_test.go:369-436`; source constructor differences. No empty-log saved-obligation operational confirmation. |
+| H9 ReadOnlySafe | Leader/follower/learner reads with correlated contexts, normal singleton, queued reads, delayed application, leadership changes/retry, differing configuration progress | Full read tests at `raft_test.go:1337,2155,2209,2319`; wrapper ReadIndex tests. Need actual read response histories, not only ReadState outputs. |
+| H10 Outcomes/quiescence | No-leader handoff/cancellation, disabled forwarding, quota rejection, pending-conf neutralization, stopped methods, retries, documented quiesced-to-active use | Wrapper outcome tests and `raft_test.go:179-257,3500-3523`; TV-2/3 and quiesced behavior lack dedicated new coverage. |
+
+The suite is a reusable normal-operation and contract-validation harness plan, not a set of operational vulnerability reproducers. Candidate reachability should first be addressed by formal exploration and source review; any later confirmation step must remain within the run's boundaries.
+
+### 8.2 Required observation map
+
+| Event/observation | Source anchors or caller layer | Why it cannot be omitted |
+|---|---|---|
+| Core input/decision/output | `raft.go:784`, role handlers, before/after Step; wrapper filtering `node.go:366`, `rawnode.go:174` | Distinguish ignored request from rejected request, phase/term update and actual sent mailbox |
+| Role, term, vote, log/commit/config | `raft.go:565-770,1403-1503`; `log.go:24-38`; tracker state | Election, history, config quorum and recovery properties require same-event state |
+| Proposal lifecycle | wrapper invocation/handoff/result, `raft.go:962-994,1530-1565` | Request/entry identity, original/effective kind, quota decision, cancellation and no-op rewrite |
+| Ready batch identity and contents | `node.go:386-408,573-592`; `rawnode.go:185-190` | Exact captured Entries/HS/Snapshot/CommittedEntries/ReadStates/Messages, MustSync and released cursor |
+| Persistence/storage view/Advance | caller durable adapter and Storage methods; `node.go:409-419`; `rawnode.go:44-69` | Record started/completed writes, stable view versus durability, old-batch endpoint acknowledgments; do not synthesize disk completion from core send |
+| Actual application/configuration | caller app start/finish/replay and snapshot apply, `ApplyConfChange` argument/result | Distinguish instruction cursor from state that can back reads/snapshots; record deterministic cancellation basis |
+| Network provenance | enqueue/publish/deliver/drop/duplicate plus incarnation and payload identity | Verify every delivered record originates in real output; old messages survive crashes where transport allows |
+| Progress/quota/status | `raft.go:445-504,1039-1150`; tracker transitions/inflight calls | Match versus Next, probe flag, recent activity, snapshot index, ordered quota; Status strips Inflights so internal read-only observations needed |
+| Snapshot lifecycle | Storage.CreateSnapshot/Compact/ApplySnapshot, core restore result, caller transport status | Separate prefix/config validity, transfer completion, installation, durability and actual application |
+| Read lifecycle | read invocation/context/requester, `read_only.go:56-111`, readState append, Ready/Advance, caller response | Capture request/confirm terms/configs, queue index/order/acks, actual application fence and response real-time order |
+| Crash/restart/error | caller failure boundary, durable image, constructor inputs/results, explicit panic/retry/ignore reasons | Distinguish genuine state loss from pending writes and intended fatal storage cleanup; preserve history witnesses |
+
+Use monotone per-node event sequence and globally correlated message/batch/request IDs; timestamps are optional diagnostics, not the ordering proof. Keep instrumentation observational and emit the actual source branch outcome. A missing state observation must prompt added observation or an explicit coverage gap, not deletion of the property that needs it.
+
+### 8.3 Positive, negative, and bounded checking requirements
+
+The next workflow phases must first generate the coherent reference/MC/Trace suite and a harness aligned to the V00 interfaces, then validate real normal traces. Controlled invalid **trace artifacts** can test general contract rejection without altering running protocol behavior: a response associated with the wrong invocation, an application record missing its required prefix, an Advance claiming an endpoint absent from its captured batch, a durable completion record missing required backing, a changed committed command identity, or a quorum witness counting a learner twice. These are validator-input mutations, not operational network payloads or implementation reproducers. Retain each mutation's intended contract, observed rejection point, and whether rejection came from parsing/schema, transition correspondence, or the general safety property; schema failure alone is not evidence the invariant works.
+
+For each coverage row, retain source mapping, model action names, observations, exact trace paths, accepted/rejected status, exercised branches/property antecedents, checker configuration/bounds, logs and exploration outcome. Separate syntax success, positive trace correspondence, negative trace rejection, completed bounded invariant checks, liveness checks with premises, and incomplete simulations/searches. Unvisited branches, timeouts, state-budget exhaustion, and absent observations stay gaps. Any discovered faithful counterexample is a finding to triage, not a reason to falsify source behavior or delete the failing property.
+
+## 9. Phase 4 synthesis and remaining acceptance work
+
+The six Scenario groups cover all five user priority questions: S1/2/4 address leadership and committed histories; S1/3/4/6 address persistence/application/promises; S2/3/5/6 address membership, eligibility and management outcomes; S4 with S1 addresses replication/catch-up and recovery; S5 with S1/3 addresses quorum reads and local application. The brief's matrix maps every core requested mechanism to source, proposed behavior/properties, a harness family and explicit pending validation. This is a coherent initialization scope, not a selected-known-bug model.
+
+Remaining initialization work is substantive: implement and validate the proposed model/harness; settle or explicitly parameterize U1–U4 caller interpretations; demonstrate coherent recovery config and actual application data; cover storage-read/compaction interleavings, quiesced ticking and context/absent-removal contract edges; check all named interactions with nonvacuity evidence and recorded finite bounds. The current ordinary tests cannot resolve these obligations. No completeness, safety proof, successful trace validation, or researcher model-quality acceptance is claimed.
+
+Review statistics at handoff: **7 model-checkable open questions, 3 test-verifiable questions, 4 code-review candidates, 16 explicit excluded simplistic claims**. These counts describe analysis artifacts only; confirmed bugs remain **0**. Historical archaeology remains excluded with all counts zero. The root and four scoped reviewers examined source independently and cross-checked compensation; no operational reproducer was run.
+
+No source repair, verdict change, publication, or manual baseline/current advancement is part of this handoff. Continue through the real CI workflow and preserve both successful and failing evidence. Pipeline completion and the researcher's later quality acceptance remain distinct.
+
+## 10. Incremental reconnaissance — revision 16c5274
+
+### 10.1 Exact inputs and decision gate
+
+The read-only baseline is the registered V00 suite for protocol revision
+`d58d5d159ae1a1f644a10003f2d8b3b807cd0b3a` plus its build overlay. The
+candidate working tree is clean at
+`16c5274b589aa75c634a1a5f2b05cf66aaf37dcc` before instrumentation. The
+controller's `source.diff` and every production hunk were reviewed with the old
+and new definitions, direct callers/callees, supplied tests, and downstream
+Ready/application/snapshot consumers. Generated protobuf byte tables were
+treated as serialization-only after their semantic schema additions were
+accounted for.
+
+The architecture is still serialized Raft state machines plus asynchronous
+messages and caller-controlled durability/application (Category A). The source
+delta nevertheless changes modeled state and visible effects, so the completed
+Chapter 1 disposition is **`MODEL_CHANGE_REQUIRED`**.
+
+### 10.2 Old/new projection
+
+| Changed branch | V00 projected post-state | Candidate projected post-state | Decision |
+|---|---|---|---|
+| Configuration apply | One voter/learner edit, no joint phase; voter demotion ignored | Simple edit or atomic joint entry; incoming/outgoing voters, `LearnersNext`, and `AutoLeave` can change together | unequal |
+| Vote/commit/quorum/read accounting | One majority over `config.voters` | Both incoming and outgoing majorities; messages go to their union | unequal |
+| `raft.advance` | Applied cursor, quota and stable endpoints only | Same effects plus possible automatic leave-joint proposal | unequal |
+| RawNode empty-log construction/restart | Constructor may reset term/vote to term 1 and synthesize bootstrap entries | Constructor always preserves loaded hard state; explicit `Bootstrap` performs the synthetic initialization | unequal |
+| Ready acceptance | Ready extraction consumes RawNode messages/quota/read state in the old abstraction | RawNode `Ready()` is read-only and `Advance` performs acceptance; Node accepts on channel delivery | unequal |
+| Snapshot configuration | Schema carries one voter set and learners | Schema carries incoming/outgoing voters, learners/staged learners, and auto-leave; live restore/newRaft currently enumerate only `Nodes` and `Learners` | unequal |
+| Status and formatting helpers | Old value/pointer and shallow diagnostic views | Allocation-safe copies and complete tracker config | excluded from protocol behavior except as optional observation |
+
+### 10.3 Interaction analysis
+
+Joint state changes the same shared configuration read by campaign broadcasts,
+vote tallying, commit advancement, CheckQuorum, ReadIndex confirmation,
+leadership transfer eligibility, replication progress, snapshot creation and
+recovery. Applying an entry remains separate from Ready release and Advance;
+auto-leave newly crosses that boundary. In-flight vote, append, heartbeat/read
+and transfer messages can therefore be produced under one half-pair and
+consumed after a local configuration transition. The model will keep these old
+Actions concrete in the update view rather than treating joint configuration as
+an isolated changer utility.
+
+Source-to-model review also exposes a consequential recovery uncertainty.
+`ConfState` documents all five configuration components and snapshots are the
+application's durable configuration carrier, but `newRaft` checks and loads only
+`Nodes`/`Learners` (`raft.go:326-365`) and live restore tests membership and
+rebuilds progress from only those two slices (`raft.go:1381-1423`). A joint
+snapshot can thus lose the outgoing quorum, staged learners and auto-leave on
+restore. This is a model-checking Scenario, not yet a finding disposition; the
+complete reference must express the concrete projection and an independent
+recovery property must challenge it.
+
+The new `RawNode.Advance` also calls `acceptReady` after applications normally
+apply committed configuration entries (`doc.go:93-103`,
+`rawnode_test.go:247-260`). Any messages produced by that callback are present
+in `raft.msgs` after the captured Ready and are then cleared at
+`rawnode.go:142-149`. The update view will check this boundary and a focused
+real trace will determine whether the effect is exercised and subsequently
+masked by ordinary retry/heartbeat behavior.
+
+### 10.4 Generation plan and retained limits
+
+The reference will add complete joint configuration and V2 entry state, use
+dual-majority helpers in every decision consumer, split source-faithful simple,
+enter-joint and leave-joint effects, implement wrapper-specific Ready acceptance
+and explicit bootstrap/recovery, and retain the V00 caller/durability
+abstractions and their stated bounds. `Update.tla` will select the affected
+configuration, advance, restore/restart, Ready and quorum consumers while full
+`MCNext` remains the semantic guard. Fresh new-version traces must rerun the five
+compatible V00 scenarios and add joint/auto-leave/recovery/RawNode ownership
+coverage. Prior V00 BFS/simulation results remain historical evidence only for
+unchanged semantics and do not check the new suite.

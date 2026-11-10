@@ -1,0 +1,35 @@
+[
+  {
+    "control": "stale_successor",
+    "positive_exit": 0,
+    "reuse_exit": 1,
+    "fresh_disabled_exit": 0,
+    "pass": true
+  },
+  {
+    "control": "mapped_disabled_vs_concrete_execution",
+    "exit_code": 0,
+    "counts": {
+      "behavioral_mismatch": 1
+    },
+    "pass": true
+  },
+  {
+    "control": "failed_command_with_valid_looking_output",
+    "exit_code": 2,
+    "counts": {
+      "adapter_error": 1
+    },
+    "pass": true
+  },
+  {
+    "control": "runner_reused_directory",
+    "exit_code": 1,
+    "pass": true
+  },
+  {
+    "control": "generic_comparator_unit_tests",
+    "exit_code": 0,
+    "pass": true
+  }
+]

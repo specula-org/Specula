@@ -1,0 +1,91 @@
+{
+  "id": "C03",
+  "title": "Automatic exit remains an obligation across application and leadership changes",
+  "kind": "bounded response and conditional liveness",
+  "support": "API promise and tests; alternate schedules derived from API",
+  "scope": "An applied or restored joint AutoLeave configuration; a healthy stable leader remains a voter.",
+  "predicate": [
+    "Track joint episode e and its establishing entry/snapshot index j, actual configuration installation, and inherited-tail barrier b recorded at current leader election (or j when this leader enters e). These are history facts, not aliases of mutable P.",
+    "Eligible(e) means current installed configuration is e with O nonempty and AutoLeave, local node is leader in I union O, A>=max(j,b), and no retained exit for e exists and no earlier retained configuration with index>A remains. A retained exit still discharges the proposal obligation when A passed its index but its actual application is deferred.",
+    "On the normal path, Advance(B) acknowledging the entering entry after ApplyConfChange installed it must append one semantic leave in the same call when no exit is already retained. It must not fail/panic because of quota. New behavior uses empty Data and zero payload cost.",
+    "More generally, with a stable eligible leader, fair local ticks/Ready service, and eventual completion of deferred application, Eligible(e) leads to an exit proposal even when A already reached j before AutoLeave was installed or before leadership began. With available joint quorums, eventual message delivery, persistence, and ordered application, that exit is eventually applied and O becomes empty and AutoLeave=false. No new client proposal is assumed.",
+    "Automatic exit generation requires an installed joint AutoLeave configuration and a leader. Explicit/manual joint configurations are not auto-left. HardState.Commit beyond j alone is not acknowledgement of applying j."
+  ],
+  "examples": [
+    {
+      "pre": "I={1,2},O={1},AutoLeave=true restored at 4; new leader starts with A=lastIndex=4, b=4.",
+      "action": "Commit and Advance its new leader normal entry 5, then continue fair processing.",
+      "forbidden": "Remain joint forever because oldApplied<P never held (4<4 is false), despite healthy joint quorum.",
+      "allowed_control": "Generate, replicate, and apply an exit without another client proposal."
+    },
+    {
+      "pre": "Node Ready contains entering entry 4 while active configuration is still stable.",
+      "action": "Advance the batch, then finish deferred ApplyConfChange before applying any later committed batch.",
+      "forbidden": "Install AutoLeave after the only cursor crossing and permanently strand the exit obligation.",
+      "allowed_control": "Remember or rediscover the obligation and eventually append one exit. Retaining stable membership until actual ApplyConfChange is allowed."
+    },
+    {
+      "pre": "Entering AutoLeave entry 4 installed; A=3; Q>M after an allowed oversized proposal.",
+      "action": "Advance through 4.",
+      "forbidden": "Reject, panic, or indefinitely postpone the exit because of quota.",
+      "allowed_control": "Append the zero-payload exit. In an otherwise identical AutoLeave=false episode, append no automatic exit."
+    }
+  ],
+  "evidence": [
+    {
+      "path": "new/source/raftpb/raft.proto",
+      "lines": "85-96, 111-113",
+      "kind": "API contract",
+      "basis": "Implicit transitions/AutoLeave promise automatic exit when safe; explicit transitions wait for the application."
+    },
+    {
+      "path": "new/source/node.go",
+      "lines": "159-175",
+      "kind": "API contract",
+      "basis": "Advance can precede completion of application; ApplyConfChange is a separate action."
+    },
+    {
+      "path": "new/source/raft.go",
+      "lines": "556-583, 747-755",
+      "kind": "intent and mechanism",
+      "basis": "Advance initiates auto-exit; new strict cursor crossing interacts with inherited barrier."
+    },
+    {
+      "path": "new/source/testdata/confchange_v2_add_double_auto.txt",
+      "lines": "34-62, 121-138",
+      "kind": "test",
+      "basis": "Processing entering change creates next-Ready exit, then joint replication applies it."
+    },
+    {
+      "path": "new/source/rawnode_test.go",
+      "lines": "333-368",
+      "kind": "test",
+      "basis": "Implicit exit versus explicit context-bearing manual exit."
+    }
+  ],
+  "observability": {
+    "state": [
+      "role/term",
+      "configuration",
+      "A",
+      "P for diagnosis only",
+      "log",
+      "Ready status",
+      "quota",
+      "fatal status"
+    ],
+    "history": [
+      "joint episode/index",
+      "actual ApplyConfChange completion",
+      "leader inherited-tail barrier",
+      "retained exit identity",
+      "fairness obligations",
+      "exit application completion, distinct from A crossing its index"
+    ]
+  },
+  "old_new_interaction": "Old level-triggered attempts could be quota-blocked or duplicated. New zero-cost behavior is permitted and required on the normal path; its edge-triggered guard cannot narrow the API promise. Leadership/deferred-application examples are static risks, not executed counterexamples.",
+  "limits": [
+    "No unconditional progress under permanent partition, absent quorum, stopped callers, endless leadership changes, or storage unavailability.",
+    "Do not make oldApplied<P a liveness antecedent: that would exclude missed obligations."
+  ]
+}

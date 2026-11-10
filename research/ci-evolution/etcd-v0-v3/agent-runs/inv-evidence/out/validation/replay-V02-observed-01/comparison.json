@@ -1,0 +1,393 @@
+{
+  "protocol": "action-validation/v1",
+  "route": "code-to-model",
+  "spec": "out/revised-spec/V02",
+  "counts": {
+    "adapter_error": 38
+  },
+  "total": 38,
+  "commands": [
+    {
+      "engine": "implementation",
+      "command": [
+        "python3",
+        "out/framework/adapters/go/run.py",
+        "--input",
+        "/workspace/out/validation/cases.json",
+        "--output",
+        "/workspace/out/validation/replay-V02-observed-01/implementation.jsonl",
+        "--work",
+        "/workspace/out/validation/replay-V02-observed-01/implementation",
+        "--source",
+        "versions/V02/source"
+      ],
+      "duration_seconds": 0.21442235074937344,
+      "exit_code": 1
+    },
+    {
+      "engine": "model",
+      "command": [
+        "python3",
+        "out/validation/adapter/run.py",
+        "--input",
+        "/workspace/out/validation/cases.json",
+        "--output",
+        "/workspace/out/validation/replay-V02-observed-01/model.jsonl",
+        "--spec",
+        "/workspace/out/revised-spec/V02",
+        "--work",
+        "/workspace/out/validation/replay-V02-observed-01/model"
+      ],
+      "duration_seconds": 11.240104101598263,
+      "exit_code": 0
+    }
+  ],
+  "results": [
+    {
+      "id": "vote-learner-MsgVote-grant",
+      "action": "vote",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "vote-learner-MsgVote-stale-log",
+      "action": "vote",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "vote-voter-MsgVote-grant",
+      "action": "vote",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "hup-learner",
+      "action": "hup",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "ready-raw-False-2-1-Leader-2",
+      "action": "ready_raw",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "ready-node-False-2-1-Leader-2",
+      "action": "ready_node",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "advance-v02-raw-heartbeat",
+      "action": "advance_raw",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "advance-v02-node-heartbeat",
+      "action": "advance_node",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "advance-v02-raw-readack",
+      "action": "advance_raw",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "advance-v02-node-readack",
+      "action": "advance_node",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "advance-raw-True-2-0-Leader-2",
+      "action": "advance_raw",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "advance-raw-True-2-16-Leader-2",
+      "action": "advance_raw",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "v03-advance-raw-cross-0",
+      "action": "advance_raw",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "v03-advance-raw-cross-17",
+      "action": "advance_raw",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "v03-advance-raw-equal-old-0",
+      "action": "advance_raw",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "v03-advance-raw-zero-cursor-0",
+      "action": "advance_raw",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "v03-advance-node-cross-0",
+      "action": "advance_node",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "v03-advance-node-cross-17",
+      "action": "advance_node",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "v03-prop-simple-0-empty-auto",
+      "action": "proposal",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "v03-prop-joint-0-v2",
+      "action": "proposal",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "v03-prop-joint-0-empty-auto",
+      "action": "proposal",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "v03-prop-joint-0-empty-explicit",
+      "action": "proposal",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "v03-prop-batch-joint-add-then-leave",
+      "action": "proposal",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "v03-prop-batch-simple-leave-then-add",
+      "action": "proposal",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "v03-quota-17-empty",
+      "action": "proposal",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "v03-quota-17-one-byte",
+      "action": "proposal",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "v03-quota-0-large",
+      "action": "proposal",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "v03-apply-demote-Leader",
+      "action": "apply",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "v03-apply-staged-demote-Leader",
+      "action": "apply",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "v03-apply-leave-demote-Leader",
+      "action": "apply",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "quorum-joint-1",
+      "action": "checkquorum",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "quorum-joint-2",
+      "action": "checkquorum",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "quorum-joint-0",
+      "action": "checkquorum",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "apply-joint-demote",
+      "action": "apply",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "joint-self-quorum-False",
+      "action": "hup",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "pending-v2-retained-obligation-False",
+      "action": "hup",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "joint-self-quorum-True",
+      "action": "hup",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "pending-v2-retained-obligation-True",
+      "action": "hup",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    }
+  ],
+  "extra_results": {
+    "implementation": [],
+    "model": []
+  }
+}

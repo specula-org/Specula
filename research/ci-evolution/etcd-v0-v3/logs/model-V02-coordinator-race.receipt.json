@@ -1,0 +1,6 @@
+{
+  "exit_code": 0,
+  "seconds": 15.248508430086076,
+  "log": "logs/model-V02-coordinator-race.log",
+  "cases": "239 supported code-derived cases; generated Go adapter under race detector"
+}

@@ -1,0 +1,11 @@
+{
+  "start_utc": "2026-09-22T18:11:43+00:00",
+  "first_current_compatible_run_utc": "2026-09-22T18:16:04.715386+00:00",
+  "first_compatible_seconds": 261.715386,
+  "last_executable_binding_edit_utc": "2026-09-22T18:23:37.885088+00:00",
+  "executable_adaptation_seconds": 714.885088,
+  "reporting_completed_utc": "2026-09-22T18:29:35.034471+00:00",
+  "total_wall_seconds": 1260.066275,
+  "note": "Wall time includes local inspection, binding/domain/model work, testing, reporting and final artifact audit. Individual command times are separately recorded; no labor-time precision claimed.",
+  "final_artifact_audit_utc": "2026-09-22T18:32:43.066275+00:00"
+}

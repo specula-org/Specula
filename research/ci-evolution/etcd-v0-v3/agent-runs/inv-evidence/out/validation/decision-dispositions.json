@@ -1,0 +1,1269 @@
+[
+  {
+    "version": "V01",
+    "name": "ElectionSafety",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V01",
+    "name": "LogMatching",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V01",
+    "name": "LeaderCompleteness",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V01",
+    "name": "CommittedHistory",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V01",
+    "name": "AppliedAgreement",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V01",
+    "name": "VoteRecovery",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V01",
+    "name": "RecoveryBacking",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V01",
+    "name": "PromiseBacking",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V01",
+    "name": "ConfigurationOrigin",
+    "initial_decision": "modify",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V01",
+    "name": "ConfigurationTransitionSafety",
+    "initial_decision": "modify",
+    "validation_disposition": "accepted_core",
+    "reason": "See accepted modification records."
+  },
+  {
+    "version": "V01",
+    "name": "LearnerEligibility",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V01",
+    "name": "QuorumAccounting",
+    "initial_decision": "modify",
+    "validation_disposition": "accepted_core",
+    "reason": "See accepted modification records."
+  },
+  {
+    "version": "V01",
+    "name": "ReplicationEvidence",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V01",
+    "name": "SnapshotBacking",
+    "initial_decision": "modify",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V01",
+    "name": "AckPreservation",
+    "initial_decision": "modify",
+    "validation_disposition": "accepted_core",
+    "reason": "See accepted modification records."
+  },
+  {
+    "version": "V01",
+    "name": "ReadyAccounting",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V01",
+    "name": "QuotaIntegrity",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V01",
+    "name": "OutcomeSoundness",
+    "initial_decision": "modify",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V01",
+    "name": "ReadBasis",
+    "initial_decision": "modify",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V01",
+    "name": "ReadApplication",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V01",
+    "name": "ReadCorrelation",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V01",
+    "name": "NoUnexpectedFatal",
+    "initial_decision": "modify",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V01",
+    "name": "TypeOK",
+    "initial_decision": "modify",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V01",
+    "name": "LogStructure",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V01",
+    "name": "VoteDecisionEligibility",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V01",
+    "name": "CampaignDecisionEligibility",
+    "initial_decision": "modify",
+    "validation_disposition": "accepted_core",
+    "reason": "See accepted modification records."
+  },
+  {
+    "version": "V01",
+    "name": "TransferDecisionEligibility",
+    "initial_decision": "modify",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V01",
+    "name": "RequestCorrelatedConfigurationEffects",
+    "initial_decision": "modify",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V01",
+    "name": "ProposalConfigurationDecisions",
+    "initial_decision": "modify",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V01",
+    "name": "MCTypeOK",
+    "initial_decision": "modify",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V01",
+    "name": "ElectionProgress",
+    "initial_decision": "keep",
+    "validation_disposition": "unresolved_or_deferred_not_validated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V01",
+    "name": "CatchupProgress",
+    "initial_decision": "keep",
+    "validation_disposition": "unresolved_or_deferred_not_validated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V01",
+    "name": "ManagementProgress",
+    "initial_decision": "keep",
+    "validation_disposition": "unresolved_or_deferred_not_validated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V01",
+    "name": "TransferSettlement",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V01",
+    "name": "ReadProgress",
+    "initial_decision": "keep",
+    "validation_disposition": "unresolved_or_deferred_not_validated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V01",
+    "name": "ConfigurationChangeValidation",
+    "initial_decision": "add",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V01",
+    "name": "ConfigurationProgressPreservation",
+    "initial_decision": "add",
+    "validation_disposition": "unresolved_or_deferred_not_validated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V01",
+    "name": "ConfigurationCommitReevaluation",
+    "initial_decision": "add",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V01",
+    "name": "AutoLeaveSerialization",
+    "initial_decision": "add",
+    "validation_disposition": "accepted_core",
+    "reason": "See accepted modification records."
+  },
+  {
+    "version": "V01",
+    "name": "AutoLeaveProgress",
+    "initial_decision": "add",
+    "validation_disposition": "unresolved_or_deferred_not_validated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V01",
+    "name": "SnapshotConfigurationRestoration",
+    "initial_decision": "add",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V01",
+    "name": "ReadyPeekAndAcceptance",
+    "initial_decision": "add",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V01",
+    "name": "ReadyHardStateDeltaAndMustSync",
+    "initial_decision": "add",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V01",
+    "name": "QuotaReleaseTiming",
+    "initial_decision": "add",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V01",
+    "name": "ExplicitBootstrapLifecycle",
+    "initial_decision": "add",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V01",
+    "name": "ConfigurationAndStatusCopies",
+    "initial_decision": "add",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V01",
+    "name": "ConfChangeEncodingAndPublicRepresentation",
+    "initial_decision": "add",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V01",
+    "name": "CheckQuorumDecision",
+    "initial_decision": "add",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V01",
+    "name": "ReadIndexDecisionBasis",
+    "initial_decision": "add",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V01",
+    "name": "NodeProposalChannelMembershipTransition",
+    "initial_decision": "add",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V01",
+    "name": "TransferTargetRevalidation",
+    "initial_decision": "unresolved",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "VoteDecisionEligibility",
+    "initial_decision": "modify",
+    "validation_disposition": "accepted_core",
+    "reason": "See accepted modification records."
+  },
+  {
+    "version": "V02",
+    "name": "LearnerEligibility",
+    "initial_decision": "modify",
+    "validation_disposition": "accepted_core",
+    "reason": "See accepted modification records."
+  },
+  {
+    "version": "V02",
+    "name": "CampaignDecisionEligibility",
+    "initial_decision": "modify",
+    "validation_disposition": "accepted_core",
+    "reason": "See accepted modification records."
+  },
+  {
+    "version": "V02",
+    "name": "TransferDecisionEligibility",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "RequestCorrelatedConfigurationEffects",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "ProposalConfigurationDecisions",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "ReadyOwnership",
+    "initial_decision": "modify",
+    "validation_disposition": "accepted_core",
+    "reason": "See accepted modification records."
+  },
+  {
+    "version": "V02",
+    "name": "ReadyAccounting",
+    "initial_decision": "modify",
+    "validation_disposition": "accepted_core",
+    "reason": "See accepted modification records."
+  },
+  {
+    "version": "V02",
+    "name": "AdvancePreservesPendingOutput",
+    "initial_decision": "add",
+    "validation_disposition": "accepted_core",
+    "reason": "See accepted modification records."
+  },
+  {
+    "version": "V02",
+    "name": "ReadyPreviewIsReadOnly",
+    "initial_decision": "add",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "AckPreservation",
+    "initial_decision": "keep",
+    "validation_disposition": "accepted_core",
+    "reason": "See accepted modification records."
+  },
+  {
+    "version": "V02",
+    "name": "AutoLeaveAdvance",
+    "initial_decision": "modify",
+    "validation_disposition": "accepted_core",
+    "reason": "See accepted modification records."
+  },
+  {
+    "version": "V02",
+    "name": "AutoLeaveAttemptExactness",
+    "initial_decision": "add",
+    "validation_disposition": "accepted_core",
+    "reason": "See accepted modification records."
+  },
+  {
+    "version": "V02",
+    "name": "JointSnapshotRecovery",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "ConfigurationOrigin",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "JointConfigurationShape",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "SnapshotBacking",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "SnapshotRestoreDecisionCompleteness",
+    "initial_decision": "add",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "RestoredProgressRoleConsistency",
+    "initial_decision": "add",
+    "validation_disposition": "unresolved_or_deferred_not_validated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "ConfigurationSwitchSideEffects",
+    "initial_decision": "add",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "ConfStateObservationMapping",
+    "initial_decision": "modify",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "ConfStateWireCompatibility",
+    "initial_decision": "add",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "ConfStateExportAndEquivalent",
+    "initial_decision": "add",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "QuorumAccounting",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "QuorumConsumerDecisions",
+    "initial_decision": "add",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "MajorityCommittedIndexExactness",
+    "initial_decision": "add",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "StableProgressVisit",
+    "initial_decision": "add",
+    "validation_disposition": "unresolved_or_deferred_not_validated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "ElectionSafety",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "LogMatching",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "LeaderCompleteness",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "CommittedHistory",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "AppliedAgreement",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "VoteRecovery",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "RecoveryBacking",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "PromiseBacking",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "ConfigurationTransitionSafety",
+    "initial_decision": "keep",
+    "validation_disposition": "accepted_core",
+    "reason": "See accepted modification records."
+  },
+  {
+    "version": "V02",
+    "name": "ReplicationEvidence",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "QuotaIntegrity",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "OutcomeSoundness",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "ReadBasis",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "ReadApplication",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "ReadCorrelation",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "NoUnexpectedFatal",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "TypeOK",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "LogStructure",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "MCTypeOK",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "NonzeroNodeIDContract",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "NodeWrapperConcurrencySafety",
+    "initial_decision": "add",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "GlobalLoggerPublication",
+    "initial_decision": "unresolved",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "UpdateReadyOwnership",
+    "initial_decision": "modify",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "UpdateAutoLeaveAdvance",
+    "initial_decision": "modify",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "UpdateJointConfigurationShape",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "UpdateJointSnapshotRecovery",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "JointNotReached",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "AutoLeaveNotAppended",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "JointRecoveryNotReached",
+    "initial_decision": "modify",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "ElectionProgress",
+    "initial_decision": "keep",
+    "validation_disposition": "unresolved_or_deferred_not_validated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "CatchupProgress",
+    "initial_decision": "keep",
+    "validation_disposition": "unresolved_or_deferred_not_validated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "ManagementProgress",
+    "initial_decision": "keep",
+    "validation_disposition": "unresolved_or_deferred_not_validated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "TransferSettlement",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V02",
+    "name": "ReadProgress",
+    "initial_decision": "keep",
+    "validation_disposition": "unresolved_or_deferred_not_validated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "AutoLeaveAdvance",
+    "initial_decision": "modify",
+    "validation_disposition": "accepted_core",
+    "reason": "See accepted modification records."
+  },
+  {
+    "version": "V03",
+    "name": "AutoLeaveCompletion",
+    "initial_decision": "add",
+    "validation_disposition": "unresolved_or_deferred_not_validated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "OutcomeSoundness",
+    "initial_decision": "modify",
+    "validation_disposition": "accepted_core",
+    "reason": "See accepted modification records."
+  },
+  {
+    "version": "V03",
+    "name": "ProposalConfigurationDecisions",
+    "initial_decision": "modify",
+    "validation_disposition": "accepted_core",
+    "reason": "See accepted modification records."
+  },
+  {
+    "version": "V03",
+    "name": "AutoLeaveWeight / AutoLeaveEncoded",
+    "initial_decision": "modify",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "CampaignDecisionEligibility",
+    "initial_decision": "modify",
+    "validation_disposition": "accepted_core",
+    "reason": "See accepted modification records."
+  },
+  {
+    "version": "V03",
+    "name": "ConfigurationTransitionSafety",
+    "initial_decision": "modify",
+    "validation_disposition": "accepted_core",
+    "reason": "See accepted modification records."
+  },
+  {
+    "version": "V03",
+    "name": "JointSnapshotMemberAcceptance",
+    "initial_decision": "modify",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "TransferDecisionEligibility",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "RequestCorrelatedConfigurationEffects",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "TransferCancellationOnConfigurationChange",
+    "initial_decision": "add",
+    "validation_disposition": "accepted_core",
+    "reason": "See accepted modification records."
+  },
+  {
+    "version": "V03",
+    "name": "ConfigurationProbeAfterSwitch",
+    "initial_decision": "add",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "NewProgressInitialization",
+    "initial_decision": "add",
+    "validation_disposition": "unresolved_or_deferred_not_validated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "LiveRestoreProgressObservation",
+    "initial_decision": "modify",
+    "validation_disposition": "unresolved_or_deferred_not_validated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "AdvanceQuotaRelease",
+    "initial_decision": "add",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "SnapshotAppResponseRecovery",
+    "initial_decision": "add",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "ChangerResultIntegrity",
+    "initial_decision": "add",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "CampaignEmissionOrder",
+    "initial_decision": "add",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "ConfChangesTextRoundTrip",
+    "initial_decision": "add",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "InteractionSnapshotApplicationIntegrity",
+    "initial_decision": "add",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "NetworkRandomAccessSerialization",
+    "initial_decision": "add",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "ElectionSafety",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "LogMatching",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "LeaderCompleteness",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "CommittedHistory",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "AppliedAgreement",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "VoteRecovery",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "RecoveryBacking",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "PromiseBacking",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "ConfigurationOrigin",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "LearnerEligibility",
+    "initial_decision": "keep",
+    "validation_disposition": "accepted_core",
+    "reason": "See accepted modification records."
+  },
+  {
+    "version": "V03",
+    "name": "QuorumAccounting",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "ReplicationEvidence",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "SnapshotBacking",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "AckPreservation",
+    "initial_decision": "keep",
+    "validation_disposition": "accepted_core",
+    "reason": "See accepted modification records."
+  },
+  {
+    "version": "V03",
+    "name": "ReadyAccounting",
+    "initial_decision": "keep",
+    "validation_disposition": "accepted_core",
+    "reason": "See accepted modification records."
+  },
+  {
+    "version": "V03",
+    "name": "ReadyOwnership",
+    "initial_decision": "keep",
+    "validation_disposition": "accepted_core",
+    "reason": "See accepted modification records."
+  },
+  {
+    "version": "V03",
+    "name": "JointConfigurationShape",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "JointSnapshotRecovery",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "QuotaIntegrity",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "ReadBasis",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "ReadApplication",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "ReadCorrelation",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "NoUnexpectedFatal",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "TypeOK",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "LogStructure",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "VoteDecisionEligibility",
+    "initial_decision": "keep",
+    "validation_disposition": "accepted_core",
+    "reason": "See accepted modification records."
+  },
+  {
+    "version": "V03",
+    "name": "MCTypeOK",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "TraceMatched",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "UpdateLearnerVoteContract",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "UpdateLearnerCampaignEligibility",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "UpdateReadyOwnership",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "UpdateAdvanceOutputPreservation",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "UpdateJointConfigurationShape",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "UpdateJointSnapshotRecovery",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "UpdateJointSnapshotMemberAcceptance",
+    "initial_decision": "modify",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "UpdateAutoLeaveAdvance",
+    "initial_decision": "modify",
+    "validation_disposition": "deferred",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "UpdateQuorumAccounting",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "ElectionProgress",
+    "initial_decision": "keep",
+    "validation_disposition": "unresolved_or_deferred_not_validated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "CatchupProgress",
+    "initial_decision": "keep",
+    "validation_disposition": "unresolved_or_deferred_not_validated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "ManagementProgress",
+    "initial_decision": "keep",
+    "validation_disposition": "unresolved_or_deferred_not_validated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "TransferSettlement",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "ReadProgress",
+    "initial_decision": "keep",
+    "validation_disposition": "unresolved_or_deferred_not_validated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "LearnerGrantNotReached",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "PostReadyOutputNotReached",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "OutgoingSnapshotRestoreNotReached",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "JointRecoveryNotReached",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "JointNotReached",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  },
+  {
+    "version": "V03",
+    "name": "AutoLeaveNotAppended",
+    "initial_decision": "keep",
+    "validation_disposition": "retained_not_revalidated",
+    "reason": "No additional adoption/coverage claim in this focused phase; original entry and property preserved."
+  }
+]

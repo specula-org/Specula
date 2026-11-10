@@ -1,0 +1,81 @@
+{
+  "protocol": "action-validation/v1",
+  "route": "code-to-model",
+  "spec": "new/spec",
+  "counts": {
+    "match": 4
+  },
+  "total": 4,
+  "commands": [
+    {
+      "engine": "implementation",
+      "command": [
+        "python3",
+        "out/framework/adapters/go/run.py",
+        "--input",
+        "/workspace/cases.json",
+        "--output",
+        "/workspace/out/replay-02/implementation.jsonl",
+        "--work",
+        "/workspace/out/replay-02/implementation"
+      ],
+      "duration_seconds": 10.136311850510538,
+      "exit_code": 0
+    },
+    {
+      "engine": "model",
+      "command": [
+        "python3",
+        "out/framework/adapters/tla/run.py",
+        "--input",
+        "/workspace/cases.json",
+        "--output",
+        "/workspace/out/replay-02/model.jsonl",
+        "--spec",
+        "/workspace/new/spec",
+        "--work",
+        "/workspace/out/replay-02/model"
+      ],
+      "duration_seconds": 2.820862087421119,
+      "exit_code": 0
+    }
+  ],
+  "results": [
+    {
+      "id": "joint-self-quorum-False",
+      "action": "hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "pending-v2-retained-obligation-False",
+      "action": "hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "joint-self-quorum-True",
+      "action": "hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "pending-v2-retained-obligation-True",
+      "action": "hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    }
+  ],
+  "extra_results": {
+    "implementation": [],
+    "model": []
+  }
+}

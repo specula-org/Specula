@@ -1,0 +1,59 @@
+TLC2 Version 2.20 of Day Month 20?? (rev: ${git.shortRevision})
+Running breadth-first search Model-Checking with fp 26 and seed 7215215261726944057 with 1 worker on 96 cores with 4096MB heap and 64MB offheap memory [pid: 5814] (Linux 6.8.0-1044-azure amd64, Ubuntu 21.0.11 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /workspace/out/runs/explicit-control-v03/C03Progress.tla
+Parsing file /workspace/out/runs/explicit-control-v03/Trace.tla
+Parsing file /tmp/tlc-4570139999818113234/_JsonTrace.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/_JsonTrace.tla)
+Parsing file /tmp/tlc-4570139999818113234/_TLCTrace.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/_TLCTrace.tla)
+Parsing file /workspace/out/runs/explicit-control-v03/base.tla
+Parsing file /tmp/tlc-4570139999818113234/Json.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Json.tla)
+Parsing file /tmp/tlc-4570139999818113234/IOUtils.tla (jar:file:/tools/CommunityModules.jar!/IOUtils.tla)
+Parsing file /tmp/tlc-4570139999818113234/Naturals.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Naturals.tla)
+Parsing file /tmp/tlc-4570139999818113234/Integers.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Integers.tla)
+Parsing file /tmp/tlc-4570139999818113234/Sequences.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Sequences.tla)
+Parsing file /tmp/tlc-4570139999818113234/FiniteSets.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/FiniteSets.tla)
+Parsing file /tmp/tlc-4570139999818113234/Bags.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Bags.tla)
+Parsing file /tmp/tlc-4570139999818113234/TLC.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/TLC.tla)
+Parsing file /tmp/tlc-4570139999818113234/TLCExt.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/TLCExt.tla)
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module Bags
+Semantic processing of module base
+Semantic processing of module Json
+Semantic processing of module IOUtils
+Semantic processing of module Trace
+Semantic processing of module TLCExt
+Semantic processing of module _JsonTrace
+Semantic processing of module _TLCTrace
+Semantic processing of module C03Progress
+Linting of module base
+Linting of module Json
+Linting of module IOUtils
+Linting of module Trace
+Linting of module TLCExt
+Linting of module _JsonTrace
+Linting of module _TLCTrace
+Linting of module C03Progress
+Starting... (2026-09-22 20:38:17)
+Implied-temporal checking--satisfiability problem has 8 branches.
+Computing initial states...
+Finished computing initial states: 1 distinct state generated at 2026-09-22 20:38:18.
+Checking 8 branches of temporal properties for the current state space with 1544 total distinct states at (2026-09-22 20:38:21)
+Finished checking temporal properties in 00s at 2026-09-22 20:38:21
+Progress(191) at 2026-09-22 20:38:21: 506 states generated (3,036 s/min), 193 distinct states found (1,158 ds/min), 0 states left on queue.
+Checking 8 branches of temporal properties for the current state space with 3272 total distinct states at (2026-09-22 20:38:31)
+Finished checking temporal properties in 00s at 2026-09-22 20:38:31
+Progress(407) at 2026-09-22 20:38:31: 1,335 states generated (4,974 s/min), 409 distinct states found (1,296 ds/min), 0 states left on queue.
+Progress(512) at 2026-09-22 20:38:36: 1,806 states generated, 514 distinct states found, 0 states left on queue.
+Checking 8 branches of temporal properties for the complete state space with 4112 total distinct states at (2026-09-22 20:38:36)
+Finished checking temporal properties in 00s at 2026-09-22 20:38:36
+Model checking completed. No error has been found.
+  Estimates of the probability that TLC did not check all reachable states
+  because two distinct states had the same fingerprint:
+  calculated (optimistic):  val = 3.6E-14
+1806 states generated, 514 distinct states found, 0 states left on queue.
+The depth of the complete state graph search is 512.
+The average outdegree of the complete state graph is 1 (minimum is 0, the maximum 2 and the 95th percentile is 1).
+Finished in 19s at (2026-09-22 20:38:36)

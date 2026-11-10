@@ -1,0 +1,4641 @@
+--- supplied-framework/README.md
++++ out/framework/README.md
+@@ -1,25 +1,31 @@
+-This is a developmental local-action validation pilot. `runner.py` is independent of Raft, Go and TLA+. It runs command adapters, validates identities, compares mapped inputs/pre-states and complete declared observations, and saves full differences. It contains no protocol transition logic. `protocol.schema.json` describes the wire format. No extra Python packages or network access are required.
++This reusable action-validation framework executes actual Go and original TLA+ actions. `runner.py`, `protocol.schema.json` and `test_runner.py` are unchanged from the supplied hardened framework. The runner compares actual mapped inputs and pre-states before outputs; unordered paths retain multiplicity. Failed commands contribute no results, and every invocation requires fresh output/work directories.
+ 
+-A case is a JSON object with `protocol: "action-validation/v1"`, stable `id`, `action`, `pre`, `input`, and provenance/reachability `meta`. Input files are JSON arrays. Each adapter writes one JSON result per line, with `id`, `engine`, `adapter_status`, `pre_observation`, `input_observation`, and `observation: {state, status, return}`. Successful model generation also includes `testcase`. Additional raw evidence fields are allowed. `adapter_status` distinguishes an executed case from adapter failure or unsupported setup; an expected implementation panic is an executed outcome, not an adapter error.
+-
+-`manifest.json` supplies executable commands and explicit paths whose arrays are unordered. The runner sorts these arrays while retaining multiplicity; every other array is ordered. Missing/duplicate results, setup/input disagreements, and execution-output disagreements are distinct. Final human triage decides whether an output disagreement is a projection defect or a source/model behavioral mismatch. A runner verdict alone is not a bug claim.
+-
+-To reproduce the final four runs from `/workspace` (use fresh output directories):
++From the workspace root, rerun the complete V02 suite with unique directories:
+ 
+ ```sh
+-python3 out/framework/runner.py --manifest out/framework/targets/etcd/manifest.json --cases out/cases/code-inputs.json --output out/cases/replay-baseline-code --spec new/spec --route code-to-model
+-python3 out/framework/runner.py --manifest out/framework/targets/etcd/manifest.json --cases out/framework/targets/etcd/model-seeds.json --output out/cases/replay-baseline-model --spec new/spec --route model-to-code
+-python3 out/framework/runner.py --manifest out/framework/targets/etcd/manifest.json --cases out/cases/code-inputs.json --output out/cases/replay-repaired-code --spec out/repaired-spec --route code-to-model
+-python3 out/framework/runner.py --manifest out/framework/targets/etcd/manifest.json --cases out/framework/targets/etcd/model-seeds.json --output out/cases/replay-repaired-model --spec out/repaired-spec --route model-to-code
+-python3 -m unittest discover -s out/framework -p test_runner.py -v
++python3 out/framework/targets/etcd/replay.py
+ ```
+ 
+-For code-to-model, the runner executes Go first, then TLC evaluates the original model on corresponding inputs. For model-to-code, TLC selects from a finite symbolic domain and executes an actual original operator/action. It exports the selected case and computed successor; the runner then passes those cases to Go. `ModelDomains.tla` constructs inputs only. `LocalActions.tla` maps state and invokes `base` definitions; it never implements a replacement Raft transition. These are depth-two local state graphs (initial local state plus one action), not a full protocol model-checking campaign. `Emit` is an output hook registered as a TLC invariant, not a safety invariant or oracle. Original safety invariants are neither executed nor changed.
++The script prints its output root. It runs both directions against `new/spec` and `out/repaired-spec`, the 21-case old-version delta subset, and the separate six-case invalid-input domain. `targets/etcd/suite.json` is the portable suite manifest. `manifest.json` and `manifest-old.json` bind the generic runner to the source adapters. Paths are relative to the workspace; supplied Go/JAR locations and the local dependency overlay are prerequisites. The supplied go.mod files reference `/workspace/deps/legacy-pkg`; this task's supported root is `/workspace`.
+ 
+-The Go adapter is maintained in `adapters/go/action_validation_test.go` and installed as a test file in `new/source`. It invokes unexported real functions using package-local Go tests. Build environment, outer timeout, and logs are recorded in every implementation work directory. It uses the historical dependency overlay with `GOPROXY=off`. TLC copies the supplied `base.tla` verbatim into a fresh work directory and records its Java command. Each invocation has one worker, a 2 GB heap and a 175-second outer timeout. Temporary/build files are directed into `/workspace/out`.
++A single comparison is also reusable:
+ 
+-`out/cases/code-inputs.json` and `out/cases/model-inputs.json` are reusable regression inputs; retain their IDs across source/model versions. `domain.py` is optional regeneration of the code-derived domain. The model domain lives in `ModelDomains.tla` plus the target's `model-seeds.json`. Shared seed vocabulary intentionally makes the routes comparable; generation is not statistically independent. Never replace saved inputs merely because a version disagrees with them.
++```sh
++python3 out/framework/runner.py --manifest out/framework/targets/etcd/manifest.json --cases out/cases/code-inputs.json --output out/cases/my-fresh-run --spec out/repaired-spec --route code-to-model
++```
+ 
+-To adapt another language or system, keep `runner.py`, `protocol.schema.json`, and its tests. Regenerate the implementation adapter and model adapter; supply the new target's domain/observation descriptors and command manifest. Reuse cases only where their semantics and precondition mappings still apply; otherwise report `unsupported` explicitly. See `regenerate-adapters.md` for a constrained agent task. There were no other agents, external references, later source versions, or prior experiment histories used in this pilot.
++Use `--cases out/framework/targets/etcd/model-seeds.json --route model-to-code` for TLC-generated cases. Every case is exported, including an explicitly mapped disabled Ready prerequisite or tested action after a successful TLC run. Parsing/evaluation failures remain adapter errors; they never become disabled results.
+ 
+-Coordinator hardening: the runner and direct TLC adapter require new exclusive output/work directories. Failed commands never contribute partial exported results. Completed local relations with no successor export mapped input/pre-state and observation.status=disabled; these compare as behavioral mismatches against a corresponding executable implementation call. Invalid mappings and failed/unsupported adapters remain separate. Raw relation mismatch still requires human/source triage. Negative controls are in ../negative-controls/results.json and fresh four-route verification in ../coordinator-rerun.json.
++The final recorded suite is `out/cases/v02-final-02`. `out/results.json` and `out/report.md` contain counts, evidence, source-backed repairs, timing and limitations. Preserve all baseline and diagnostic directories. `prior-*` inputs remain immutable reusable inputs. `domain_v02.py` enriches their descriptors and adds V02 cases; `ModelDomains.tla` builds finite symbolic inputs, never expected successors. `LocalActions.tla` invokes the original `Step`, `ApplyConfCore`, `Restore`, `RestartCore`, `ProtocolReady`, and `ProtocolAdvance` operators/actions. Advance preparation runs original Ready and intervening original Step calls before comparing the captured batch and actual pre-state.
++
++`adapters/go/action_validation_test.go` contains package-local setup/call/projection glue. `run.py` installs it into the selected source tree; old-source spelling/API changes are explicit. Production source remains unchanged. Node ownership cases run the real `node.run` goroutine and channels, using `Status` as an execution barrier. Go uses a 90-second outer timeout, GOMAXPROCS=2, offline modules and workspace-local build/temp paths. Each local TLC invocation has one worker, 2 GB heap and a 175-second timeout. No safety invariants or global protocol search run here.
++
++Additional verification:
++
++```sh
++python3 -m unittest discover -s out/framework -p test_runner.py -v
++python3 out/framework/targets/etcd/audit_inputs.py out/cases/code-inputs.json out/cases/model-inputs.json
++python3 out/framework/targets/etcd/summarize.py --run-root out/cases/v02-final-02
++```
++
++The deliberately invalid snapshot cases fail the structural audit and remain outside supported-domain conformance totals. See `targets/etcd/observations.md` for mapping and validity assumptions. Observer proposals are kept separately in `out/adaptation/observer-corrections.patch`, unapplied.
+--- supplied-framework/adapters/go/action_validation_test.go
++++ out/framework/adapters/go/action_validation_test.go
+@@ -2,6 +2,7 @@
+ 
+ // Generated adapter: setup, real calls, observation only.
+ import (
++	"context"
+ 	"encoding/json"
+ 	"fmt"
+ 	"go.etcd.io/etcd/raft/quorum"
+@@ -13,6 +14,7 @@
+ 	"strconv"
+ 	"strings"
+ 	"testing"
++	"time"
+ )
+ 
+ type avConfig struct {
+@@ -41,7 +43,7 @@
+ type avMessage struct {
+ 	Type                                                    string
+ 	FromID, To, Term, Index, LogTerm, Commit, Hint, Context uint64
+-	Reject                                                  bool
++	Reject, Forced                                          bool
+ 	Entries                                                 []avEntry
+ }
+ type avSnap struct {
+@@ -52,7 +54,12 @@
+ 	Role string
+ 	Lead uint64
+ }
++type avVote struct {
++	ID  uint64
++	Yes bool
++}
+ type avPre struct {
++	Votes                                                             []avVote
+ 	Config                                                            avConfig
+ 	Role                                                              string
+ 	Term, Vote, Lead, Commit, Applied, Pending, Quota, Transfer, Uoff uint64
+@@ -60,7 +67,7 @@
+ 	Prs                                                               []avProgress
+ 	Messages                                                          []avMessage
+ 	Reads, ReadQueue                                                  []avRead
+-	PreVote                                                           bool
++	PreVote, CheckQuorum                                              bool
+ 	Elapsed, Heartbeat                                                int
+ 	PrevHS                                                            pb.HardState
+ 	PrevSS                                                            avSoft
+@@ -70,6 +77,8 @@
+ 	Entry           avEntry
+ 	Snapshot        avSnap
+ 	FromID, Context uint64
++	Message         avMessage
++	Between         []avMessage
+ }
+ type avCase struct {
+ 	Protocol, ID, Action string
+@@ -100,10 +109,10 @@
+ 	return map[string]interface{}{"voters": avIDs(c.Voters[0]), "outgoing": avIDs(c.Voters[1]), "learners": avIDs(c.Learners), "learnersNext": avIDs(c.LearnersNext), "autoLeave": c.AutoLeave}
+ }
+ func avCS(c avConfig) pb.ConfState {
+-	return pb.ConfState{Nodes: c.Voters, NodesJoint: c.Outgoing, Learners: c.Learners, LearnersNext: c.LearnersNext, AutoLeave: c.AutoLeave}
++	return pb.ConfState{Voters: c.Voters, VotersOutgoing: c.Outgoing, Learners: c.Learners, LearnersNext: c.LearnersNext, AutoLeave: c.AutoLeave}
+ }
+ func avCfgCS(c pb.ConfState) interface{} {
+-	return avCfg(tracker.Config{Voters: quorum.JointConfig{avSet(c.Nodes), avSet(c.NodesJoint)}, Learners: avSet(c.Learners), LearnersNext: avSet(c.LearnersNext), AutoLeave: c.AutoLeave})
++	return avCfg(tracker.Config{Voters: quorum.JointConfig{avSet(c.Voters), avSet(c.VotersOutgoing)}, Learners: avSet(c.Learners), LearnersNext: avSet(c.LearnersNext), AutoLeave: c.AutoLeave})
+ }
+ func avKind(s string) pb.ConfChangeType {
+ 	switch s {
+@@ -217,12 +226,29 @@
+ 	return i
+ }
+ func avMsg(m avMessage) pb.Message {
+-	return pb.Message{Type: pb.MessageType(pb.MessageType_value[m.Type]), From: m.FromID, To: m.To, Term: m.Term, Index: m.Index, LogTerm: m.LogTerm, Commit: m.Commit, Reject: m.Reject, RejectHint: m.Hint, Context: avCtx(m.Context), Entries: avEnts(m.Entries)}
++	ctx := avCtx(m.Context)
++	if m.Forced {
++		ctx = []byte(campaignTransfer)
++	}
++	return pb.Message{Type: pb.MessageType(pb.MessageType_value[m.Type]), From: m.FromID, To: m.To, Term: m.Term, Index: m.Index, LogTerm: m.LogTerm, Commit: m.Commit, Reject: m.Reject, RejectHint: m.Hint, Context: ctx, Entries: avEnts(m.Entries)}
++}
++func avContextID(b []byte) uint64 {
++	if string(b) == string(campaignTransfer) {
++		return 0
++	}
++	return avCtxID(b)
++}
++func avObsMessages(ms []avMessage) []interface{} {
++	out := []pb.Message{}
++	for _, m := range ms {
++		out = append(out, avMsg(m))
++	}
++	return avObsMsgs(out)
+ }
+ func avObsMsgs(ms []pb.Message) []interface{} {
+ 	a := []interface{}{}
+ 	for _, m := range ms {
+-		a = append(a, map[string]interface{}{"type": m.Type.String(), "fromId": m.From, "to": m.To, "term": m.Term, "index": m.Index, "logTerm": m.LogTerm, "commit": m.Commit, "reject": m.Reject, "hint": m.RejectHint, "context": avCtxID(m.Context), "entries": avObsEnts(m.Entries), "snapshot": avObsSnap(m.Snapshot)})
++		a = append(a, map[string]interface{}{"type": m.Type.String(), "fromId": m.From, "to": m.To, "term": m.Term, "index": m.Index, "logTerm": m.LogTerm, "commit": m.Commit, "reject": m.Reject, "hint": m.RejectHint, "context": avContextID(m.Context), "forced": string(m.Context) == string(campaignTransfer), "entries": avObsEnts(m.Entries), "snapshot": avObsSnap(m.Snapshot)})
+ 	}
+ 	return a
+ }
+@@ -300,7 +326,7 @@
+ 		snap = *l.unstable.snapshot
+ 	}
+ 	st := l.storage.(*MemoryStorage)
+-	return map[string]interface{}{"config": avCfg(r.prs.Config), "role": strings.TrimPrefix(r.state.String(), "State"), "term": r.Term, "vote": r.Vote, "lead": r.lead, "commit": l.committed, "applied": l.applied, "pending": r.pendingConfIndex, "quota": r.uncommittedSize, "transfer": r.leadTransferee, "log": avObsEnts(es), "last": l.lastIndex(), "first": l.firstIndex(), "unstable": avObsEnts(l.unstable.entries), "uoff": l.unstable.offset, "snapshot": avObsSnap(snap), "prs": prs, "messages": avObsMsgs(r.msgs), "reads": avReads(r.readStates), "readQueue": q, "prevHS": avHS(rn.prevHardSt), "prevSS": avSS(rn.prevSoftSt), "elapsed": r.electionElapsed, "heartbeat": r.heartbeatElapsed, "preVote": r.preVote, "isLearner": r.isLearner, "votes": avVotes(r.prs.Votes), "storage": map[string]interface{}{"log": avObsEnts(st.ents[1:]), "snapshot": avObsSnap(st.snapshot), "hs": avHS(st.hardState), "cut": st.ents[0].Index}}
++	return map[string]interface{}{"config": avCfg(r.prs.Config), "role": strings.TrimPrefix(r.state.String(), "State"), "term": r.Term, "vote": r.Vote, "lead": r.lead, "commit": l.committed, "applied": l.applied, "pending": r.pendingConfIndex, "quota": r.uncommittedSize, "transfer": r.leadTransferee, "log": avObsEnts(es), "last": l.lastIndex(), "first": l.firstIndex(), "unstable": avObsEnts(l.unstable.entries), "uoff": l.unstable.offset, "snapshot": avObsSnap(snap), "prs": prs, "messages": avObsMsgs(r.msgs), "reads": avReads(r.readStates), "readQueue": q, "prevHS": avHS(rn.prevHardSt), "prevSS": avSS(rn.prevSoftSt), "elapsed": r.electionElapsed, "heartbeat": r.heartbeatElapsed, "preVote": r.preVote, "checkQuorum": r.checkQuorum, "isLearner": r.isLearner, "votes": avVotes(r.prs.Votes), "storage": map[string]interface{}{"log": avObsEnts(st.ents[1:]), "snapshot": avObsSnap(st.snapshot), "hs": avHS(st.hardState), "cut": st.ents[0].Index}}
+ }
+ func avRD(rd Ready) interface{} {
+ 	ss := interface{}(nil)
+@@ -336,6 +362,9 @@
+ 		r.tick = r.tickElection
+ 	}
+ 	r.prs = tracker.MakeProgressTracker(2)
++	for _, v := range p.Votes {
++		r.prs.RecordVote(v.ID, v.Yes)
++	}
+ 	r.prs.Config = tracker.Config{Voters: quorum.JointConfig{avSet(p.Config.Voters), avSet(p.Config.Outgoing)}, Learners: avSet(p.Config.Learners), LearnersNext: avSet(p.Config.LearnersNext), AutoLeave: p.Config.AutoLeave}
+ 	for _, q := range p.Prs {
+ 		pr := &tracker.Progress{Match: q.Match, Next: q.Next, ProbeSent: q.Probe, PendingSnapshot: q.Pending, RecentActive: q.Active, Inflights: tracker.NewInflights(2)}
+@@ -360,6 +389,7 @@
+ 	r.uncommittedSize = p.Quota
+ 	r.leadTransferee = p.Transfer
+ 	r.preVote = p.PreVote
++	r.checkQuorum = p.CheckQuorum
+ 	r.electionElapsed = p.Elapsed
+ 	r.heartbeatElapsed = p.Heartbeat
+ 	r.randomizedElectionTimeout = 10
+@@ -380,6 +410,14 @@
+ 	rn.prevHardSt = p.PrevHS
+ 	rn.prevSoftSt = &SoftState{Lead: p.PrevSS.Lead, RaftState: avState(p.PrevSS.Role)}
+ 	return rn
++}
++func avNodeReady(n *node) Ready {
++	select {
++	case rd := <-n.Ready():
++		return rd
++	case <-time.After(2 * time.Second):
++		panic("Node Ready timeout")
++	}
+ }
+ func avRun(c avCase) (result map[string]interface{}) {
+ 	result = map[string]interface{}{"protocol": "action-validation/v1", "id": c.ID, "engine": "go", "adapter_status": "ok"}
+@@ -403,10 +441,19 @@
+ 	rn = avSetup(c)
+ 	r := rn.raft
+ 	var rd Ready
++	var nd *node
++	if strings.HasSuffix(c.Action, "_node") {
++		n := newNode(rn)
++		nd = &n
++		go nd.run()
++		defer nd.Stop()
++	}
+ 	if strings.HasPrefix(c.Action, "advance") {
+-		rd = rn.Ready()
+ 		if c.Action == "advance_node" {
+-			rn.acceptReady(rd)
++			rd = avNodeReady(nd)
++			nd.Status()
++		} else {
++			rd = rn.Ready()
+ 		}
+ 		if !IsEmptyHardState(rd.HardState) {
+ 			if err := r.raftLog.storage.(*MemoryStorage).SetHardState(rd.HardState); err != nil {
+@@ -414,12 +461,52 @@
+ 			}
+ 		}
+ 		result["captured_ready"] = avRD(rd)
++		for _, m := range c.Input.Between {
++			var e error
++			if nd != nil {
++				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
++				e = nd.step(ctx, avMsg(m))
++				cancel()
++				nd.Status()
++			} else {
++				e = r.Step(avMsg(m))
++			}
++			if e != nil && e != ErrProposalDropped {
++				panic(e)
++			}
++			if e != nil {
++				result["between_error"] = e.Error()
++			}
++		}
+ 	}
+ 	result["pre_observation"] = avObs(rn)
+-	result["input_observation"] = map[string]interface{}{"entries": avObsEnts(avEnts(c.Input.Entries)), "entry": avObsEnt(avEnt(c.Input.Entry)), "snapshot": avObsSnap(avSnapPB(c.Input.Snapshot)), "fromId": c.Input.FromID, "context": c.Input.Context}
++	var restartStorage *MemoryStorage
++	var restartConfig *Config
++	if c.Action == "restart" {
++		restartStorage = NewMemoryStorage()
++		if e := restartStorage.ApplySnapshot(avSnapPB(c.Input.Snapshot)); e != nil {
++			panic(e)
++		}
++		if e := restartStorage.SetHardState(pb.HardState{Term: 3, Commit: c.Input.Snapshot.Index}); e != nil {
++			panic(e)
++		}
++		restartConfig = &Config{ID: 1, ElectionTick: 10, HeartbeatTick: 1, Storage: restartStorage, MaxSizePerMsg: 1024, MaxCommittedSizePerReady: 1024, MaxUncommittedEntriesSize: 16, MaxInflightMsgs: 2}
++		st := restartStorage
++		opt := restartConfig
++		result["pre_observation"] = map[string]interface{}{
++			"storage":     map[string]interface{}{"log": avObsEnts(st.ents[1:]), "snapshot": avObsSnap(st.snapshot), "hs": avHS(st.hardState), "cut": st.ents[0].Index},
++			"constructor": map[string]interface{}{"id": opt.ID, "applied": opt.Applied, "electionTick": opt.ElectionTick, "heartbeatTick": opt.HeartbeatTick, "maxSizePerMsg": opt.MaxSizePerMsg, "maxCommittedSizePerReady": opt.MaxCommittedSizePerReady, "maxUncommittedEntriesSize": opt.MaxUncommittedEntriesSize, "maxInflightMsgs": opt.MaxInflightMsgs},
++		}
++	}
++	result["input_observation"] = map[string]interface{}{"entries": avObsEnts(avEnts(c.Input.Entries)), "entry": avObsEnt(avEnt(c.Input.Entry)), "snapshot": avObsSnap(avSnapPB(c.Input.Snapshot)), "fromId": c.Input.FromID, "context": c.Input.Context, "message": avObsMsgs([]pb.Message{avMsg(c.Input.Message)})[0], "between": avObsMessages(c.Input.Between)}
++	if strings.HasPrefix(c.Action, "advance") {
++		result["input_observation"].(map[string]interface{})["batch"] = avRD(rd)
++	}
+ 	phase = "execute"
+ 	var err error
+ 	switch c.Action {
++	case "vote", "receive":
++		err = rn.Step(avMsg(c.Input.Message))
+ 	case "proposal":
+ 		err = r.Step(pb.Message{Type: pb.MsgProp, From: 1, Entries: avEnts(c.Input.Entries)})
+ 	case "apply":
+@@ -435,23 +522,21 @@
+ 	case "restore":
+ 		ret = map[string]interface{}{"restored": r.restore(avSnapPB(c.Input.Snapshot))}
+ 	case "restart":
+-		st := NewMemoryStorage()
+-		if e := st.ApplySnapshot(avSnapPB(c.Input.Snapshot)); e != nil {
+-			panic(e)
+-		}
+-		st.SetHardState(pb.HardState{Term: 3, Commit: c.Input.Snapshot.Index})
+-		result["restart_storage"] = avObsSnap(st.snapshot)
+-		rn, err = NewRawNode(&Config{ID: 1, ElectionTick: 10, HeartbeatTick: 1, Storage: st, MaxSizePerMsg: 1024, MaxCommittedSizePerReady: 1024, MaxUncommittedEntriesSize: 16, MaxInflightMsgs: 2})
++		result["restart_storage"] = avObsSnap(restartStorage.snapshot)
++		rn, err = NewRawNode(restartConfig)
+ 	case "ready_raw":
+ 		ret = avRD(rn.Ready())
+ 	case "ready_node":
+-		rd = rn.Ready()
+-		rn.acceptReady(rd)
++		rd = avNodeReady(nd)
++		nd.Status()
+ 		ret = avRD(rd)
+ 	case "advance_raw":
+ 		rn.Advance(rd)
++		ret = map[string]interface{}{"batchAfter": avRD(rd)}
+ 	case "advance_node":
+-		rn.commitReady(rd)
++		nd.Advance()
++		nd.Status()
++		ret = map[string]interface{}{"batchAfter": avRD(rd)}
+ 	default:
+ 		phase = "dispatch"
+ 		panic("unsupported action " + c.Action)
+--- supplied-framework/adapters/go/run.py
++++ out/framework/adapters/go/run.py
+@@ -1,8 +1,15 @@
+ #!/usr/bin/env python3
+ import argparse,os,pathlib,subprocess,time,json,shutil,sys
+-p=argparse.ArgumentParser();p.add_argument('--input',required=True);p.add_argument('--output',required=True);p.add_argument('--work',required=True);a=p.parse_args();root=pathlib.Path('/workspace');work=pathlib.Path(a.work);work.mkdir(parents=True,exist_ok=True)
+-source=root/'new/source';shutil.copy(pathlib.Path(__file__).parent/'action_validation_test.go',source/'action_validation_test.go')
+-env=os.environ.copy();env.update(GOMAXPROCS='2',GOTMPDIR=str(root/'out/tmp'),TMPDIR=str(root/'out/tmp'),GOCACHE=str(root/'out/go-cache'),GOPROXY='off',CGO_ENABLED='0',AV_INPUT=a.input,AV_OUTPUT=a.output)
++p=argparse.ArgumentParser();p.add_argument('--input',required=True);p.add_argument('--output',required=True);p.add_argument('--work',required=True);p.add_argument('--source',default='new/source');a=p.parse_args();root=pathlib.Path(__file__).resolve().parents[4];work=pathlib.Path(a.work);work.mkdir(parents=True,exist_ok=False)
++source=(root/a.source).resolve()
++binding=(pathlib.Path(__file__).parent/'action_validation_test.go').read_text()
++if a.source.startswith('old/'):
++ binding=binding.replace('Voters: c.Voters, VotersOutgoing: c.Outgoing','Nodes: c.Voters, NodesJoint: c.Outgoing').replace('c.Voters)', 'c.Nodes)').replace('c.VotersOutgoing)', 'c.NodesJoint)')
++ binding=binding.replace('rn.readyWithoutAccept()', 'rn.Ready()')
++ binding=binding.replace('newNode(rn)', 'newNode()').replace('go nd.run()', 'go nd.run(rn)')
++(source/'action_validation_test.go').write_text(binding)
++(root/'out/tmp').mkdir(parents=True,exist_ok=True)
++env=os.environ.copy();env.update(GOMAXPROCS='2',GOTMPDIR=str(root/'out/tmp'),TMPDIR=str(root/'out/tmp'),GOCACHE=str(root/'out/go-cache'),GOPROXY='off',GOSUMDB='off',GOFLAGS='-mod=readonly',GOTOOLCHAIN='local',CGO_ENABLED='0',AV_INPUT=a.input,AV_OUTPUT=a.output)
+ cmd=['timeout','90s','/usr/local/go/bin/go','test','-run','^TestActionValidation$','-count=1','-v','.'];start=time.monotonic()
+ with (work/'go.log').open('w') as f:r=subprocess.run(cmd,cwd=source,env=env,stdout=f,stderr=subprocess.STDOUT,timeout=95)
+ (work/'commands.json').write_text(json.dumps([dict(command=cmd,cwd=str(source),env={k:env[k] for k in ['GOMAXPROCS','GOTMPDIR','TMPDIR','GOCACHE','GOPROXY','CGO_ENABLED','AV_INPUT','AV_OUTPUT']},duration_seconds=time.monotonic()-start,exit_code=r.returncode)],indent=2));sys.exit(r.returncode)
+--- supplied-framework/adapters/tla/LocalActions.tla
++++ out/framework/adapters/tla/LocalActions.tla
+@@ -1,7 +1,7 @@
+ -------------------------- MODULE LocalActions --------------------------
+ EXTENDS base, Json
+ CONSTANTS InputFile, OutputDir, Generation
+-VARIABLES selected, phase, before
++VARIABLES selected, phase, before, captured
+ LocalEmptyEncoded == 6
+ InputCases == JsonDeserialize(InputFile)
+ \* ModelDomains is generated from target descriptors, not transition code.
+@@ -16,12 +16,14 @@
+  hist |-> [k\in 1..s.index |-> Entry(s.term,k,"Normal",0,0,0,8)]]
+ Msg(m) == [Message(m.type,m.fromId,m.to,m.term) EXCEPT
+  !.index=m.index,!.logTerm=m.logTerm,!.commit=m.commit,!.reject=m.reject,
+- !.hint=m.hint,!.context=m.context,!.entries=Ents(m.entries)]
++ !.hint=m.hint,!.context=m.context,!.forced=m.forced,!.entries=Ents(m.entries)]
+ Read(s) == [EmptyRead EXCEPT !.id=s.id,!.index=s.index]
+ ReadQ(s,c) == [EmptyRead EXCEPT !.id=s.id,!.index=s.index,!.requester=s.fromId,
+  !.acks=SeqSet(s.acks),!.config=c]
+ Built(c) == LET p==c.pre h==Ents(p.log) cfg==Cfg(p.config) IN
+  [InitialRaft(1,10) EXCEPT !.term=p.term,!.vote=p.vote,!.lead=p.lead,!.role=p.role,
++ !.yes={p.votes[k].id:k\in {i\in DOMAIN p.votes:p.votes[i].yes}},
++ !.no={p.votes[k].id:k\in {i\in DOMAIN p.votes:~p.votes[i].yes}},
+  !.config=cfg,!.cfgHist= <<>>,!.store=Store(h,EmptySnapshot,0,EmptyHS),
+  !.unstable=Suffix(h,p.uoff),!.uoff=p.uoff,!.commit=p.commit,!.applied=p.applied,
+  !.pendingConf=p.pending,!.quota=p.quota,!.transfer=p.transfer,
+@@ -32,16 +34,11 @@
+  !.out=BagSeq([k\in DOMAIN p.messages |-> Msg(p.messages[k])]),
+  !.readStates=[k\in DOMAIN p.reads |-> Read(p.reads[k])],
+  !.readQueue=[k\in DOMAIN p.readQueue |-> ReadQ(p.readQueue[k],cfg)],
+- !.preVote=p.preVote,!.elapsed=p.elapsed,!.heartbeat=p.heartbeat,
++ !.preVote=p.preVote,!.checkQuorum=p.checkQuorum,!.elapsed=p.elapsed,!.heartbeat=p.heartbeat,
+  !.prevHS=p.prevHS,!.prevSS=p.prevSS]
+ IsAdvance(c) == c.action\in {"advance_raw","advance_node"}
+-Captured(c) == NewReady(Built(c))
+-Start(c) == LET r==Built(c) b==Captured(c) IN
+- IF ~IsAdvance(c) THEN r ELSE [r EXCEPT
+- !.store.hs=IF b.hasHS THEN b.hs ELSE @,
+- !.out=IF c.action="advance_node" THEN EmptyBag ELSE @,
+- !.readStates=IF c.action="advance_node" /\ b.reads# <<>> THEN <<>> ELSE @,
+- !.prevSS=IF c.action="advance_node" /\ b.hasSS THEN b.ss ELSE @]
++RECURSIVE Between(_, _)
++Between(r,ms) == IF ms= <<>> THEN r ELSE Between(Step(r,Msg(Head(ms)),10),Tail(ms))
+ PCfg(c) == c
+ PEnt(e) == [kind |-> e.kind,transition |-> e.transition,target |-> e.target,
+  changes |-> e.changes,weight |-> e.weight,encoded |-> e.encoded,term |-> e.term,index |-> e.index]
+@@ -49,7 +46,7 @@
+ PSnap(s) == [index |-> s.index,term |-> s.term,config |-> PCfg(s.config)]
+ PMsg(m) == [type |-> m.type,fromId |-> m.from,to |-> m.to,term |-> m.term,
+  index |-> m.index,logTerm |-> m.logTerm,commit |-> m.commit,reject |-> m.reject,
+- hint |-> m.hint,context |-> m.context,entries |-> PEnts(m.entries),snapshot |-> PSnap(m.snapshot)]
++ hint |-> m.hint,context |-> m.context,forced |-> m.forced,entries |-> PEnts(m.entries),snapshot |-> PSnap(m.snapshot)]
+ RECURSIVE PMsgs(_)
+ PMsgs(b) == IF b=EmptyBag THEN <<>> ELSE LET m==CHOOSE x\in DOMAIN b:TRUE IN
+  <<PMsg(m)>> \o PMsgs(RemoveBag(b,m))
+@@ -66,7 +63,7 @@
+  readQueue |-> [k\in DOMAIN r.readQueue |-> [id |-> r.readQueue[k].id,index |-> r.readQueue[k].index,
+  fromId |-> r.readQueue[k].requester,acks |-> r.readQueue[k].acks]],
+  prevHS |-> r.prevHS,prevSS |-> r.prevSS,elapsed |-> r.elapsed,heartbeat |-> r.heartbeat,
+- preVote |-> r.preVote,isLearner |-> r.id\in r.config.learners,
++ preVote |-> r.preVote,checkQuorum |-> r.checkQuorum,isLearner |-> r.id\in r.config.learners,
+  votes |-> {[id |-> n,yes |-> n\in r.yes]:n\in r.yes\cup r.no},
+  storage |-> [log |-> PEnts(Suffix(r.store.hist,r.store.cut+1)),snapshot |-> PSnap(r.store.snapshot),
+  hs |-> r.store.hs,cut |-> r.store.cut]]
+@@ -74,19 +71,24 @@
+  ss |-> IF b.hasSS THEN b.ss ELSE "__null__", entries |-> PEnts(b.entries),
+  committed |-> PEnts(b.committed),messages |-> PMsgs(b.messages),reads |-> PReads(b.reads),
+  snapshot |-> PSnap(b.snapshot),mustSync |-> b.mustSync,cursor |-> b.cursor]
+-LocalInit == /\ selected\in Cases /\ phase=0
+- /\ raft=[n\in Server |-> IF n=1 THEN Start(selected) ELSE InitialRaft(n,10)]
+- /\ before=PState(Start(selected))
++RestartBefore(c) == [storage |-> [log |-> <<>>,snapshot |-> PSnap(Snap(c.input.snapshot)),
++ hs |-> [term |-> 3,vote |-> 0,commit |-> c.input.snapshot.index],cut |-> c.input.snapshot.index],
++ constructor |-> [id |-> 1,applied |-> 0,electionTick |-> ElectionTick,heartbeatTick |-> HeartbeatTick,
++ maxSizePerMsg |-> MaxMsgSize,maxCommittedSizePerReady |-> MaxReadySize,
++ maxUncommittedEntriesSize |-> MaxUncommitted,maxInflightMsgs |-> MaxInflight]]
++LocalInit == /\ selected\in Cases /\ phase=(IF IsAdvance(selected) THEN -2 ELSE 0)
++ /\ captured=EmptyReady
++ /\ raft=[n\in Server |-> IF n=1 THEN Built(selected) ELSE InitialRaft(n,10)]
++ /\ before=(IF selected.action="restart" THEN RestartBefore(selected) ELSE PState(Built(selected)))
+  /\ disk=[n\in Server |-> IF n=1 /\ selected.action="restart" THEN
+        [EmptyDisk EXCEPT !.snapshot=Snap(selected.input.snapshot),
+         !.hs=[term |-> 3,vote |-> 0,commit |-> selected.input.snapshot.index]] ELSE EmptyDisk]
+- /\ ready=[n\in Server |-> IF n=1 /\ IsAdvance(selected) THEN
+-       [Captured(selected) EXCEPT !.done=Parts(@),!.installed=Parts(@),!.published=TRUE,!.queued=TRUE]
+-       ELSE EmptyReady]
++ /\ ready=[n\in Server |-> EmptyReady]
+  /\ application=[n\in Server |-> EmptyApp]
+  /\ requests=[id\in RequestId |-> EmptyRequest]
+  /\ wire=EmptyBag /\ history=EmptyHistory /\ quality=EmptyQuality
+-Core(c,r) == CASE c.action="proposal" -> Step(r,[Message("MsgProp",1,1,0) EXCEPT !.entries=Ents(c.input.entries)],10)
++Core(c,r) == CASE c.action\in {"vote","receive"} -> Step(r,Msg(c.input.message),10)
++ [] c.action="proposal" -> Step(r,[Message("MsgProp",1,1,0) EXCEPT !.entries=Ents(c.input.entries)],10)
+  [] c.action="apply" -> ApplyConfCore(r,Ent(c.input.entry),10)
+  [] c.action="hup" -> Step(r,Message("MsgHup",1,1,0),10)
+  [] c.action="read" -> Step(r,[Message("MsgReadIndex",1,1,0) EXCEPT !.context=c.input.context],10)
+@@ -94,25 +96,42 @@
+  [] c.action="checkquorum" -> Step(r,Message("MsgCheckQuorum",1,1,0),10)
+  [] c.action="restore" -> Restore(r,Snap(c.input.snapshot),10)
+  [] c.action="restart" -> RestartCore(1,10)
+-LocalNext == /\ phase=0 /\ phase'=1 /\ UNCHANGED <<selected,before,quality>>
++\* Setup uses the actual original Ready action, then original Step calls.
++\* Caller persistence flags and storage installation are environment mappings.
++PrepareReady == /\ phase=-2 /\ ProtocolReady(1) /\ phase'=-1
++ /\ captured'=ready'[1] /\ before'=PState(raft'[1])
++ /\ UNCHANGED <<selected,quality>>
++PrepareAdvance == /\ phase=-1 /\ phase'=0
++ /\ LET r==raft[1] b==captured
++         a==Between([r EXCEPT !.store.hs=IF b.hasHS THEN b.hs ELSE @],selected.input.between)
++    IN /\ raft'=[raft EXCEPT ![1]=a] /\ before'=PState(a)
++ /\ ready'=[ready EXCEPT ![1].done=Parts(captured),![1].installed=Parts(captured),
++              ![1].published=TRUE,![1].queued=TRUE]
++ /\ UNCHANGED <<selected,captured,disk,application,requests,wire,history,quality>>
++Execute == /\ phase=0 /\ phase'=1 /\ UNCHANGED <<selected,before,captured,quality>>
+  /\ CASE selected.action\in {"ready_raw","ready_node"} -> ProtocolReady(1)
+     [] IsAdvance(selected) -> ProtocolAdvance(1)
+     [] OTHER -> /\ raft'=[raft EXCEPT ![1]=Core(selected,@)]
+                 /\ UNCHANGED <<disk,ready,application,requests,wire,history>>
++LocalNext == PrepareReady \/ PrepareAdvance \/ Execute
+ Result(c,r) == [state |-> PState(r),
+  status |-> IF r.fatal#"" THEN "panic" ELSE IF c.action="proposal" /\ r.decision\in {"DropQuota","DropTransfer","DropRemoved"} THEN "dropped" ELSE "ok",
+  return |-> IF r.fatal#"" THEN "__null__" ELSE
+  CASE c.action="apply" -> PCfg(r.config)
+  [] c.action\in {"ready_raw","ready_node"} -> PReady(ready[1])
+  [] c.action="restore" -> [restored |-> r.usnap.index=selected.input.snapshot.index /\ r.usnap.index>0]
++ [] IsAdvance(c) -> [batchAfter |-> PReady(captured)]
+  [] OTHER -> "__null__"]
++PInput(c) == [entries |-> PEnts(Ents(c.input.entries)),entry |-> PEnt(Ent(c.input.entry)),
++ snapshot |-> PSnap(Snap(c.input.snapshot)),fromId |-> c.input.fromId,context |-> c.input.context,
++ message |-> PMsg(Msg(c.input.message)),
++ between |-> [k\in DOMAIN c.input.between |-> PMsg(Msg(c.input.between[k]))]]
++ActualInput(c) == IF IsAdvance(c) THEN PInput(c) @@ [batch |-> PReady(IF phase=-2 THEN NewReady(raft[1]) ELSE captured)] ELSE PInput(c)
+ Emit == IF phase=1 THEN JsonSerialize(OutputDir \o "/" \o selected.id \o ".json",
+  [protocol |-> "action-validation/v1",id |-> selected.id,engine |-> "tlc",adapter_status |-> "ok",
+  testcase |-> selected,pre_observation |-> before,
+- input_observation |-> [entries |-> PEnts(Ents(selected.input.entries)),entry |-> PEnt(Ent(selected.input.entry)),
+- snapshot |-> PSnap(Snap(selected.input.snapshot)),fromId |-> selected.input.fromId,context |-> selected.input.context],observation |-> Result(selected,raft[1]),raw_fatal |-> raft[1].fatal]) ELSE
+- JsonSerialize(OutputDir \o "/candidate-" \o selected.id \o ".json",
+- [testcase |-> selected,pre_observation |-> before,
+- input_observation |-> [entries |-> PEnts(Ents(selected.input.entries)),entry |-> PEnt(Ent(selected.input.entry)),
+- snapshot |-> PSnap(Snap(selected.input.snapshot)),fromId |-> selected.input.fromId,context |-> selected.input.context]])
++ input_observation |-> ActualInput(selected),observation |-> Result(selected,raft[1]),raw_fatal |-> raft[1].fatal]) ELSE
++ IF phase\in {-2,0} THEN JsonSerialize(OutputDir \o "/candidate-" \o selected.id \o ".json",
++ [testcase |-> selected,pre_observation |-> before,input_observation |-> ActualInput(selected),
++ setup_phase |-> IF phase=-2 THEN "Ready prerequisite" ELSE "tested action"]) ELSE TRUE
+ =============================================================================
+--- supplied-framework/adapters/tla/ModelDomains.tla
++++ out/framework/adapters/tla/ModelDomains.tla
+@@ -14,7 +14,12 @@
+      !.prs=[k\in DOMAIN p.prs |-> [p.prs[k] EXCEPT
+          !.match=IF p.prs[k].id=1 THEN Len(h) ELSE @,!.next=Len(h)+1]]]
+ 
+-Domain(c) == CASE c.action="apply" /\ c.input.entry.kind#"V2" -> {[c EXCEPT !.id="tlc-" \o c.id]}
++Domain(c) == CASE c.id="advance-v02-raw-empty" -> {[c EXCEPT !.id="tlc-" \o c.id]}
++ [] c.action="vote" ->
++ {[c EXCEPT !.id="tlc-" \o c.id \o "-" \o ToString(t) \o "-" \o ToString(l) \o "-" \o ToString(v),
++   !.input.message.term=t,!.input.message.logTerm=l,!.pre.vote=v]:
++   t\in {1,2,3},l\in {1,2},v\in {0,3}}
++ [] c.action="apply" /\ c.input.entry.kind#"V2" -> {[c EXCEPT !.id="tlc-" \o c.id]}
+  [] c.action="apply" ->
+  {[c EXCEPT !.id="tlc-" \o c.id \o "-" \o tr \o "-" \o ToString(k),
+    !.input.entry.transition=tr,!.input.entry.changes=IF k=0 THEN <<>> ELSE @,
+--- supplied-framework/adapters/tla/run.py
++++ out/framework/adapters/tla/run.py
+@@ -2,7 +2,7 @@
+ """TLC adapter CLI; original base is copied into an isolated invocation directory."""
+ import argparse,json,pathlib,shutil,subprocess,time,sys
+ P=pathlib.Path
+-root=P('/workspace'); here=P(__file__).resolve().parent
++here=P(__file__).resolve().parent; root=here.parents[3]
+ p=argparse.ArgumentParser();p.add_argument('--input',required=True);p.add_argument('--output',required=True);p.add_argument('--spec',required=True);p.add_argument('--work',required=True);p.add_argument('--generate',action='store_true');a=p.parse_args()
+ work=P(a.work);work.mkdir(parents=True,exist_ok=False);cs=json.loads(P(a.input).read_text());all_results=[];commands=[]
+ (root/'out/tmp').mkdir(parents=True,exist_ok=True)
+@@ -15,7 +15,7 @@
+  inp=d/'inputs.json';inp.write_text(json.dumps(batch))
+  cfg=(here/'constants.cfg').read_text()+f'\n RawNodes = '+('{1,2,3,4}' if owner=='raw' else '{}')+f'\n InputFile = "{inp}"\n OutputDir = "{out}"\n Generation = '+('TRUE' if a.generate else 'FALSE')+'\n'
+  (d/'LocalActions.cfg').write_text(cfg)
+- cmd=['/usr/bin/java','-XX:+UseParallelGC','-Xmx2G','-Djava.io.tmpdir=/workspace/out/tmp','-cp','/tools/tla2tools.jar:/tools/CommunityModules.jar','tlc2.TLC','-workers','1','-metadir',str(d/'states'),'-config','LocalActions.cfg','LocalActions']
++ cmd=['/usr/bin/java','-XX:+UseParallelGC','-Xmx2G','-Djava.io.tmpdir='+str(root/'out/tmp'),'-cp','/tools/tla2tools.jar:/tools/CommunityModules.jar','tlc2.TLC','-workers','1','-metadir',str(d/'states'),'-config','LocalActions.cfg','LocalActions']
+  start=time.monotonic()
+  with (d/'tlc.log').open('w') as f:
+   try:r=subprocess.run(cmd,cwd=d,stdout=f,stderr=subprocess.STDOUT,timeout=175);code=r.returncode
+@@ -30,7 +30,8 @@
+   disabled=dict(protocol='action-validation/v1',id=c['id'],engine='tlc',adapter_status='ok',testcase=c,
+     pre_observation=seed['pre_observation'],input_observation=seed['input_observation'],
+     observation=dict(state=seed['pre_observation'],status='disabled',**{'return':None}),
+-    reason='Completed finite local relation has no successor from this mapped input')
++    reason='Completed finite local relation has no successor from this mapped input',
++    disabled_phase=seed.get('setup_phase','tested action'))
+   all_results.append(results.get(c['id'],disabled))
+ # Json has no TLA null value: translate only the adapter sentinel, never integers/sets.
+ def clean(x):
+--- supplied-framework/targets/etcd/audit_inputs.py
++++ out/framework/targets/etcd/audit_inputs.py
+@@ -1,7 +1,15 @@
+ """Structural/setup-domain audit, not a protocol transition or safety oracle."""
+ import json,sys,pathlib,collections
+ 
++def valid_config(cfg):
++ v=set(cfg['voters']);o=set(cfg['outgoing']);l=set(cfg['learners']);n=set(cfg['learnersNext'])
++ assert v and not ((v|o)&l) and n<=o and not n&(v|l)
++ assert o or (not n and not cfg['autoLeave'])
++ for field in ['voters','outgoing','learners','learnersNext']:assert len(cfg[field])==len(set(cfg[field]))
++
+ def audit(c):
++ valid_config(c['pre']['config'])
++ if c['action'] in ['restore','restart']:valid_config(c['input']['snapshot']['config'])
+  p=c['pre'];es=p['log'];cfg=p['config'];v=set(cfg['voters']);o=set(cfg['outgoing']);l=set(cfg['learners']);n=set(cfg['learnersNext']);prs=p['prs']
+  assert v and not ((v|o)&l) and n<=o and not n&(v|l)
+  assert o or (not n and not cfg['autoLeave'])
+--- supplied-framework/targets/etcd/domain_v02.py
++++ out/framework/targets/etcd/domain_v02.py
+@@ -0,0 +1,55 @@
++"""V02 descriptors only; preserves prior cases and adds diff/consumer boundaries."""
++import json,copy,pathlib
++from domain import case,cfg,entry,change
++R=pathlib.Path(__file__).resolve().parents[4]
++def msg(kind='MsgHup',**kw):
++ d=dict(type=kind,fromId=2,to=1,term=2,index=0,logTerm=0,commit=0,reject=False,hint=0,context=0,forced=False,entries=[]);d.update(kw);return d
++def extend(c):
++ c=copy.deepcopy(c);c['pre'].setdefault('checkQuorum',False);c['pre'].setdefault('votes',[])
++ for m in c['pre']['messages']:m.setdefault('forced',False)
++ c['input'].setdefault('message',msg());c['input'].setdefault('between',[])
++ c['meta']['version']='V02';return c
++def build():
++ xs=[extend(c) for c in json.loads((R/'out/cases/prior-code-inputs.json').read_text())]
++ def add(c):c=extend(c);xs.append(c);return c
++ # Voting uses actual RawNode.Step. Term and log boundaries, learner/staged/removed roles.
++ for name,co in [('learner',cfg((2,3),l=(1,))),('voter',cfg()),('removed',cfg((2,3))),('staged',cfg((2,3),(1,2,3),n=(1,),a=True))]:
++  for typ in ['MsgVote','MsgPreVote']:
++   for label,kw,pk in [('grant',{},{}),('stale-log',dict(logTerm=1),{}),('short-log',dict(index=1),{}),('higher-log',dict(index=1,logTerm=3),{}),('past-term',dict(term=1),{}),('same-term',dict(term=2),{}),('already-voted',dict(term=2),dict(vote=3)),('repeat-vote',dict(term=2),dict(vote=2,lead=3)),('lease',{},dict(checkQuorum=True,lead=3,elapsed=9)),('lease-expired',{},dict(checkQuorum=True,lead=3,elapsed=10)),('forced',dict(forced=True),dict(checkQuorum=True,lead=3)),('nonmember-candidate',dict(fromId=4),{})]:
++    c=add(case(f'vote-{name}-{typ}-{label}','vote',config=co,role='Follower',elapsed=4,**pk) if 'elapsed' not in pk else case(f'vote-{name}-{typ}-{label}','vote',config=co,role='Follower',**pk))
++    c['input']['message']=msg(typ,term=3,index=2,logTerm=2);c['input']['message'].update(kw)
++ # Unchanged campaign eligibility for learners and staged outgoing voters.
++ for label,co in [('learner',cfg((2,3),l=(1,))),('staged',cfg((2,3),(1,2,3),n=(1,),a=True))]:
++  for pv in [False,True]:
++   add(case(f'hup-v02-{label}-{pv}','hup',config=co,role='Follower',preVote=pv))
++ # Candidate tallies use the receiver's configuration, including both voter halves.
++ for label,co,frm in [('learner-ignored',cfg(l=(4,)),4),('voter-wins',cfg(l=(4,)),2),('joint-outgoing-only',cfg((1,2),(1,3,4)),3),('joint-incoming-only',cfg((1,2),(1,3,4)),2),('staged-counts',cfg((1,2),(1,2,3),n=(3,),a=True),3)]:
++  for reject in [False,True]:
++   c=add(case(f'receive-{label}-{reject}','receive',config=co,role='Candidate',vote=1))
++   c['pre']['votes']=[dict(id=1,yes=True)]
++   c['input']['message']=msg('MsgVoteResp',fromId=frm,reject=reject)
++ # Preserve batch content and ownership while real operations emit additional work.
++ for owner in ['raw','node']:
++  for op in ['heartbeat','proposal','readack','term-change','multiple']:
++   c=add(case(f'advance-v02-{owner}-{op}','advance_'+owner,applied=1,uoff=2))
++   c['pre']['messages']=[msg('MsgHeartbeat',fromId=1,to=2),msg('MsgHeartbeat',fromId=1,to=2)]
++   c['pre']['reads']=[dict(id=7,index=2),dict(id=7,index=2)]
++   c['pre']['readQueue']=[dict(id=8,index=2,fromId=1,acks=[1])]
++   c['pre']['prevSS']=dict(role='Follower',lead=0)
++   operations={'heartbeat':[msg('MsgBeat',fromId=1,term=0)],'proposal':[msg('MsgProp',fromId=1,term=0,entries=[entry(weight=2)])], 'readack':[msg('MsgHeartbeatResp',term=0,context=8)],'term-change':[msg('MsgHeartbeat',fromId=2,term=3,commit=2)]}
++   c['input']['between']=sum(operations.values(),[]) if op=='multiple' else operations[op]
++ # Empty Ready: RawNode API accepts it; Node has no channel delivery without HasReady.
++ add(case('ready-v02-raw-empty','ready_raw',role='Follower'))
++ add(case('advance-v02-raw-empty','advance_raw',role='Follower'))
++ # Full joint configurations: self learner, staged self, disjoint halves, removed self.
++ for name,co in [('full',cfg((1,2),(1,3),l=(4,),n=(3,),a=True)),('full-explicit',cfg((1,2),(1,3),l=(4,),n=(3,))),('staged-self',cfg((2,3),(1,2),l=(4,),n=(1,),a=True)),('learner-self',cfg((2,3),(2,4),l=(1,),n=(4,),a=True)),('disjoint',cfg((1,2),(3,4),a=True)),('removed-self',cfg((2,3),(2,4),n=(4,),a=True))]:
++  for act in ['restore','restart']:
++   c=add(case(f'{act}-v02-{name}',act,role='Follower'));c['input']['snapshot']['config']=co
++ return xs
++if __name__=='__main__':
++ xs=build();(R/'out/cases/code-inputs.json').write_text(json.dumps(xs,indent=2))
++ seeds=[extend(c) for c in json.loads((R/'out/cases/prior-model-seeds.json').read_text())]
++ ids=['vote-learner-MsgVote-grant','vote-learner-MsgPreVote-grant','vote-staged-MsgVote-grant','hup-v02-learner-False','advance-v02-raw-multiple','advance-v02-node-multiple','ready-v02-raw-empty','advance-v02-raw-empty','restore-v02-full','restart-v02-full','restore-v02-staged-self','restart-v02-staged-self','restart-v02-learner-self','receive-learner-ignored-False','receive-joint-outgoing-only-False','receive-voter-wins-False']
++ seeds += [dict(copy.deepcopy(c),meta=dict(c['meta'],domain='v02')) for c in xs if c['id'] in ids]
++ (R/'out/framework/targets/etcd/model-seeds.json').write_text(json.dumps(seeds,indent=2))
++ print(len(xs),len(seeds))
+--- supplied-framework/targets/etcd/manifest-old.json
++++ out/framework/targets/etcd/manifest-old.json
+@@ -0,0 +1,94 @@
++{
++  "protocol": "action-validation/v1",
++  "cwd": ".",
++  "implementation": {
++    "command": [
++      "python3",
++      "out/framework/adapters/go/run.py",
++      "--input",
++      "{input}",
++      "--output",
++      "{output}",
++      "--work",
++      "{work}",
++      "--source",
++      "old/source"
++    ],
++    "timeout_seconds": 100
++  },
++  "model": {
++    "command": [
++      "python3",
++      "out/framework/adapters/tla/run.py",
++      "--input",
++      "{input}",
++      "--output",
++      "{output}",
++      "--spec",
++      "{spec}",
++      "--work",
++      "{work}"
++    ],
++    "generate_args": [
++      "--generate"
++    ],
++    "timeout_seconds": 360
++  },
++  "unordered_paths": [
++    "state.config.voters",
++    "state.config.outgoing",
++    "state.config.learners",
++    "state.config.learnersNext",
++    "state.prs",
++    "state.messages",
++    "state.votes",
++    "state.readQueue.*.acks",
++    "state.snapshot.config.voters",
++    "state.snapshot.config.outgoing",
++    "state.snapshot.config.learners",
++    "state.snapshot.config.learnersNext",
++    "state.storage.snapshot.config.voters",
++    "state.storage.snapshot.config.outgoing",
++    "state.storage.snapshot.config.learners",
++    "state.storage.snapshot.config.learnersNext",
++    "return.voters",
++    "return.outgoing",
++    "return.learners",
++    "return.learnersNext",
++    "return.messages",
++    "return.snapshot.config.voters",
++    "return.snapshot.config.outgoing",
++    "return.snapshot.config.learners",
++    "return.snapshot.config.learnersNext",
++    "input.snapshot.config.voters",
++    "input.snapshot.config.outgoing",
++    "input.snapshot.config.learners",
++    "input.snapshot.config.learnersNext",
++    "state.messages.*.snapshot.config.voters",
++    "state.messages.*.snapshot.config.outgoing",
++    "state.messages.*.snapshot.config.learners",
++    "state.messages.*.snapshot.config.learnersNext",
++    "return.messages.*.snapshot.config.voters",
++    "return.messages.*.snapshot.config.outgoing",
++    "return.messages.*.snapshot.config.learners",
++    "return.messages.*.snapshot.config.learnersNext",
++    "input.batch.messages",
++    "input.batch.snapshot.config.voters",
++    "input.batch.snapshot.config.outgoing",
++    "input.batch.snapshot.config.learners",
++    "input.batch.snapshot.config.learnersNext",
++    "input.batch.messages.*.snapshot.config.voters",
++    "input.batch.messages.*.snapshot.config.outgoing",
++    "input.batch.messages.*.snapshot.config.learners",
++    "input.batch.messages.*.snapshot.config.learnersNext",
++    "return.batchAfter.messages",
++    "return.batchAfter.snapshot.config.voters",
++    "return.batchAfter.snapshot.config.outgoing",
++    "return.batchAfter.snapshot.config.learners",
++    "return.batchAfter.snapshot.config.learnersNext",
++    "return.batchAfter.messages.*.snapshot.config.voters",
++    "return.batchAfter.messages.*.snapshot.config.outgoing",
++    "return.batchAfter.messages.*.snapshot.config.learners",
++    "return.batchAfter.messages.*.snapshot.config.learnersNext"
++  ]
++}
+--- supplied-framework/targets/etcd/manifest.json
++++ out/framework/targets/etcd/manifest.json
+@@ -1,10 +1,10 @@
+ {
+   "protocol": "action-validation/v1",
+-  "cwd": "/workspace",
++  "cwd": ".",
+   "implementation": {
+     "command": [
+       "python3",
+-      "/workspace/out/framework/adapters/go/run.py",
++      "out/framework/adapters/go/run.py",
+       "--input",
+       "{input}",
+       "--output",
+@@ -17,7 +17,7 @@
+   "model": {
+     "command": [
+       "python3",
+-      "/workspace/out/framework/adapters/tla/run.py",
++      "out/framework/adapters/tla/run.py",
+       "--input",
+       "{input}",
+       "--output",
+@@ -69,6 +69,24 @@
+     "return.messages.*.snapshot.config.voters",
+     "return.messages.*.snapshot.config.outgoing",
+     "return.messages.*.snapshot.config.learners",
+-    "return.messages.*.snapshot.config.learnersNext"
++    "return.messages.*.snapshot.config.learnersNext",
++    "input.batch.messages",
++    "input.batch.snapshot.config.voters",
++    "input.batch.snapshot.config.outgoing",
++    "input.batch.snapshot.config.learners",
++    "input.batch.snapshot.config.learnersNext",
++    "input.batch.messages.*.snapshot.config.voters",
++    "input.batch.messages.*.snapshot.config.outgoing",
++    "input.batch.messages.*.snapshot.config.learners",
++    "input.batch.messages.*.snapshot.config.learnersNext",
++    "return.batchAfter.messages",
++    "return.batchAfter.snapshot.config.voters",
++    "return.batchAfter.snapshot.config.outgoing",
++    "return.batchAfter.snapshot.config.learners",
++    "return.batchAfter.snapshot.config.learnersNext",
++    "return.batchAfter.messages.*.snapshot.config.voters",
++    "return.batchAfter.messages.*.snapshot.config.outgoing",
++    "return.batchAfter.messages.*.snapshot.config.learners",
++    "return.batchAfter.messages.*.snapshot.config.learnersNext"
+   ]
+-}+}
+--- supplied-framework/targets/etcd/model-seeds.json
++++ out/framework/targets/etcd/model-seeds.json
+@@ -93,7 +93,9 @@
+       "prevSS": {
+         "role": "Leader",
+         "lead": 1
+-      }
++      },
++      "checkQuorum": false,
++      "votes": []
+     },
+     "input": {
+       "entries": [],
+@@ -128,12 +130,28 @@
+         }
+       },
+       "fromId": 2,
+-      "context": 7
++      "context": 7,
++      "message": {
++        "type": "MsgHup",
++        "fromId": 2,
++        "to": 1,
++        "term": 2,
++        "index": 0,
++        "logTerm": 0,
++        "commit": 0,
++        "reject": false,
++        "hint": 0,
++        "context": 0,
++        "forced": false,
++        "entries": []
++      },
++      "between": []
+     },
+     "meta": {
+       "origin": "model",
+       "reachability": "locally valid injected state; no cluster trace claimed",
+-      "generation": "TLC finite domain choices plus original transition"
++      "generation": "TLC finite domain choices plus original transition",
++      "version": "V02"
+     }
+   },
+   {
+@@ -235,7 +253,9 @@
+       "prevSS": {
+         "role": "Leader",
+         "lead": 1
+-      }
++      },
++      "checkQuorum": false,
++      "votes": []
+     },
+     "input": {
+       "entries": [],
+@@ -270,12 +290,28 @@
+         }
+       },
+       "fromId": 2,
+-      "context": 7
++      "context": 7,
++      "message": {
++        "type": "MsgHup",
++        "fromId": 2,
++        "to": 1,
++        "term": 2,
++        "index": 0,
++        "logTerm": 0,
++        "commit": 0,
++        "reject": false,
++        "hint": 0,
++        "context": 0,
++        "forced": false,
++        "entries": []
++      },
++      "between": []
+     },
+     "meta": {
+       "origin": "model",
+       "reachability": "locally valid injected state; no cluster trace claimed",
+-      "generation": "TLC finite domain choices plus original transition"
++      "generation": "TLC finite domain choices plus original transition",
++      "version": "V02"
+     }
+   },
+   {
+@@ -372,7 +408,9 @@
+       "prevSS": {
+         "role": "Leader",
+         "lead": 1
+-      }
++      },
++      "checkQuorum": false,
++      "votes": []
+     },
+     "input": {
+       "entries": [
+@@ -433,12 +471,28 @@
+         }
+       },
+       "fromId": 2,
+-      "context": 7
++      "context": 7,
++      "message": {
++        "type": "MsgHup",
++        "fromId": 2,
++        "to": 1,
++        "term": 2,
++        "index": 0,
++        "logTerm": 0,
++        "commit": 0,
++        "reject": false,
++        "hint": 0,
++        "context": 0,
++        "forced": false,
++        "entries": []
++      },
++      "between": []
+     },
+     "meta": {
+       "origin": "model",
+       "reachability": "locally valid injected state; no cluster trace claimed",
+-      "generation": "TLC finite domain choices plus original transition"
++      "generation": "TLC finite domain choices plus original transition",
++      "version": "V02"
+     }
+   },
+   {
+@@ -540,7 +594,9 @@
+       "prevSS": {
+         "role": "Follower",
+         "lead": 0
+-      }
++      },
++      "checkQuorum": false,
++      "votes": []
+     },
+     "input": {
+       "entries": [],
+@@ -570,12 +626,28 @@
+         }
+       },
+       "fromId": 2,
+-      "context": 7
++      "context": 7,
++      "message": {
++        "type": "MsgHup",
++        "fromId": 2,
++        "to": 1,
++        "term": 2,
++        "index": 0,
++        "logTerm": 0,
++        "commit": 0,
++        "reject": false,
++        "hint": 0,
++        "context": 0,
++        "forced": false,
++        "entries": []
++      },
++      "between": []
+     },
+     "meta": {
+       "origin": "model",
+       "reachability": "locally valid injected state; no cluster trace claimed",
+-      "generation": "TLC finite domain choices plus original transition"
++      "generation": "TLC finite domain choices plus original transition",
++      "version": "V02"
+     }
+   },
+   {
+@@ -673,7 +745,8 @@
+           "reject": false,
+           "hint": 0,
+           "context": 0,
+-          "entries": []
++          "entries": [],
++          "forced": false
+         }
+       ],
+       "reads": [
+@@ -694,7 +767,9 @@
+       "prevSS": {
+         "role": "Follower",
+         "lead": 0
+-      }
++      },
++      "checkQuorum": false,
++      "votes": []
+     },
+     "input": {
+       "entries": [],
+@@ -724,12 +799,28 @@
+         }
+       },
+       "fromId": 2,
+-      "context": 7
++      "context": 7,
++      "message": {
++        "type": "MsgHup",
++        "fromId": 2,
++        "to": 1,
++        "term": 2,
++        "index": 0,
++        "logTerm": 0,
++        "commit": 0,
++        "reject": false,
++        "hint": 0,
++        "context": 0,
++        "forced": false,
++        "entries": []
++      },
++      "between": []
+     },
+     "meta": {
+       "origin": "model",
+       "reachability": "locally valid injected state; no cluster trace claimed",
+-      "generation": "TLC finite domain choices plus original transition"
++      "generation": "TLC finite domain choices plus original transition",
++      "version": "V02"
+     }
+   },
+   {
+@@ -827,7 +918,8 @@
+           "reject": false,
+           "hint": 0,
+           "context": 0,
+-          "entries": []
++          "entries": [],
++          "forced": false
+         }
+       ],
+       "reads": [
+@@ -848,7 +940,9 @@
+       "prevSS": {
+         "role": "Follower",
+         "lead": 0
+-      }
++      },
++      "checkQuorum": false,
++      "votes": []
+     },
+     "input": {
+       "entries": [],
+@@ -878,12 +972,28 @@
+         }
+       },
+       "fromId": 2,
+-      "context": 7
++      "context": 7,
++      "message": {
++        "type": "MsgHup",
++        "fromId": 2,
++        "to": 1,
++        "term": 2,
++        "index": 0,
++        "logTerm": 0,
++        "commit": 0,
++        "reject": false,
++        "hint": 0,
++        "context": 0,
++        "forced": false,
++        "entries": []
++      },
++      "between": []
+     },
+     "meta": {
+       "origin": "model",
+       "reachability": "locally valid injected state; no cluster trace claimed",
+-      "generation": "TLC finite domain choices plus original transition"
++      "generation": "TLC finite domain choices plus original transition",
++      "version": "V02"
+     }
+   },
+   {
+@@ -993,7 +1103,9 @@
+       "prevSS": {
+         "role": "Leader",
+         "lead": 1
+-      }
++      },
++      "checkQuorum": false,
++      "votes": []
+     },
+     "input": {
+       "entries": [],
+@@ -1023,12 +1135,28 @@
+         }
+       },
+       "fromId": 2,
+-      "context": 7
++      "context": 7,
++      "message": {
++        "type": "MsgHup",
++        "fromId": 2,
++        "to": 1,
++        "term": 2,
++        "index": 0,
++        "logTerm": 0,
++        "commit": 0,
++        "reject": false,
++        "hint": 0,
++        "context": 0,
++        "forced": false,
++        "entries": []
++      },
++      "between": []
+     },
+     "meta": {
+       "origin": "model",
+       "reachability": "locally valid injected state; no cluster trace claimed",
+-      "generation": "TLC finite domain choices plus original transition"
++      "generation": "TLC finite domain choices plus original transition",
++      "version": "V02"
+     }
+   },
+   {
+@@ -1127,7 +1255,9 @@
+       "prevSS": {
+         "role": "Leader",
+         "lead": 1
+-      }
++      },
++      "checkQuorum": false,
++      "votes": []
+     },
+     "input": {
+       "entries": [],
+@@ -1157,12 +1287,28 @@
+         }
+       },
+       "fromId": 2,
+-      "context": 7
++      "context": 7,
++      "message": {
++        "type": "MsgHup",
++        "fromId": 2,
++        "to": 1,
++        "term": 2,
++        "index": 0,
++        "logTerm": 0,
++        "commit": 0,
++        "reject": false,
++        "hint": 0,
++        "context": 0,
++        "forced": false,
++        "entries": []
++      },
++      "between": []
+     },
+     "meta": {
+       "origin": "model",
+       "reachability": "locally valid injected state; no cluster trace claimed",
+-      "generation": "TLC finite domain choices plus original transition"
++      "generation": "TLC finite domain choices plus original transition",
++      "version": "V02"
+     }
+   },
+   {
+@@ -1259,7 +1405,9 @@
+       "prevSS": {
+         "role": "Follower",
+         "lead": 0
+-      }
++      },
++      "checkQuorum": false,
++      "votes": []
+     },
+     "input": {
+       "entries": [],
+@@ -1294,12 +1442,28 @@
+         }
+       },
+       "fromId": 2,
+-      "context": 7
++      "context": 7,
++      "message": {
++        "type": "MsgHup",
++        "fromId": 2,
++        "to": 1,
++        "term": 2,
++        "index": 0,
++        "logTerm": 0,
++        "commit": 0,
++        "reject": false,
++        "hint": 0,
++        "context": 0,
++        "forced": false,
++        "entries": []
++      },
++      "between": []
+     },
+     "meta": {
+       "origin": "model",
+       "reachability": "locally valid injected state; no cluster trace claimed",
+-      "generation": "TLC finite domain choices plus original transition"
++      "generation": "TLC finite domain choices plus original transition",
++      "version": "V02"
+     }
+   },
+   {
+@@ -1396,7 +1560,9 @@
+       "prevSS": {
+         "role": "Follower",
+         "lead": 0
+-      }
++      },
++      "checkQuorum": false,
++      "votes": []
+     },
+     "input": {
+       "entries": [],
+@@ -1431,12 +1597,28 @@
+         }
+       },
+       "fromId": 2,
+-      "context": 7
++      "context": 7,
++      "message": {
++        "type": "MsgHup",
++        "fromId": 2,
++        "to": 1,
++        "term": 2,
++        "index": 0,
++        "logTerm": 0,
++        "commit": 0,
++        "reject": false,
++        "hint": 0,
++        "context": 0,
++        "forced": false,
++        "entries": []
++      },
++      "between": []
+     },
+     "meta": {
+       "origin": "model",
+       "reachability": "locally valid injected state; no cluster trace claimed",
+-      "generation": "TLC finite domain choices plus original transition"
++      "generation": "TLC finite domain choices plus original transition",
++      "version": "V02"
+     }
+   },
+   {
+@@ -1531,7 +1713,8 @@
+           "reject": false,
+           "hint": 0,
+           "context": 0,
+-          "entries": []
++          "entries": [],
++          "forced": false
+         }
+       ],
+       "reads": [
+@@ -1552,7 +1735,9 @@
+       "prevSS": {
+         "role": "Follower",
+         "lead": 0
+-      }
++      },
++      "checkQuorum": false,
++      "votes": []
+     },
+     "input": {
+       "entries": [],
+@@ -1582,12 +1767,28 @@
+         }
+       },
+       "fromId": 2,
+-      "context": 7
++      "context": 7,
++      "message": {
++        "type": "MsgHup",
++        "fromId": 2,
++        "to": 1,
++        "term": 2,
++        "index": 0,
++        "logTerm": 0,
++        "commit": 0,
++        "reject": false,
++        "hint": 0,
++        "context": 0,
++        "forced": false,
++        "entries": []
++      },
++      "between": []
+     },
+     "meta": {
+       "origin": "model",
+       "reachability": "locally valid injected state; no cluster trace claimed",
+-      "generation": "TLC finite domain choices plus original transition"
++      "generation": "TLC finite domain choices plus original transition",
++      "version": "V02"
+     }
+   },
+   {
+@@ -1682,7 +1883,8 @@
+           "reject": false,
+           "hint": 0,
+           "context": 0,
+-          "entries": []
++          "entries": [],
++          "forced": false
+         }
+       ],
+       "reads": [
+@@ -1703,7 +1905,9 @@
+       "prevSS": {
+         "role": "Follower",
+         "lead": 0
+-      }
++      },
++      "checkQuorum": false,
++      "votes": []
+     },
+     "input": {
+       "entries": [],
+@@ -1733,12 +1937,28 @@
+         }
+       },
+       "fromId": 2,
+-      "context": 7
++      "context": 7,
++      "message": {
++        "type": "MsgHup",
++        "fromId": 2,
++        "to": 1,
++        "term": 2,
++        "index": 0,
++        "logTerm": 0,
++        "commit": 0,
++        "reject": false,
++        "hint": 0,
++        "context": 0,
++        "forced": false,
++        "entries": []
++      },
++      "between": []
+     },
+     "meta": {
+       "origin": "model",
+       "reachability": "locally valid injected state; no cluster trace claimed",
+-      "generation": "TLC finite domain choices plus original transition"
++      "generation": "TLC finite domain choices plus original transition",
++      "version": "V02"
+     }
+   },
+   {
+@@ -1857,7 +2077,9 @@
+       "prevSS": {
+         "role": "Leader",
+         "lead": 1
+-      }
++      },
++      "checkQuorum": false,
++      "votes": []
+     },
+     "input": {
+       "entries": [],
+@@ -1887,12 +2109,28 @@
+         }
+       },
+       "fromId": 3,
+-      "context": 7
++      "context": 7,
++      "message": {
++        "type": "MsgHup",
++        "fromId": 2,
++        "to": 1,
++        "term": 2,
++        "index": 0,
++        "logTerm": 0,
++        "commit": 0,
++        "reject": false,
++        "hint": 0,
++        "context": 0,
++        "forced": false,
++        "entries": []
++      },
++      "between": []
+     },
+     "meta": {
+       "origin": "model",
+       "reachability": "locally valid injected state; no cluster trace claimed",
+-      "generation": "TLC finite domain choices plus original transition"
++      "generation": "TLC finite domain choices plus original transition",
++      "version": "V02"
+     }
+   },
+   {
+@@ -1989,7 +2227,9 @@
+       "prevSS": {
+         "role": "Leader",
+         "lead": 1
+-      }
++      },
++      "checkQuorum": false,
++      "votes": []
+     },
+     "input": {
+       "entries": [],
+@@ -2024,12 +2264,28 @@
+         }
+       },
+       "fromId": 2,
+-      "context": 7
++      "context": 7,
++      "message": {
++        "type": "MsgHup",
++        "fromId": 2,
++        "to": 1,
++        "term": 2,
++        "index": 0,
++        "logTerm": 0,
++        "commit": 0,
++        "reject": false,
++        "hint": 0,
++        "context": 0,
++        "forced": false,
++        "entries": []
++      },
++      "between": []
+     },
+     "meta": {
+       "origin": "model",
+       "reachability": "locally valid injected state; no cluster trace claimed",
+-      "generation": "TLC domain selection plus original transition"
++      "generation": "TLC domain selection plus original transition",
++      "version": "V02"
+     }
+   },
+   {
+@@ -2137,7 +2393,9 @@
+       "prevSS": {
+         "role": "Leader",
+         "lead": 1
+-      }
++      },
++      "checkQuorum": false,
++      "votes": []
+     },
+     "input": {
+       "entries": [],
+@@ -2172,12 +2430,2748 @@
+         }
+       },
+       "fromId": 2,
+-      "context": 7
++      "context": 7,
++      "message": {
++        "type": "MsgHup",
++        "fromId": 2,
++        "to": 1,
++        "term": 2,
++        "index": 0,
++        "logTerm": 0,
++        "commit": 0,
++        "reject": false,
++        "hint": 0,
++        "context": 0,
++        "forced": false,
++        "entries": []
++      },
++      "between": []
+     },
+     "meta": {
+       "origin": "model",
+       "reachability": "locally valid injected state; no cluster trace claimed",
+-      "generation": "TLC domain selection plus original transition"
++      "generation": "TLC domain selection plus original transition",
++      "version": "V02"
++    }
++  },
++  {
++    "protocol": "action-validation/v1",
++    "id": "vote-learner-MsgVote-grant",
++    "action": "vote",
++    "pre": {
++      "config": {
++        "voters": [
++          2,
++          3
++        ],
++        "outgoing": [],
++        "learners": [
++          1
++        ],
++        "learnersNext": [],
++        "autoLeave": false
++      },
++      "role": "Follower",
++      "term": 2,
++      "vote": 0,
++      "lead": 0,
++      "commit": 2,
++      "applied": 2,
++      "pending": 0,
++      "quota": 0,
++      "transfer": 0,
++      "log": [
++        {
++          "kind": "Normal",
++          "target": 0,
++          "changes": [],
++          "transition": "Legacy",
++          "weight": 0,
++          "encoded": 8,
++          "term": 2,
++          "index": 1
++        },
++        {
++          "kind": "Normal",
++          "target": 0,
++          "changes": [],
++          "transition": "Legacy",
++          "weight": 1,
++          "encoded": 9,
++          "term": 2,
++          "index": 2
++        }
++      ],
++      "uoff": 3,
++      "prs": [
++        {
++          "id": 1,
++          "match": 2,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        },
++        {
++          "id": 2,
++          "match": 0,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        },
++        {
++          "id": 3,
++          "match": 0,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        }
++      ],
++      "messages": [],
++      "reads": [],
++      "readQueue": [],
++      "preVote": false,
++      "elapsed": 4,
++      "heartbeat": 0,
++      "prevHS": {
++        "term": 2,
++        "vote": 0,
++        "commit": 2
++      },
++      "prevSS": {
++        "role": "Follower",
++        "lead": 0
++      },
++      "checkQuorum": false,
++      "votes": []
++    },
++    "input": {
++      "entries": [],
++      "entry": {
++        "kind": "V2",
++        "target": 0,
++        "changes": [],
++        "transition": "Auto",
++        "weight": 2,
++        "encoded": 10,
++        "term": 0,
++        "index": 0
++      },
++      "snapshot": {
++        "index": 3,
++        "term": 3,
++        "config": {
++          "voters": [
++            1,
++            2,
++            3
++          ],
++          "outgoing": [],
++          "learners": [],
++          "learnersNext": [],
++          "autoLeave": false
++        }
++      },
++      "fromId": 2,
++      "context": 7,
++      "message": {
++        "type": "MsgVote",
++        "fromId": 2,
++        "to": 1,
++        "term": 3,
++        "index": 2,
++        "logTerm": 2,
++        "commit": 0,
++        "reject": false,
++        "hint": 0,
++        "context": 0,
++        "forced": false,
++        "entries": []
++      },
++      "between": []
++    },
++    "meta": {
++      "origin": "code",
++      "reachability": "locally valid injected state; no cluster trace claimed",
++      "version": "V02",
++      "domain": "v02"
++    }
++  },
++  {
++    "protocol": "action-validation/v1",
++    "id": "vote-learner-MsgPreVote-grant",
++    "action": "vote",
++    "pre": {
++      "config": {
++        "voters": [
++          2,
++          3
++        ],
++        "outgoing": [],
++        "learners": [
++          1
++        ],
++        "learnersNext": [],
++        "autoLeave": false
++      },
++      "role": "Follower",
++      "term": 2,
++      "vote": 0,
++      "lead": 0,
++      "commit": 2,
++      "applied": 2,
++      "pending": 0,
++      "quota": 0,
++      "transfer": 0,
++      "log": [
++        {
++          "kind": "Normal",
++          "target": 0,
++          "changes": [],
++          "transition": "Legacy",
++          "weight": 0,
++          "encoded": 8,
++          "term": 2,
++          "index": 1
++        },
++        {
++          "kind": "Normal",
++          "target": 0,
++          "changes": [],
++          "transition": "Legacy",
++          "weight": 1,
++          "encoded": 9,
++          "term": 2,
++          "index": 2
++        }
++      ],
++      "uoff": 3,
++      "prs": [
++        {
++          "id": 1,
++          "match": 2,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        },
++        {
++          "id": 2,
++          "match": 0,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        },
++        {
++          "id": 3,
++          "match": 0,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        }
++      ],
++      "messages": [],
++      "reads": [],
++      "readQueue": [],
++      "preVote": false,
++      "elapsed": 4,
++      "heartbeat": 0,
++      "prevHS": {
++        "term": 2,
++        "vote": 0,
++        "commit": 2
++      },
++      "prevSS": {
++        "role": "Follower",
++        "lead": 0
++      },
++      "checkQuorum": false,
++      "votes": []
++    },
++    "input": {
++      "entries": [],
++      "entry": {
++        "kind": "V2",
++        "target": 0,
++        "changes": [],
++        "transition": "Auto",
++        "weight": 2,
++        "encoded": 10,
++        "term": 0,
++        "index": 0
++      },
++      "snapshot": {
++        "index": 3,
++        "term": 3,
++        "config": {
++          "voters": [
++            1,
++            2,
++            3
++          ],
++          "outgoing": [],
++          "learners": [],
++          "learnersNext": [],
++          "autoLeave": false
++        }
++      },
++      "fromId": 2,
++      "context": 7,
++      "message": {
++        "type": "MsgPreVote",
++        "fromId": 2,
++        "to": 1,
++        "term": 3,
++        "index": 2,
++        "logTerm": 2,
++        "commit": 0,
++        "reject": false,
++        "hint": 0,
++        "context": 0,
++        "forced": false,
++        "entries": []
++      },
++      "between": []
++    },
++    "meta": {
++      "origin": "code",
++      "reachability": "locally valid injected state; no cluster trace claimed",
++      "version": "V02",
++      "domain": "v02"
++    }
++  },
++  {
++    "protocol": "action-validation/v1",
++    "id": "vote-staged-MsgVote-grant",
++    "action": "vote",
++    "pre": {
++      "config": {
++        "voters": [
++          2,
++          3
++        ],
++        "outgoing": [
++          1,
++          2,
++          3
++        ],
++        "learners": [],
++        "learnersNext": [
++          1
++        ],
++        "autoLeave": true
++      },
++      "role": "Follower",
++      "term": 2,
++      "vote": 0,
++      "lead": 0,
++      "commit": 2,
++      "applied": 2,
++      "pending": 0,
++      "quota": 0,
++      "transfer": 0,
++      "log": [
++        {
++          "kind": "Normal",
++          "target": 0,
++          "changes": [],
++          "transition": "Legacy",
++          "weight": 0,
++          "encoded": 8,
++          "term": 2,
++          "index": 1
++        },
++        {
++          "kind": "Normal",
++          "target": 0,
++          "changes": [],
++          "transition": "Legacy",
++          "weight": 1,
++          "encoded": 9,
++          "term": 2,
++          "index": 2
++        }
++      ],
++      "uoff": 3,
++      "prs": [
++        {
++          "id": 1,
++          "match": 2,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        },
++        {
++          "id": 2,
++          "match": 0,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        },
++        {
++          "id": 3,
++          "match": 0,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        }
++      ],
++      "messages": [],
++      "reads": [],
++      "readQueue": [],
++      "preVote": false,
++      "elapsed": 4,
++      "heartbeat": 0,
++      "prevHS": {
++        "term": 2,
++        "vote": 0,
++        "commit": 2
++      },
++      "prevSS": {
++        "role": "Follower",
++        "lead": 0
++      },
++      "checkQuorum": false,
++      "votes": []
++    },
++    "input": {
++      "entries": [],
++      "entry": {
++        "kind": "V2",
++        "target": 0,
++        "changes": [],
++        "transition": "Auto",
++        "weight": 2,
++        "encoded": 10,
++        "term": 0,
++        "index": 0
++      },
++      "snapshot": {
++        "index": 3,
++        "term": 3,
++        "config": {
++          "voters": [
++            1,
++            2,
++            3
++          ],
++          "outgoing": [],
++          "learners": [],
++          "learnersNext": [],
++          "autoLeave": false
++        }
++      },
++      "fromId": 2,
++      "context": 7,
++      "message": {
++        "type": "MsgVote",
++        "fromId": 2,
++        "to": 1,
++        "term": 3,
++        "index": 2,
++        "logTerm": 2,
++        "commit": 0,
++        "reject": false,
++        "hint": 0,
++        "context": 0,
++        "forced": false,
++        "entries": []
++      },
++      "between": []
++    },
++    "meta": {
++      "origin": "code",
++      "reachability": "locally valid injected state; no cluster trace claimed",
++      "version": "V02",
++      "domain": "v02"
++    }
++  },
++  {
++    "protocol": "action-validation/v1",
++    "id": "hup-v02-learner-False",
++    "action": "hup",
++    "pre": {
++      "config": {
++        "voters": [
++          2,
++          3
++        ],
++        "outgoing": [],
++        "learners": [
++          1
++        ],
++        "learnersNext": [],
++        "autoLeave": false
++      },
++      "role": "Follower",
++      "term": 2,
++      "vote": 0,
++      "lead": 0,
++      "commit": 2,
++      "applied": 2,
++      "pending": 0,
++      "quota": 0,
++      "transfer": 0,
++      "log": [
++        {
++          "kind": "Normal",
++          "target": 0,
++          "changes": [],
++          "transition": "Legacy",
++          "weight": 0,
++          "encoded": 8,
++          "term": 2,
++          "index": 1
++        },
++        {
++          "kind": "Normal",
++          "target": 0,
++          "changes": [],
++          "transition": "Legacy",
++          "weight": 1,
++          "encoded": 9,
++          "term": 2,
++          "index": 2
++        }
++      ],
++      "uoff": 3,
++      "prs": [
++        {
++          "id": 1,
++          "match": 2,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        },
++        {
++          "id": 2,
++          "match": 0,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        },
++        {
++          "id": 3,
++          "match": 0,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        }
++      ],
++      "messages": [],
++      "reads": [],
++      "readQueue": [],
++      "preVote": false,
++      "elapsed": 0,
++      "heartbeat": 0,
++      "prevHS": {
++        "term": 2,
++        "vote": 0,
++        "commit": 2
++      },
++      "prevSS": {
++        "role": "Follower",
++        "lead": 0
++      },
++      "checkQuorum": false,
++      "votes": []
++    },
++    "input": {
++      "entries": [],
++      "entry": {
++        "kind": "V2",
++        "target": 0,
++        "changes": [],
++        "transition": "Auto",
++        "weight": 2,
++        "encoded": 10,
++        "term": 0,
++        "index": 0
++      },
++      "snapshot": {
++        "index": 3,
++        "term": 3,
++        "config": {
++          "voters": [
++            1,
++            2,
++            3
++          ],
++          "outgoing": [],
++          "learners": [],
++          "learnersNext": [],
++          "autoLeave": false
++        }
++      },
++      "fromId": 2,
++      "context": 7,
++      "message": {
++        "type": "MsgHup",
++        "fromId": 2,
++        "to": 1,
++        "term": 2,
++        "index": 0,
++        "logTerm": 0,
++        "commit": 0,
++        "reject": false,
++        "hint": 0,
++        "context": 0,
++        "forced": false,
++        "entries": []
++      },
++      "between": []
++    },
++    "meta": {
++      "origin": "code",
++      "reachability": "locally valid injected state; no cluster trace claimed",
++      "version": "V02",
++      "domain": "v02"
++    }
++  },
++  {
++    "protocol": "action-validation/v1",
++    "id": "receive-learner-ignored-False",
++    "action": "receive",
++    "pre": {
++      "config": {
++        "voters": [
++          1,
++          2,
++          3
++        ],
++        "outgoing": [],
++        "learners": [
++          4
++        ],
++        "learnersNext": [],
++        "autoLeave": false
++      },
++      "role": "Candidate",
++      "term": 2,
++      "vote": 1,
++      "lead": 0,
++      "commit": 2,
++      "applied": 2,
++      "pending": 0,
++      "quota": 0,
++      "transfer": 0,
++      "log": [
++        {
++          "kind": "Normal",
++          "target": 0,
++          "changes": [],
++          "transition": "Legacy",
++          "weight": 0,
++          "encoded": 8,
++          "term": 2,
++          "index": 1
++        },
++        {
++          "kind": "Normal",
++          "target": 0,
++          "changes": [],
++          "transition": "Legacy",
++          "weight": 1,
++          "encoded": 9,
++          "term": 2,
++          "index": 2
++        }
++      ],
++      "uoff": 3,
++      "prs": [
++        {
++          "id": 1,
++          "match": 2,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        },
++        {
++          "id": 2,
++          "match": 0,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        },
++        {
++          "id": 3,
++          "match": 0,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        },
++        {
++          "id": 4,
++          "match": 0,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        }
++      ],
++      "messages": [],
++      "reads": [],
++      "readQueue": [],
++      "preVote": false,
++      "elapsed": 0,
++      "heartbeat": 0,
++      "prevHS": {
++        "term": 2,
++        "vote": 0,
++        "commit": 2
++      },
++      "prevSS": {
++        "role": "Candidate",
++        "lead": 0
++      },
++      "checkQuorum": false,
++      "votes": [
++        {
++          "id": 1,
++          "yes": true
++        }
++      ]
++    },
++    "input": {
++      "entries": [],
++      "entry": {
++        "kind": "V2",
++        "target": 0,
++        "changes": [],
++        "transition": "Auto",
++        "weight": 2,
++        "encoded": 10,
++        "term": 0,
++        "index": 0
++      },
++      "snapshot": {
++        "index": 3,
++        "term": 3,
++        "config": {
++          "voters": [
++            1,
++            2,
++            3
++          ],
++          "outgoing": [],
++          "learners": [],
++          "learnersNext": [],
++          "autoLeave": false
++        }
++      },
++      "fromId": 2,
++      "context": 7,
++      "message": {
++        "type": "MsgVoteResp",
++        "fromId": 4,
++        "to": 1,
++        "term": 2,
++        "index": 0,
++        "logTerm": 0,
++        "commit": 0,
++        "reject": false,
++        "hint": 0,
++        "context": 0,
++        "forced": false,
++        "entries": []
++      },
++      "between": []
++    },
++    "meta": {
++      "origin": "code",
++      "reachability": "locally valid injected state; no cluster trace claimed",
++      "version": "V02",
++      "domain": "v02"
++    }
++  },
++  {
++    "protocol": "action-validation/v1",
++    "id": "receive-voter-wins-False",
++    "action": "receive",
++    "pre": {
++      "config": {
++        "voters": [
++          1,
++          2,
++          3
++        ],
++        "outgoing": [],
++        "learners": [
++          4
++        ],
++        "learnersNext": [],
++        "autoLeave": false
++      },
++      "role": "Candidate",
++      "term": 2,
++      "vote": 1,
++      "lead": 0,
++      "commit": 2,
++      "applied": 2,
++      "pending": 0,
++      "quota": 0,
++      "transfer": 0,
++      "log": [
++        {
++          "kind": "Normal",
++          "target": 0,
++          "changes": [],
++          "transition": "Legacy",
++          "weight": 0,
++          "encoded": 8,
++          "term": 2,
++          "index": 1
++        },
++        {
++          "kind": "Normal",
++          "target": 0,
++          "changes": [],
++          "transition": "Legacy",
++          "weight": 1,
++          "encoded": 9,
++          "term": 2,
++          "index": 2
++        }
++      ],
++      "uoff": 3,
++      "prs": [
++        {
++          "id": 1,
++          "match": 2,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        },
++        {
++          "id": 2,
++          "match": 0,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        },
++        {
++          "id": 3,
++          "match": 0,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        },
++        {
++          "id": 4,
++          "match": 0,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        }
++      ],
++      "messages": [],
++      "reads": [],
++      "readQueue": [],
++      "preVote": false,
++      "elapsed": 0,
++      "heartbeat": 0,
++      "prevHS": {
++        "term": 2,
++        "vote": 0,
++        "commit": 2
++      },
++      "prevSS": {
++        "role": "Candidate",
++        "lead": 0
++      },
++      "checkQuorum": false,
++      "votes": [
++        {
++          "id": 1,
++          "yes": true
++        }
++      ]
++    },
++    "input": {
++      "entries": [],
++      "entry": {
++        "kind": "V2",
++        "target": 0,
++        "changes": [],
++        "transition": "Auto",
++        "weight": 2,
++        "encoded": 10,
++        "term": 0,
++        "index": 0
++      },
++      "snapshot": {
++        "index": 3,
++        "term": 3,
++        "config": {
++          "voters": [
++            1,
++            2,
++            3
++          ],
++          "outgoing": [],
++          "learners": [],
++          "learnersNext": [],
++          "autoLeave": false
++        }
++      },
++      "fromId": 2,
++      "context": 7,
++      "message": {
++        "type": "MsgVoteResp",
++        "fromId": 2,
++        "to": 1,
++        "term": 2,
++        "index": 0,
++        "logTerm": 0,
++        "commit": 0,
++        "reject": false,
++        "hint": 0,
++        "context": 0,
++        "forced": false,
++        "entries": []
++      },
++      "between": []
++    },
++    "meta": {
++      "origin": "code",
++      "reachability": "locally valid injected state; no cluster trace claimed",
++      "version": "V02",
++      "domain": "v02"
++    }
++  },
++  {
++    "protocol": "action-validation/v1",
++    "id": "receive-joint-outgoing-only-False",
++    "action": "receive",
++    "pre": {
++      "config": {
++        "voters": [
++          1,
++          2
++        ],
++        "outgoing": [
++          1,
++          3,
++          4
++        ],
++        "learners": [],
++        "learnersNext": [],
++        "autoLeave": false
++      },
++      "role": "Candidate",
++      "term": 2,
++      "vote": 1,
++      "lead": 0,
++      "commit": 2,
++      "applied": 2,
++      "pending": 0,
++      "quota": 0,
++      "transfer": 0,
++      "log": [
++        {
++          "kind": "Normal",
++          "target": 0,
++          "changes": [],
++          "transition": "Legacy",
++          "weight": 0,
++          "encoded": 8,
++          "term": 2,
++          "index": 1
++        },
++        {
++          "kind": "Normal",
++          "target": 0,
++          "changes": [],
++          "transition": "Legacy",
++          "weight": 1,
++          "encoded": 9,
++          "term": 2,
++          "index": 2
++        }
++      ],
++      "uoff": 3,
++      "prs": [
++        {
++          "id": 1,
++          "match": 2,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        },
++        {
++          "id": 2,
++          "match": 0,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        },
++        {
++          "id": 3,
++          "match": 0,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        },
++        {
++          "id": 4,
++          "match": 0,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        }
++      ],
++      "messages": [],
++      "reads": [],
++      "readQueue": [],
++      "preVote": false,
++      "elapsed": 0,
++      "heartbeat": 0,
++      "prevHS": {
++        "term": 2,
++        "vote": 0,
++        "commit": 2
++      },
++      "prevSS": {
++        "role": "Candidate",
++        "lead": 0
++      },
++      "checkQuorum": false,
++      "votes": [
++        {
++          "id": 1,
++          "yes": true
++        }
++      ]
++    },
++    "input": {
++      "entries": [],
++      "entry": {
++        "kind": "V2",
++        "target": 0,
++        "changes": [],
++        "transition": "Auto",
++        "weight": 2,
++        "encoded": 10,
++        "term": 0,
++        "index": 0
++      },
++      "snapshot": {
++        "index": 3,
++        "term": 3,
++        "config": {
++          "voters": [
++            1,
++            2,
++            3
++          ],
++          "outgoing": [],
++          "learners": [],
++          "learnersNext": [],
++          "autoLeave": false
++        }
++      },
++      "fromId": 2,
++      "context": 7,
++      "message": {
++        "type": "MsgVoteResp",
++        "fromId": 3,
++        "to": 1,
++        "term": 2,
++        "index": 0,
++        "logTerm": 0,
++        "commit": 0,
++        "reject": false,
++        "hint": 0,
++        "context": 0,
++        "forced": false,
++        "entries": []
++      },
++      "between": []
++    },
++    "meta": {
++      "origin": "code",
++      "reachability": "locally valid injected state; no cluster trace claimed",
++      "version": "V02",
++      "domain": "v02"
++    }
++  },
++  {
++    "protocol": "action-validation/v1",
++    "id": "advance-v02-raw-multiple",
++    "action": "advance_raw",
++    "pre": {
++      "config": {
++        "voters": [
++          1,
++          2,
++          3
++        ],
++        "outgoing": [],
++        "learners": [],
++        "learnersNext": [],
++        "autoLeave": false
++      },
++      "role": "Leader",
++      "term": 2,
++      "vote": 0,
++      "lead": 1,
++      "commit": 2,
++      "applied": 1,
++      "pending": 0,
++      "quota": 0,
++      "transfer": 0,
++      "log": [
++        {
++          "kind": "Normal",
++          "target": 0,
++          "changes": [],
++          "transition": "Legacy",
++          "weight": 0,
++          "encoded": 8,
++          "term": 2,
++          "index": 1
++        },
++        {
++          "kind": "Normal",
++          "target": 0,
++          "changes": [],
++          "transition": "Legacy",
++          "weight": 1,
++          "encoded": 9,
++          "term": 2,
++          "index": 2
++        }
++      ],
++      "uoff": 2,
++      "prs": [
++        {
++          "id": 1,
++          "match": 2,
++          "next": 3,
++          "mode": "Replicate",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        },
++        {
++          "id": 2,
++          "match": 0,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        },
++        {
++          "id": 3,
++          "match": 0,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        }
++      ],
++      "messages": [
++        {
++          "type": "MsgHeartbeat",
++          "fromId": 1,
++          "to": 2,
++          "term": 2,
++          "index": 0,
++          "logTerm": 0,
++          "commit": 0,
++          "reject": false,
++          "hint": 0,
++          "context": 0,
++          "forced": false,
++          "entries": []
++        },
++        {
++          "type": "MsgHeartbeat",
++          "fromId": 1,
++          "to": 2,
++          "term": 2,
++          "index": 0,
++          "logTerm": 0,
++          "commit": 0,
++          "reject": false,
++          "hint": 0,
++          "context": 0,
++          "forced": false,
++          "entries": []
++        }
++      ],
++      "reads": [
++        {
++          "id": 7,
++          "index": 2
++        },
++        {
++          "id": 7,
++          "index": 2
++        }
++      ],
++      "readQueue": [
++        {
++          "id": 8,
++          "index": 2,
++          "fromId": 1,
++          "acks": [
++            1
++          ]
++        }
++      ],
++      "preVote": false,
++      "elapsed": 0,
++      "heartbeat": 0,
++      "prevHS": {
++        "term": 2,
++        "vote": 0,
++        "commit": 2
++      },
++      "prevSS": {
++        "role": "Follower",
++        "lead": 0
++      },
++      "checkQuorum": false,
++      "votes": []
++    },
++    "input": {
++      "entries": [],
++      "entry": {
++        "kind": "V2",
++        "target": 0,
++        "changes": [],
++        "transition": "Auto",
++        "weight": 2,
++        "encoded": 10,
++        "term": 0,
++        "index": 0
++      },
++      "snapshot": {
++        "index": 3,
++        "term": 3,
++        "config": {
++          "voters": [
++            1,
++            2,
++            3
++          ],
++          "outgoing": [],
++          "learners": [],
++          "learnersNext": [],
++          "autoLeave": false
++        }
++      },
++      "fromId": 2,
++      "context": 7,
++      "message": {
++        "type": "MsgHup",
++        "fromId": 2,
++        "to": 1,
++        "term": 2,
++        "index": 0,
++        "logTerm": 0,
++        "commit": 0,
++        "reject": false,
++        "hint": 0,
++        "context": 0,
++        "forced": false,
++        "entries": []
++      },
++      "between": [
++        {
++          "type": "MsgBeat",
++          "fromId": 1,
++          "to": 1,
++          "term": 0,
++          "index": 0,
++          "logTerm": 0,
++          "commit": 0,
++          "reject": false,
++          "hint": 0,
++          "context": 0,
++          "forced": false,
++          "entries": []
++        },
++        {
++          "type": "MsgProp",
++          "fromId": 1,
++          "to": 1,
++          "term": 0,
++          "index": 0,
++          "logTerm": 0,
++          "commit": 0,
++          "reject": false,
++          "hint": 0,
++          "context": 0,
++          "forced": false,
++          "entries": [
++            {
++              "kind": "Normal",
++              "target": 0,
++              "changes": [],
++              "transition": "Legacy",
++              "weight": 2,
++              "encoded": 10,
++              "term": 0,
++              "index": 0
++            }
++          ]
++        },
++        {
++          "type": "MsgHeartbeatResp",
++          "fromId": 2,
++          "to": 1,
++          "term": 0,
++          "index": 0,
++          "logTerm": 0,
++          "commit": 0,
++          "reject": false,
++          "hint": 0,
++          "context": 8,
++          "forced": false,
++          "entries": []
++        },
++        {
++          "type": "MsgHeartbeat",
++          "fromId": 2,
++          "to": 1,
++          "term": 3,
++          "index": 0,
++          "logTerm": 0,
++          "commit": 2,
++          "reject": false,
++          "hint": 0,
++          "context": 0,
++          "forced": false,
++          "entries": []
++        }
++      ]
++    },
++    "meta": {
++      "origin": "code",
++      "reachability": "locally valid injected state; no cluster trace claimed",
++      "version": "V02",
++      "domain": "v02"
++    }
++  },
++  {
++    "protocol": "action-validation/v1",
++    "id": "advance-v02-node-multiple",
++    "action": "advance_node",
++    "pre": {
++      "config": {
++        "voters": [
++          1,
++          2,
++          3
++        ],
++        "outgoing": [],
++        "learners": [],
++        "learnersNext": [],
++        "autoLeave": false
++      },
++      "role": "Leader",
++      "term": 2,
++      "vote": 0,
++      "lead": 1,
++      "commit": 2,
++      "applied": 1,
++      "pending": 0,
++      "quota": 0,
++      "transfer": 0,
++      "log": [
++        {
++          "kind": "Normal",
++          "target": 0,
++          "changes": [],
++          "transition": "Legacy",
++          "weight": 0,
++          "encoded": 8,
++          "term": 2,
++          "index": 1
++        },
++        {
++          "kind": "Normal",
++          "target": 0,
++          "changes": [],
++          "transition": "Legacy",
++          "weight": 1,
++          "encoded": 9,
++          "term": 2,
++          "index": 2
++        }
++      ],
++      "uoff": 2,
++      "prs": [
++        {
++          "id": 1,
++          "match": 2,
++          "next": 3,
++          "mode": "Replicate",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        },
++        {
++          "id": 2,
++          "match": 0,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        },
++        {
++          "id": 3,
++          "match": 0,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        }
++      ],
++      "messages": [
++        {
++          "type": "MsgHeartbeat",
++          "fromId": 1,
++          "to": 2,
++          "term": 2,
++          "index": 0,
++          "logTerm": 0,
++          "commit": 0,
++          "reject": false,
++          "hint": 0,
++          "context": 0,
++          "forced": false,
++          "entries": []
++        },
++        {
++          "type": "MsgHeartbeat",
++          "fromId": 1,
++          "to": 2,
++          "term": 2,
++          "index": 0,
++          "logTerm": 0,
++          "commit": 0,
++          "reject": false,
++          "hint": 0,
++          "context": 0,
++          "forced": false,
++          "entries": []
++        }
++      ],
++      "reads": [
++        {
++          "id": 7,
++          "index": 2
++        },
++        {
++          "id": 7,
++          "index": 2
++        }
++      ],
++      "readQueue": [
++        {
++          "id": 8,
++          "index": 2,
++          "fromId": 1,
++          "acks": [
++            1
++          ]
++        }
++      ],
++      "preVote": false,
++      "elapsed": 0,
++      "heartbeat": 0,
++      "prevHS": {
++        "term": 2,
++        "vote": 0,
++        "commit": 2
++      },
++      "prevSS": {
++        "role": "Follower",
++        "lead": 0
++      },
++      "checkQuorum": false,
++      "votes": []
++    },
++    "input": {
++      "entries": [],
++      "entry": {
++        "kind": "V2",
++        "target": 0,
++        "changes": [],
++        "transition": "Auto",
++        "weight": 2,
++        "encoded": 10,
++        "term": 0,
++        "index": 0
++      },
++      "snapshot": {
++        "index": 3,
++        "term": 3,
++        "config": {
++          "voters": [
++            1,
++            2,
++            3
++          ],
++          "outgoing": [],
++          "learners": [],
++          "learnersNext": [],
++          "autoLeave": false
++        }
++      },
++      "fromId": 2,
++      "context": 7,
++      "message": {
++        "type": "MsgHup",
++        "fromId": 2,
++        "to": 1,
++        "term": 2,
++        "index": 0,
++        "logTerm": 0,
++        "commit": 0,
++        "reject": false,
++        "hint": 0,
++        "context": 0,
++        "forced": false,
++        "entries": []
++      },
++      "between": [
++        {
++          "type": "MsgBeat",
++          "fromId": 1,
++          "to": 1,
++          "term": 0,
++          "index": 0,
++          "logTerm": 0,
++          "commit": 0,
++          "reject": false,
++          "hint": 0,
++          "context": 0,
++          "forced": false,
++          "entries": []
++        },
++        {
++          "type": "MsgProp",
++          "fromId": 1,
++          "to": 1,
++          "term": 0,
++          "index": 0,
++          "logTerm": 0,
++          "commit": 0,
++          "reject": false,
++          "hint": 0,
++          "context": 0,
++          "forced": false,
++          "entries": [
++            {
++              "kind": "Normal",
++              "target": 0,
++              "changes": [],
++              "transition": "Legacy",
++              "weight": 2,
++              "encoded": 10,
++              "term": 0,
++              "index": 0
++            }
++          ]
++        },
++        {
++          "type": "MsgHeartbeatResp",
++          "fromId": 2,
++          "to": 1,
++          "term": 0,
++          "index": 0,
++          "logTerm": 0,
++          "commit": 0,
++          "reject": false,
++          "hint": 0,
++          "context": 8,
++          "forced": false,
++          "entries": []
++        },
++        {
++          "type": "MsgHeartbeat",
++          "fromId": 2,
++          "to": 1,
++          "term": 3,
++          "index": 0,
++          "logTerm": 0,
++          "commit": 2,
++          "reject": false,
++          "hint": 0,
++          "context": 0,
++          "forced": false,
++          "entries": []
++        }
++      ]
++    },
++    "meta": {
++      "origin": "code",
++      "reachability": "locally valid injected state; no cluster trace claimed",
++      "version": "V02",
++      "domain": "v02"
++    }
++  },
++  {
++    "protocol": "action-validation/v1",
++    "id": "ready-v02-raw-empty",
++    "action": "ready_raw",
++    "pre": {
++      "config": {
++        "voters": [
++          1,
++          2,
++          3
++        ],
++        "outgoing": [],
++        "learners": [],
++        "learnersNext": [],
++        "autoLeave": false
++      },
++      "role": "Follower",
++      "term": 2,
++      "vote": 0,
++      "lead": 0,
++      "commit": 2,
++      "applied": 2,
++      "pending": 0,
++      "quota": 0,
++      "transfer": 0,
++      "log": [
++        {
++          "kind": "Normal",
++          "target": 0,
++          "changes": [],
++          "transition": "Legacy",
++          "weight": 0,
++          "encoded": 8,
++          "term": 2,
++          "index": 1
++        },
++        {
++          "kind": "Normal",
++          "target": 0,
++          "changes": [],
++          "transition": "Legacy",
++          "weight": 1,
++          "encoded": 9,
++          "term": 2,
++          "index": 2
++        }
++      ],
++      "uoff": 3,
++      "prs": [
++        {
++          "id": 1,
++          "match": 2,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        },
++        {
++          "id": 2,
++          "match": 0,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        },
++        {
++          "id": 3,
++          "match": 0,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        }
++      ],
++      "messages": [],
++      "reads": [],
++      "readQueue": [],
++      "preVote": false,
++      "elapsed": 0,
++      "heartbeat": 0,
++      "prevHS": {
++        "term": 2,
++        "vote": 0,
++        "commit": 2
++      },
++      "prevSS": {
++        "role": "Follower",
++        "lead": 0
++      },
++      "checkQuorum": false,
++      "votes": []
++    },
++    "input": {
++      "entries": [],
++      "entry": {
++        "kind": "V2",
++        "target": 0,
++        "changes": [],
++        "transition": "Auto",
++        "weight": 2,
++        "encoded": 10,
++        "term": 0,
++        "index": 0
++      },
++      "snapshot": {
++        "index": 3,
++        "term": 3,
++        "config": {
++          "voters": [
++            1,
++            2,
++            3
++          ],
++          "outgoing": [],
++          "learners": [],
++          "learnersNext": [],
++          "autoLeave": false
++        }
++      },
++      "fromId": 2,
++      "context": 7,
++      "message": {
++        "type": "MsgHup",
++        "fromId": 2,
++        "to": 1,
++        "term": 2,
++        "index": 0,
++        "logTerm": 0,
++        "commit": 0,
++        "reject": false,
++        "hint": 0,
++        "context": 0,
++        "forced": false,
++        "entries": []
++      },
++      "between": []
++    },
++    "meta": {
++      "origin": "code",
++      "reachability": "locally valid injected state; no cluster trace claimed",
++      "version": "V02",
++      "domain": "v02"
++    }
++  },
++  {
++    "protocol": "action-validation/v1",
++    "id": "advance-v02-raw-empty",
++    "action": "advance_raw",
++    "pre": {
++      "config": {
++        "voters": [
++          1,
++          2,
++          3
++        ],
++        "outgoing": [],
++        "learners": [],
++        "learnersNext": [],
++        "autoLeave": false
++      },
++      "role": "Follower",
++      "term": 2,
++      "vote": 0,
++      "lead": 0,
++      "commit": 2,
++      "applied": 2,
++      "pending": 0,
++      "quota": 0,
++      "transfer": 0,
++      "log": [
++        {
++          "kind": "Normal",
++          "target": 0,
++          "changes": [],
++          "transition": "Legacy",
++          "weight": 0,
++          "encoded": 8,
++          "term": 2,
++          "index": 1
++        },
++        {
++          "kind": "Normal",
++          "target": 0,
++          "changes": [],
++          "transition": "Legacy",
++          "weight": 1,
++          "encoded": 9,
++          "term": 2,
++          "index": 2
++        }
++      ],
++      "uoff": 3,
++      "prs": [
++        {
++          "id": 1,
++          "match": 2,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        },
++        {
++          "id": 2,
++          "match": 0,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        },
++        {
++          "id": 3,
++          "match": 0,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        }
++      ],
++      "messages": [],
++      "reads": [],
++      "readQueue": [],
++      "preVote": false,
++      "elapsed": 0,
++      "heartbeat": 0,
++      "prevHS": {
++        "term": 2,
++        "vote": 0,
++        "commit": 2
++      },
++      "prevSS": {
++        "role": "Follower",
++        "lead": 0
++      },
++      "checkQuorum": false,
++      "votes": []
++    },
++    "input": {
++      "entries": [],
++      "entry": {
++        "kind": "V2",
++        "target": 0,
++        "changes": [],
++        "transition": "Auto",
++        "weight": 2,
++        "encoded": 10,
++        "term": 0,
++        "index": 0
++      },
++      "snapshot": {
++        "index": 3,
++        "term": 3,
++        "config": {
++          "voters": [
++            1,
++            2,
++            3
++          ],
++          "outgoing": [],
++          "learners": [],
++          "learnersNext": [],
++          "autoLeave": false
++        }
++      },
++      "fromId": 2,
++      "context": 7,
++      "message": {
++        "type": "MsgHup",
++        "fromId": 2,
++        "to": 1,
++        "term": 2,
++        "index": 0,
++        "logTerm": 0,
++        "commit": 0,
++        "reject": false,
++        "hint": 0,
++        "context": 0,
++        "forced": false,
++        "entries": []
++      },
++      "between": []
++    },
++    "meta": {
++      "origin": "code",
++      "reachability": "locally valid injected state; no cluster trace claimed",
++      "version": "V02",
++      "domain": "v02"
++    }
++  },
++  {
++    "protocol": "action-validation/v1",
++    "id": "restore-v02-full",
++    "action": "restore",
++    "pre": {
++      "config": {
++        "voters": [
++          1,
++          2,
++          3
++        ],
++        "outgoing": [],
++        "learners": [],
++        "learnersNext": [],
++        "autoLeave": false
++      },
++      "role": "Follower",
++      "term": 2,
++      "vote": 0,
++      "lead": 0,
++      "commit": 2,
++      "applied": 2,
++      "pending": 0,
++      "quota": 0,
++      "transfer": 0,
++      "log": [
++        {
++          "kind": "Normal",
++          "target": 0,
++          "changes": [],
++          "transition": "Legacy",
++          "weight": 0,
++          "encoded": 8,
++          "term": 2,
++          "index": 1
++        },
++        {
++          "kind": "Normal",
++          "target": 0,
++          "changes": [],
++          "transition": "Legacy",
++          "weight": 1,
++          "encoded": 9,
++          "term": 2,
++          "index": 2
++        }
++      ],
++      "uoff": 3,
++      "prs": [
++        {
++          "id": 1,
++          "match": 2,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        },
++        {
++          "id": 2,
++          "match": 0,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        },
++        {
++          "id": 3,
++          "match": 0,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        }
++      ],
++      "messages": [],
++      "reads": [],
++      "readQueue": [],
++      "preVote": false,
++      "elapsed": 0,
++      "heartbeat": 0,
++      "prevHS": {
++        "term": 2,
++        "vote": 0,
++        "commit": 2
++      },
++      "prevSS": {
++        "role": "Follower",
++        "lead": 0
++      },
++      "checkQuorum": false,
++      "votes": []
++    },
++    "input": {
++      "entries": [],
++      "entry": {
++        "kind": "V2",
++        "target": 0,
++        "changes": [],
++        "transition": "Auto",
++        "weight": 2,
++        "encoded": 10,
++        "term": 0,
++        "index": 0
++      },
++      "snapshot": {
++        "index": 3,
++        "term": 3,
++        "config": {
++          "voters": [
++            1,
++            2
++          ],
++          "outgoing": [
++            1,
++            3
++          ],
++          "learners": [
++            4
++          ],
++          "learnersNext": [
++            3
++          ],
++          "autoLeave": true
++        }
++      },
++      "fromId": 2,
++      "context": 7,
++      "message": {
++        "type": "MsgHup",
++        "fromId": 2,
++        "to": 1,
++        "term": 2,
++        "index": 0,
++        "logTerm": 0,
++        "commit": 0,
++        "reject": false,
++        "hint": 0,
++        "context": 0,
++        "forced": false,
++        "entries": []
++      },
++      "between": []
++    },
++    "meta": {
++      "origin": "code",
++      "reachability": "locally valid injected state; no cluster trace claimed",
++      "version": "V02",
++      "domain": "v02"
++    }
++  },
++  {
++    "protocol": "action-validation/v1",
++    "id": "restart-v02-full",
++    "action": "restart",
++    "pre": {
++      "config": {
++        "voters": [
++          1,
++          2,
++          3
++        ],
++        "outgoing": [],
++        "learners": [],
++        "learnersNext": [],
++        "autoLeave": false
++      },
++      "role": "Follower",
++      "term": 2,
++      "vote": 0,
++      "lead": 0,
++      "commit": 2,
++      "applied": 2,
++      "pending": 0,
++      "quota": 0,
++      "transfer": 0,
++      "log": [
++        {
++          "kind": "Normal",
++          "target": 0,
++          "changes": [],
++          "transition": "Legacy",
++          "weight": 0,
++          "encoded": 8,
++          "term": 2,
++          "index": 1
++        },
++        {
++          "kind": "Normal",
++          "target": 0,
++          "changes": [],
++          "transition": "Legacy",
++          "weight": 1,
++          "encoded": 9,
++          "term": 2,
++          "index": 2
++        }
++      ],
++      "uoff": 3,
++      "prs": [
++        {
++          "id": 1,
++          "match": 2,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        },
++        {
++          "id": 2,
++          "match": 0,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        },
++        {
++          "id": 3,
++          "match": 0,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        }
++      ],
++      "messages": [],
++      "reads": [],
++      "readQueue": [],
++      "preVote": false,
++      "elapsed": 0,
++      "heartbeat": 0,
++      "prevHS": {
++        "term": 2,
++        "vote": 0,
++        "commit": 2
++      },
++      "prevSS": {
++        "role": "Follower",
++        "lead": 0
++      },
++      "checkQuorum": false,
++      "votes": []
++    },
++    "input": {
++      "entries": [],
++      "entry": {
++        "kind": "V2",
++        "target": 0,
++        "changes": [],
++        "transition": "Auto",
++        "weight": 2,
++        "encoded": 10,
++        "term": 0,
++        "index": 0
++      },
++      "snapshot": {
++        "index": 3,
++        "term": 3,
++        "config": {
++          "voters": [
++            1,
++            2
++          ],
++          "outgoing": [
++            1,
++            3
++          ],
++          "learners": [
++            4
++          ],
++          "learnersNext": [
++            3
++          ],
++          "autoLeave": true
++        }
++      },
++      "fromId": 2,
++      "context": 7,
++      "message": {
++        "type": "MsgHup",
++        "fromId": 2,
++        "to": 1,
++        "term": 2,
++        "index": 0,
++        "logTerm": 0,
++        "commit": 0,
++        "reject": false,
++        "hint": 0,
++        "context": 0,
++        "forced": false,
++        "entries": []
++      },
++      "between": []
++    },
++    "meta": {
++      "origin": "code",
++      "reachability": "locally valid injected state; no cluster trace claimed",
++      "version": "V02",
++      "domain": "v02"
++    }
++  },
++  {
++    "protocol": "action-validation/v1",
++    "id": "restore-v02-staged-self",
++    "action": "restore",
++    "pre": {
++      "config": {
++        "voters": [
++          1,
++          2,
++          3
++        ],
++        "outgoing": [],
++        "learners": [],
++        "learnersNext": [],
++        "autoLeave": false
++      },
++      "role": "Follower",
++      "term": 2,
++      "vote": 0,
++      "lead": 0,
++      "commit": 2,
++      "applied": 2,
++      "pending": 0,
++      "quota": 0,
++      "transfer": 0,
++      "log": [
++        {
++          "kind": "Normal",
++          "target": 0,
++          "changes": [],
++          "transition": "Legacy",
++          "weight": 0,
++          "encoded": 8,
++          "term": 2,
++          "index": 1
++        },
++        {
++          "kind": "Normal",
++          "target": 0,
++          "changes": [],
++          "transition": "Legacy",
++          "weight": 1,
++          "encoded": 9,
++          "term": 2,
++          "index": 2
++        }
++      ],
++      "uoff": 3,
++      "prs": [
++        {
++          "id": 1,
++          "match": 2,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        },
++        {
++          "id": 2,
++          "match": 0,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        },
++        {
++          "id": 3,
++          "match": 0,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        }
++      ],
++      "messages": [],
++      "reads": [],
++      "readQueue": [],
++      "preVote": false,
++      "elapsed": 0,
++      "heartbeat": 0,
++      "prevHS": {
++        "term": 2,
++        "vote": 0,
++        "commit": 2
++      },
++      "prevSS": {
++        "role": "Follower",
++        "lead": 0
++      },
++      "checkQuorum": false,
++      "votes": []
++    },
++    "input": {
++      "entries": [],
++      "entry": {
++        "kind": "V2",
++        "target": 0,
++        "changes": [],
++        "transition": "Auto",
++        "weight": 2,
++        "encoded": 10,
++        "term": 0,
++        "index": 0
++      },
++      "snapshot": {
++        "index": 3,
++        "term": 3,
++        "config": {
++          "voters": [
++            2,
++            3
++          ],
++          "outgoing": [
++            1,
++            2
++          ],
++          "learners": [
++            4
++          ],
++          "learnersNext": [
++            1
++          ],
++          "autoLeave": true
++        }
++      },
++      "fromId": 2,
++      "context": 7,
++      "message": {
++        "type": "MsgHup",
++        "fromId": 2,
++        "to": 1,
++        "term": 2,
++        "index": 0,
++        "logTerm": 0,
++        "commit": 0,
++        "reject": false,
++        "hint": 0,
++        "context": 0,
++        "forced": false,
++        "entries": []
++      },
++      "between": []
++    },
++    "meta": {
++      "origin": "code",
++      "reachability": "locally valid injected state; no cluster trace claimed",
++      "version": "V02",
++      "domain": "v02"
++    }
++  },
++  {
++    "protocol": "action-validation/v1",
++    "id": "restart-v02-staged-self",
++    "action": "restart",
++    "pre": {
++      "config": {
++        "voters": [
++          1,
++          2,
++          3
++        ],
++        "outgoing": [],
++        "learners": [],
++        "learnersNext": [],
++        "autoLeave": false
++      },
++      "role": "Follower",
++      "term": 2,
++      "vote": 0,
++      "lead": 0,
++      "commit": 2,
++      "applied": 2,
++      "pending": 0,
++      "quota": 0,
++      "transfer": 0,
++      "log": [
++        {
++          "kind": "Normal",
++          "target": 0,
++          "changes": [],
++          "transition": "Legacy",
++          "weight": 0,
++          "encoded": 8,
++          "term": 2,
++          "index": 1
++        },
++        {
++          "kind": "Normal",
++          "target": 0,
++          "changes": [],
++          "transition": "Legacy",
++          "weight": 1,
++          "encoded": 9,
++          "term": 2,
++          "index": 2
++        }
++      ],
++      "uoff": 3,
++      "prs": [
++        {
++          "id": 1,
++          "match": 2,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        },
++        {
++          "id": 2,
++          "match": 0,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        },
++        {
++          "id": 3,
++          "match": 0,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        }
++      ],
++      "messages": [],
++      "reads": [],
++      "readQueue": [],
++      "preVote": false,
++      "elapsed": 0,
++      "heartbeat": 0,
++      "prevHS": {
++        "term": 2,
++        "vote": 0,
++        "commit": 2
++      },
++      "prevSS": {
++        "role": "Follower",
++        "lead": 0
++      },
++      "checkQuorum": false,
++      "votes": []
++    },
++    "input": {
++      "entries": [],
++      "entry": {
++        "kind": "V2",
++        "target": 0,
++        "changes": [],
++        "transition": "Auto",
++        "weight": 2,
++        "encoded": 10,
++        "term": 0,
++        "index": 0
++      },
++      "snapshot": {
++        "index": 3,
++        "term": 3,
++        "config": {
++          "voters": [
++            2,
++            3
++          ],
++          "outgoing": [
++            1,
++            2
++          ],
++          "learners": [
++            4
++          ],
++          "learnersNext": [
++            1
++          ],
++          "autoLeave": true
++        }
++      },
++      "fromId": 2,
++      "context": 7,
++      "message": {
++        "type": "MsgHup",
++        "fromId": 2,
++        "to": 1,
++        "term": 2,
++        "index": 0,
++        "logTerm": 0,
++        "commit": 0,
++        "reject": false,
++        "hint": 0,
++        "context": 0,
++        "forced": false,
++        "entries": []
++      },
++      "between": []
++    },
++    "meta": {
++      "origin": "code",
++      "reachability": "locally valid injected state; no cluster trace claimed",
++      "version": "V02",
++      "domain": "v02"
++    }
++  },
++  {
++    "protocol": "action-validation/v1",
++    "id": "restart-v02-learner-self",
++    "action": "restart",
++    "pre": {
++      "config": {
++        "voters": [
++          1,
++          2,
++          3
++        ],
++        "outgoing": [],
++        "learners": [],
++        "learnersNext": [],
++        "autoLeave": false
++      },
++      "role": "Follower",
++      "term": 2,
++      "vote": 0,
++      "lead": 0,
++      "commit": 2,
++      "applied": 2,
++      "pending": 0,
++      "quota": 0,
++      "transfer": 0,
++      "log": [
++        {
++          "kind": "Normal",
++          "target": 0,
++          "changes": [],
++          "transition": "Legacy",
++          "weight": 0,
++          "encoded": 8,
++          "term": 2,
++          "index": 1
++        },
++        {
++          "kind": "Normal",
++          "target": 0,
++          "changes": [],
++          "transition": "Legacy",
++          "weight": 1,
++          "encoded": 9,
++          "term": 2,
++          "index": 2
++        }
++      ],
++      "uoff": 3,
++      "prs": [
++        {
++          "id": 1,
++          "match": 2,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        },
++        {
++          "id": 2,
++          "match": 0,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        },
++        {
++          "id": 3,
++          "match": 0,
++          "next": 3,
++          "mode": "Probe",
++          "probe": false,
++          "pending": 0,
++          "active": false,
++          "inflight": []
++        }
++      ],
++      "messages": [],
++      "reads": [],
++      "readQueue": [],
++      "preVote": false,
++      "elapsed": 0,
++      "heartbeat": 0,
++      "prevHS": {
++        "term": 2,
++        "vote": 0,
++        "commit": 2
++      },
++      "prevSS": {
++        "role": "Follower",
++        "lead": 0
++      },
++      "checkQuorum": false,
++      "votes": []
++    },
++    "input": {
++      "entries": [],
++      "entry": {
++        "kind": "V2",
++        "target": 0,
++        "changes": [],
++        "transition": "Auto",
++        "weight": 2,
++        "encoded": 10,
++        "term": 0,
++        "index": 0
++      },
++      "snapshot": {
++        "index": 3,
++        "term": 3,
++        "config": {
++          "voters": [
++            2,
++            3
++          ],
++          "outgoing": [
++            2,
++            4
++          ],
++          "learners": [
++            1
++          ],
++          "learnersNext": [
++            4
++          ],
++          "autoLeave": true
++        }
++      },
++      "fromId": 2,
++      "context": 7,
++      "message": {
++        "type": "MsgHup",
++        "fromId": 2,
++        "to": 1,
++        "term": 2,
++        "index": 0,
++        "logTerm": 0,
++        "commit": 0,
++        "reject": false,
++        "hint": 0,
++        "context": 0,
++        "forced": false,
++        "entries": []
++      },
++      "between": []
++    },
++    "meta": {
++      "origin": "code",
++      "reachability": "locally valid injected state; no cluster trace claimed",
++      "version": "V02",
++      "domain": "v02"
+     }
+   }
+ ]--- supplied-framework/targets/etcd/observations.md
++++ out/framework/targets/etcd/observations.md
+@@ -1,34 +1,35 @@
+-All cases use server IDs 1–4, local ID 1, election/heartbeat ticks 10/1, inflight capacity 2, message/Ready caps 1024 bytes, uncommitted cap 16 bytes, safe reads, no forwarding suppression and no CheckQuorum/PreVote configuration flags except the explicit pre-vote case field. The CheckQuorum action is invoked explicitly. Entry indexes/terms fit one-byte varints. Legacy changes have six payload bytes; V2 has two bytes plus six per single change. Go actually marshals and measures each input and its log/Ready/message entries; the runner separately checks input mapping. Normal-entry data is zero-filled of the chosen length. Empty stored normal payloads are nonnil (eight-byte entries); internally generated nil normal payloads are six-byte entries. The adapter overrides only the model's concrete `EmptyEncoded` size, not behavior. Auto-leave uses two payload bytes and ten encoded bytes.
++The supported domain uses server IDs 1–4, local ID 1, election/heartbeat ticks 10/1, inflight capacity 2, message/Ready cap 1024, uncommitted cap 16, and safe reads. CheckQuorum and PreVote are explicit pre-state fields. Votes include real/pre-votes, stale/future/current terms, repeated/conflicting votes, log freshness, lease suppression/expiry, forced transfer context, and recipients that are learners, voters, staged learners or removed members. The candidate's actual tracker counts responses under its own incoming/outgoing configuration; current learners do not count.
+ 
+-`pre` describes an injected, serialized local boundary state. Setup uses real `MemoryStorage`/`NewRawNode`, then package-local test assignments for volatile state that public constructors cannot represent, including joint progress and pending indexes. `audit_inputs.py` checks configuration/progress shape, contiguous nondecreasing log terms, applied/committed/last bounds, payload backing for quota, and inflight bounds. It does not determine distributed reachability or serve as a transition oracle. Some combinations can require unusual histories, and none carries a proof of reachability from `ProtocolInit`. Configuration history, durable-quorum evidence and other model ghosts are not fabricated as correctness evidence. The initially generated over-quota and decreasing-term descriptors were corrected before the final runs; earlier attempts remain diagnostic evidence only.
++`pre` is a locally injected boundary state built using real MemoryStorage/NewRawNode plus package-local assignments. `audit_inputs.py` checks configuration shape, both halves, learners, staged learners, progress membership, log indices/terms, quota backing and bounds. This is necessary, not sufficient, for distributed reachability. Synthetic log/configuration combinations, leader states and Ready read results are not a proof of reachability. The six `invalid-inputs.json` cases intentionally violate ConfState constraints and are reported separately. Empty incoming configurations, overlapping voters/learners and staged learners without joint state are unsupported normal inputs. All 342 supported direction instances pass structural audit.
+ 
+-| Family | Real execution | Original model surface | Output beyond common state |
+-|---|---|---|---|
+-| Proposal | `raft.Step(MsgProp)` | `Step` → `StepLeaderProposal`, `RewriteConf`, `AppendEntry`, `BcastAppend` | Actual nil/error mapped to ok/dropped; rewritten entries, pending index, quota, progress, messages |
+-| Configuration application | `RawNode.ApplyConfChange`, actual legacy `AsV2`, `raft.applyConfChange` and Changer | `ApplyConfCore`, `ConfigCandidate`, `ValidConfigTransition` | Returned ConfState or panic, both voter halves, staged learners, progress, commit/broadcast and transfer cancellation |
+-| Campaign | `RawNode.Campaign` → `Step(MsgHup)` | `Step` → `StepHup`, campaign operators | Term/vote/role, voter union, messages, no-op, leader no-op entry |
+-| Read/ack | `Step(MsgReadIndex/MsgHeartbeatResp)` | `Step`, leader read and heartbeat-response operators | Full queue, acknowledgement sets, read results, messages and progress |
+-| Quorum activity | `Step(MsgCheckQuorum)` | `StepCheckQuorum` through `Step` | Role reset, votes, clocks, progress activity reset |
+-| Ready | `RawNode.Ready`; for Node, then real `acceptReady` | actual `ProtocolReady` transition | Whole Ready: changed HS/SS, entries, committed entries, snapshot, messages, read states, MustSync, cursor; ownership changes |
+-| Advance | real captured Ready, then `RawNode.Advance` or Node's real `commitReady` | actual `ProtocolAdvance` → `AdvanceCore` | Applied cursor, stability offsets, cleared queues, quota, auto-leave append or failed append/pending retry; no public return |
+-| Restore | `raft.restore` | `Restore` | Real boolean return, volatile snapshot, full state/config/progress, ignore/fast-forward/non-follower cases |
+-| Restart | `NewRawNode` over real snapshot-backed `MemoryStorage` | `RestartCore` | Reconstructed config/progress/log bounds, cursors and remembered HS/SS |
++| Family | Go call | Original model surface |
++|---|---|---|
++| Proposal | raft.Step(MsgProp) | Step / StepLeaderProposal / RewriteConf / AppendEntry / BcastAppend |
++| Apply configuration | RawNode.ApplyConfChange; real Changer | ApplyConfCore / ConfigCandidate / ValidConfigTransition |
++| Campaign | RawNode.Campaign | Step / StepHup / campaign operators |
++| Vote request, response | RawNode.Step | Step / StepVote / StepCandidate |
++| Read / read ack / quorum | raft.Step | Step / leader consumers / StepCheckQuorum |
++| Ready, RawNode | RawNode.Ready | ProtocolReady |
++| Ready, Node | actual node.run channel delivery | ProtocolReady |
++| Advance, RawNode | actual captured Ready; intervening real Step; RawNode.Advance | ProtocolReady preparation; original Step calls; ProtocolAdvance / AdvanceCore |
++| Advance, Node | actual node.run; channel operations; Node.Advance | same original actions, Node ownership |
++| Restore | raft.restore | Restore |
++| Restart | NewRawNode over actual snapshot-backed storage | RestartCore |
+ 
+-The common projection compares term, vote, role, leader, configuration, self learner flag, commit/applied/pending indexes, quota, transfer target, observable log entries, first/last indexes, unstable entries/offset/snapshot, each peer's Match/Next/mode/probe/pending/active/learner/inflight values, outgoing messages, read queue and acknowledgements, read states, prevHS/prevSS, election/heartbeat counters, pre-vote flag, recorded votes, and MemoryStorage entries/snapshot/HS/cut. Returned values and ok/drop/panic status are separate. Exact panic text is raw evidence: the model abstracts several concrete Changer errors as `invalid configuration transition`. It must still agree on panic occurrence and unchanged/changed state. An internal failed auto-leave append is observable via state and model `raw_fatal`/Go logs; Advance itself is void and is not an API drop.
++Node schedules use a Status request/response after Ready, each intervening operation and Advance. This guarantees the prior select branch finished; no tick producer or concurrent external caller runs. Intervening heartbeat, proposal, read acknowledgement, higher-term heartbeat and combined schedules run through the actual Node channels. Internal `node.step` allows explicit local MsgBeat; this is a scheduler boundary test, not a claim that public Node.Step accepts local messages. There is no schedule enumeration. Cancellation, removed-node proposal gating and arbitrary concurrent callers remain uncovered. Node's asynchronous intermediate proposal delivery does not return the core proposal error; RawNode's drop is retained as raw evidence and subsequent operations proceed.
+ 
+-The caller owns persistence. Before an Advance test, Go obtains an actual Ready, optionally accepts it as Node does, and installs its HardState into MemoryStorage. Its entries are already installed by setup, representing completed caller persistence. TLC captures `NewReady` and installs matching caller flags/storage for `ProtocolAdvance`; it does not handcraft an unrelated cursor. The independently compared pre-state is at the entry to the tested action. Node tests call the exact `acceptReady`/`commitReady` helpers used in `node.run`, but do not exercise goroutine/select/channel scheduling or proposal-channel gating. `RawNode.Ready` tests contain no intervening mutation before Advance. Reentrant/invalid caller use is not endorsed or tested.
++The common state projection covers configuration, learner flag, term/vote/role/leader, committed/applied/pending cursors, quota, transfer, visible/stable/unstable log, snapshot, full progress including inflights, outgoing messages, pending reads and acknowledgements, read states, prevHS/prevSS, elapsed counters, configuration flags and recorded votes. MemoryStorage entries, snapshot, HardState and cut are included. Go measures entry sizes using the actual protobuf encoder. Legacy entries have six payload bytes; V2 has two plus six per change in this domain. Empty stored normal payloads are nonnil (encoded size eight); internally generated nil payloads have size six, selected through the retained adapter constant override. Auto-leave has two payload bytes and ten encoded bytes.
+ 
+-For restart, the model's `disk[1]` and Go's constructor storage are both built from `input.snapshot`, with HardState term 3 and commit at the snapshot index. The output compares the reconstructed MemoryStorage too. Model full snapshot histories are synthetic ghost prefixes with the snapshot's term; only snapshot metadata, log bounds and the concrete surviving entries are observable. Snapshot data is empty. Restore's boolean mapping is valid only for this domain's initially empty unstable snapshot; a domain with existing unstable snapshots needs an explicit restoration-outcome mapping.
++Ready returns include changed HS/SS, unstable and committed entries, snapshot, messages, read states, MustSync and applied cursor. Advance's input observation additionally contains the actual captured Ready batch. Its return observation is a synthetic ownership observation `batchAfter`, obtained by reading that same Go Ready after Advance; it is not a public API return. This verifies that intervening live output and the retained batch stay distinct, including duplicate messages/read results. The model compares the actual original Ready result, not a manufactured batch. Persistence flags and storage writes are caller-environment mappings. Setup installs the supplied log into MemoryStorage; the unstable overlapping suffix represents persisted but not yet acknowledged entries. Before Advance, the caller installs any captured HardState. This does not model disk failure or write ordering.
+ 
+-Messages are compared as multisets, preserving duplicate counts. All wire fields used here are mapped: type, from/to, term, index/logTerm, commit, reject/hint, context, entries and snapshot metadata. Configuration and vote/progress collections are unordered; logs, change batches, read queues and inflights remain ordered. Go map iteration and TLC CHOOSE order are thus excluded only where order has no semantic role. Randomized election timeout is fixed to 10 during setup; resets may choose any 10–19 in Go. The timeout value and random-generator state are excluded because these single actions do not subsequently tick. Clocks themselves are compared.
++Restart has a different pre-observation: actual MemoryStorage contents and the actual constructor option values passed to NewRawNode. It does not pretend the unused live setup object is constructor input. The model compares snapshot-backed disk contents and corresponding fixed options. Input HardState term is three, vote zero, commit the snapshot index. Snapshot histories in the model are synthetic ghosts; only metadata, surviving entries and bounds are compared. No disk I/O or application replay is exercised. A panicking constructor returns no new object; invalid-domain state projections are diagnostic only.
+ 
+-Excluded/unsupported dimensions and expansion tasks:
++Messages are multisets; duplicate counts are preserved. Configurations, progress, votes and read acknowledgement sets are unordered; logs, changes, pending-read order, read-result order and inflights are ordered. Captured batch message/config collections have the same canonicalization. CampaignTransfer is mapped to an explicit `forced` boolean with context ID zero; ordinary contexts are integer read IDs. Arbitrary data/context bytes, unknown protobuf fields, remote read-index responses and snapshot data are outside this mapping. Response inputs in the supported domain come from tracked members; RawNode's local-message and unknown-peer errors are not independently covered.
+ 
+-- Model ghosts (`history`, `quality`, witness prefixes, `cfgHist`, durability obligations), application queues, channel state and sequence IDs have no direct Go-core observation. Ready and Advance caller effects are mapped explicitly; add end-to-end caller schedules before claiming wrapper conformance.
+-- Progress inflight allocation layout, slice capacity/aliasing, logger state, function pointers and goroutine scheduling are hidden implementation details. Logical inflight contents are read via reflection and compared; allocation and mutation ownership beyond the tested boundary are not checked.
+-- Context and normal data bytes are represented by integer read IDs or payload length. Legacy context/ID, V2 context/unknown protobuf fields, and arbitrary application data are unsupported. Add byte-preserving mappings before testing serialization compatibility or remote read responses. Current reads are local.
+-- Restore/restart covers joint metadata loss, omitted outgoing-only recipient, learner membership, obsolete snapshot, matching-term fast-forward and non-follower defense. It does not cover actual disk I/O failures, snapshot data, compaction availability, snapshot creation, post-restart application replay or a complete joint-recovery history.
+-- Bootstrap construction, Node handoff/cancellation, status APIs, append-response commit paths, elections by received vote responses, lease reads, transfer schedules, and crash/network concurrency are not tested as independent families. Commit/broadcast on configuration application and joint quorum decisions are covered locally.
+-- The old snapshot/spec were inspected for the diff, not replayed. Saved JSON inputs can be reused across versions, but this Go adapter binds to the new snapshot's API. An old-version adapter must explicitly translate supported legacy cases and report V2 cases unsupported.
++Status is separate from state/return: ok, proposal dropped, panic, error or model disabled. Panic text is raw evidence; model configuration errors abstract several exact Go errors. A void Advance remains ok even when its internal automatic-leave append encounters quota. Model candidates are exported before and after prerequisite preparation, so disabled Ready preparation cannot silently remove a generated case. A completed relation without a successor is an explicit disabled result; a nonzero TLC process exit is an adapter failure. The empty public RawNode Ready/Advance pair is supported by the behavior repair; an empty Node Ready delivery remains disabled because node.run requires HasReady.
+ 
+-No exclusions are silent mismatch suppression. The runner compares the complete declared projection and stores every difference; adding a field to the projection can expose a new adapter error or real model discrepancy.
++Random election timeout is fixed for initial setup; Go resets may choose 10–19. Timeout/RNG state is excluded because no subsequent ticking action tests that choice. Tick counters are compared. Slice allocation/capacity, function pointers, log output and tracker map order are excluded. Borrowed Ready slice contents are observed, but arbitrary backing-array mutation/reentrant API abuse is not modeled. Domains share vocabulary across routes, so the routes are not statistically independent and correlated mapping mistakes remain possible.
++
++Old/new comparisons explicitly bind both provided sources. They are a 21-case semantic delta subset, not a repeat of the coordinator's V01 certification. Unchanged `numOfPendingConf` still ignores V2 entries. Fresh live snapshots still reject outgoing-only and staged outgoing-only recipients; restart now reconstructs them. These source-backed behaviors are retained. No injected state alone is labeled a real distributed system bug.
++
++Remaining coverage: no global search, safety checking, distributed reachability traces, elections/network/crash schedules, arbitrary pagination boundaries, post-restart application replay, ReadIndex cancellation/lease reads, disk failures or broad transport inputs. The action domain is limited to four servers; supplied package tests cover additional quorum/restore cases, but are not extra bidirectional instances. Observer ghosts and invariant predicates remain outside the comparison; a proposed auto-leave observer correction is recorded separately and unapplied.
+--- supplied-framework/targets/etcd/replay.py
++++ out/framework/targets/etcd/replay.py
+@@ -0,0 +1,28 @@
++#!/usr/bin/env python3
++"""Portable suite orchestration; contains no protocol transitions or expected outputs."""
++import argparse,os,json,pathlib,subprocess,sys,time,uuid,datetime
++R=pathlib.Path(__file__).resolve().parents[4]
++p=argparse.ArgumentParser();p.add_argument('--output-root',default=None);a=p.parse_args()
++out=(R/a.output_root) if a.output_root else R/'out/cases'/('v02-replay-'+datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')+'-'+uuid.uuid4().hex[:8])
++out.mkdir(parents=True,exist_ok=False)
++manifest=R/'out/framework/targets/etcd/suite.json';suite=json.loads(manifest.read_text());records=[]
++for run in suite['runs']:
++ target=out/run['label']
++ cmd=[sys.executable,'out/framework/runner.py','--manifest',run['manifest'],'--cases',run['cases'],'--output',str(target),'--spec',run['spec'],'--route',run['route']]
++ start=time.monotonic()
++ with (out/(run['label']+'.log')).open('w') as log:r=subprocess.run(cmd,cwd=R,stdout=log,stderr=subprocess.STDOUT,timeout=500)
++ records.append(dict(label=run['label'],output=str(target.relative_to(R)),command=cmd,exit_code=r.returncode,duration_seconds=time.monotonic()-start))
++ (out/'runs.json').write_text(json.dumps(records,indent=2))
++ print(json.dumps(records[-1]),flush=True)
++ if r.returncode:sys.exit(r.returncode)
++checks=[]
++for check in suite.get('verification',[]):
++ params=dict(root=str(R),output_root=str(out))
++ cmd=[x.format(**params) for x in check['command']]
++ env=os.environ.copy();env.update({k:v.format(**params) for k,v in check.get('env',{}).items()})
++ start=time.monotonic()
++ with (out/(check['name']+'.log')).open('w') as log:r=subprocess.run(cmd,cwd=R/check['cwd'],env=env,stdout=log,stderr=subprocess.STDOUT,timeout=check['timeout_seconds'])
++ checks.append(dict(name=check['name'],command=cmd,exit_code=r.returncode,expected_exit=check['expected_exit'],duration_seconds=time.monotonic()-start))
++ (out/'verification.json').write_text(json.dumps(checks,indent=2))
++ if r.returncode!=check['expected_exit']:sys.exit(2)
++print('Reports: '+str(out))
+--- supplied-framework/targets/etcd/suite.json
++++ out/framework/targets/etcd/suite.json
+@@ -0,0 +1,184 @@
++{
++  "protocol": "action-validation/v1",
++  "version": "V02",
++  "root": "Run from the supplied workspace root; all paths below are relative.",
++  "tools": {
++    "go": "/usr/local/go/bin/go",
++    "tlc": "/tools/tla2tools.jar",
++    "community_modules": "/tools/CommunityModules.jar",
++    "python": "python3",
++    "java": "/usr/bin/java"
++  },
++  "limits": {
++    "tlc_timeout_seconds": 175,
++    "tlc_workers": 1,
++    "tlc_heap_gb": 2,
++    "go_timeout_seconds": 90,
++    "GOMAXPROCS": 2
++  },
++  "network": "disabled by GOPROXY=off/GOSUMDB=off; no downloads",
++  "cache": "out/go-cache",
++  "tmp": "out/tmp",
++  "runs": [
++    {
++      "label": "baseline-code",
++      "manifest": "out/framework/targets/etcd/manifest.json",
++      "cases": "out/cases/code-inputs.json",
++      "spec": "new/spec",
++      "route": "code-to-model"
++    },
++    {
++      "label": "baseline-model",
++      "manifest": "out/framework/targets/etcd/manifest.json",
++      "cases": "out/framework/targets/etcd/model-seeds.json",
++      "spec": "new/spec",
++      "route": "model-to-code"
++    },
++    {
++      "label": "repaired-code",
++      "manifest": "out/framework/targets/etcd/manifest.json",
++      "cases": "out/cases/code-inputs.json",
++      "spec": "out/repaired-spec",
++      "route": "code-to-model"
++    },
++    {
++      "label": "repaired-model",
++      "manifest": "out/framework/targets/etcd/manifest.json",
++      "cases": "out/framework/targets/etcd/model-seeds.json",
++      "spec": "out/repaired-spec",
++      "route": "model-to-code"
++    },
++    {
++      "label": "old-version-subset",
++      "manifest": "out/framework/targets/etcd/manifest-old.json",
++      "cases": "out/cases/version-inputs.json",
++      "spec": "old/spec",
++      "route": "code-to-model"
++    },
++    {
++      "label": "invalid-inputs",
++      "manifest": "out/framework/targets/etcd/manifest.json",
++      "cases": "out/cases/invalid-inputs.json",
++      "spec": "out/repaired-spec",
++      "route": "code-to-model"
++    }
++  ],
++  "verification": [
++    {
++      "name": "generic-tests",
++      "command": [
++        "python3",
++        "-m",
++        "unittest",
++        "discover",
++        "-s",
++        "out/framework",
++        "-p",
++        "test_runner.py",
++        "-v"
++      ],
++      "cwd": ".",
++      "timeout_seconds": 20,
++      "expected_exit": 0
++    },
++    {
++      "name": "valid-input-audit",
++      "command": [
++        "python3",
++        "out/framework/targets/etcd/audit_inputs.py",
++        "out/cases/code-inputs.json",
++        "{output_root}/baseline-model/generated-cases.json"
++      ],
++      "cwd": ".",
++      "timeout_seconds": 20,
++      "expected_exit": 0
++    },
++    {
++      "name": "invalid-input-audit",
++      "command": [
++        "python3",
++        "out/framework/targets/etcd/audit_inputs.py",
++        "out/cases/invalid-inputs.json"
++      ],
++      "cwd": ".",
++      "timeout_seconds": 20,
++      "expected_exit": 1
++    },
++    {
++      "name": "source-tests",
++      "command": [
++        "timeout",
++        "90s",
++        "/usr/local/go/bin/go",
++        "test",
++        "-run",
++        "Test(RawNodeConsumeReady|Learner.*|Restore.*|Node.*)$",
++        "-count=1",
++        ".",
++        "./confchange",
++        "./quorum",
++        "./tracker",
++        "./raftpb"
++      ],
++      "cwd": "new/source",
++      "env": {
++        "GOMAXPROCS": "2",
++        "GOCACHE": "{root}/out/go-cache",
++        "GOTMPDIR": "{root}/out/tmp",
++        "TMPDIR": "{root}/out/tmp",
++        "GOPROXY": "off",
++        "GOSUMDB": "off",
++        "GOFLAGS": "-mod=readonly",
++        "GOTOOLCHAIN": "local",
++        "CGO_ENABLED": "0"
++      },
++      "timeout_seconds": 95,
++      "expected_exit": 0
++    },
++    {
++      "name": "source-package-tests",
++      "command": [
++        "timeout",
++        "90s",
++        "/usr/local/go/bin/go",
++        "test",
++        "-count=1",
++        "./confchange",
++        "./quorum",
++        "./tracker",
++        "./raftpb"
++      ],
++      "cwd": "new/source",
++      "env": {
++        "GOMAXPROCS": "2",
++        "GOCACHE": "{root}/out/go-cache",
++        "GOTMPDIR": "{root}/out/tmp",
++        "TMPDIR": "{root}/out/tmp",
++        "GOPROXY": "off",
++        "GOSUMDB": "off",
++        "GOFLAGS": "-mod=readonly",
++        "GOTOOLCHAIN": "local",
++        "CGO_ENABLED": "0"
++      },
++      "timeout_seconds": 95,
++      "expected_exit": 0
++    }
++  ],
++  "regenerate_domains": [
++    "python3",
++    "out/framework/targets/etcd/domain_v02.py"
++  ],
++  "rerun": [
++    "python3",
++    "out/framework/targets/etcd/replay.py"
++  ],
++  "repair_patch": "out/adaptation/behavior-repairs.patch",
++  "observer_patch_not_applied": "out/adaptation/observer-corrections.patch",
++  "claim": "bounded local action validation; invalid-inputs is a separate negative domain; no safety or reachability proof",
++  "report_command": [
++    "python3",
++    "out/framework/targets/etcd/summarize.py",
++    "--run-root",
++    "{output_root}"
++  ]
++}
+--- supplied-framework/targets/etcd/summarize.py
++++ out/framework/targets/etcd/summarize.py
+@@ -1,62 +1,167 @@
+ #!/usr/bin/env python3
+-"""Summarize recorded executions and explicit source-backed human triage."""
+-import json,pathlib,collections,hashlib,re,shutil
+-R=pathlib.Path('/workspace');O=R/'out'
+-read=lambda p:json.loads((R/p).read_text())
+-run_names=['baseline-code','baseline-model','repaired-code','repaired-model']
+-runs={n:read('out/cases/'+n+'/comparison.json') for n in run_names}
+-base_cases=read('out/cases/code-inputs.json');model_cases=read('out/cases/baseline-model/generated-cases.json')
+-assert model_cases==read('out/cases/repaired-model/generated-cases.json'),'regression inputs changed between model versions'
+-(O/'cases/model-inputs.json').write_text(json.dumps(model_cases,indent=2))
++"""Summarize recorded comparisons and explicit source-based triage, never transitions."""
++import argparse,collections,datetime,difflib,hashlib,importlib.util,json,pathlib,re
++R=pathlib.Path(__file__).resolve().parents[4];O=R/'out'
++p=argparse.ArgumentParser();p.add_argument('--run-root',default='out/cases/v02-final-02');a=p.parse_args();runroot=R/a.run_root
++read=lambda p:json.loads(p.read_text())
++sha=lambda p:hashlib.sha256(p.read_bytes()).hexdigest()
++relative=lambda p:str(p.relative_to(R))
++labels=['baseline-code','baseline-model','repaired-code','repaired-model','old-version-subset','invalid-inputs']
++runs={label:read(runroot/label/'comparison.json') for label in labels}
++cs=read(O/'cases/code-inputs.json');mc=read(runroot/'baseline-model/generated-cases.json');aftermc=read(runroot/'repaired-model/generated-cases.json')
++assert sorted(mc,key=lambda c:c['id'])==sorted(aftermc,key=lambda c:c['id'])
++(O/'cases/model-inputs.json').write_text(json.dumps(mc,indent=2)+'\n')
++for label in labels:
++ for row in runs[label]['results']:assert not row['pre_differences'] and not row['input_differences'] and row['verdict']!='adapter_error'
++assert all(runs[x]['counts']=={'match':runs[x]['total']} for x in ['repaired-code','repaired-model','old-version-subset'])
++repairs=[dict(id='R1',operator='IsLeave',classification='lost established behavior repair',change='Require Auto transition as well as empty V2 changes. Empty explicit/implicit changes enter joint state; they do not leave it.',source=['new/source/raftpb/confchange.go:101','new/source/raft.go:1478','new/source/confchange/confchange.go:50'],established='old/spec/base.tla:522'),dict(id='R2',operator='AdvanceCore',classification='lost established behavior repair',change='Require captured applied cursor > 0 before auto-leave, preserving the source enclosing branch and its quota retry behavior.',source=['new/source/raft.go:561'],established='old/spec/base.tla:1071'),dict(id='R3',operator='ProtocolReady',classification='too restrictive API model',change='Allow public RawNode Ready even with no updates; Node delivery still requires updates. This also enables valid empty Ready/Advance preparation.',source=['new/source/rawnode.go:123','new/source/node.go:306'],established=None)]
++triage=[]
++for label in ['baseline-code','baseline-model']:
++ for row in runs[label]['results']:
++  if row['verdict']=='match':continue
++  if row['action']=='apply':
++   repair='R1';classification='extra model behavior' if 'joint-' in row['id'] else 'too restrictive model behavior'
++  elif 'empty' in row['id']:repair='R3';classification='too restrictive model behavior (disabled relation)'
++  else:repair='R2';classification='extra model behavior'
++  triage.append(dict(row,run=label,repair=repair,classification=classification,evidence=relative(runroot/label/'comparison.json')))
++for r in repairs:r['baseline_counts']=dict(collections.Counter(x['run'] for x in triage if x['repair']==r['id']));r['remaining_supported_mismatches']=0
+ coverage={}
+-for n,d in runs.items():
+- for row in d['results']:
+-  coverage.setdefault(row['action'],{})[n]=coverage.setdefault(row['action'],{}).get(n,0)+1
++for label in labels:
++ for row in runs[label]['results']:
++  family=row['action'];coverage.setdefault(family,{}).setdefault(label,collections.Counter())[row['verdict']]+=1
++coverage={family:{label:dict(counts) for label,counts in x.items()} for family,x in sorted(coverage.items())}
++# This uses the unchanged generic comparator for observed old/new deltas, not an oracle.
++spec=importlib.util.spec_from_file_location('runner',O/'framework/runner.py');runner=importlib.util.module_from_spec(spec);spec.loader.exec_module(runner)
++old=runner.read_results(runroot/'old-version-subset/implementation.jsonl');new=runner.read_results(runroot/'repaired-code/implementation.jsonl');unordered=read(O/'framework/targets/etcd/manifest.json')['unordered_paths']
++deltas=[]
++for cid,x in old.items():
++ y=new[cid]
++ deltas.append(dict(id=cid,pre_differences=runner.differences(runner.norm(x['pre_observation'],unordered,('state',)),runner.norm(y['pre_observation'],unordered,('state',))),input_differences=runner.differences(runner.norm(x['input_observation'],unordered,('input',)),runner.norm(y['input_observation'],unordered,('input',))),differences=runner.differences(runner.norm(x['observation'],unordered),runner.norm(y['observation'],unordered))))
++(O/'adaptation/version-deltas.json').write_text(json.dumps(deltas,indent=2)+'\n')
++commands=[]
++for label in labels:
++ for engine in ['implementation','model']:
++  for command in read(runroot/label/engine/'commands.json'):
++   c=dict(command,run=label,engine=engine)
++   if engine=='model':
++    txt=(pathlib.Path(c['cwd'])/'tlc.log').read_text();m=re.search(r'(\d+) states generated, (\d+) distinct states found',txt)
++    c['tlc_states']=dict(generated=int(m[1]),distinct=int(m[2])) if m else None
++    c.update(workers=1,heap_gb=2,outer_timeout_seconds=175)
++   else:c.update(outer_timeout_seconds=90,GOMAXPROCS=2)
++   commands.append(c)
++# Verify the supplied source/spec/patch and prior reusable input files remain immutable.
++original=read(R/'input-manifest.json');immutable=[];changed=[]
++for name,h in original.items():
++ if name.startswith(('old/','new/','out/cases/prior-')) or name in ['update.patch','framework-negative-controls.json','prior-rerun.json']:
++  immutable.append(name)
++  if sha(R/name)!=h:changed.append(name)
++assert not changed,changed
++base=(R/'new/spec/base.tla').read_text();repaired=(O/'repaired-spec/base.tla').read_text()
++assert base[base.index('Independent safety contracts.'):]==repaired[repaired.index('Independent safety contracts.'):]
++for name in ['VoteContract','CampaignContract','TransferContract','ProposalContract','EffectContract']:
++ def operator(text):
++  tail=text[text.index(name+'('):];m=re.search(r'\n[A-Za-z][A-Za-z0-9_]*(?:\([^\n]*\))?\s*==',tail);return tail[:m.start()] if m else tail
++ assert operator(base)==operator(repaired),name
++for file in (R/'new/spec').iterdir():
++ if file.name!='base.tla':assert sha(file)==sha(O/'repaired-spec'/file.name)
++# Footprint versus the supplied framework, including generated data separately.
++origin=O/'adaptation/original-framework';framework=O/'framework';footprint=[];patch=[]
++paths=set(p.relative_to(origin) for p in origin.rglob('*') if p.is_file())|set(p.relative_to(framework) for p in framework.rglob('*') if p.is_file())
++for rel in sorted(paths):
++ if '__pycache__' in str(rel):continue
++ oldp=origin/rel;newp=framework/rel
++ before=oldp.read_text() if oldp.exists() else '';after=newp.read_text() if newp.exists() else ''
++ if before==after:continue
++ diff=list(difflib.unified_diff(before.splitlines(True),after.splitlines(True),fromfile='supplied-framework/'+str(rel),tofile='out/framework/'+str(rel)));patch+=diff
++ footprint.append(dict(path='out/framework/'+str(rel),status='modified' if oldp.exists() else 'added',added_lines=sum(x.startswith('+') and not x.startswith('+++') for x in diff),removed_lines=sum(x.startswith('-') and not x.startswith('---') for x in diff),bytes=len(after.encode()),kind='generated domain/manifest' if rel.suffix=='.json' else 'documentation' if rel.suffix=='.md' else 'target binding/domain/report code'))
++(O/'adaptation/framework-adaptation.patch').write_text(''.join(patch))
++generic=['runner.py','protocol.schema.json','test_runner.py']
++assert all(sha(framework/x)==sha(origin/x) for x in generic)
++integrity=dict(immutable_supplied_files_checked=len(immutable),changed=[],generic_unchanged={x:sha(framework/x) for x in generic},safety_predicates_and_decision_contracts_unchanged=True,other_spec_files_unchanged=True,behavior_operators_changed=['IsLeave','ProtocolReady','AdvanceCore'],observer_changes_applied=False)
++(O/'adaptation/integrity.json').write_text(json.dumps(integrity,indent=2)+'\n')
++# Preserve original measured timestamps across report regeneration.
++timing_path=O/'adaptation/timing.json'
++if timing_path.exists():timing=read(timing_path)
++else:
++ start=datetime.datetime(2026,9,22,18,11,43,tzinfo=datetime.timezone.utc);end=datetime.datetime.now(datetime.timezone.utc)
++ code_end=datetime.datetime.fromtimestamp((O/'framework/adapters/tla/LocalActions.tla').stat().st_mtime,datetime.timezone.utc)
++ compat=datetime.datetime.fromtimestamp((O/'cases/v02-dev01-code/comparison.json').stat().st_mtime,datetime.timezone.utc)
++ timing=dict(start_utc=start.isoformat(),first_current_compatible_run_utc=compat.isoformat(),first_compatible_seconds=(compat-start).total_seconds(),last_executable_binding_edit_utc=code_end.isoformat(),executable_adaptation_seconds=(code_end-start).total_seconds(),reporting_completed_utc=end.isoformat(),total_wall_seconds=(end-start).total_seconds(),note='Wall time includes local inspection, binding/domain/model work, testing and report preparation. Individual command times are separately recorded; no labor-time precision claimed.')
++ timing_path.write_text(json.dumps(timing,indent=2)+'\n')
++final_summary={label:dict(route=d['route'],spec=d['spec'],total=d['total'],counts=d['counts'],comparison=relative(runroot/label/'comparison.json'),duration_seconds=sum(c['duration_seconds'] for c in commands if c['run']==label)) for label,d in runs.items()}
++diagnostics=[]
++for path in sorted((O/'cases').rglob('comparison.json')):
++ if path.parent.parent==runroot:continue
++ d=read(path);diagnostics.append(dict(path=relative(path),total=d['total'],counts=d['counts'],exit_codes=[x['exit_code'] for x in d['commands']]))
++invalid=[dict(row,classification='invalid setup: malformed ConfState outside supported domain; not a real-system bug or behavior repair',evidence=relative(runroot/'invalid-inputs/comparison.json')) for row in runs['invalid-inputs']['results']]
++limits=['No global protocol search or safety-invariant evaluation. No distributed reachability proof; all local injected states need a separate reachability argument before system-bug claims.','Two directions share vocabulary and projections; correlated mapping mistakes remain possible. TLC selects finite symbolic descriptors and executes original model actions, not a separate Python oracle.','Node uses actual channels and deterministic barriers, but there is no scheduler enumeration, cancellation, removed-node proposal gating, or arbitrary concurrent caller coverage.','Four-server action domain excludes the quorum sort allocation threshold; supplied package tests are supplemental, not bidirectional comparisons.','No arbitrary bytes/unknown protobuf fields, snapshot data, remote/lease read semantics, disk failures, post-restart application replay, broad pagination, transport or crash histories.','Empty Node Ready delivery, response inputs from unknown peers and local messages through public RawNode.Step are outside the supported action domain.','Observer histories and invariant predicates are untouched; recommended observer correction and potentially intended implementation-defect properties need the later invariant phase.']
++result=dict(protocol='action-validation/v1',version='V02',claim='Bounded source/model action validation, not a proof of safety or distributed reachability.',run_root=relative(runroot),runs=final_summary,coverage=coverage,
++ totals=dict(code_derived=239,model_derived=103,supported_pairs_per_model=342,baseline_matches=324,baseline_mismatches=18,repaired_matches=342,repaired_mismatches=0,final_supported_adapter_errors=0,old_version_subset_matches=21,invalid_inputs_separate=6),
++ repairs=repairs,mismatches=triage,invalid_setup_results=invalid,
++ preserved_prior_repairs=[dict(operator='IsLeave',restored=True),dict(operator='AdvanceCore positive cursor',restored=True),dict(operator='StepHup legacy-only configuration scan',restored=False,already_preserved_in_new_model=True,source=['new/source/raft.go:1605','old/spec/base.tla:267'])],
++ version_comparison=dict(cases=21,changed_outputs=sum(bool(x['differences']) for x in deltas),unchanged_outputs=sum(not x['differences'] for x in deltas),changed_pre_states=sum(bool(x['pre_differences']) for x in deltas),changed_inputs=sum(bool(x['input_differences']) for x in deltas),evidence='out/adaptation/version-deltas.json',note='Both versions separately match their supplied/repaired model on this subset. Advance pre-state deltas are expected because Ready acceptance changed; these are version changes, not adapter mismatches.'),
++ retained_implementation_behaviors=[dict(behavior='Hup scans only legacy EntryConfChange, ignoring unapplied V2 entries.',source='new/source/raft.go:1605',classification='source omission preserved, no distributed counterexample claim'),dict(behavior='Live snapshot membership checks incoming voters/current learners only; outgoing-only and staged outgoing-only recipients decline the snapshot, although full restart reconstructs them.',source='new/source/raft.go:1403',classification='source restriction preserved; joint metadata itself is now restored',cases=['restore-outgoing-only','restore-v02-staged-self','restart-v02-staged-self'])],
++ observer_review=[dict(id='O1',applied=False,issue='autoLeaveChecks.eligible lacks b.cursor>0; after behavior repair it records false eligibility for a zero-cursor batch.',source='new/source/raft.go:561',model='new/spec/base.tla:1119',evidence=['advance-raw-True-0-0-Leader-0','advance-node-True-0-0-Leader-0'],proposal='out/adaptation/observer-corrections.patch'),dict(id='O2',applied=False,issue='CampaignContract uses ConfKinds while actual Hup scans LegacyConfKinds. Decide later whether this property should intentionally expose the source omission; do not change it here.',source='new/source/raft.go:1605',model='new/spec/base.tla:673'),dict(id='O3',applied=False,issue='JointSnapshotMemberAcceptance can expose outgoing-only snapshot rejection. The matching local behavior is preserved; a reachable witness is still needed.',model='new/spec/base.tla:1370',source='new/source/raft.go:1403')],
++ adapter_changes=['Renamed ConfState fields; explicit old-source API spelling binding.','Actual Node goroutine/channels and Status barriers replace helper-only owner testing.','Original ProtocolReady/Step preparation for Advance; captured input batch and retained batch observation; mapped disabled prerequisite candidates.','Learner/forced vote flags, actual message inputs, recorded votes and CheckQuorum mappings.','Restart pre-observation reads actual storage and actual constructor options.','Fresh Go work directories, relative manifests, workspace-local offline build environment. No generic runner/protocol changes.'],
++ adapter_diagnostics=[dict(issue='Intervening proposal ErrProposalDropped was initially treated as setup failure.',fixed='Retain raw error and continue actual schedule; do not panic or invent an expected output.',evidence='out/cases/v02-dev02-model/comparison.json'),dict(issue='TLA conditional grouping in new restart pre-mapping caused evaluation failure.',fixed='Parenthesized the conditional. Failed command output rejected; not a disabled action.',evidence=['out/cases/v02-invalid-01','out/cases/v02-final-01/baseline-code'])],
++ diagnostics=diagnostics,integrity=integrity,adaptation_footprint=footprint,timing=timing,
++ execution_time=dict(final_suite_inner_seconds=sum(c['duration_seconds'] for c in commands),max_tlc_invocation_seconds=max(c['duration_seconds'] for c in commands if c['engine']=='model'),commands=commands),
++ validation=dict(structural_audit=read(O/'adaptation/valid-input-audit.json'),invalid_audit=read(O/'adaptation/invalid-input-audit.json'),generic_unit_tests=8,generic_tests_log='out/adaptation/runner-tests.log',source_tests=['out/adaptation/source-tests.log','out/adaptation/source-package-tests.log'],supplemental_commands=read(O/'adaptation/supplemental-verification.json'),coordinator_controls_preserved='framework-negative-controls.json',coordinator_prior_certification_preserved='prior-rerun.json'),
++ portable_manifest='out/framework/targets/etcd/suite.json',reusable_invocation='python3 out/framework/targets/etcd/replay.py',limits=limits)
++(O/'results.json').write_text(json.dumps(result,indent=2)+'\n')
++rows=[]
++for family,d in coverage.items():
++ if family not in {x['action'] for x in cs+mc}:continue
++ def num(label,key=None):return sum(d.get(label,{}).values()) if key is None else d.get(label,{}).get(key,0)
++ rows.append(f"| {family} | {num('baseline-code')} | {num('baseline-code','behavioral_mismatch')} | {num('baseline-model')} | {num('baseline-model','behavioral_mismatch')} | {num('repaired-code','match')} / {num('repaired-model','match')} |")
++report=f'''# V02 action validation
+ 
+-def repair_for(id):
+- if 'apply' in id:return 'R1'
+- if 'hup' in id:return 'R2'
+- if 'advance' in id:return 'R3'
+- raise ValueError(id)
+-repairs=[
+- dict(id='R1',operator='IsLeave',source=['new/source/raftpb/confchange.go:96','new/source/raft.go:1449'],model='out/repaired-spec/base.tla:522',classification='model_behavior_error',change='Require transition Auto as well as empty V2 changes. Explicit/implicit empty batches request entry into joint state; they do not leave it.'),
+- dict(id='R2',operator='StepHup',source=['new/source/raft.go:906','new/source/raft.go:1580'],model='out/repaired-spec/base.tla:268',classification='model_behavior_error_masking_implementation_defect',change='Scan only legacy configuration entries, matching unchanged numOfPendingConf. This retains the implementation omission for V2 rather than fixing the implementation in the model.'),
+- dict(id='R3',operator='AdvanceCore',source=['new/source/raft.go:559'],model='out/repaired-spec/base.tla:1071',classification='model_behavior_error',change='Require a positive captured applied cursor before automatic leave, matching the enclosing Go branch. Zero cursor causes neither append nor failed-append pending-index retry.'),
+-]
+-mismatches=[]
+-for n in ['baseline-code','baseline-model']:
+- for row in runs[n]['results']:
+-  if row['verdict']=='behavioral_mismatch':
+-   r=dict(row,run=n,repair=repair_for(row['id']),classification='source_backed_model_behavior_error',evidence=f'out/cases/{n}/comparison.json')
+-   mismatches.append(r)
+-for r in repairs:
+- r['baseline_case_counts']=dict(collections.Counter(x['run'] for x in mismatches if x['repair']==r['id']))
+- r['remaining_after_repair']=0
+-commands=[]
+-for n,d in runs.items():
+- for engine in ['implementation','model']:
+-  p=O/'cases'/n/engine/'commands.json'
+-  for cmd in json.loads(p.read_text()):
+-   cmd.update(run=n,engine=engine)
+-   if engine=='model':
+-    log=pathlib.Path(cmd['cwd'])/'tlc.log';txt=log.read_text()
+-    m=re.search(r'(\d+) states generated, (\d+) distinct states found',txt)
+-    cmd['tlc_states']=dict(generated=int(m[1]),distinct=int(m[2])) if m else None
+-    cmd['workers']=1;cmd['heap_gb']=2;cmd['outer_timeout_seconds']=175
+-   else:cmd['outer_timeout_seconds']=90
+-   commands.append(cmd)
+-summary={n:dict(total=d['total'],counts=d['counts'],route=d['route'],spec=d['spec'],duration_seconds=sum(c['duration_seconds'] for c in commands if c['run']==n),comparison=f'out/cases/{n}/comparison.json',outer_commands=d['commands']) for n,d in runs.items()}
+-unique={json.dumps({k:c[k] for k in ['action','pre','input']},sort_keys=True) for c in base_cases+model_cases}
+-result=dict(protocol='action-validation/v1',pilot=True,claim='Developmental local action validation; no independent bug discovery or general conformance claim.',sources=dict(old='old/source',new='new/source',old_spec='old/spec',baseline='new/spec',repair='out/repaired-spec',old_snapshot_executed=False),runs=summary,
+- totals=dict(code_derived_cases=len(base_cases),tlc_generated_cases=len(model_cases),distinct_case_ids=len(base_cases)+len(model_cases),distinct_semantic_inputs=len(unique),baseline_pairs=sum(runs[n]['total'] for n in ['baseline-code','baseline-model']),baseline_matches=sum(runs[n]['counts'].get('match',0) for n in ['baseline-code','baseline-model']),baseline_mismatches=len(mismatches),repaired_pairs=sum(runs[n]['total'] for n in ['repaired-code','repaired-model']),repaired_matches=sum(runs[n]['counts'].get('match',0) for n in ['repaired-code','repaired-model']),repaired_mismatches=sum(runs[n]['counts'].get('behavioral_mismatch',0) for n in ['repaired-code','repaired-model']),final_adapter_errors=sum(d['counts'].get('adapter_error',0) for d in runs.values()),unsupported_cases=0,runner_fault_injection_tests_passed=8),
+- coverage=coverage,mismatches=mismatches,repairs=repairs,
+- retained_implementation_behavior=[dict(id='snapshot_joint_loss',behavior='Restore and constructor read only ConfState.Nodes and Learners; outgoing voters, staged learners and AutoLeave are lost. Already modeled by RestoreProjection; no repair.',source=['new/source/raft.go:337','new/source/raft.go:1385','new/source/raft.go:1418'],cases=['restore-joint','restart-joint','restore-outgoing-only'],classification='implementation_defect_faithfully_modeled'),dict(id='campaign_v2_scan',behavior='numOfPendingConf ignores V2. R2 aligns the model with that code behavior; it does not fix the defect.',source=['new/source/raft.go:1580'],classification='implementation_defect_retained')],
+- invariant_issues=[dict(name='CampaignDecisionEligibility / CampaignContract',source='new/spec/base.tla:660',issue='Still treats V2 as campaign-blocking. Decide later whether this is an intended correctness property exposing the real source omission or a source-alignment contract needing revision.',changed=False),dict(name='AutoLeaveAdvance / history.autoLeaveChecks.eligible',source='new/spec/base.tla:1095',issue='Eligibility observation lacks positive-cursor guard. Repaired zero-cursor behavior can fail this unchanged contract. Review observer/property together later.',changed=False),dict(name='JointSnapshotRecovery',source='new/spec/base.tla:1331',issue='Can expose faithful source loss of joint state. Do not change behavior to satisfy the invariant.',changed=False)],
+- adapter_triage=[dict(issue='Wrong nil versus nonnil empty Entry.Size projection',resolution='Concrete EmptyEncoded changed from 8 to 6 in adapter override. Input/output sizes now independently measured in Go; no baseline spec repair.',evidence='out/evidence/development-comparison.json'),dict(issue='Stray target field on normal log descriptors',resolution='Corrected descriptor; classified as pre-state mapping error.',evidence='out/evidence/development-comparison.json'),dict(issue='Internal DropQuota treated as public Advance drop',resolution='Only proposal error maps to dropped; Advance remains void/ok, with all state effects compared.',evidence='out/evidence/development-comparison.json'),dict(issue='TLC nested EXCEPT @ bound to a boolean',resolution='Qualified original input progress reference; aborted invocation retained.',evidence='out/evidence/model-domain-adapter-error'),dict(issue='Initial quota backing and stale-term descriptors structurally invalid',resolution='Corrected input domains; all final cases pass the separate structural audit. Earlier runs excluded from final totals.',evidence='out/evidence/input-domain-audit.json'),dict(issue='Unavailable default build temporary directory / CGO temporary path',resolution='TMPDIR/GOTMPDIR/GOCACHE and Java temp path set inside workspace; pure-Go adapter uses CGO_ENABLED=0.',evidence=['out/evidence/go-development.log','out/evidence/go-development-2.log'])],
+- integrity=read('out/evidence/immutability-audit.json'),input_domain_audit=read('out/evidence/input-domain-audit.json'),
+- verification=dict(evidence_audit=read('out/evidence/final-evidence-audit.json'),runner_tests=dict(command=['python3','-m','unittest','discover','-s','out/framework','-p','test_runner.py','-v'],log='out/evidence/runner-tests.log',passed=8),input_audit=dict(command=['python3','out/framework/targets/etcd/audit_inputs.py','out/cases/code-inputs.json','out/cases/baseline-model/generated-cases.json'],evidence='out/evidence/input-domain-audit.json')),
+- commands=commands,durations=dict(final_recorded_execution_seconds=sum(c['duration_seconds'] for c in commands),max_tlc_invocation_seconds=max(c['duration_seconds'] for c in commands if c['engine']=='model'),note='Measured subprocess wall time, excludes implementation/analysis and diagnostic development attempts. Earlier attempt commands/durations are in their preserved work directories where recorded.'),
+- limitations=['Locally injected structurally valid states; no reachability proof from protocol Init, no full protocol checking.','Shared domains and projections permit correlated mistakes; the TLC-generated route is not an independent oracle.','Node ownership tests call the exact real helpers, but omit channel/select scheduling and proposal-channel gating.','No old-version execution adapter; saved legacy cases require API mapping before replay there.','Ghost histories/durability observers, arbitrary payload/context bytes, remote/lease reads, disk I/O failures, bootstrap/status APIs and end-to-end restart/application schedules are outside the declared projection.','No invariants were edited or checked as safety properties; listed invariant issues require later review.'],
+- next_actions=['Add real Node channel lifecycle schedules and application-to-Advance sequences.','Obtain reachable cluster traces for the distinguishing cases before interpreting them as distributed counterexamples.','Extend byte-preserving context/remote-read and snapshot/restart replay mappings.','Review the three invariant issues separately, then decide bounds for a later protocol model-checking campaign.','Generate an old-version implementation/model adapter to replay the compatible saved cases.'])
+-(O/'results.json').write_text(json.dumps(result,indent=2))
+-print(json.dumps(dict(totals=result['totals'],durations=result['durations']),indent=2))
++The behaviorally repaired model matches **239/239 code-derived and 103/103 model-derived cases**. The provisional baseline has **18 mismatches** across the same 342 instances, with matching actual pre-states and inputs. There are no adapter errors in the final supported runs. The separate old-source subset matches 21/21; six intentionally invalid ConfStates remain outside conformance totals.
++
++The generic JSON protocol, runner and eight comparator tests are byte-for-byte unchanged. No supplied invariant predicate was edited or checked. Go executes the supplied implementation; TLC executes original model operators/actions. There is no Python transition oracle, external browsing, other agent, later version or global protocol search.
++
++| Family | Code cases | Baseline code mismatches | Model cases | Baseline model mismatches | Repaired matches code / model |
++|---|---:|---:|---:|---:|---:|
++'''+ '\n'.join(rows)+f'''
++| **Total** | **239** | **8** | **103** | **10** | **239 / 103** |
++
++Counts are direction instances, not independent discoveries. Code inputs retain all 105 prior cases and add 134 conditions; model seeds expand through original TLC domain selection to 103 instances, retaining the prior 43. All 342 pass structural audit. Logs, selected cases, input/pre-state comparisons and complete output differences are preserved in [the final suite](cases/{runroot.name}) and [results.json](results.json).
++
++**Concrete differences and repairs.** Only three behavior definitions change in [repaired-spec/base.tla](repaired-spec/base.tla); [the patch](adaptation/behavior-repairs.patch) is reviewable.
++
++- **R1 — IsLeave:** four code and four model mismatches. Empty V2 explicit/implicit transitions enter joint state from a simple configuration in Go, while the baseline tries to leave and panics. From joint state Go panics on the attempted re-entry, while the baseline incorrectly leaves and promotes staged learners. Require `transition="Auto"` for leave. Evidence: `new/source/raftpb/confchange.go:101–105`, `raft.go:1478–1495`; this restores `old/spec/base.tla:522`. This includes both too restrictive and extra model behavior.
++- **R2 — AdvanceCore:** two code and four model mismatches. With a zero captured applied cursor, the baseline appends automatic leave or advances the quota-retry pending index; Go does neither. Restore `b.cursor>0`, matching the enclosing branch at `new/source/raft.go:561`. The old repaired model already had this guard. This is extra model behavior.
++- **R3 — ProtocolReady:** two code and two model mismatches. Public RawNode Ready and its empty Ready/Advance sequence execute successfully in Go, but the baseline relation is disabled by `ContainsUpdates`. Permit empty Ready for RawNodes; keep Node channel delivery gated by updates. Evidence: `new/source/rawnode.go:123–126`, `node.go:306–318`. TLC completed successfully and exported mapped disabled outcomes; these were not adapter errors. The empty Advance case identified a disabled Ready prerequisite explicitly.
++
++The old StepHup repair is retained without another edit: `numOfPendingConf` still counts only legacy EntryConfChange at `new/source/raft.go:1605`. The model preserves this omission for V2. The live snapshot guard at `raft.go:1403–1406` still excludes outgoing-only recipients, including staged learners. Restore/restart now preserve full joint configuration metadata for accepted snapshots. These are source-backed local behaviors, not distributed bug claims derived from injected state.
++
++**Adapters and domains.** ConfState names and old/new wrapper calls are bound explicitly. The updated projection adds actual vote-message fields, forced context, CheckQuorum and recorded votes. Advance setup calls original ProtocolReady and original Step actions, then compares the real captured input batch, action-entry state, live output and retained batch contents. Duplicate messages/read results are exercised. Node cases run actual `node.run` channels with Status barriers, including heartbeat, proposal, read acknowledgement and term changes between Ready and Advance. Restart pre-state is actual constructor storage/options, not an unrelated live raft object.
++
++The 96 code-derived vote cases cover learner/voter/staged/removed recipients, regular/pre-votes, term/log freshness, repeated/conflicting votes, lease suppression/expiry and forced context. Candidate-response cases check that the receiver's own configuration controls counting, including both joint halves. Full recovery includes current learners, staged learners, AutoLeave, explicit joint mode, disjoint halves and outgoing-only/removed self. Existing proposal, config, read, quorum and auto-leave cases remain.
++
++The old/new subset has {result['version_comparison']['changed_outputs']} changed and {result['version_comparison']['unchanged_outputs']} unchanged output projections. Learners now answer eligible votes; RawNode accepts output at Ready and preserves newly produced output across Advance; joint metadata survives recovery. Both versions separately match their models on all 21 selected cases. Advance pre-states can differ across versions because acceptance timing changed. [Full deltas](adaptation/version-deltas.json) retain these differences separately from within-version mapping checks. This subset tests the current diff; it does not redo the coordinator's V01 certification.
++
++**Validity, disabled behavior and diagnostics.** The six malformed snapshots cover overlapping voters/learners, staged learners without joint state, and empty incoming voters. Go panics while the model admits configurations; mappings agree, but the structural audit rejects these inputs. They are classified as invalid setup, not repaired or counted as system defects. Generic comparison rows remain preserved as raw disagreements. Constructor panic state projections are diagnostic only.
++
++Two adapter failures were corrected and retained: generated intermediate proposals at full quota initially raised setup errors on ErrProposalDropped; the adapter now continues the real schedule and keeps raw error evidence. A missing pair of parentheses in the new restart TLA mapping caused an evaluation failure; failed exported results were rejected. Every attempt used a fresh directory. The final suite has no missing/extra results, mapping disagreements or failed processes.
++
++**Observer review is separate.** No observer correction is applied to the behavior-only tree. [The proposed patch](adaptation/observer-corrections.patch) adds the missing positive-cursor guard to `history.autoLeaveChecks.eligible`, supported by the zero-cursor cases and `raft.go:561`. `CampaignContract` still treats V2 as campaign-blocking; decide in the later invariant phase whether it intentionally exposes the source omission. `JointSnapshotMemberAcceptance` can expose outgoing-only rejection; obtain a reachable witness before interpreting it as a distributed failure. All safety/decision predicates and other model files are verified unchanged.
++
++**Footprint and time.** {len(footprint)} framework files were added/modified, all target bindings, domains, manifests, reporting or documentation; the three generic files have identical SHA-256 hashes. Per-file added/removed line counts and generated-data sizes are in results.json; [the complete adaptation patch](adaptation/framework-adaptation.patch) is retained. The behavior repair changes three expression lines plus one source comment. No supplied production source/spec/patch or prior input changed ({len(immutable)} immutable files checked).
++
++First compatible current-version run: {timing['first_compatible_seconds']:.1f} seconds after starting. Executable adaptation finished after {timing['executable_adaptation_seconds']:.1f} seconds; total measured wall time through reporting: {timing['total_wall_seconds']:.1f} seconds. Final suite inner process time: {result['execution_time']['final_suite_inner_seconds']:.2f} seconds; longest TLC invocation: {result['execution_time']['max_tlc_invocation_seconds']:.2f} seconds. Each TLC process used one worker, a 2 GB heap and a 175-second outer timeout. Go used GOMAXPROCS=2, a 90-second outer timeout, offline modules and workspace-local cache/tmp. Commands and individual durations are in results.json and each invocation directory.
++
++The eight unchanged comparator tests passed. Supplied learner/restore/Node/RawNode tests and complete confchange/quorum/tracker/raftpb package tests passed. The coordinator's integrity controls remain unchanged; no generic bug or need to rerun its old certification was found.
++
++**Reproduce.** Run from `/workspace`:
++
++```sh
++python3 out/framework/targets/etcd/replay.py
++```
++
++[The portable suite manifest](framework/targets/etcd/suite.json) lists all six runs, relative paths, supplied tools, limits, all verification commands and regeneration commands. The replay script creates a unique exclusive root, leaving all previous evidence intact. After a rerun, use `python3 out/framework/targets/etcd/summarize.py --run-root <printed-root>` to regenerate the report. Bindings, saved inputs, symbolic domains, repaired model, schema and runner remain in the same framework organization for the next version.
++
++**Remaining limits.** These are locally injected states with structural checks, not a proof of distributed reachability. Shared domains/projections permit correlated errors. Node channels are real but schedules are deterministic and do not cover cancellation, removal gating or arbitrary concurrency. The four-server action domain excludes the quorum allocation threshold; package tests are supplemental. Arbitrary bytes, snapshot data, remote/lease reads, disk failures, pagination boundaries, application replay and broad transport/crash schedules remain uncovered. Empty Node delivery and unknown-peer/local-message RawNode errors are unsupported domain dimensions. No safety claim or global search result is made. [The observation map](framework/targets/etcd/observations.md) records the full projection, ownership, error and uncertainty boundaries.
++'''
++(O/'report.md').write_text(report)
++print(json.dumps(dict(totals=result['totals'],version_comparison=result['version_comparison'],timing=timing,footprint_files=len(footprint)),indent=2))

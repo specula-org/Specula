@@ -1,0 +1,5 @@
+versions/V03/spec/base.tla:433:                         IF n=b.id THEN b.prs[n] ELSE [b.prs[n] EXCEPT !.active=FALSE]]]
+versions/V03/spec/base.tla:827:        readySeq |-> 0, nodeLead |-> 0, propcEnabled |-> FALSE, decision |-> "", wins |-> {}, grants |-> {}, campaigns |-> {},
+versions/V03/spec/base.tla:987:    IN [EmptyReady EXCEPT !.active=TRUE, !.id=r.readySeq+1,
+versions/V03/spec/base.tla:1006:            !.readySeq=b.id,
+versions/V03/spec/base.tla:1104:             Append(@,[batch |-> b.id, snapshot |-> b.snapshot, entries |-> b.committed])]

@@ -1,0 +1,70 @@
+[
+  {
+    "module": "base",
+    "command": [
+      "timeout",
+      "45s",
+      "/usr/bin/java",
+      "-Xmx1G",
+      "-Djava.io.tmpdir=/workspace/out/tmp",
+      "-cp",
+      "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+      "tla2sany.SANY",
+      "base.tla"
+    ],
+    "duration_seconds": 0.44958331249654293,
+    "exit_code": 0,
+    "semantic_errors": false
+  },
+  {
+    "module": "MC",
+    "command": [
+      "timeout",
+      "45s",
+      "/usr/bin/java",
+      "-Xmx1G",
+      "-Djava.io.tmpdir=/workspace/out/tmp",
+      "-cp",
+      "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+      "tla2sany.SANY",
+      "MC.tla"
+    ],
+    "duration_seconds": 0.4554633991792798,
+    "exit_code": 0,
+    "semantic_errors": false
+  },
+  {
+    "module": "Update",
+    "command": [
+      "timeout",
+      "45s",
+      "/usr/bin/java",
+      "-Xmx1G",
+      "-Djava.io.tmpdir=/workspace/out/tmp",
+      "-cp",
+      "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+      "tla2sany.SANY",
+      "Update.tla"
+    ],
+    "duration_seconds": 0.4741417979821563,
+    "exit_code": 0,
+    "semantic_errors": true
+  },
+  {
+    "module": "Trace",
+    "command": [
+      "timeout",
+      "45s",
+      "/usr/bin/java",
+      "-Xmx1G",
+      "-Djava.io.tmpdir=/workspace/out/tmp",
+      "-cp",
+      "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+      "tla2sany.SANY",
+      "Trace.tla"
+    ],
+    "duration_seconds": 0.44954961724579334,
+    "exit_code": 0,
+    "semantic_errors": false
+  }
+]

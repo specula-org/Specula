@@ -1,0 +1,62 @@
+--- v02/baseline-spec/base.tla
++++ v02/spec/base.tla
+@@ -181,9 +181,10 @@
+ BecomeFollower(r,t,leader,timeout) ==
+     [Reset(r,t,timeout) EXCEPT !.role="Follower", !.lead=leader]
+ \* raft.go:596-616; self Match is volatile, payload quota permits oversized first.
++AppendQuotaExceeded(r,es) == r.quota>0 /\ r.quota+Weight(es)>MaxUncommitted
+ AppendEntry(r,es) == LET fixed==[k \in DOMAIN es |->
+                                      [es[k] EXCEPT !.term=r.term, !.index=Last(r)+k]] IN
+-    IF r.quota>0 /\ r.quota+Weight(es)>MaxUncommitted
++    IF AppendQuotaExceeded(r,es)
+     THEN [r EXCEPT !.decision="DropQuota"]
+     ELSE LET a==AppendLog([r EXCEPT !.quota=@+Weight(es)],fixed)
+              b==[a EXCEPT !.prs[r.id]=MaybeUpdate(@,Last(a),Hist(a))]
+@@ -559,17 +560,26 @@
+     IF ValidConfigTransition(cfg,e) THEN ConfigCandidate(cfg,e) ELSE cfg
+ RECURSIVE ConfigOf(_)
+ ConfigOf(h) == IF h= <<>> THEN EmptyConfig ELSE ConfigAfter(ConfigOf(Prefix(h,Len(h)-1)),h[Len(h)])
++\* Local repair: preserve intermediate Changer Progress deletion/recreation.
++RECURSIVE ChangeProgress(_,_,_,_)
++ChangeProgress(cfg,prs,last,changes) == IF changes= <<>> THEN prs ELSE
++ LET nextCfg==ApplySingle(cfg,Head(changes))
++     nextPrs==[n \in VoterIDs(nextCfg)\cup nextCfg.learners |->
++         IF n \in DOMAIN prs THEN prs[n] ELSE Progress(0,last+1,TRUE)]
++ IN ChangeProgress(nextCfg,nextPrs,last,Tail(changes))
+ ApplyConfCore(r,e,timeout) ==
+     LET cfg==ConfigCandidate(r.config,e)
+         members==VoterIDs(cfg)\cup cfg.learners
+         a==IF ~ValidConfigTransition(r.config,e)
+            THEN Fatal(r,"invalid configuration transition") ELSE
+-           [r EXCEPT !.config=cfg, !.prs=[n \in members |->
+-              IF n\notin Members(r) THEN Progress(0,Last(r)+1,TRUE) ELSE r.prs[n]]]
++           LET startCfg==IF EntersJoint(e) THEN [r.config EXCEPT !.outgoing=r.config.voters] ELSE r.config
++               changed==IF IsLeave(e) \/ CanceledEntry(e) THEN r.prs ELSE
++                            ChangeProgress(startCfg,r.prs,Last(r),e.changes)
++           IN [r EXCEPT !.config=cfg, !.prs=[n \in members |-> changed[n]]]
+     IN IF a.fatal#"" \/ r.role#"Leader" \/ ~Promotable(a) \/ cfg.voters={} THEN a ELSE
+        LET b==MaybeCommit(a)
+            c==IF b.commit>a.commit THEN BcastAppend(b) ELSE b
+-       IN IF c.transfer#0 /\ c.transfer\notin members THEN [c EXCEPT !.transfer=0] ELSE c
++       IN IF c.fatal#"" THEN c ELSE IF c.transfer#0 /\ c.transfer\notin members THEN [c EXCEPT !.transfer=0] ELSE c
+ 
+ (***************************************************************************
+ Caller, storage and observation layer: S1/S3/S4/S5/S6.
+@@ -1093,7 +1103,7 @@
+         leave==V2Entry(0,0,0,<<>>,"Auto",AutoLeaveWeight,AutoLeaveEncoded)
+         auto==a.fatal="" /\ b.cursor>0 /\ a.config.autoLeave /\ b.cursor>=a.pendingConf /\ a.role="Leader"
+         b0==IF auto THEN AppendEntry(a,<<leave>>) ELSE a
+-        b1==IF auto /\ b0.decision="DropQuota" THEN [b0 EXCEPT !.pendingConf=Last(b0)] ELSE b0
++        b1==IF auto /\ AppendQuotaExceeded(a,<<leave>>) THEN [b0 EXCEPT !.pendingConf=Last(b0)] ELSE b0
+         last==IF b.entries= <<>> THEN MissingEntry(0) ELSE b.entries[Len(b.entries)]
+         stable==b.entries# <<>> /\ last.index>=b1.uoff /\ last.index<=Last(b1) /\
+                  Term(b1,last.index)=last.term
+@@ -1142,7 +1152,7 @@
+               ELSE Append(application[n].hist,e)
+            a==IF e.kind\in ConfKinds THEN ApplyConfCore(raft[n],e,timeout) ELSE raft[n]
+            b0==IF e.kind\in ConfKinds THEN [a EXCEPT !.cfgHist=IF e.index>Len(a.cfgHist) THEN Prefix(h,e.index) ELSE @] ELSE a
+-           b==WrapperLoop(IF n\notin RawNodes /\ e.target=n /\ e.id\notin CancelChanges /\ n\notin Members(b0)
++           b==WrapperLoop(IF n\notin RawNodes /\ n\in Members(raft[n]) /\ n\notin Members(b0)
+                   THEN [b0 EXCEPT !.propcEnabled=FALSE] ELSE b0)
+        IN /\ e.index<=Len(application[n].hist)+1
+           /\ raft'=[raft EXCEPT ![n]=b]

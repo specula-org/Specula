@@ -1,0 +1,258 @@
+TLC2 Version 2.20 of Day Month 20?? (rev: ${git.shortRevision})
+Running breadth-first search Model-Checking with fp 79 and seed -408575748307324940 with 1 worker on 4 cores with 3641MB heap and 64MB offheap memory [pid: 1637500] (Linux 6.8.0-1044-azure amd64, Ubuntu 21.0.11 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/results/exploration/V01-campaign-prefix-probe/spec/CampaignProbe.tla
+Parsing file /home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/results/exploration/V01-campaign-prefix-probe/spec/Trace.tla
+Parsing file /tmp/tlc-8153826547139583503/_JsonTrace.tla (jar:file:/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/dist/tla2tools.jar!/tla2sany/StandardModules/_JsonTrace.tla)
+Parsing file /tmp/tlc-8153826547139583503/_TLCTrace.tla (jar:file:/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/dist/tla2tools.jar!/tla2sany/StandardModules/_TLCTrace.tla)
+Parsing file /home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/results/exploration/V01-campaign-prefix-probe/spec/base.tla
+Parsing file /tmp/tlc-8153826547139583503/Json.tla (jar:file:/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/dist/tla2tools.jar!/tla2sany/StandardModules/Json.tla)
+Parsing file /tmp/tlc-8153826547139583503/IOUtils.tla (jar:file:/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/lib/CommunityModules.jar!/IOUtils.tla)
+Parsing file /tmp/tlc-8153826547139583503/Naturals.tla (jar:file:/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/dist/tla2tools.jar!/tla2sany/StandardModules/Naturals.tla)
+Parsing file /tmp/tlc-8153826547139583503/Integers.tla (jar:file:/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/dist/tla2tools.jar!/tla2sany/StandardModules/Integers.tla)
+Parsing file /tmp/tlc-8153826547139583503/Sequences.tla (jar:file:/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/dist/tla2tools.jar!/tla2sany/StandardModules/Sequences.tla)
+Parsing file /tmp/tlc-8153826547139583503/FiniteSets.tla (jar:file:/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/dist/tla2tools.jar!/tla2sany/StandardModules/FiniteSets.tla)
+Parsing file /tmp/tlc-8153826547139583503/Bags.tla (jar:file:/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/dist/tla2tools.jar!/tla2sany/StandardModules/Bags.tla)
+Parsing file /tmp/tlc-8153826547139583503/TLC.tla (jar:file:/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/dist/tla2tools.jar!/tla2sany/StandardModules/TLC.tla)
+Parsing file /tmp/tlc-8153826547139583503/TLCExt.tla (jar:file:/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/dist/tla2tools.jar!/tla2sany/StandardModules/TLCExt.tla)
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module Bags
+Semantic processing of module base
+Semantic processing of module Json
+Semantic processing of module IOUtils
+Semantic processing of module Trace
+Semantic processing of module TLCExt
+Semantic processing of module _JsonTrace
+Semantic processing of module _TLCTrace
+Semantic processing of module CampaignProbe
+Linting of module base
+Linting of module Json
+Linting of module IOUtils
+Linting of module Trace
+Linting of module TLCExt
+Linting of module _JsonTrace
+Linting of module _TLCTrace
+Linting of module CampaignProbe
+Starting... (2026-09-22 20:28:10)
+Computing initial states...
+Finished computing initial states: 1 distinct state generated at 2026-09-22 20:28:44.
+Error: Invariant CampaignDecisionEligibility is violated.
+Error: The behavior up to this point is:
+[trimmed for the repository: 1026199 lines of counterexample state dumps removed; state headers kept. Condensed trace: events.json/summary.json next to this log; rerun with the command in run.json/receipt.json to regenerate the full dump.]
+State 1: <Initial predicate>
+State 2: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 3: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 4: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 5: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 6: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 7: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 8: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 9: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 10: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 11: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 12: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 13: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 14: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 15: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 16: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 17: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 18: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 19: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 20: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 21: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 22: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 23: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 24: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 25: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 26: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 27: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 28: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 29: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 30: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 31: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 32: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 33: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 34: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 35: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 36: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 37: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 38: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 39: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 40: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 41: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 42: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 43: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 44: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 45: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 46: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 47: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 48: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 49: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 50: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 51: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 52: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 53: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 54: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 55: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 56: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 57: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 58: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 59: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 60: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 61: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 62: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 63: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 64: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 65: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 66: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 67: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 68: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 69: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 70: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 71: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 72: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 73: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 74: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 75: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 76: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 77: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 78: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 79: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 80: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 81: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 82: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 83: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 84: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 85: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 86: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 87: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 88: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 89: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 90: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 91: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 92: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 93: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 94: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 95: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 96: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 97: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 98: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 99: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 100: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 101: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 102: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 103: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 104: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 105: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 106: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 107: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 108: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 109: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 110: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 111: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 112: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 113: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 114: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 115: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 116: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 117: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 118: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 119: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 120: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 121: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 122: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 123: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 124: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 125: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 126: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 127: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 128: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 129: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 130: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 131: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 132: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 133: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 134: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 135: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 136: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 137: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 138: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 139: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 140: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 141: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 142: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 143: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 144: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 145: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 146: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 147: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 148: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 149: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 150: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 151: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 152: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 153: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 154: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 155: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 156: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 157: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 158: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 159: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 160: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 161: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 162: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 163: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 164: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 165: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 166: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 167: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 168: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 169: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 170: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 171: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 172: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 173: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 174: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 175: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 176: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 177: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 178: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 179: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 180: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 181: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 182: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 183: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 184: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 185: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 186: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 187: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 188: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 189: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 190: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 191: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 192: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 193: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 194: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 195: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 196: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 197: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 198: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 199: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 200: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 201: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 202: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 203: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 204: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 205: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 206: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 207: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 208: <PrefixStep line 7, col 15 to line 8, col 50 of module CampaignProbe>
+State 209: <CampaignBranch line 12, col 19 to line 17, col 37 of module CampaignProbe>
+"CounterExample written: /home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/results/exploration/V01-campaign-prefix-probe/counterexample.json"
+1193 states generated, 871 distinct states found, 6 states left on queue.
+The depth of the complete state graph search is 209.
+Finished in 38s at (2026-09-22 20:28:49)
+Trace exploration spec path: ./CampaignProbe_TTrace_1790108890.tla

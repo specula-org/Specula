@@ -1,0 +1,20 @@
+{
+  "packet": "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/agent-runs/reproduce-A",
+  "model": "gpt-5.5",
+  "effort": "xhigh",
+  "started_at": "2026-09-22T20:32:02.440981+00:00",
+  "status": "finished",
+  "log": "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/logs/reproduce-A-attempt-1.jsonl",
+  "pid": 1648180,
+  "exit_code": 0,
+  "seconds": 857.9766515903175,
+  "usage": [
+    {
+      "input_tokens": 5549670,
+      "cached_input_tokens": 5351424,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 42695,
+      "reasoning_output_tokens": 17643
+    }
+  ]
+}

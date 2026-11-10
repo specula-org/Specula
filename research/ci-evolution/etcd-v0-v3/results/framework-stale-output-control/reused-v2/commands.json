@@ -1,0 +1,23 @@
+[
+  {
+    "command": [
+      "/usr/bin/java",
+      "-XX:+UseParallelGC",
+      "-Xmx2G",
+      "-Djava.io.tmpdir=/workspace/out/tmp",
+      "-cp",
+      "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+      "tlc2.TLC",
+      "-workers",
+      "1",
+      "-metadir",
+      "/workspace/reused-v2/raw/states",
+      "-config",
+      "LocalActions.cfg",
+      "LocalActions"
+    ],
+    "cwd": "/workspace/reused-v2/raw",
+    "duration_seconds": 1.0160545613616705,
+    "exit_code": 0
+  }
+]

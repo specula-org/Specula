@@ -1,0 +1,31 @@
+{
+  "name": "witness-completion-v03",
+  "version": "V03",
+  "module": "C03Progress",
+  "config": "witness-completion.cfg",
+  "seconds_limit": 120,
+  "elapsed_seconds": 13.325831413269043,
+  "exit_code": 12,
+  "command": [
+    "timeout",
+    "--signal=TERM",
+    "--kill-after=5s",
+    "120s",
+    "java",
+    "-Xmx4g",
+    "-Dtlc2.TLC.progressInterval=10",
+    "-cp",
+    "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+    "tlc2.TLC",
+    "-workers",
+    "1",
+    "-nowarning",
+    "-dumpTrace",
+    "json",
+    "counterexample.json",
+    "-config",
+    "witness-completion.cfg",
+    "C03Progress"
+  ],
+  "trace": "/workspace/out/joint-autoleave-prefix-inputs.ndjson"
+}

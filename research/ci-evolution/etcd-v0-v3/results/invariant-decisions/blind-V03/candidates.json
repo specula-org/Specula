@@ -1,0 +1,1240 @@
+{
+  "format_version": 1,
+  "task": "Independently derived, update-local correctness candidates.",
+  "sources": [
+    "/workspace/old/source",
+    "/workspace/new/source",
+    "/workspace/update.patch",
+    "/workspace/state-vocabulary.md"
+  ],
+  "method": {
+    "basis": "Static reading of supplied code contracts, intent comments, and test source/fixtures. No prior invariant suite or maintenance conclusion consulted.",
+    "tests_executed": false,
+    "tlc_executed": false,
+    "source_modified": false,
+    "external_browsing": false,
+    "other_agents_used": false,
+    "validation": "Not executed against either version. Version differences and suspected failures below are source-derived hypotheses, not validated results."
+  },
+  "notation": {
+    "state": "Unprimed variables are pre-state; primed are post-state of the stated action. I/O/L/S are incoming voters, outgoing voters, active learners, staged learners. A is raft's acknowledged applied cursor; actual configuration application is a distinct event. P=pendingConfIndex, Q=uncommittedSize, M=normalized runtime quota (Config zero means unlimited).",
+    "predicates": "Clauses within each candidate are conjunctive under their stated scopes. 'Leads to' means eventual response under explicitly stated fairness, not a fixed time bound.",
+    "leave": "For well-formed supported messages, Leave(c) means a V2 zero change except optional Context: Transition=Auto and Changes empty. A V1 zero change converts to a one-operation V2 change, so is not Leave.",
+    "cursor": "Cursor(B)=last(B.CommittedEntries).Index if nonempty, else nonzero B.Snapshot.Metadata.Index, else 0.",
+    "cost": "cost(es)=sum(len(e.Data)); encoded entry size, Index and Term are not payload cost. Assume arithmetic without uint64 overflow.",
+    "retained": "Retained entries belong to the current log identity. Retransmission is not another append; legitimate truncation/replacement is recorded. No global one-configuration-entry rule is imposed on bootstrap or historical logs.",
+    "observation": "Use actual pre/input/post observations and the source-backed history named per candidate. Monitors must not synthesize missed Advance crossings, conflate ApplyConfChange with Advance, or discard counterexamples by copying an implementation guard into an obligation.",
+    "environment": "Correct callers obey persistence and ordered application contracts. Node's documented deferred application after Advance is permitted, with completion ordered before later committed batches. Network may delay, drop, or duplicate messages. Liveness separately assumes eventual service/delivery as stated."
+  },
+  "scope_exclusions": [
+    "No generic Raft safety inventory: leader uniqueness, unrelated log matching, reads, storage contracts, and similar obligations are excluded.",
+    "README edits, diagnostics/string parsing, test plumbing, equivalent refactoring, and cosmetic test fixes yield no additional core protocol candidate.",
+    "Sorted campaign generation is checked for recipient preservation, not network order: the supplied vocabulary has a message multiset.",
+    "Exact Next=LastIndex is a probing strategy, not elevated into a universal requirement. Dormant empty bootstrap Next=Match=0 is permitted.",
+    "No mixed-version wire compatibility guarantee is inferred. Old/new interactions refer to changed behavior interacting with retained contracts and paths."
+  ],
+  "core_candidates": [
+    {
+      "id": "C01",
+      "title": "Configuration admission uses the semantic joint phase",
+      "kind": "transition safety and permitted behavior",
+      "support": "API contract and tests",
+      "scope": "Well-formed V1/V2 proposals at a healthy member leader, without a transfer or pending barrier, with sufficient quota; operations are otherwise valid.",
+      "predicate": [
+        "Let c=Decode(entry).AsV2(), J=(O nonempty), and PhaseOK=(J AND Leave(c)) OR (NOT J AND NOT Leave(c)). In a locally appended proposal batch, each unblocked configuration slot retains its original kind and payload iff PhaseOK; phase-refused slots become empty EntryNormal, do not change configuration, and do not reserve a new pending configuration index.",
+        "Empty Changes with JointImplicit or JointExplicit is an ENTER request: permit it in a nonempty stable configuration and refuse it in an already joint configuration. Absence of operations alone is not a sufficient leave predicate.",
+        "A context-only V2 leave remains legal in joint state. A V1 zero-ID operation remains a non-leave operation, even though its application is a membership no-op."
+      ],
+      "examples": [
+        {
+          "pre": "I={1,2}, O={1}, P=A=4; quota available.",
+          "action": "Propose V2{Transition:JointExplicit,Changes:[]}.",
+          "forbidden": "Append a configuration entry which later attempts to enter joint again and fails.",
+          "allowed_control": "Propose V2{Context:'manual'}; preserve its payload and leave when that committed entry is applied."
+        },
+        {
+          "pre": "I={1}, O=empty, P=A=4.",
+          "action": "Propose V2{Transition:JointImplicit,Changes:[]}.",
+          "forbidden": "Convert a valid request to enter {1}&&{1} to a normal no-op solely because Changes is empty.",
+          "allowed_control": "Retain it; application enters {1}&&{1}, AutoLeave=true. A true context-only leave in the same stable state is instead refused as a normal no-op."
+        }
+      ],
+      "evidence": [
+        {
+          "path": "new/source/raftpb/raft.proto",
+          "lines": "79-96, 141-168",
+          "kind": "API contract",
+          "basis": "Explicit modes use joint consensus; leaving uses only optional Context."
+        },
+        {
+          "path": "new/source/raftpb/confchange.go",
+          "lines": "49-57, 71-106",
+          "kind": "semantic contracts",
+          "basis": "V1 conversion and EnterJoint/LeaveJoint distinguish transition mode from an empty operation list."
+        },
+        {
+          "path": "new/source/confchange/testdata/joint_safety.txt",
+          "lines": "24-37",
+          "kind": "test",
+          "basis": "Entering an unchanged joint configuration is allowed; entering twice is rejected."
+        },
+        {
+          "path": "new/source/testdata/confchange_v2_add_single_explicit.txt",
+          "lines": "100-111, 165-181",
+          "kind": "test",
+          "basis": "Nested membership changes and leave outside joint become normal no-ops."
+        },
+        {
+          "path": "new/source/raft.go",
+          "lines": "1036-1078",
+          "kind": "implementation caveat",
+          "basis": "New wantsLeaveJoint uses len(Changes)==0, weaker than LeaveJoint()."
+        }
+      ],
+      "observability": {
+        "state": [
+          "role",
+          "I/O/AutoLeave",
+          "A/P",
+          "log kinds/payloads",
+          "quota",
+          "transfer target"
+        ],
+        "history": [
+          "input and appended proposal slots",
+          "decoded Transition/Changes/Context",
+          "local refusal reason"
+        ]
+      },
+      "old_new_interaction": "Old admission checked only pending status. New phase checks add rejection behavior but appear to misclassify empty explicit/implicit enter requests. Preserve the API meaning rather than redefining leave to fit the guard.",
+      "limits": [
+        "Malformed protobufs, unknown enums, and independently invalid membership operations are outside scope."
+      ]
+    },
+    {
+      "id": "C02",
+      "title": "Pending configuration serialization includes automatic exits",
+      "kind": "state and transition safety",
+      "support": "contract and updated tests",
+      "scope": "Leader-local configuration appends after bootstrap, including external requests and automatic exits.",
+      "predicate": [
+        "In leader states, P >= max({index(e): retained configuration entry e has index(e)>A} union {0}). P may conservatively exceed the exact last configuration index and need not point at a configuration entry.",
+        "A local configuration append at k requires no earlier retained configuration entry with index>A at the instant of append. Within a proposal batch, once one slot reserves a configuration index, later configuration slots become empty normal entries.",
+        "Appending an automatic exit at k must make P cover k; the updated test specifies P=k. Neither a manual nor automatic competing exit may be appended while k>A. Refused slots do not replace that reservation.",
+        "For one joint episode in an unchanged retained log, at most one exit entry may be retained before actual ApplyConfChange of that exit closes the episode. Advance passing the exit index does not by itself close the episode or authorize another exit. Retransmission of the same entry, or replacement after legitimate truncation, is not a second exit."
+      ],
+      "examples": [
+        {
+          "pre": "Entry 4 installed a joint AutoLeave configuration; A becomes 4; automatic exit is appended at 5.",
+          "action": "Before applying 5, propose another leave or Advance a batch that does not apply 5.",
+          "forbidden": "Leave P=4 or append a second exit at 6 while 5 is pending.",
+          "allowed_control": "Set P=5; a competing request becomes empty EntryNormal. Ordinary proposals remain possible."
+        },
+        {
+          "pre": "New leader inherits a normal entry 8, with A=7.",
+          "action": "Initialize its pending barrier.",
+          "forbidden": "Demand that P identify an actual configuration entry, excluding a conservative normal-tail barrier.",
+          "allowed_control": "P=8 is allowed until the inherited prefix is acknowledged; equality with the last actual configuration entry is not required."
+        },
+        {
+          "pre": "AutoLeave episode entered at 4; exit 5 already retained; caller has not yet applied exit 5.",
+          "action": "Use deferred application and Advance the Ready through exit 5 before calling ApplyConfChange(5).",
+          "forbidden": "Append a second exit 6 just because A crossed P=5 while the installed configuration still has AutoLeave=true.",
+          "allowed_control": "Keep the existing exit as the episode's sole exit, then close the episode when ApplyConfChange(5) actually runs."
+        }
+      ],
+      "evidence": [
+        {
+          "path": "new/source/raft.go",
+          "lines": "282-288, 747-752",
+          "kind": "intent",
+          "basis": "One unapplied configuration; new leaders conservatively reserve the inherited tail."
+        },
+        {
+          "path": "new/source/node.go",
+          "lines": "135-139",
+          "kind": "API contract",
+          "basis": "Leader must be certain no previous configuration remains unapplied."
+        },
+        {
+          "path": "new/source/raft_test.go",
+          "lines": "3055-3101",
+          "kind": "tests",
+          "basis": "Second configuration becomes no-op without changing P; inherited normal entries may set P."
+        },
+        {
+          "path": "new/source/rawnode_test.go",
+          "lines": "319-330",
+          "kind": "updated test",
+          "basis": "Automatic exit advances pendingConfIndex to the new unstable entry."
+        },
+        {
+          "path": "old/source/raft.go",
+          "lines": "563-582",
+          "kind": "old implementation",
+          "basis": "Successful automatic append did not update pendingConfIndex."
+        }
+      ],
+      "observability": {
+        "state": [
+          "role",
+          "A/P",
+          "retained log indices/kinds",
+          "configuration"
+        ],
+        "history": [
+          "append origin/index",
+          "retained-log identity and truncation",
+          "bootstrap versus leader append"
+        ]
+      },
+      "old_new_interaction": "Groups external serialization, auto-exit reservation, and duplicate suppression. New tracking addresses an old gap that checking only external proposals would miss.",
+      "limits": [
+        "Do not impose a blanket one-configuration-entry rule on bootstrap or inherited historical logs."
+      ]
+    },
+    {
+      "id": "C03",
+      "title": "Automatic exit remains an obligation across application and leadership changes",
+      "kind": "bounded response and conditional liveness",
+      "support": "API promise and tests; alternate schedules derived from API",
+      "scope": "An applied or restored joint AutoLeave configuration; a healthy stable leader remains a voter.",
+      "predicate": [
+        "Track joint episode e and its establishing entry/snapshot index j, actual configuration installation, and inherited-tail barrier b recorded at current leader election (or j when this leader enters e). These are history facts, not aliases of mutable P.",
+        "Eligible(e) means current installed configuration is e with O nonempty and AutoLeave, local node is leader in I union O, A>=max(j,b), and no retained exit for e exists and no earlier retained configuration with index>A remains. A retained exit still discharges the proposal obligation when A passed its index but its actual application is deferred.",
+        "On the normal path, Advance(B) acknowledging the entering entry after ApplyConfChange installed it must append one semantic leave in the same call when no exit is already retained. It must not fail/panic because of quota. New behavior uses empty Data and zero payload cost.",
+        "More generally, with a stable eligible leader, fair local ticks/Ready service, and eventual completion of deferred application, Eligible(e) leads to an exit proposal even when A already reached j before AutoLeave was installed or before leadership began. With available joint quorums, eventual message delivery, persistence, and ordered application, that exit is eventually applied and O becomes empty and AutoLeave=false. No new client proposal is assumed.",
+        "Automatic exit generation requires an installed joint AutoLeave configuration and a leader. Explicit/manual joint configurations are not auto-left. HardState.Commit beyond j alone is not acknowledgement of applying j."
+      ],
+      "examples": [
+        {
+          "pre": "I={1,2},O={1},AutoLeave=true restored at 4; new leader starts with A=lastIndex=4, b=4.",
+          "action": "Commit and Advance its new leader normal entry 5, then continue fair processing.",
+          "forbidden": "Remain joint forever because oldApplied<P never held (4<4 is false), despite healthy joint quorum.",
+          "allowed_control": "Generate, replicate, and apply an exit without another client proposal."
+        },
+        {
+          "pre": "Node Ready contains entering entry 4 while active configuration is still stable.",
+          "action": "Advance the batch, then finish deferred ApplyConfChange before applying any later committed batch.",
+          "forbidden": "Install AutoLeave after the only cursor crossing and permanently strand the exit obligation.",
+          "allowed_control": "Remember or rediscover the obligation and eventually append one exit. Retaining stable membership until actual ApplyConfChange is allowed."
+        },
+        {
+          "pre": "Entering AutoLeave entry 4 installed; A=3; Q>M after an allowed oversized proposal.",
+          "action": "Advance through 4.",
+          "forbidden": "Reject, panic, or indefinitely postpone the exit because of quota.",
+          "allowed_control": "Append the zero-payload exit. In an otherwise identical AutoLeave=false episode, append no automatic exit."
+        }
+      ],
+      "evidence": [
+        {
+          "path": "new/source/raftpb/raft.proto",
+          "lines": "85-96, 111-113",
+          "kind": "API contract",
+          "basis": "Implicit transitions/AutoLeave promise automatic exit when safe; explicit transitions wait for the application."
+        },
+        {
+          "path": "new/source/node.go",
+          "lines": "159-175",
+          "kind": "API contract",
+          "basis": "Advance can precede completion of application; ApplyConfChange is a separate action."
+        },
+        {
+          "path": "new/source/raft.go",
+          "lines": "556-583, 747-755",
+          "kind": "intent and mechanism",
+          "basis": "Advance initiates auto-exit; new strict cursor crossing interacts with inherited barrier."
+        },
+        {
+          "path": "new/source/testdata/confchange_v2_add_double_auto.txt",
+          "lines": "34-62, 121-138",
+          "kind": "test",
+          "basis": "Processing entering change creates next-Ready exit, then joint replication applies it."
+        },
+        {
+          "path": "new/source/rawnode_test.go",
+          "lines": "333-368",
+          "kind": "test",
+          "basis": "Implicit exit versus explicit context-bearing manual exit."
+        }
+      ],
+      "observability": {
+        "state": [
+          "role/term",
+          "configuration",
+          "A",
+          "P for diagnosis only",
+          "log",
+          "Ready status",
+          "quota",
+          "fatal status"
+        ],
+        "history": [
+          "joint episode/index",
+          "actual ApplyConfChange completion",
+          "leader inherited-tail barrier",
+          "retained exit identity",
+          "fairness obligations",
+          "exit application completion, distinct from A crossing its index"
+        ]
+      },
+      "old_new_interaction": "Old level-triggered attempts could be quota-blocked or duplicated. New zero-cost behavior is permitted and required on the normal path; its edge-triggered guard cannot narrow the API promise. Leadership/deferred-application examples are static risks, not executed counterexamples.",
+      "limits": [
+        "No unconditional progress under permanent partition, absent quorum, stopped callers, endless leadership changes, or storage unavailability.",
+        "Do not make oldApplied<P a liveness antecedent: that would exclude missed obligations."
+      ]
+    },
+    {
+      "id": "C04",
+      "title": "Configuration effects occur at application and preserve the requested transition",
+      "kind": "transition safety and permitted behavior",
+      "support": "API contract and tests",
+      "scope": "Accepted simple, explicit/implicit joint, and exit entries; valid bootstrap/restoration are separate installation events.",
+      "predicate": [
+        "Propose, append, commit, Ready capture, and Advance alone do not apply a configuration entry. Outside bootstrap/restoration, membership changes through ordered ApplyConfChange for committed entries.",
+        "V1 single operations and one-operation V2 Auto use the simple result with O empty and AutoLeave=false. Non-leave V2 Auto with multiple operations, or JointImplicit/JointExplicit, sets O to former I, applies operations to incoming membership, and sets AutoLeave iff Auto or JointImplicit.",
+        "Applying a semantic leave to (I,O,L,S,AutoLeave), O nonempty, yields (I,empty,L union S,empty,false). Staged learners become IsLearner=true; outgoing-only voters with no remaining membership lose Progress; retained peers preserve their replication evidence.",
+        "Entering application, exit generation/commitment, and exit application are distinct. Both voter halves remain active until exit application. Returned ConfState equals installed membership/AutoLeave and is the configuration recorded in subsequent snapshots."
+      ],
+      "examples": [
+        {
+          "pre": "Committed entry 4 adds node 2 with JointExplicit; current configuration {1}; A=3.",
+          "action": "Deliver Ready, ApplyConfChange(4), then Advance.",
+          "forbidden": "Activate new members on proposal, skip joint state, or automatically exit Explicit.",
+          "allowed_control": "Before Apply retain {1}; at Apply install {1,2}&&{1},AutoLeave=false; remain until committed manual leave is applied."
+        },
+        {
+          "pre": "I={2},O={1},L={3},S={1},AutoLeave=true; exit 5 is appended.",
+          "action": "Commit 5, then later apply it.",
+          "forbidden": "Demote 1 to active learner and drop outgoing quorum merely on append/commit.",
+          "allowed_control": "Keep 1 an outgoing voter until Apply(5); then I={2},L={1,3},O=S=empty,AutoLeave=false."
+        }
+      ],
+      "evidence": [
+        {
+          "path": "new/source/raftpb/raft.proto",
+          "lines": "145-168",
+          "kind": "API contract",
+          "basis": "Configuration active on application, not append; two-stage joint transition."
+        },
+        {
+          "path": "new/source/rawnode_test.go",
+          "lines": "118-218, 285-330, 354-369",
+          "kind": "tests",
+          "basis": "V1/V2 simple equivalence, transition modes, bytes/context preservation, staged learners, returned ConfState."
+        },
+        {
+          "path": "new/source/confchange/confchange.go",
+          "lines": "36-122, 194-230",
+          "kind": "contracts",
+          "basis": "Entering preserves outgoing majority; leaving activates staged learners."
+        },
+        {
+          "path": "new/source/node.go",
+          "lines": "169-175",
+          "kind": "API contract",
+          "basis": "Apply committed configurations and record returned state in snapshots."
+        }
+      ],
+      "observability": {
+        "state": [
+          "configuration",
+          "log kinds/payloads/indices",
+          "committed/A",
+          "Ready committed entries",
+          "Progress",
+          "snapshot ConfState"
+        ],
+        "history": [
+          "ordered configuration application events separately from Advance",
+          "entry-to-returned-ConfState association"
+        ]
+      },
+      "old_new_interaction": "Constrains the new application-time probes and Advance-time append. Allows installed joint membership ahead of A; forbids treating exit generation as final membership.",
+      "limits": [
+        "Actual application may finish before or after Advance under Node's contract. Configuration effects need not wait for A."
+      ]
+    },
+    {
+      "id": "C05",
+      "title": "Ready acknowledgement covers only its captured batch and preserves new work",
+      "kind": "transition safety and publication response",
+      "support": "Ready contract and updated tests",
+      "scope": "Configuration application emits replication messages or Advance creates an automatic exit while an earlier Ready is being handled.",
+      "predicate": [
+        "For valid Advance(B), A'=Cursor(B) when Cursor(B)>0, else A'=A. B.HardState.Commit is not a substitute for the committed page cursor.",
+        "Advance(B) acknowledges persistence only of the matching entries/snapshot captured in B and saved by the caller. An exit created during Advance and absent from B.Entries remains outstanding for persistence/publication in later Ready.",
+        "Messages created after B acceptance by ApplyConfChange, and entries created during Advance(B), cannot be consumed as part of B merely because they are in live state. Still-valid effects remain queued until captured in a subsequent accepted Ready, and fresh entries remain outstanding until correctly stabilized. A queued new message or unstabilized new entry makes RawNode.HasReady true; Node may withhold the next delivery until the current Advance.",
+        "Under fair Ready service without intervening supersession, the next accepted batch carries these effects. Captured entry/HardState persistence precedes publication of dependent messages under the caller contract."
+      ],
+      "examples": [
+        {
+          "pre": "Accepted B ends at entering entry 4; ApplyConfChange generates probes to new nodes.",
+          "action": "Advance(B) appends exit 5.",
+          "forbidden": "Mark 5 stable using B, discard new probes, or report no work until another client request.",
+          "allowed_control": "Keep exit 5 unstable and probes pending; expose both in following Ready while caller storage still ends at 4."
+        },
+        {
+          "pre": "B.HardState.Commit=8, but paginated B.CommittedEntries ends at 4.",
+          "action": "Advance(B).",
+          "forbidden": "Set A=8, clear a barrier at 6, or consume entries 5-8 as if delivered.",
+          "allowed_control": "Set A=4 and retain remaining application work/barriers."
+        }
+      ],
+      "evidence": [
+        {
+          "path": "new/source/node.go",
+          "lines": "49-89, 112-122, 152-167",
+          "kind": "API contract",
+          "basis": "Point-in-time Ready, captured entries/page, distinct acknowledgement."
+        },
+        {
+          "path": "new/source/rawnode.go",
+          "lines": "119-176",
+          "kind": "API and mechanism",
+          "basis": "AcceptReady clears captured messages; HasReady observes new work; Advance takes captured batch."
+        },
+        {
+          "path": "new/source/raft.go",
+          "lines": "559-562, 586-592",
+          "kind": "intent",
+          "basis": "Respect pagination; stabilize only captured entries/snapshot."
+        },
+        {
+          "path": "new/source/rawnode_test.go",
+          "lines": "285-288, 319-330",
+          "kind": "updated test",
+          "basis": "Auto-exit not yet in storage belongs to next Ready."
+        },
+        {
+          "path": "new/source/testdata/confchange_v2_add_double_auto.txt",
+          "lines": "34-62",
+          "kind": "test",
+          "basis": "Second Ready carries exit and probes."
+        },
+        {
+          "path": "new/source/node_test.go",
+          "lines": "908-945",
+          "kind": "test",
+          "basis": "Committed entries delivered in separate pages."
+        }
+      ],
+      "observability": {
+        "state": [
+          "Ready fields/statuses",
+          "A",
+          "log",
+          "outgoing messages",
+          "accepted HardState/SoftState"
+        ],
+        "history": [
+          "batch identity",
+          "entry identity by term/index and stable watermark",
+          "message generation/acceptance identity or multiset difference",
+          "HasReady observation"
+        ]
+      },
+      "old_new_interaction": "New side effects must survive the existing Ready lifecycle. Permits extra Ready batches and P beyond stable storage; rejects lost effects and over-acknowledgement.",
+      "limits": [
+        "Assumes correct caller persistence/application ordering. Monitor message IDs do not impose message order."
+      ]
+    },
+    {
+      "id": "C06",
+      "title": "Zero payload bypasses quota without disabling ordinary backpressure",
+      "kind": "transition safety and acceptance",
+      "support": "explicit new intent and test; retained ordinary contract",
+      "scope": "Local append admission after role, transfer, and phase checks; finite normalized quota M.",
+      "predicate": [
+        "cost(es)=sum(len(e.Data)); entry type tags, Index, Term, and protobuf framing are not payload charges.",
+        "Otherwise admissible zero-payload batches are quota-accepted for every Q, including Q>M, and leave Q unchanged. Includes an empty normal entry and internally generated nil-Data V2 exit.",
+        "For ordinary positive-payload batch cost s, quotaAccept iff Q=0 OR Q+s<=M. Acceptance gives Q'=Q+s; quota rejection leaves log and Q unchanged and returns ErrProposalDropped at the local proposal interface.",
+        "The first oversized batch is allowed when Q=0; Q<=M is not a state invariant. This does not settle positive-size configuration exemption (U01)."
+      ],
+      "examples": [
+        {
+          "pre": "M=8,Q=16 after an allowed oversized first proposal.",
+          "action": "Append an otherwise admissible empty normal entry or nil-Data automatic exit.",
+          "forbidden": "Reject because Q>M, charge framing bytes, or panic during auto-exit.",
+          "allowed_control": "Accept with Q=16. An ordinary one-byte entry in the same state is dropped."
+        },
+        {
+          "pre": "M=8,Q=0.",
+          "action": "Propose an ordinary 16-byte batch.",
+          "forbidden": "Enforce an absolute maximum by rejecting the first oversized batch.",
+          "allowed_control": "Accept with Q=16; reject a subsequent positive payload until quota is released."
+        }
+      ],
+      "evidence": [
+        {
+          "path": "new/source/raft.go",
+          "lines": "163-167, 634-654, 1604-1627",
+          "kind": "API and intent",
+          "basis": "Uncommitted quota and explicit zero-payload exception."
+        },
+        {
+          "path": "new/source/util.go",
+          "lines": "158-162",
+          "kind": "contract",
+          "basis": "PayloadSize=len(Data), independent of Index/Term."
+        },
+        {
+          "path": "new/source/raft_test.go",
+          "lines": "179-190, 219-268",
+          "kind": "updated test",
+          "basis": "Positive limit, first oversized batch, empty entry accepted while over limit."
+        },
+        {
+          "path": "old/source/raft.go",
+          "lines": "1562-1580",
+          "kind": "old implementation",
+          "basis": "Quota guard lacked s>0 exemption."
+        }
+      ],
+      "observability": {
+        "state": [
+          "Q/M",
+          "proposal kinds/payload lengths",
+          "log",
+          "API result"
+        ],
+        "history": [
+          "post-filter proposal batch",
+          "local append admission decision"
+        ]
+      },
+      "old_new_interaction": "Allows intended new empty-entry behavior and old oversized-first behavior, while forbidding an overbroad relaxation admitting arbitrary positive payload.",
+      "limits": [
+        "Config limit 0 is normalized to unlimited. Numeric overflow is outside this abstraction."
+      ]
+    },
+    {
+      "id": "C07",
+      "title": "Advance releases its own payload accounting, with saturation",
+      "kind": "transition safety",
+      "support": "accounting contract and tests",
+      "scope": "Moved reduceUncommittedSize call in Advance, automatic appends, and inherited entries.",
+      "predicate": [
+        "For Advance(B) without a reset, let d=cost(B.CommittedEntries), s=cost(entries freshly appended during that Advance). Q'=max(0,Q-d)+s: reduction precedes charging fresh appends. In the new automatic-exit path s=0.",
+        "Do not subtract B.Entries, all entries up to live committed, a HardState.Commit delta, or a snapshot index. Release the acknowledged committed page only.",
+        "Saturate at zero because inherited/previous-term entries may not have been charged. Do not equate Q to all bytes currently above committed: the estimate resets and releases wait for Advance."
+      ],
+      "examples": [
+        {
+          "pre": "Q=12; B.Entries has 20 payload bytes, B.CommittedEntries has 4; HardState.Commit exceeds that page.",
+          "action": "Advance(B), generating a zero-cost exit.",
+          "forbidden": "Set Q=0 by subtracting all persisted/committed bytes, or forget release and leave Q=12.",
+          "allowed_control": "Set Q=8."
+        },
+        {
+          "pre": "Q=3; acknowledged committed page includes 7 inherited payload bytes.",
+          "action": "Advance the page.",
+          "forbidden": "Unsigned underflow or a negative debt that blocks later proposals.",
+          "allowed_control": "Saturate Q=0; next positive proposal can use the empty-quota exception."
+        }
+      ],
+      "evidence": [
+        {
+          "path": "new/source/raft.go",
+          "lines": "289-292, 629-630, 556-557, 1630-1649",
+          "kind": "intent and mechanism",
+          "basis": "Estimate resets; Advance releases committed entries; reduction saturates."
+        },
+        {
+          "path": "new/source/raft_test.go",
+          "lines": "224-232, 260-269",
+          "kind": "tests",
+          "basis": "Releasing committed payload returns accounting to zero."
+        },
+        {
+          "path": "old/source/raft.go",
+          "lines": "556-593",
+          "kind": "old interaction",
+          "basis": "Reduction followed potential auto-append."
+        }
+      ],
+      "observability": {
+        "state": [
+          "Q",
+          "Ready committed-entry payloads",
+          "Ready entries",
+          "log"
+        ],
+        "history": [
+          "fresh append events within Advance",
+          "reset/leadership events"
+        ]
+      },
+      "old_new_interaction": "Localizes accounting to the reordered operation, without inventing an exact global tail-size equality."
+    },
+    {
+      "id": "C08",
+      "title": "A new peer is probed without inventing replication knowledge",
+      "kind": "initialization and transition safety",
+      "support": "intent and updated fixtures",
+      "scope": "New Progress allocation by configuration addition/restore; distinct from becomeLeader reset.",
+      "predicate": [
+        "At creation of a genuinely new peer p with local last index N, before optional sending: Match=0, mode=Probe, inflights empty, RecentActive=true, IsLearner reflects active learner membership, not staged LearnersNext.",
+        "For N>0, a valid initial probe cursor is 1<=Next<=N+1. For N=0, dormant Next=0 is allowed by new fixtures, as is former Next=1. Neither implies acknowledged storage; no underflowed predecessor may be published.",
+        "An idempotent addition or promotion/demotion of an existing peer preserves Match and replication evidence instead of reinitializing it. Optional sends may subsequently change Next/mode/paused/inflights under send contracts.",
+        "At the API boundary a fresh peer still has Match=0 and cannot be Replicate without acknowledgement. A snapshot send may have moved it to Snapshot, or its first probe may already have paused it."
+      ],
+      "examples": [
+        {
+          "pre": "Leader lastIndex=4 adds absent peer 2.",
+          "action": "Install Progress and send initial probe.",
+          "forbidden": "Set Match=4 or Replicate merely because Next is near the tail.",
+          "allowed_control": "Match=0,Next=4,Probe,active=true; send entry 4 with predecessor 3 and await acknowledgement."
+        },
+        {
+          "pre": "Empty bootstrap log N=0.",
+          "action": "Create peer 1 without transmitting replication.",
+          "forbidden": "Treat Next=0 as a matched entry or publish MsgApp predecessor 2^64-1.",
+          "allowed_control": "Dormant Probe{Match:0,Next:0}; leadership reset later establishes a usable cursor."
+        },
+        {
+          "pre": "Tracked voter 2 has Match=7,Next=9.",
+          "action": "Apply duplicate add of voter 2.",
+          "forbidden": "Reset Match=0 as if newly allocated.",
+          "allowed_control": "Retain replication evidence; further sends are permitted."
+        }
+      ],
+      "evidence": [
+        {
+          "path": "new/source/confchange/confchange.go",
+          "lines": "178-191, 207-273",
+          "kind": "intent and mechanism",
+          "basis": "Preserve existing progress; new peers may be empty and are active probes."
+        },
+        {
+          "path": "new/source/confchange/testdata/joint_idempotency.txt",
+          "lines": "1-23",
+          "kind": "updated test",
+          "basis": "Idempotency and cursor values including zero."
+        },
+        {
+          "path": "new/source/confchange/testdata/zero.txt",
+          "lines": "1-6",
+          "kind": "updated test",
+          "basis": "Empty bootstrap permits Next=0."
+        },
+        {
+          "path": "new/source/tracker/progress.go",
+          "lines": "23-43, 141-154",
+          "kind": "contract",
+          "basis": "Progress is leader knowledge; success updates Match."
+        },
+        {
+          "path": "old/source/confchange/confchange.go",
+          "lines": "249-274",
+          "kind": "old implementation",
+          "basis": "New cursor LastIndex+1 rather than LastIndex."
+        }
+      ],
+      "observability": {
+        "state": [
+          "lastIndex",
+          "configuration",
+          "Progress Match/Next/mode/inflights/active/IsLearner",
+          "outgoing messages"
+        ],
+        "history": [
+          "whether peer previously existed",
+          "allocation observation or boundary messages"
+        ]
+      },
+      "old_new_interaction": "Permits the intended cursor shift, including bootstrap zero, without weakening acknowledged Match. Exact Next=lastIndex is a strategy/fixture value, not a universal requirement.",
+      "limits": [
+        "Use the post-send boundary clause when allocation is not separately observable."
+      ]
+    },
+    {
+      "id": "C09",
+      "title": "Adding a peer starts catch-up without a fresh client proposal",
+      "kind": "immediate response and conditional progress",
+      "support": "new intent and tests; snapshot-only boundary is derived",
+      "scope": "ApplyConfChange on a leader remaining a voter, adding absent p with lastIndex>0; storage supplies a usable log probe or suitable nonempty snapshot; fresh peer is unpaused.",
+      "predicate": [
+        "By completion of the configuration switch, p has an outgoing valid catch-up attempt: MsgApp probe containing retained entries, or MsgSnap when needed history is compacted and a suitable snapshot is available. The obligation does not depend on committed advancing.",
+        "A probe uses a locally known predecessor index/term and contiguous retained entries. It does not certify that the recipient matches the predecessor; rejection by an empty peer is allowed.",
+        "With eventual delivery/replies, local processing, available storage, and stable leadership/membership, that empty peer eventually catches up via log or snapshot. Rejection of the initial probe cannot permanently strand it.",
+        "No immediate acknowledgement or empty-message broadcast to caught-up peers is required. Temporary snapshot unavailability and paused existing peers permit deferral."
+      ],
+      "examples": [
+        {
+          "pre": "Entry 4 available, committed=4; leader adds empty peer 2; maybeCommit cannot advance.",
+          "action": "ApplyConfChange returns before Tick/new proposal.",
+          "forbidden": "Emit no probe because committed did not advance.",
+          "allowed_control": "MsgApp to 2 contains entry 4 and predecessor 3. A rejection with hint 0 can trigger later snapshot catch-up."
+        },
+        {
+          "pre": "New peer needs compacted history; no entries at its cursor, but a covering nonempty snapshot is available.",
+          "action": "Install peer while remaining leader.",
+          "forbidden": "Suppress the initial attempt solely because the entry slice is empty, despite an available snapshot path.",
+          "allowed_control": "Emit a snapshot. Temporary snapshot unavailability instead permits retry after availability returns."
+        }
+      ],
+      "evidence": [
+        {
+          "path": "new/source/raft.go",
+          "lines": "1556-1566",
+          "kind": "intent",
+          "basis": "New replicas should not wait for heartbeat or another proposal."
+        },
+        {
+          "path": "new/source/confchange/confchange.go",
+          "lines": "257-272",
+          "kind": "intent",
+          "basis": "New peer generally has no log and likely needs snapshot; mark active."
+        },
+        {
+          "path": "new/source/testdata/confchange_v2_add_double_auto.txt",
+          "lines": "53-110",
+          "kind": "test",
+          "basis": "Immediate probes, rejection, snapshot, and catch-up."
+        },
+        {
+          "path": "new/source/testdata/confchange_v1_add_single.txt",
+          "lines": "32-97",
+          "kind": "test",
+          "basis": "V1 new-peer catch-up."
+        },
+        {
+          "path": "new/source/raft.go",
+          "lines": "440-504",
+          "kind": "implementation caveat",
+          "basis": "Snapshot fallback exists, but sendIfEmpty=false returns on empty entries before storage-error fallback."
+        }
+      ],
+      "observability": {
+        "state": [
+          "role",
+          "configuration before/after",
+          "log/firstIndex",
+          "committed",
+          "Progress",
+          "outgoing messages",
+          "snapshot/storage availability"
+        ],
+        "history": [
+          "peer-add action and emitted messages",
+          "absence of intervening Tick/proposal",
+          "fairness for eventual catch-up"
+        ]
+      },
+      "old_new_interaction": "Old switch sent only on commit advancement; new code adds immediate entry probes. Snapshot-only clause follows stated catch-up intent rather than copying the empty-entry guard.",
+      "limits": [
+        "Snapshot-only immediacy has no direct supplied test. Its reachability through permitted public schedules requires later validation; no executed failure is claimed."
+      ]
+    },
+    {
+      "id": "C10",
+      "title": "Reconfiguration uses the installed quorum and communicates enabled commits",
+      "kind": "transition safety and response",
+      "support": "source contracts and tests",
+      "scope": "Commit decisions in and after changed switchToConfig, including joint additions and removed-leader tail completion.",
+      "predicate": [
+        "For installed C, q(C) is the largest index acknowledged through Match by a strict majority of I and, if O nonempty, a strict majority of O. Learners and absent nodes add no vote; the leader is not an implicit extra voter.",
+        "On a surviving-voter leader switch: if q(C)>committed and term(q(C))=currentTerm, committed'=q(C), otherwise committed'=committed. Enlarging membership never uncommits the existing prefix even when q(C) becomes smaller.",
+        "When the switch advances committed, each non-self unpaused peer for which a log append can be formed gets a newly emitted MsgApp with Commit=committed', even with no entries. Paused/snapshot-needed peers retain ordinary send constraints.",
+        "Later commit advancement for retained pre-change entries uses current C even if a removed node temporarily retains Leader role. The joint exit itself needs both voter halves until it is applied."
+      ],
+      "examples": [
+        {
+          "pre": "I changes {1,2}->{1}; current-term command 6 follows committed removal; only 1 has Match>=6.",
+          "action": "Apply removal on leader 1.",
+          "forbidden": "Leave 6 uncommitted until an unrelated response despite sufficient new quorum.",
+          "allowed_control": "Commit 6 immediately; notify eligible remaining peers, if any."
+        },
+        {
+          "pre": "Removed leader 1 remains Leader; installed I={2,3}; command 6 above committed.",
+          "action": "Only node 2 acknowledges 6.",
+          "forbidden": "Count removed 1 and commit 6.",
+          "allowed_control": "Wait for 3, then finish retained command under {2,3}."
+        },
+        {
+          "pre": "Joint I={1,2,3},O={1}; only 1 acknowledges exit 5.",
+          "action": "Consider commitment.",
+          "forbidden": "Commit exit using old singleton alone.",
+          "allowed_control": "Wait for incoming majority too; already committed entering entry 4 stays committed."
+        }
+      ],
+      "evidence": [
+        {
+          "path": "new/source/raft.go",
+          "lines": "595-601, 1556-1559",
+          "kind": "contract and changed path",
+          "basis": "Recompute and broadcast newly enabled commits."
+        },
+        {
+          "path": "new/source/quorum/joint.go",
+          "lines": "46-55",
+          "kind": "contract",
+          "basis": "Joint committed index satisfies both constituent majorities."
+        },
+        {
+          "path": "new/source/raft_test.go",
+          "lines": "3310-3368",
+          "kind": "test",
+          "basis": "Removal enables pending ordinary command commitment."
+        },
+        {
+          "path": "new/source/testdata/confchange_v1_remove_leader.txt",
+          "lines": "69-125, 127-187",
+          "kind": "new test",
+          "basis": "Removed leader must not count itself; remaining voters complete tail."
+        },
+        {
+          "path": "new/source/rawnode_test.go",
+          "lines": "365-368",
+          "kind": "test comment",
+          "basis": "Exit cannot commit without joint quorum."
+        }
+      ],
+      "observability": {
+        "state": [
+          "I/O/L",
+          "Match",
+          "committed",
+          "log terms/currentTerm",
+          "role",
+          "outgoing messages",
+          "paused state"
+        ],
+        "history": [
+          "configuration switch and newly generated messages",
+          "tail acknowledgement events"
+        ]
+      },
+      "old_new_interaction": "Preserves commit-on-shrink alongside new no-commit probes. Requiring an enlarged present quorum to justify every old commit would be too strong; counting a removed leader would be too weak."
+    },
+    {
+      "id": "C11",
+      "title": "Leadership transfer follows voter membership through staged demotion",
+      "kind": "transition safety",
+      "support": "explicit intent and new test",
+      "scope": "Active transfer during configuration switch on a leader that remains a voter; subsequent transfer requests and TimeoutNow generation.",
+      "predicate": [
+        "Let V'=I' union O'. If old target t!=0 and t is absent from V', the switch must clear transferTarget even when Progress[t] remains as a learner.",
+        "If t remains a voter only in O' and is staged in LearnersNext, that stage alone cannot cancel the transfer. Without an independent timeout/completion/replacement, preserve t until it ceases to be a voter.",
+        "After cancellation, do not generate new MsgTimeoutNow for t as the old transfer target. A fresh transfer request to an active learner is ignored. Cancellation removes the transfer-specific block on otherwise valid proposals."
+      ],
+      "examples": [
+        {
+          "pre": "Leader 1 transfers to 3; joint I={1,2},O={1,2,3},S={3}.",
+          "action": "Apply leave, making 3 an active learner with retained Progress.",
+          "forbidden": "Keep transferTarget=3 because Progress[3] exists, continuing to block ordinary proposals.",
+          "allowed_control": "Clear target on final demotion; otherwise valid proposals are no longer transfer-blocked."
+        },
+        {
+          "pre": "Same target 3 while entering that joint configuration.",
+          "action": "Install staged demotion, before leave.",
+          "forbidden": "Cancel solely because 3 is absent from incoming voters.",
+          "allowed_control": "Preserve target while 3 still votes in O; later final demotion cancels."
+        }
+      ],
+      "evidence": [
+        {
+          "path": "new/source/raft.go",
+          "lines": "1568-1571, 1239-1268",
+          "kind": "intent and mechanism",
+          "basis": "Abort removed/demoted target; ignore learner transfers."
+        },
+        {
+          "path": "new/source/raft_test.go",
+          "lines": "3598-3647",
+          "kind": "tests",
+          "basis": "Removal and final demotion cancel transfer."
+        },
+        {
+          "path": "new/source/confchange/confchange.go",
+          "lines": "194-230, 105-120",
+          "kind": "contract",
+          "basis": "Staged learner remains outgoing voter until leave."
+        },
+        {
+          "path": "old/source/raft.go",
+          "lines": "1526-1529",
+          "kind": "old implementation",
+          "basis": "Progress membership check misses retained learner."
+        }
+      ],
+      "observability": {
+        "state": [
+          "I/O/L/S",
+          "role",
+          "Progress.IsLearner",
+          "outgoing messages",
+          "proposal result"
+        ],
+        "history": [
+          "transferTarget: additional source-backed state at raft.go:279-281",
+          "newly generated versus already in-flight TimeoutNow"
+        ]
+      },
+      "old_new_interaction": "New voter-union check rejects stale transfer to retained learner without overrejecting outgoing voters staged for demotion.",
+      "limits": [
+        "No retroactive invalidation of already emitted TimeoutNow messages. Local leader removal is separately scoped in C14."
+      ]
+    },
+    {
+      "id": "C12",
+      "title": "A tail snapshot acknowledgement immediately restores replication mode",
+      "kind": "transition response",
+      "support": "retained regression test moved into interaction harness",
+      "scope": "Leader peer Progress has snapshot s=lastIndex=committed, Match<s; a fresh successful current-term MsgAppResp acknowledges s, with no concurrent append.",
+      "predicate": [
+        "From Snapshot, or Probe paused after successful ReportSnapshot, that acknowledgement yields Match'=s, Next'=s+1, mode'=Replicate, PendingSnapshot'=0, no probe pause.",
+        "Emit MsgApp conveying Commit=s to the recovered peer without requiring another log entry. This empty append is allowed and is not another configuration proposal.",
+        "ReportSnapshot(success) alone is transport status, not matched-log evidence: it may leave Probe awaiting MsgAppResp and cannot fabricate Match=s. A duplicate successful response after recovery must not move Match/mode backward."
+      ],
+      "examples": [
+        {
+          "pre": "Tail/commit=11; peer 3 is Snapshot{Match:0,Next:11,PendingSnapshot:11}.",
+          "action": "Receive successful AppResp(11) from 3.",
+          "forbidden": "Remain Snapshot/Probe until a new client command, or omit commit notification.",
+          "allowed_control": "Replicate{Match:11,Next:12,PendingSnapshot:0}; emit empty MsgApp predecessor=11,Commit=11."
+        },
+        {
+          "pre": "Same pending snapshot, but only transport reports successful delivery.",
+          "action": "ReportSnapshot(success).",
+          "forbidden": "Treat delivery as matched-log acknowledgement and set Match=11.",
+          "allowed_control": "Probe with Next=12,Match=0 while waiting for actual AppResp. Later receipt triggers recovery."
+        }
+      ],
+      "evidence": [
+        {
+          "path": "old/source/raft_snap_test.go",
+          "lines": "114-232",
+          "kind": "old regression test",
+          "basis": "Tail snapshot must reach Replicate without another committed entry."
+        },
+        {
+          "path": "new/source/testdata/snapshot_succeed_via_app_resp.txt",
+          "lines": "1-5, 102-137",
+          "kind": "replacement test",
+          "basis": "AppResp yields Replicate and commit notification."
+        },
+        {
+          "path": "new/source/raft.go",
+          "lines": "1138-1173, 1210-1231",
+          "kind": "intent and mechanism",
+          "basis": "Snapshot goes via Probe to Replicate; transport status waits for remote acknowledgement."
+        }
+      ],
+      "observability": {
+        "state": [
+          "role/term",
+          "lastIndex/committed",
+          "Progress mode/Match/Next/paused",
+          "message type/term/index/reject",
+          "outgoing messages"
+        ],
+        "history": [
+          "PendingSnapshot: additional source-backed Progress field",
+          "remote acknowledgement versus transport-status event"
+        ]
+      },
+      "old_new_interaction": "Predates patch and is retained in new test form. Changed initial probing must still reach the same recovered state.",
+      "limits": [
+        "Fresh acknowledgement premise matters; no repeated commit-notification requirement on every duplicate."
+      ]
+    },
+    {
+      "id": "C13",
+      "title": "Campaign and voting respect observer-local configuration during promotion lag",
+      "kind": "transition safety and permitted response",
+      "support": "new regression trace and existing intent",
+      "scope": "Sorted campaign generation and a promoted voter that still locally believes it is a learner.",
+      "predicate": [
+        "For a campaign needing remote votes, newly generated request recipient multiset is exactly one per member of candidate I union O except self. Active learners absent from that union are not solicited/counted. Sorting changes order, not membership.",
+        "On a valid higher-term MsgVote with CheckQuorum lease suppression disabled and up-to-date candidate log, a locally marked learner must grant the vote: higher-term processing clears an old vote, response uses request term without rejection, and the receiver records the candidate vote. Local learner status is not a veto.",
+        "The candidate counts that response when sender belongs to its own installed voter configuration, even if sender lacks the promotion entry. Conversely, a locally active learner cannot initiate its own campaign; normal eligibility/log/vote rules remain."
+      ],
+      "examples": [
+        {
+          "pre": "1 and 2 applied promotion of 3 into {1,2,3}; 3 still has local I={1,2},L={3}. 1 unavailable; 2 log newer.",
+          "action": "2 campaigns in term 2 and requests 3's vote without lease suppression.",
+          "forbidden": "3 rejects solely as learner, or 2 refuses to count it because 3 locally considers itself a learner.",
+          "allowed_control": "3 votes for 2; candidate counts {2,3} and later catches 3 up."
+        },
+        {
+          "pre": "Candidate 1 still has I={1,2},L={3}.",
+          "action": "Generate campaign requests.",
+          "forbidden": "Solicit/count 3 merely because Progress[3] exists.",
+          "allowed_control": "Solicit voter 2 only. Locally active learner 3 also ignores its own Campaign until promoted."
+        }
+      ],
+      "evidence": [
+        {
+          "path": "new/source/testdata/campaign_learner_must_vote.txt",
+          "lines": "1-6, 30-95",
+          "kind": "test and intent",
+          "basis": "Lagging learner must vote for candidate with promoted configuration."
+        },
+        {
+          "path": "new/source/raft.go",
+          "lines": "797-818, 907-919, 932-979",
+          "kind": "changed generation and existing intent",
+          "basis": "Iterate voter union; learners may vote but cannot campaign."
+        },
+        {
+          "path": "old/source/raft_test.go",
+          "lines": "383-440",
+          "kind": "existing test",
+          "basis": "Learner voting predates sorted loop."
+        }
+      ],
+      "observability": {
+        "state": [
+          "per-node configuration",
+          "role/term/vote/leader",
+          "log term/index",
+          "Progress.IsLearner",
+          "outgoing votes"
+        ],
+        "history": [
+          "candidate config at generation/counting",
+          "promotion application histories",
+          "CheckQuorum/lease setting"
+        ]
+      },
+      "old_new_interaction": "Allows divergent local configurations and learner responses while detecting a sorted-loop regression that uses all Progress peers. No ascending delivery order is required."
+    },
+    {
+      "id": "C14",
+      "title": "A removed leader cannot accept new work or obstruct replacement forever",
+      "kind": "transition safety and conditional liveness",
+      "support": "safety tested; progress intent explicitly identified as unfixed",
+      "scope": "Applied final membership excludes leader from all voters and learners; current voters remain healthy and connected.",
+      "predicate": [
+        "After removal is installed locally, new local MsgProp cannot append entries. Drop/error behavior at the appropriate API boundary is allowed. Entries accepted before removal may still complete under the new quorum (C10).",
+        "For stable final configuration excluding n, if a current quorum has applied it, ticks/caller/network processing are fair, and no re-addition occurs, RemovedLeader(n) leads to role(n)!=Leader OR cessation of n's continuing leader-maintenance messages that suppress current voters' elections.",
+        "Do not require synchronous role!=Leader in the exact ApplyConfChange post-state, a prescribed term change, successor, or immediate TimeoutNow. Transient removed leadership completing old work is allowed; indefinite heartbeat suppression is forbidden."
+      ],
+      "examples": [
+        {
+          "pre": "1 installed its removal, voters={2,3}, but transiently retains Leader role.",
+          "action": "Propose new 'baz' while old accepted 'bar' remains.",
+          "forbidden": "Append baz or count 1 to commit bar.",
+          "allowed_control": "Drop baz; complete bar only after the new quorum acknowledges it."
+        },
+        {
+          "pre": "All current voters {2,3} applied removal of 1; pending work settled; fair storage/ticks/network continue.",
+          "action": "Continue indefinitely.",
+          "forbidden": "1 drops all proposals yet heartbeats current voters forever, suppressing replacement.",
+          "allowed_control": "1 relinquishes or stops suppressing elections. A bounded interval of finishing already accepted work is permitted."
+        }
+      ],
+      "evidence": [
+        {
+          "path": "new/source/raft.go",
+          "lines": "1025-1029",
+          "kind": "intent",
+          "basis": "Removed leader drops new proposals."
+        },
+        {
+          "path": "new/source/testdata/confchange_v1_remove_leader.txt",
+          "lines": "69-187, 189-224",
+          "kind": "test and defect commentary",
+          "basis": "Valid old-tail completion; ongoing heartbeat suppression called stuck and step-down/handover requested."
+        },
+        {
+          "path": "new/source/raft.go",
+          "lines": "1537-1547",
+          "kind": "intent/TODO",
+          "basis": "Describes stepping down but returns without doing so."
+        }
+      ],
+      "observability": {
+        "state": [
+          "role",
+          "configuration",
+          "log",
+          "outgoing heartbeats/appends",
+          "proposal inputs/results",
+          "liveness status"
+        ],
+        "history": [
+          "removal application at former leader/current quorum",
+          "pre-removal accepted entries",
+          "fair continued processing"
+        ]
+      },
+      "old_new_interaction": "New trace documents an existing defect as well as allowed transient behavior. Recorded stuck behavior is not promoted into a desired requirement merely because both versions implement it.",
+      "limits": [
+        "Liveness is intent-backed, not a passing test assertion. Exact handover latency/method is unresolved in U03."
+      ]
+    },
+    {
+      "id": "C15",
+      "title": "Simple changes report validation failure without partial installation",
+      "kind": "helper return contract",
+      "support": "directly changed validation path and tests",
+      "scope": "confchange.Changer.Simple, including removed redundant block that swallowed an error; distinct from raft.ApplyConfChange panic policy.",
+      "predicate": [
+        "Compatible(C,prs) means every ID in I union O union L union S has Progress; S subset O and staged peers IsLearner=false; L disjoint from I union O and active learners IsLearner=true; O empty implies S empty and AutoLeave=false.",
+        "Successful Simple(ops) returns nonempty I', empty O', Compatible(C',prs'), and |I symmetric_difference I'|<=1. Failure of input compatibility, operation validity, nonempty-voter, nonjoint-input, or result compatibility validation returns a non-nil error; never (zero configuration, zero progress, nil error).",
+        "Original tracker configuration and Progress membership/learner fields remain unchanged by the helper on success and failure; caller installs only a successful result. Zero-ID operations are ignored. First voter addition to a valid empty bootstrap input is allowed."
+      ],
+      "examples": [
+        {
+          "pre": "Original compatible voters {1,2}.",
+          "action": "Simple(remove 1, remove 2).",
+          "forbidden": "Return nil error with zero voters or partly mutate original tracker before failing.",
+          "allowed_control": "Return error and preserve original. Removing only 2 succeeds with returned voters {1}."
+        },
+        {
+          "pre": "A compatibility check fails, such as a configured voter missing Progress.",
+          "action": "Call Simple or encounter failing result validation.",
+          "forbidden": "Swallow validation error and return successful zero-valued result.",
+          "allowed_control": "Return validation error. By contrast adding voter 1 to valid empty bootstrap input succeeds; zero-ID operations are ignored."
+        }
+      ],
+      "evidence": [
+        {
+          "path": "new/source/confchange/confchange.go",
+          "lines": "27-30, 125-174, 276-359",
+          "kind": "helper contracts",
+          "basis": "Validate before active effects; Simple constraints, compatibility, copy and return semantics."
+        },
+        {
+          "path": "new/source/confchange/testdata/simple_safety.txt",
+          "lines": "1-64",
+          "kind": "tests",
+          "basis": "No zero voters/multi-voter simple replacement; valid one-voter changes."
+        },
+        {
+          "path": "new/source/confchange/testdata/zero.txt",
+          "lines": "1-6",
+          "kind": "test",
+          "basis": "Zero IDs ignored."
+        },
+        {
+          "path": "old/source/confchange/confchange.go",
+          "lines": "142-151",
+          "kind": "removed implementation",
+          "basis": "Redundant post-validation branch returned nil error on validation failure."
+        }
+      ],
+      "observability": {
+        "state": [
+          "configuration",
+          "Progress membership/IsLearner",
+          "helper result/error"
+        ],
+        "history": [
+          "original tracker before call",
+          "operation list",
+          "validation-error observation if modeled"
+        ]
+      },
+      "old_new_interaction": "Localizes removed validation block to return/atomicity contract. No assumption that old swallowed-error path is reachable from valid ordinary operations; later validation must establish that.",
+      "limits": [
+        "Nil versus empty map representation omitted from abstract semantics. This uses supplied code contracts, not a prior invariant suite."
+      ]
+    }
+  ],
+  "unresolved": [
+    {
+      "id": "U01",
+      "title": "Are all positive-size configuration proposals exempt from quota?",
+      "status": "conflicting evidence; not a core requirement",
+      "tentative_predicate": "Otherwise admissible configuration-only append with cost s>0 is quota-accepted for every Q/M, and its payload is charged.",
+      "forbidden_example": "M=8,Q=8; phase-valid V1 add or context-bearing manual V2 leave is dropped solely for payload size.",
+      "allowed_control": "Accept that configuration proposal while still dropping ordinary positive data. Zero-size exits are already required by C06.",
+      "evidence": [
+        {
+          "path": "new/source/raft.go",
+          "lines": "1604-1627",
+          "kind": "conflict",
+          "basis": "New comment: 'Configuration changes are never refused.' Actual guard only checks size; surrounding explanation singles out zero payload."
+        },
+        {
+          "path": "new/source/node.go",
+          "lines": "135-139",
+          "kind": "API limitation",
+          "basis": "Configuration proposals may be dropped with or without error."
+        },
+        {
+          "path": "new/source/raft_test.go",
+          "lines": "179-268",
+          "kind": "test limitation",
+          "basis": "Tests ordinary oversized/empty entries, not positive-size configuration exemption."
+        }
+      ],
+      "observability": [
+        "entry kind/payload/phase eligibility",
+        "Q/M",
+        "local quota decision/result"
+      ],
+      "reason_unresolved": "Broad comment may express unimplemented intent or overstate the automatic zero-cost exception. Do not resolve it by copying the guard."
+    },
+    {
+      "id": "U02",
+      "title": "Must a quota-dropped configuration roll back its pending reservation?",
+      "status": "plausible stronger atomicity rule; insufficient explicit evidence",
+      "tentative_predicate": "A configuration proposal dropped solely by appendEntry quota refusal leaves P'=P and log unchanged.",
+      "forbidden_example": "P=A=lastIndex=8,Q=M; proposed entry 9 is dropped but P becomes 9, so immediate retries are no-opped even after quota drains.",
+      "allowed_control": "After quota drains, the dropped change can be retried; legitimate inherited-tail barriers remain allowed.",
+      "evidence": [
+        {
+          "path": "new/source/raft.go",
+          "lines": "1052-1077",
+          "kind": "risk",
+          "basis": "P written before append can fail."
+        },
+        {
+          "path": "old/source/raft.go",
+          "lines": "1028-1042",
+          "kind": "old interaction",
+          "basis": "Same ordering predates update."
+        },
+        {
+          "path": "new/source/raft.go",
+          "lines": "282-288, 747-752",
+          "kind": "contract limit",
+          "basis": "P is explicitly conservative."
+        }
+      ],
+      "observability": [
+        "P/A/lastIndex",
+        "quota refusal reason",
+        "proposed configuration index",
+        "retry history"
+      ],
+      "reason_unresolved": "A stranded automatic exit violates C03, but exact rollback on every rejected external proposal is stronger than the supplied pending-index contract."
+    },
+    {
+      "id": "U03",
+      "title": "Exact removal step-down latency and handover method",
+      "status": "policy unresolved beyond C14 eventual retirement",
+      "tentative_predicate": "ApplyConfChange removing local leader synchronously changes role to Follower in a higher term and sends TimeoutNow to remaining voter with greatest Match.",
+      "forbidden_example": "Removal returns with Leader role and no immediate TimeoutNow.",
+      "allowed_control": "Transient removed leader completes accepted tail under new quorum, then relinquishes without a prescribed successor.",
+      "evidence": [
+        {
+          "path": "new/source/raft.go",
+          "lines": "1537-1547",
+          "kind": "TODO",
+          "basis": "Suggests step-down and most caught-up follower handover."
+        },
+        {
+          "path": "new/source/testdata/confchange_v1_remove_leader.txt",
+          "lines": "69-187, 189-224",
+          "kind": "mixed evidence",
+          "basis": "Valid retained work completion, but indefinite suppression identified as defect."
+        }
+      ],
+      "observability": [
+        "configuration application event",
+        "role/term",
+        "Match",
+        "new TimeoutNow messages",
+        "retirement history"
+      ],
+      "reason_unresolved": "Preventing indefinite obstruction has intent support; exact synchronous boundary and successor algorithm are not established API guarantees."
+    }
+  ],
+  "core_candidate_count": 15
+}

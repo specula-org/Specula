@@ -1,0 +1,47 @@
+TLC2 Version 2.20 of Day Month 20?? (rev: ${git.shortRevision})
+Running breadth-first search Model-Checking with fp 40 and seed 3087084090840130189 with 1 worker on 96 cores with 1963MB heap and 64MB offheap memory [pid: 7382] (Linux 6.8.0-1044-azure amd64, Ubuntu 21.0.11 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /workspace/out/revised-spec/V03/Witnesses.tla
+Parsing file /workspace/out/revised-spec/V03/Checks.tla
+Parsing file /tmp/tlc-14015601369288825297/_TLCTrace.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/_TLCTrace.tla)
+Parsing file /workspace/out/revised-spec/V03/Maintenance.tla
+Parsing file /tmp/tlc-14015601369288825297/Json.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Json.tla)
+Parsing file /workspace/out/revised-spec/V03/base.tla
+Parsing file /tmp/tlc-14015601369288825297/Naturals.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Naturals.tla)
+Parsing file /tmp/tlc-14015601369288825297/Integers.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Integers.tla)
+Parsing file /tmp/tlc-14015601369288825297/Sequences.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Sequences.tla)
+Parsing file /tmp/tlc-14015601369288825297/FiniteSets.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/FiniteSets.tla)
+Parsing file /tmp/tlc-14015601369288825297/Bags.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Bags.tla)
+Parsing file /tmp/tlc-14015601369288825297/TLC.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/TLC.tla)
+Parsing file /workspace/out/revised-spec/V03/HistoricalV00.tla
+Parsing file /workspace/out/revised-spec/V03/HistoricalV01.tla
+Parsing file /workspace/out/revised-spec/V03/HistoricalV02.tla
+Parsing file /tmp/tlc-14015601369288825297/TLCExt.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/TLCExt.tla)
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module Bags
+Semantic processing of module base
+Semantic processing of module Maintenance
+Semantic processing of module Json
+Semantic processing of module HistoricalV00
+Semantic processing of module HistoricalV01
+Semantic processing of module HistoricalV02
+Semantic processing of module Checks
+Semantic processing of module TLCExt
+Semantic processing of module _TLCTrace
+Semantic processing of module Witnesses
+Linting of module base
+Linting of module Maintenance
+Linting of module Json
+Linting of module HistoricalV00
+Linting of module HistoricalV01
+Linting of module HistoricalV02
+Linting of module Checks
+Linting of module TLCExt
+Linting of module _TLCTrace
+Linting of module Witnesses
+Starting... (2026-09-22 20:21:14)
+Error: The next state action WitnessNext cannot be a constant.
+Finished in 57s at (2026-09-22 20:22:11)

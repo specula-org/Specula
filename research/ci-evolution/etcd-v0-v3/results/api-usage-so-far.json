@@ -1,0 +1,48 @@
+{
+  "as_of": "2026-09-22T19:42:51.382303+00:00",
+  "dollar_cost": "not reported by CLI receipts; do not infer tokens are dollars",
+  "calls": [
+    {
+      "receipt": "logs/model-V01-attempt-2.receipt.json",
+      "model": "gpt-6-astra",
+      "seconds": 1624.4002308454365,
+      "usage": [
+        {
+          "input_tokens": 3546137,
+          "cached_input_tokens": 3396096,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 49179,
+          "reasoning_output_tokens": 12817
+        }
+      ]
+    },
+    {
+      "receipt": "logs/model-V02-attempt-1.receipt.json",
+      "model": "gpt-6-astra",
+      "seconds": 1284.3134567253292,
+      "usage": [
+        {
+          "input_tokens": 3069074,
+          "cached_input_tokens": 2907648,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 35343,
+          "reasoning_output_tokens": 10425
+        }
+      ]
+    },
+    {
+      "receipt": "logs/model-V03-attempt-1.receipt.json",
+      "model": "gpt-6-astra",
+      "seconds": 2161.4924042951316,
+      "usage": [
+        {
+          "input_tokens": 6714854,
+          "cached_input_tokens": 6519040,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 64042,
+          "reasoning_output_tokens": 26145
+        }
+      ]
+    }
+  ]
+}

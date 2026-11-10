@@ -1,0 +1,31 @@
+{
+  "name": "entering-deferred-v02",
+  "version": "V02",
+  "module": "C03Progress",
+  "config": "deferred-v02.cfg",
+  "seconds_limit": 300,
+  "elapsed_seconds": 68.11104440689087,
+  "exit_code": 13,
+  "command": [
+    "timeout",
+    "--signal=TERM",
+    "--kill-after=5s",
+    "300s",
+    "java",
+    "-Xmx4g",
+    "-Dtlc2.TLC.progressInterval=10",
+    "-cp",
+    "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+    "tlc2.TLC",
+    "-workers",
+    "1",
+    "-nowarning",
+    "-dumpTrace",
+    "json",
+    "counterexample.json",
+    "-config",
+    "deferred-v02.cfg",
+    "C03Progress"
+  ],
+  "trace": "/workspace/out/joint-autoleave-prefix-inputs.ndjson"
+}

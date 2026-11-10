@@ -1,0 +1,3497 @@
+{
+  "protocol": "action-validation/v1",
+  "version": "V02",
+  "claim": "Bounded source/model action validation, not a proof of safety or distributed reachability.",
+  "run_root": "out/cases/v02-final-02",
+  "runs": {
+    "baseline-code": {
+      "route": "code-to-model",
+      "spec": "new/spec",
+      "total": 239,
+      "counts": {
+        "match": 231,
+        "behavioral_mismatch": 8
+      },
+      "comparison": "out/cases/v02-final-02/baseline-code/comparison.json",
+      "duration_seconds": 3.5997494272887707
+    },
+    "baseline-model": {
+      "route": "model-to-code",
+      "spec": "new/spec",
+      "total": 103,
+      "counts": {
+        "match": 93,
+        "behavioral_mismatch": 10
+      },
+      "comparison": "out/cases/v02-final-02/baseline-model/comparison.json",
+      "duration_seconds": 2.547325123101473
+    },
+    "repaired-code": {
+      "route": "code-to-model",
+      "spec": "out/repaired-spec",
+      "total": 239,
+      "counts": {
+        "match": 239
+      },
+      "comparison": "out/cases/v02-final-02/repaired-code/comparison.json",
+      "duration_seconds": 3.5503697227686644
+    },
+    "repaired-model": {
+      "route": "model-to-code",
+      "spec": "out/repaired-spec",
+      "total": 103,
+      "counts": {
+        "match": 103
+      },
+      "comparison": "out/cases/v02-final-02/repaired-model/comparison.json",
+      "duration_seconds": 2.5477139838039875
+    },
+    "old-version-subset": {
+      "route": "code-to-model",
+      "spec": "old/spec",
+      "total": 21,
+      "counts": {
+        "match": 21
+      },
+      "comparison": "out/cases/v02-final-02/old-version-subset/comparison.json",
+      "duration_seconds": 3.09943822119385
+    },
+    "invalid-inputs": {
+      "route": "code-to-model",
+      "spec": "out/repaired-spec",
+      "total": 6,
+      "counts": {
+        "behavioral_mismatch": 6
+      },
+      "comparison": "out/cases/v02-final-02/invalid-inputs/comparison.json",
+      "duration_seconds": 1.2809002334252
+    }
+  },
+  "coverage": {
+    "advance_node": {
+      "baseline-code": {
+        "match": 10,
+        "behavioral_mismatch": 1
+      },
+      "baseline-model": {
+        "match": 6,
+        "behavioral_mismatch": 2
+      },
+      "repaired-code": {
+        "match": 11
+      },
+      "repaired-model": {
+        "match": 8
+      },
+      "old-version-subset": {
+        "match": 2
+      }
+    },
+    "advance_raw": {
+      "baseline-code": {
+        "match": 10,
+        "behavioral_mismatch": 2
+      },
+      "baseline-model": {
+        "match": 6,
+        "behavioral_mismatch": 3
+      },
+      "repaired-code": {
+        "match": 12
+      },
+      "repaired-model": {
+        "match": 9
+      },
+      "old-version-subset": {
+        "match": 2
+      }
+    },
+    "apply": {
+      "baseline-code": {
+        "match": 25,
+        "behavioral_mismatch": 4
+      },
+      "baseline-model": {
+        "match": 10,
+        "behavioral_mismatch": 4
+      },
+      "repaired-code": {
+        "match": 29
+      },
+      "repaired-model": {
+        "match": 14
+      }
+    },
+    "checkquorum": {
+      "baseline-code": {
+        "match": 12
+      },
+      "baseline-model": {
+        "match": 3
+      },
+      "repaired-code": {
+        "match": 12
+      },
+      "repaired-model": {
+        "match": 3
+      }
+    },
+    "hup": {
+      "baseline-code": {
+        "match": 14
+      },
+      "baseline-model": {
+        "match": 8
+      },
+      "repaired-code": {
+        "match": 14
+      },
+      "repaired-model": {
+        "match": 8
+      },
+      "old-version-subset": {
+        "match": 2
+      }
+    },
+    "proposal": {
+      "baseline-code": {
+        "match": 9
+      },
+      "baseline-model": {
+        "match": 6
+      },
+      "repaired-code": {
+        "match": 9
+      },
+      "repaired-model": {
+        "match": 6
+      }
+    },
+    "read": {
+      "baseline-code": {
+        "match": 8
+      },
+      "baseline-model": {
+        "match": 2
+      },
+      "repaired-code": {
+        "match": 8
+      },
+      "repaired-model": {
+        "match": 2
+      }
+    },
+    "readack": {
+      "baseline-code": {
+        "match": 2
+      },
+      "baseline-model": {
+        "match": 1
+      },
+      "repaired-code": {
+        "match": 2
+      },
+      "repaired-model": {
+        "match": 1
+      }
+    },
+    "ready_node": {
+      "baseline-code": {
+        "match": 6
+      },
+      "baseline-model": {
+        "match": 1
+      },
+      "repaired-code": {
+        "match": 6
+      },
+      "repaired-model": {
+        "match": 1
+      },
+      "old-version-subset": {
+        "match": 1
+      }
+    },
+    "ready_raw": {
+      "baseline-code": {
+        "match": 6,
+        "behavioral_mismatch": 1
+      },
+      "baseline-model": {
+        "match": 1,
+        "behavioral_mismatch": 1
+      },
+      "repaired-code": {
+        "match": 7
+      },
+      "repaired-model": {
+        "match": 2
+      },
+      "old-version-subset": {
+        "match": 1
+      }
+    },
+    "receive": {
+      "baseline-code": {
+        "match": 10
+      },
+      "baseline-model": {
+        "match": 3
+      },
+      "repaired-code": {
+        "match": 10
+      },
+      "repaired-model": {
+        "match": 3
+      }
+    },
+    "restart": {
+      "baseline-code": {
+        "match": 10
+      },
+      "baseline-model": {
+        "match": 4
+      },
+      "repaired-code": {
+        "match": 10
+      },
+      "repaired-model": {
+        "match": 4
+      },
+      "old-version-subset": {
+        "match": 5
+      },
+      "invalid-inputs": {
+        "behavioral_mismatch": 3
+      }
+    },
+    "restore": {
+      "baseline-code": {
+        "match": 13
+      },
+      "baseline-model": {
+        "match": 6
+      },
+      "repaired-code": {
+        "match": 13
+      },
+      "repaired-model": {
+        "match": 6
+      },
+      "old-version-subset": {
+        "match": 5
+      },
+      "invalid-inputs": {
+        "behavioral_mismatch": 3
+      }
+    },
+    "vote": {
+      "baseline-code": {
+        "match": 96
+      },
+      "baseline-model": {
+        "match": 36
+      },
+      "repaired-code": {
+        "match": 96
+      },
+      "repaired-model": {
+        "match": 36
+      },
+      "old-version-subset": {
+        "match": 3
+      }
+    }
+  },
+  "totals": {
+    "code_derived": 239,
+    "model_derived": 103,
+    "supported_pairs_per_model": 342,
+    "baseline_matches": 324,
+    "baseline_mismatches": 18,
+    "repaired_matches": 342,
+    "repaired_mismatches": 0,
+    "final_supported_adapter_errors": 0,
+    "old_version_subset_matches": 21,
+    "invalid_inputs_separate": 6
+  },
+  "repairs": [
+    {
+      "id": "R1",
+      "operator": "IsLeave",
+      "classification": "lost established behavior repair",
+      "change": "Require Auto transition as well as empty V2 changes. Empty explicit/implicit changes enter joint state; they do not leave it.",
+      "source": [
+        "new/source/raftpb/confchange.go:101",
+        "new/source/raft.go:1478",
+        "new/source/confchange/confchange.go:50"
+      ],
+      "established": "old/spec/base.tla:522",
+      "baseline_counts": {
+        "baseline-code": 4,
+        "baseline-model": 4
+      },
+      "remaining_supported_mismatches": 0
+    },
+    {
+      "id": "R2",
+      "operator": "AdvanceCore",
+      "classification": "lost established behavior repair",
+      "change": "Require captured applied cursor > 0 before auto-leave, preserving the source enclosing branch and its quota retry behavior.",
+      "source": [
+        "new/source/raft.go:561"
+      ],
+      "established": "old/spec/base.tla:1071",
+      "baseline_counts": {
+        "baseline-code": 2,
+        "baseline-model": 4
+      },
+      "remaining_supported_mismatches": 0
+    },
+    {
+      "id": "R3",
+      "operator": "ProtocolReady",
+      "classification": "too restrictive API model",
+      "change": "Allow public RawNode Ready even with no updates; Node delivery still requires updates. This also enables valid empty Ready/Advance preparation.",
+      "source": [
+        "new/source/rawnode.go:123",
+        "new/source/node.go:306"
+      ],
+      "established": null,
+      "baseline_counts": {
+        "baseline-code": 2,
+        "baseline-model": 2
+      },
+      "remaining_supported_mismatches": 0
+    }
+  ],
+  "mismatches": [
+    {
+      "id": "apply-simple-empty-explicit",
+      "action": "apply",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.return",
+          "left": {
+            "autoLeave": false,
+            "learners": [],
+            "learnersNext": [],
+            "outgoing": [
+              1,
+              2,
+              3
+            ],
+            "voters": [
+              1,
+              2,
+              3
+            ]
+          },
+          "right": null
+        },
+        {
+          "path": "$.state.config.outgoing",
+          "left": [
+            1,
+            2,
+            3
+          ],
+          "right": []
+        },
+        {
+          "path": "$.status",
+          "left": "ok",
+          "right": "panic"
+        }
+      ],
+      "run": "baseline-code",
+      "repair": "R1",
+      "classification": "too restrictive model behavior",
+      "evidence": "out/cases/v02-final-02/baseline-code/comparison.json"
+    },
+    {
+      "id": "apply-simple-empty-implicit",
+      "action": "apply",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.return",
+          "left": {
+            "autoLeave": true,
+            "learners": [],
+            "learnersNext": [],
+            "outgoing": [
+              1,
+              2,
+              3
+            ],
+            "voters": [
+              1,
+              2,
+              3
+            ]
+          },
+          "right": null
+        },
+        {
+          "path": "$.state.config.autoLeave",
+          "left": true,
+          "right": false
+        },
+        {
+          "path": "$.state.config.outgoing",
+          "left": [
+            1,
+            2,
+            3
+          ],
+          "right": []
+        },
+        {
+          "path": "$.status",
+          "left": "ok",
+          "right": "panic"
+        }
+      ],
+      "run": "baseline-code",
+      "repair": "R1",
+      "classification": "too restrictive model behavior",
+      "evidence": "out/cases/v02-final-02/baseline-code/comparison.json"
+    },
+    {
+      "id": "apply-joint-empty-explicit",
+      "action": "apply",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.return",
+          "left": null,
+          "right": {
+            "autoLeave": false,
+            "learners": [
+              3
+            ],
+            "learnersNext": [],
+            "outgoing": [],
+            "voters": [
+              1,
+              2
+            ]
+          }
+        },
+        {
+          "path": "$.state.config.autoLeave",
+          "left": true,
+          "right": false
+        },
+        {
+          "path": "$.state.config.learners",
+          "left": [],
+          "right": [
+            3
+          ]
+        },
+        {
+          "path": "$.state.config.learnersNext",
+          "left": [
+            3
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.config.outgoing",
+          "left": [
+            1,
+            2,
+            3
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.prs[2].learner",
+          "left": false,
+          "right": true
+        },
+        {
+          "path": "$.status",
+          "left": "panic",
+          "right": "ok"
+        }
+      ],
+      "run": "baseline-code",
+      "repair": "R1",
+      "classification": "extra model behavior",
+      "evidence": "out/cases/v02-final-02/baseline-code/comparison.json"
+    },
+    {
+      "id": "apply-joint-empty-implicit",
+      "action": "apply",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.return",
+          "left": null,
+          "right": {
+            "autoLeave": false,
+            "learners": [
+              3
+            ],
+            "learnersNext": [],
+            "outgoing": [],
+            "voters": [
+              1,
+              2
+            ]
+          }
+        },
+        {
+          "path": "$.state.config.autoLeave",
+          "left": true,
+          "right": false
+        },
+        {
+          "path": "$.state.config.learners",
+          "left": [],
+          "right": [
+            3
+          ]
+        },
+        {
+          "path": "$.state.config.learnersNext",
+          "left": [
+            3
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.config.outgoing",
+          "left": [
+            1,
+            2,
+            3
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.prs[2].learner",
+          "left": false,
+          "right": true
+        },
+        {
+          "path": "$.status",
+          "left": "panic",
+          "right": "ok"
+        }
+      ],
+      "run": "baseline-code",
+      "repair": "R1",
+      "classification": "extra model behavior",
+      "evidence": "out/cases/v02-final-02/baseline-code/comparison.json"
+    },
+    {
+      "id": "advance-raw-True-0-0-Leader-0",
+      "action": "advance_raw",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.last",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.log",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            }
+          ],
+          "right": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            },
+            {
+              "changes": [],
+              "encoded": 10,
+              "index": 3,
+              "kind": "V2",
+              "target": 0,
+              "term": 2,
+              "transition": "Auto",
+              "weight": 2
+            }
+          ]
+        },
+        {
+          "path": "$.state.prs[0].match",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.prs[0].next",
+          "left": 3,
+          "right": 4
+        },
+        {
+          "path": "$.state.quota",
+          "left": 0,
+          "right": 2
+        },
+        {
+          "path": "$.state.unstable",
+          "left": [],
+          "right": [
+            {
+              "changes": [],
+              "encoded": 10,
+              "index": 3,
+              "kind": "V2",
+              "target": 0,
+              "term": 2,
+              "transition": "Auto",
+              "weight": 2
+            }
+          ]
+        }
+      ],
+      "run": "baseline-code",
+      "repair": "R2",
+      "classification": "extra model behavior",
+      "evidence": "out/cases/v02-final-02/baseline-code/comparison.json"
+    },
+    {
+      "id": "advance-node-True-0-0-Leader-0",
+      "action": "advance_node",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.last",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.log",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            }
+          ],
+          "right": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            },
+            {
+              "changes": [],
+              "encoded": 10,
+              "index": 3,
+              "kind": "V2",
+              "target": 0,
+              "term": 2,
+              "transition": "Auto",
+              "weight": 2
+            }
+          ]
+        },
+        {
+          "path": "$.state.prs[0].match",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.prs[0].next",
+          "left": 3,
+          "right": 4
+        },
+        {
+          "path": "$.state.quota",
+          "left": 0,
+          "right": 2
+        },
+        {
+          "path": "$.state.unstable",
+          "left": [],
+          "right": [
+            {
+              "changes": [],
+              "encoded": 10,
+              "index": 3,
+              "kind": "V2",
+              "target": 0,
+              "term": 2,
+              "transition": "Auto",
+              "weight": 2
+            }
+          ]
+        }
+      ],
+      "run": "baseline-code",
+      "repair": "R2",
+      "classification": "extra model behavior",
+      "evidence": "out/cases/v02-final-02/baseline-code/comparison.json"
+    },
+    {
+      "id": "ready-v02-raw-empty",
+      "action": "ready_raw",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.return",
+          "left": {
+            "committed": [],
+            "cursor": 0,
+            "entries": [],
+            "hs": {
+              "commit": 0,
+              "term": 0,
+              "vote": 0
+            },
+            "messages": [],
+            "mustSync": false,
+            "reads": [],
+            "snapshot": {
+              "config": {
+                "autoLeave": false,
+                "learners": [],
+                "learnersNext": [],
+                "outgoing": [],
+                "voters": []
+              },
+              "index": 0,
+              "term": 0
+            },
+            "ss": null
+          },
+          "right": null
+        },
+        {
+          "path": "$.status",
+          "left": "ok",
+          "right": "disabled"
+        }
+      ],
+      "run": "baseline-code",
+      "repair": "R3",
+      "classification": "too restrictive model behavior (disabled relation)",
+      "evidence": "out/cases/v02-final-02/baseline-code/comparison.json"
+    },
+    {
+      "id": "advance-v02-raw-empty",
+      "action": "advance_raw",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.return",
+          "left": {
+            "batchAfter": {
+              "committed": [],
+              "cursor": 0,
+              "entries": [],
+              "hs": {
+                "commit": 0,
+                "term": 0,
+                "vote": 0
+              },
+              "messages": [],
+              "mustSync": false,
+              "reads": [],
+              "snapshot": {
+                "config": {
+                  "autoLeave": false,
+                  "learners": [],
+                  "learnersNext": [],
+                  "outgoing": [],
+                  "voters": []
+                },
+                "index": 0,
+                "term": 0
+              },
+              "ss": null
+            }
+          },
+          "right": null
+        },
+        {
+          "path": "$.status",
+          "left": "ok",
+          "right": "disabled"
+        }
+      ],
+      "run": "baseline-code",
+      "repair": "R3",
+      "classification": "too restrictive model behavior (disabled relation)",
+      "evidence": "out/cases/v02-final-02/baseline-code/comparison.json"
+    },
+    {
+      "id": "tlc-advance-raw-True-2-0-Leader-2-2-0",
+      "action": "advance_raw",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.last",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.log",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            }
+          ],
+          "right": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            },
+            {
+              "changes": [],
+              "encoded": 10,
+              "index": 3,
+              "kind": "V2",
+              "target": 0,
+              "term": 2,
+              "transition": "Auto",
+              "weight": 2
+            }
+          ]
+        },
+        {
+          "path": "$.state.prs[0].match",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.prs[0].next",
+          "left": 3,
+          "right": 4
+        },
+        {
+          "path": "$.state.quota",
+          "left": 0,
+          "right": 2
+        },
+        {
+          "path": "$.state.unstable",
+          "left": [],
+          "right": [
+            {
+              "changes": [],
+              "encoded": 10,
+              "index": 3,
+              "kind": "V2",
+              "target": 0,
+              "term": 2,
+              "transition": "Auto",
+              "weight": 2
+            }
+          ]
+        }
+      ],
+      "run": "baseline-model",
+      "repair": "R2",
+      "classification": "extra model behavior",
+      "evidence": "out/cases/v02-final-02/baseline-model/comparison.json"
+    },
+    {
+      "id": "tlc-advance-raw-True-2-0-Leader-2-2-16",
+      "action": "advance_raw",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.pending",
+          "left": 0,
+          "right": 3
+        }
+      ],
+      "run": "baseline-model",
+      "repair": "R2",
+      "classification": "extra model behavior",
+      "evidence": "out/cases/v02-final-02/baseline-model/comparison.json"
+    },
+    {
+      "id": "tlc-advance-v02-raw-empty",
+      "action": "advance_raw",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.return",
+          "left": {
+            "batchAfter": {
+              "committed": [],
+              "cursor": 0,
+              "entries": [],
+              "hs": {
+                "commit": 0,
+                "term": 0,
+                "vote": 0
+              },
+              "messages": [],
+              "mustSync": false,
+              "reads": [],
+              "snapshot": {
+                "config": {
+                  "autoLeave": false,
+                  "learners": [],
+                  "learnersNext": [],
+                  "outgoing": [],
+                  "voters": []
+                },
+                "index": 0,
+                "term": 0
+              },
+              "ss": null
+            }
+          },
+          "right": null
+        },
+        {
+          "path": "$.status",
+          "left": "ok",
+          "right": "disabled"
+        }
+      ],
+      "run": "baseline-model",
+      "repair": "R3",
+      "classification": "too restrictive model behavior (disabled relation)",
+      "evidence": "out/cases/v02-final-02/baseline-model/comparison.json"
+    },
+    {
+      "id": "tlc-apply-joint-demote-JointExplicit-0",
+      "action": "apply",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.return",
+          "left": null,
+          "right": {
+            "autoLeave": false,
+            "learners": [
+              3
+            ],
+            "learnersNext": [],
+            "outgoing": [],
+            "voters": [
+              1,
+              2
+            ]
+          }
+        },
+        {
+          "path": "$.state.config.autoLeave",
+          "left": true,
+          "right": false
+        },
+        {
+          "path": "$.state.config.learners",
+          "left": [],
+          "right": [
+            3
+          ]
+        },
+        {
+          "path": "$.state.config.learnersNext",
+          "left": [
+            3
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.config.outgoing",
+          "left": [
+            1,
+            2,
+            3
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.prs[2].learner",
+          "left": false,
+          "right": true
+        },
+        {
+          "path": "$.status",
+          "left": "panic",
+          "right": "ok"
+        }
+      ],
+      "run": "baseline-model",
+      "repair": "R1",
+      "classification": "extra model behavior",
+      "evidence": "out/cases/v02-final-02/baseline-model/comparison.json"
+    },
+    {
+      "id": "tlc-apply-joint-demote-JointImplicit-0",
+      "action": "apply",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.return",
+          "left": null,
+          "right": {
+            "autoLeave": false,
+            "learners": [
+              3
+            ],
+            "learnersNext": [],
+            "outgoing": [],
+            "voters": [
+              1,
+              2
+            ]
+          }
+        },
+        {
+          "path": "$.state.config.autoLeave",
+          "left": true,
+          "right": false
+        },
+        {
+          "path": "$.state.config.learners",
+          "left": [],
+          "right": [
+            3
+          ]
+        },
+        {
+          "path": "$.state.config.learnersNext",
+          "left": [
+            3
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.config.outgoing",
+          "left": [
+            1,
+            2,
+            3
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.prs[2].learner",
+          "left": false,
+          "right": true
+        },
+        {
+          "path": "$.status",
+          "left": "panic",
+          "right": "ok"
+        }
+      ],
+      "run": "baseline-model",
+      "repair": "R1",
+      "classification": "extra model behavior",
+      "evidence": "out/cases/v02-final-02/baseline-model/comparison.json"
+    },
+    {
+      "id": "tlc-apply-simple-demote-JointExplicit-0",
+      "action": "apply",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.return",
+          "left": {
+            "autoLeave": false,
+            "learners": [],
+            "learnersNext": [],
+            "outgoing": [
+              1,
+              2,
+              3
+            ],
+            "voters": [
+              1,
+              2,
+              3
+            ]
+          },
+          "right": null
+        },
+        {
+          "path": "$.state.config.outgoing",
+          "left": [
+            1,
+            2,
+            3
+          ],
+          "right": []
+        },
+        {
+          "path": "$.status",
+          "left": "ok",
+          "right": "panic"
+        }
+      ],
+      "run": "baseline-model",
+      "repair": "R1",
+      "classification": "too restrictive model behavior",
+      "evidence": "out/cases/v02-final-02/baseline-model/comparison.json"
+    },
+    {
+      "id": "tlc-apply-simple-demote-JointImplicit-0",
+      "action": "apply",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.return",
+          "left": {
+            "autoLeave": true,
+            "learners": [],
+            "learnersNext": [],
+            "outgoing": [
+              1,
+              2,
+              3
+            ],
+            "voters": [
+              1,
+              2,
+              3
+            ]
+          },
+          "right": null
+        },
+        {
+          "path": "$.state.config.autoLeave",
+          "left": true,
+          "right": false
+        },
+        {
+          "path": "$.state.config.outgoing",
+          "left": [
+            1,
+            2,
+            3
+          ],
+          "right": []
+        },
+        {
+          "path": "$.status",
+          "left": "ok",
+          "right": "panic"
+        }
+      ],
+      "run": "baseline-model",
+      "repair": "R1",
+      "classification": "too restrictive model behavior",
+      "evidence": "out/cases/v02-final-02/baseline-model/comparison.json"
+    },
+    {
+      "id": "tlc-ready-v02-raw-empty",
+      "action": "ready_raw",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.return",
+          "left": {
+            "committed": [],
+            "cursor": 0,
+            "entries": [],
+            "hs": {
+              "commit": 0,
+              "term": 0,
+              "vote": 0
+            },
+            "messages": [],
+            "mustSync": false,
+            "reads": [],
+            "snapshot": {
+              "config": {
+                "autoLeave": false,
+                "learners": [],
+                "learnersNext": [],
+                "outgoing": [],
+                "voters": []
+              },
+              "index": 0,
+              "term": 0
+            },
+            "ss": null
+          },
+          "right": null
+        },
+        {
+          "path": "$.status",
+          "left": "ok",
+          "right": "disabled"
+        }
+      ],
+      "run": "baseline-model",
+      "repair": "R3",
+      "classification": "too restrictive model behavior (disabled relation)",
+      "evidence": "out/cases/v02-final-02/baseline-model/comparison.json"
+    },
+    {
+      "id": "tlc-advance-node-True-2-0-Leader-2-2-0",
+      "action": "advance_node",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.last",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.log",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            }
+          ],
+          "right": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            },
+            {
+              "changes": [],
+              "encoded": 10,
+              "index": 3,
+              "kind": "V2",
+              "target": 0,
+              "term": 2,
+              "transition": "Auto",
+              "weight": 2
+            }
+          ]
+        },
+        {
+          "path": "$.state.prs[0].match",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.prs[0].next",
+          "left": 3,
+          "right": 4
+        },
+        {
+          "path": "$.state.quota",
+          "left": 0,
+          "right": 2
+        },
+        {
+          "path": "$.state.unstable",
+          "left": [],
+          "right": [
+            {
+              "changes": [],
+              "encoded": 10,
+              "index": 3,
+              "kind": "V2",
+              "target": 0,
+              "term": 2,
+              "transition": "Auto",
+              "weight": 2
+            }
+          ]
+        }
+      ],
+      "run": "baseline-model",
+      "repair": "R2",
+      "classification": "extra model behavior",
+      "evidence": "out/cases/v02-final-02/baseline-model/comparison.json"
+    },
+    {
+      "id": "tlc-advance-node-True-2-0-Leader-2-2-16",
+      "action": "advance_node",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.pending",
+          "left": 0,
+          "right": 3
+        }
+      ],
+      "run": "baseline-model",
+      "repair": "R2",
+      "classification": "extra model behavior",
+      "evidence": "out/cases/v02-final-02/baseline-model/comparison.json"
+    }
+  ],
+  "invalid_setup_results": [
+    {
+      "id": "invalid-restore-overlap",
+      "action": "restore",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.return",
+          "left": null,
+          "right": {
+            "restored": true
+          }
+        },
+        {
+          "path": "$.state.config.voters",
+          "left": [
+            2
+          ],
+          "right": [
+            1,
+            2
+          ]
+        },
+        {
+          "path": "$.state.prs[0].match",
+          "left": 0,
+          "right": 3
+        },
+        {
+          "path": "$.status",
+          "left": "panic",
+          "right": "ok"
+        }
+      ],
+      "classification": "invalid setup: malformed ConfState outside supported domain; not a real-system bug or behavior repair",
+      "evidence": "out/cases/v02-final-02/invalid-inputs/comparison.json"
+    },
+    {
+      "id": "invalid-restore-staged-without-joint",
+      "action": "restore",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.return",
+          "left": null,
+          "right": {
+            "restored": true
+          }
+        },
+        {
+          "path": "$.state.config.learners",
+          "left": [
+            3
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.config.learnersNext",
+          "left": [],
+          "right": [
+            3
+          ]
+        },
+        {
+          "path": "$.state.prs",
+          "left": [
+            {
+              "active": true,
+              "id": 1,
+              "inflight": [],
+              "learner": false,
+              "match": 0,
+              "mode": "Probe",
+              "next": 4,
+              "pending": 0,
+              "probe": false
+            },
+            {
+              "active": true,
+              "id": 2,
+              "inflight": [],
+              "learner": false,
+              "match": 0,
+              "mode": "Probe",
+              "next": 4,
+              "pending": 0,
+              "probe": false
+            },
+            {
+              "active": true,
+              "id": 3,
+              "inflight": [],
+              "learner": true,
+              "match": 0,
+              "mode": "Probe",
+              "next": 4,
+              "pending": 0,
+              "probe": false
+            }
+          ],
+          "right": [
+            {
+              "active": true,
+              "id": 1,
+              "inflight": [],
+              "learner": false,
+              "match": 3,
+              "mode": "Probe",
+              "next": 4,
+              "pending": 0,
+              "probe": false
+            },
+            {
+              "active": true,
+              "id": 2,
+              "inflight": [],
+              "learner": false,
+              "match": 0,
+              "mode": "Probe",
+              "next": 4,
+              "pending": 0,
+              "probe": false
+            }
+          ]
+        },
+        {
+          "path": "$.status",
+          "left": "panic",
+          "right": "ok"
+        }
+      ],
+      "classification": "invalid setup: malformed ConfState outside supported domain; not a real-system bug or behavior repair",
+      "evidence": "out/cases/v02-final-02/invalid-inputs/comparison.json"
+    },
+    {
+      "id": "invalid-restore-empty-incoming",
+      "action": "restore",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.return",
+          "left": null,
+          "right": {
+            "restored": true
+          }
+        },
+        {
+          "path": "$.state.config.learners",
+          "left": [],
+          "right": [
+            1
+          ]
+        },
+        {
+          "path": "$.state.config.outgoing",
+          "left": [],
+          "right": [
+            1,
+            2
+          ]
+        },
+        {
+          "path": "$.state.isLearner",
+          "left": false,
+          "right": true
+        },
+        {
+          "path": "$.state.prs",
+          "left": [],
+          "right": [
+            {
+              "active": true,
+              "id": 1,
+              "inflight": [],
+              "learner": true,
+              "match": 3,
+              "mode": "Probe",
+              "next": 4,
+              "pending": 0,
+              "probe": false
+            },
+            {
+              "active": true,
+              "id": 2,
+              "inflight": [],
+              "learner": false,
+              "match": 0,
+              "mode": "Probe",
+              "next": 4,
+              "pending": 0,
+              "probe": false
+            }
+          ]
+        },
+        {
+          "path": "$.status",
+          "left": "panic",
+          "right": "ok"
+        }
+      ],
+      "classification": "invalid setup: malformed ConfState outside supported domain; not a real-system bug or behavior repair",
+      "evidence": "out/cases/v02-final-02/invalid-inputs/comparison.json"
+    },
+    {
+      "id": "invalid-restart-overlap",
+      "action": "restart",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.applied",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.commit",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.config.learners",
+          "left": [],
+          "right": [
+            1
+          ]
+        },
+        {
+          "path": "$.state.config.voters",
+          "left": [
+            1,
+            2,
+            3
+          ],
+          "right": [
+            1,
+            2
+          ]
+        },
+        {
+          "path": "$.state.first",
+          "left": 1,
+          "right": 4
+        },
+        {
+          "path": "$.state.isLearner",
+          "left": false,
+          "right": true
+        },
+        {
+          "path": "$.state.last",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.log",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            }
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.prevHS.commit",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.prevHS.term",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.prs",
+          "left": [
+            {
+              "active": false,
+              "id": 1,
+              "inflight": [],
+              "learner": false,
+              "match": 2,
+              "mode": "Probe",
+              "next": 3,
+              "pending": 0,
+              "probe": false
+            },
+            {
+              "active": false,
+              "id": 2,
+              "inflight": [],
+              "learner": false,
+              "match": 0,
+              "mode": "Probe",
+              "next": 3,
+              "pending": 0,
+              "probe": false
+            },
+            {
+              "active": false,
+              "id": 3,
+              "inflight": [],
+              "learner": false,
+              "match": 0,
+              "mode": "Probe",
+              "next": 3,
+              "pending": 0,
+              "probe": false
+            }
+          ],
+          "right": [
+            {
+              "active": false,
+              "id": 1,
+              "inflight": [],
+              "learner": true,
+              "match": 3,
+              "mode": "Probe",
+              "next": 4,
+              "pending": 0,
+              "probe": false
+            },
+            {
+              "active": false,
+              "id": 2,
+              "inflight": [],
+              "learner": false,
+              "match": 0,
+              "mode": "Probe",
+              "next": 4,
+              "pending": 0,
+              "probe": false
+            }
+          ]
+        },
+        {
+          "path": "$.state.storage.cut",
+          "left": 0,
+          "right": 3
+        },
+        {
+          "path": "$.state.storage.hs.commit",
+          "left": 0,
+          "right": 3
+        },
+        {
+          "path": "$.state.storage.hs.term",
+          "left": 0,
+          "right": 3
+        },
+        {
+          "path": "$.state.storage.log",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            }
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.storage.snapshot.config.learners",
+          "left": [],
+          "right": [
+            1
+          ]
+        },
+        {
+          "path": "$.state.storage.snapshot.config.voters",
+          "left": [],
+          "right": [
+            1,
+            2
+          ]
+        },
+        {
+          "path": "$.state.storage.snapshot.index",
+          "left": 0,
+          "right": 3
+        },
+        {
+          "path": "$.state.storage.snapshot.term",
+          "left": 0,
+          "right": 3
+        },
+        {
+          "path": "$.state.term",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.uoff",
+          "left": 3,
+          "right": 4
+        },
+        {
+          "path": "$.status",
+          "left": "panic",
+          "right": "ok"
+        }
+      ],
+      "classification": "invalid setup: malformed ConfState outside supported domain; not a real-system bug or behavior repair",
+      "evidence": "out/cases/v02-final-02/invalid-inputs/comparison.json"
+    },
+    {
+      "id": "invalid-restart-staged-without-joint",
+      "action": "restart",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.applied",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.commit",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.config.learnersNext",
+          "left": [],
+          "right": [
+            3
+          ]
+        },
+        {
+          "path": "$.state.config.voters",
+          "left": [
+            1,
+            2,
+            3
+          ],
+          "right": [
+            1,
+            2
+          ]
+        },
+        {
+          "path": "$.state.first",
+          "left": 1,
+          "right": 4
+        },
+        {
+          "path": "$.state.last",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.log",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            }
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.prevHS.commit",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.prevHS.term",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.prs",
+          "left": [
+            {
+              "active": false,
+              "id": 1,
+              "inflight": [],
+              "learner": false,
+              "match": 2,
+              "mode": "Probe",
+              "next": 3,
+              "pending": 0,
+              "probe": false
+            },
+            {
+              "active": false,
+              "id": 2,
+              "inflight": [],
+              "learner": false,
+              "match": 0,
+              "mode": "Probe",
+              "next": 3,
+              "pending": 0,
+              "probe": false
+            },
+            {
+              "active": false,
+              "id": 3,
+              "inflight": [],
+              "learner": false,
+              "match": 0,
+              "mode": "Probe",
+              "next": 3,
+              "pending": 0,
+              "probe": false
+            }
+          ],
+          "right": [
+            {
+              "active": false,
+              "id": 1,
+              "inflight": [],
+              "learner": false,
+              "match": 3,
+              "mode": "Probe",
+              "next": 4,
+              "pending": 0,
+              "probe": false
+            },
+            {
+              "active": false,
+              "id": 2,
+              "inflight": [],
+              "learner": false,
+              "match": 0,
+              "mode": "Probe",
+              "next": 4,
+              "pending": 0,
+              "probe": false
+            }
+          ]
+        },
+        {
+          "path": "$.state.storage.cut",
+          "left": 0,
+          "right": 3
+        },
+        {
+          "path": "$.state.storage.hs.commit",
+          "left": 0,
+          "right": 3
+        },
+        {
+          "path": "$.state.storage.hs.term",
+          "left": 0,
+          "right": 3
+        },
+        {
+          "path": "$.state.storage.log",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            }
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.storage.snapshot.config.learnersNext",
+          "left": [],
+          "right": [
+            3
+          ]
+        },
+        {
+          "path": "$.state.storage.snapshot.config.voters",
+          "left": [],
+          "right": [
+            1,
+            2
+          ]
+        },
+        {
+          "path": "$.state.storage.snapshot.index",
+          "left": 0,
+          "right": 3
+        },
+        {
+          "path": "$.state.storage.snapshot.term",
+          "left": 0,
+          "right": 3
+        },
+        {
+          "path": "$.state.term",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.uoff",
+          "left": 3,
+          "right": 4
+        },
+        {
+          "path": "$.status",
+          "left": "panic",
+          "right": "ok"
+        }
+      ],
+      "classification": "invalid setup: malformed ConfState outside supported domain; not a real-system bug or behavior repair",
+      "evidence": "out/cases/v02-final-02/invalid-inputs/comparison.json"
+    },
+    {
+      "id": "invalid-restart-empty-incoming",
+      "action": "restart",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.applied",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.commit",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.config.learners",
+          "left": [],
+          "right": [
+            1
+          ]
+        },
+        {
+          "path": "$.state.config.outgoing",
+          "left": [],
+          "right": [
+            1,
+            2
+          ]
+        },
+        {
+          "path": "$.state.config.voters",
+          "left": [
+            1,
+            2,
+            3
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.first",
+          "left": 1,
+          "right": 4
+        },
+        {
+          "path": "$.state.isLearner",
+          "left": false,
+          "right": true
+        },
+        {
+          "path": "$.state.last",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.log",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            }
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.prevHS.commit",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.prevHS.term",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.prs",
+          "left": [
+            {
+              "active": false,
+              "id": 1,
+              "inflight": [],
+              "learner": false,
+              "match": 2,
+              "mode": "Probe",
+              "next": 3,
+              "pending": 0,
+              "probe": false
+            },
+            {
+              "active": false,
+              "id": 2,
+              "inflight": [],
+              "learner": false,
+              "match": 0,
+              "mode": "Probe",
+              "next": 3,
+              "pending": 0,
+              "probe": false
+            },
+            {
+              "active": false,
+              "id": 3,
+              "inflight": [],
+              "learner": false,
+              "match": 0,
+              "mode": "Probe",
+              "next": 3,
+              "pending": 0,
+              "probe": false
+            }
+          ],
+          "right": [
+            {
+              "active": false,
+              "id": 1,
+              "inflight": [],
+              "learner": true,
+              "match": 3,
+              "mode": "Probe",
+              "next": 4,
+              "pending": 0,
+              "probe": false
+            },
+            {
+              "active": false,
+              "id": 2,
+              "inflight": [],
+              "learner": false,
+              "match": 0,
+              "mode": "Probe",
+              "next": 4,
+              "pending": 0,
+              "probe": false
+            }
+          ]
+        },
+        {
+          "path": "$.state.storage.cut",
+          "left": 0,
+          "right": 3
+        },
+        {
+          "path": "$.state.storage.hs.commit",
+          "left": 0,
+          "right": 3
+        },
+        {
+          "path": "$.state.storage.hs.term",
+          "left": 0,
+          "right": 3
+        },
+        {
+          "path": "$.state.storage.log",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            }
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.storage.snapshot.config.learners",
+          "left": [],
+          "right": [
+            1
+          ]
+        },
+        {
+          "path": "$.state.storage.snapshot.config.outgoing",
+          "left": [],
+          "right": [
+            1,
+            2
+          ]
+        },
+        {
+          "path": "$.state.storage.snapshot.index",
+          "left": 0,
+          "right": 3
+        },
+        {
+          "path": "$.state.storage.snapshot.term",
+          "left": 0,
+          "right": 3
+        },
+        {
+          "path": "$.state.term",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.uoff",
+          "left": 3,
+          "right": 4
+        },
+        {
+          "path": "$.status",
+          "left": "panic",
+          "right": "ok"
+        }
+      ],
+      "classification": "invalid setup: malformed ConfState outside supported domain; not a real-system bug or behavior repair",
+      "evidence": "out/cases/v02-final-02/invalid-inputs/comparison.json"
+    }
+  ],
+  "preserved_prior_repairs": [
+    {
+      "operator": "IsLeave",
+      "restored": true
+    },
+    {
+      "operator": "AdvanceCore positive cursor",
+      "restored": true
+    },
+    {
+      "operator": "StepHup legacy-only configuration scan",
+      "restored": false,
+      "already_preserved_in_new_model": true,
+      "source": [
+        "new/source/raft.go:1605",
+        "old/spec/base.tla:267"
+      ]
+    }
+  ],
+  "version_comparison": {
+    "cases": 21,
+    "changed_outputs": 14,
+    "unchanged_outputs": 7,
+    "changed_pre_states": 2,
+    "changed_inputs": 0,
+    "evidence": "out/adaptation/version-deltas.json",
+    "note": "Both versions separately match their supplied/repaired model on this subset. Advance pre-state deltas are expected because Ready acceptance changed; these are version changes, not adapter mismatches."
+  },
+  "retained_implementation_behaviors": [
+    {
+      "behavior": "Hup scans only legacy EntryConfChange, ignoring unapplied V2 entries.",
+      "source": "new/source/raft.go:1605",
+      "classification": "source omission preserved, no distributed counterexample claim"
+    },
+    {
+      "behavior": "Live snapshot membership checks incoming voters/current learners only; outgoing-only and staged outgoing-only recipients decline the snapshot, although full restart reconstructs them.",
+      "source": "new/source/raft.go:1403",
+      "classification": "source restriction preserved; joint metadata itself is now restored",
+      "cases": [
+        "restore-outgoing-only",
+        "restore-v02-staged-self",
+        "restart-v02-staged-self"
+      ]
+    }
+  ],
+  "observer_review": [
+    {
+      "id": "O1",
+      "applied": false,
+      "issue": "autoLeaveChecks.eligible lacks b.cursor>0; after behavior repair it records false eligibility for a zero-cursor batch.",
+      "source": "new/source/raft.go:561",
+      "model": "new/spec/base.tla:1119",
+      "evidence": [
+        "advance-raw-True-0-0-Leader-0",
+        "advance-node-True-0-0-Leader-0"
+      ],
+      "proposal": "out/adaptation/observer-corrections.patch"
+    },
+    {
+      "id": "O2",
+      "applied": false,
+      "issue": "CampaignContract uses ConfKinds while actual Hup scans LegacyConfKinds. Decide later whether this property should intentionally expose the source omission; do not change it here.",
+      "source": "new/source/raft.go:1605",
+      "model": "new/spec/base.tla:673"
+    },
+    {
+      "id": "O3",
+      "applied": false,
+      "issue": "JointSnapshotMemberAcceptance can expose outgoing-only snapshot rejection. The matching local behavior is preserved; a reachable witness is still needed.",
+      "model": "new/spec/base.tla:1370",
+      "source": "new/source/raft.go:1403"
+    }
+  ],
+  "adapter_changes": [
+    "Renamed ConfState fields; explicit old-source API spelling binding.",
+    "Actual Node goroutine/channels and Status barriers replace helper-only owner testing.",
+    "Original ProtocolReady/Step preparation for Advance; captured input batch and retained batch observation; mapped disabled prerequisite candidates.",
+    "Learner/forced vote flags, actual message inputs, recorded votes and CheckQuorum mappings.",
+    "Restart pre-observation reads actual storage and actual constructor options.",
+    "Fresh Go work directories, relative manifests, workspace-local offline build environment. No generic runner/protocol changes."
+  ],
+  "adapter_diagnostics": [
+    {
+      "issue": "Intervening proposal ErrProposalDropped was initially treated as setup failure.",
+      "fixed": "Retain raw error and continue actual schedule; do not panic or invent an expected output.",
+      "evidence": "out/cases/v02-dev02-model/comparison.json"
+    },
+    {
+      "issue": "TLA conditional grouping in new restart pre-mapping caused evaluation failure.",
+      "fixed": "Parenthesized the conditional. Failed command output rejected; not a disabled action.",
+      "evidence": [
+        "out/cases/v02-invalid-01",
+        "out/cases/v02-final-01/baseline-code"
+      ]
+    }
+  ],
+  "diagnostics": [
+    {
+      "path": "out/cases/v02-baseline-code-01/comparison.json",
+      "total": 238,
+      "counts": {
+        "match": 231,
+        "behavioral_mismatch": 7
+      },
+      "exit_codes": [
+        0,
+        0
+      ]
+    },
+    {
+      "path": "out/cases/v02-baseline-code-02/comparison.json",
+      "total": 239,
+      "counts": {
+        "match": 231,
+        "behavioral_mismatch": 8
+      },
+      "exit_codes": [
+        0,
+        0
+      ]
+    },
+    {
+      "path": "out/cases/v02-baseline-model-01/comparison.json",
+      "total": 102,
+      "counts": {
+        "match": 93,
+        "behavioral_mismatch": 9
+      },
+      "exit_codes": [
+        0,
+        0
+      ]
+    },
+    {
+      "path": "out/cases/v02-baseline-model-02/comparison.json",
+      "total": 103,
+      "counts": {
+        "match": 93,
+        "behavioral_mismatch": 10
+      },
+      "exit_codes": [
+        0,
+        0
+      ]
+    },
+    {
+      "path": "out/cases/v02-dev01-code/comparison.json",
+      "total": 228,
+      "counts": {
+        "match": 221,
+        "behavioral_mismatch": 7
+      },
+      "exit_codes": [
+        0,
+        0
+      ]
+    },
+    {
+      "path": "out/cases/v02-dev02-model/comparison.json",
+      "total": 99,
+      "counts": {
+        "match": 86,
+        "behavioral_mismatch": 9,
+        "adapter_error": 4
+      },
+      "exit_codes": [
+        0,
+        0
+      ]
+    },
+    {
+      "path": "out/cases/v02-dev03-code/comparison.json",
+      "total": 238,
+      "counts": {
+        "match": 231,
+        "behavioral_mismatch": 7
+      },
+      "exit_codes": [
+        0,
+        0
+      ]
+    },
+    {
+      "path": "out/cases/v02-dev04-model/comparison.json",
+      "total": 102,
+      "counts": {
+        "match": 93,
+        "behavioral_mismatch": 9
+      },
+      "exit_codes": [
+        0,
+        0
+      ]
+    },
+    {
+      "path": "out/cases/v02-dev05-old/comparison.json",
+      "total": 21,
+      "counts": {
+        "match": 21
+      },
+      "exit_codes": [
+        0,
+        0
+      ]
+    },
+    {
+      "path": "out/cases/v02-final-01/baseline-code/comparison.json",
+      "total": 239,
+      "counts": {
+        "adapter_error": 239
+      },
+      "exit_codes": [
+        0,
+        1
+      ]
+    },
+    {
+      "path": "out/cases/v02-invalid-01/comparison.json",
+      "total": 6,
+      "counts": {
+        "adapter_error": 6
+      },
+      "exit_codes": [
+        0,
+        1
+      ]
+    },
+    {
+      "path": "out/cases/v02-repaired-code-01/comparison.json",
+      "total": 239,
+      "counts": {
+        "match": 239
+      },
+      "exit_codes": [
+        0,
+        0
+      ]
+    },
+    {
+      "path": "out/cases/v02-repaired-model-01/comparison.json",
+      "total": 103,
+      "counts": {
+        "match": 103
+      },
+      "exit_codes": [
+        0,
+        0
+      ]
+    }
+  ],
+  "integrity": {
+    "immutable_supplied_files_checked": 223,
+    "changed": [],
+    "generic_unchanged": {
+      "runner.py": "4e9700051929787ad462aca97f97c91ac8a03cb415893c745f8b9698be923679",
+      "protocol.schema.json": "c737e33e6d53f49412c4a80a6f7fddef39552309fec0cb1e8c8cdd5b2d1ed885",
+      "test_runner.py": "247fdcf893031fecb0a1c4dfe06a80b3b79562899596fc06a35b01ae5cdd0fb7"
+    },
+    "safety_predicates_and_decision_contracts_unchanged": true,
+    "other_spec_files_unchanged": true,
+    "behavior_operators_changed": [
+      "IsLeave",
+      "ProtocolReady",
+      "AdvanceCore"
+    ],
+    "observer_changes_applied": false
+  },
+  "adaptation_footprint": [
+    {
+      "path": "out/framework/README.md",
+      "status": "modified",
+      "added_lines": 22,
+      "removed_lines": 16,
+      "bytes": 3523,
+      "kind": "documentation"
+    },
+    {
+      "path": "out/framework/adapters/go/action_validation_test.go",
+      "status": "modified",
+      "added_lines": 105,
+      "removed_lines": 20,
+      "bytes": 19010,
+      "kind": "target binding/domain/report code"
+    },
+    {
+      "path": "out/framework/adapters/go/run.py",
+      "status": "modified",
+      "added_lines": 10,
+      "removed_lines": 3,
+      "bytes": 1821,
+      "kind": "target binding/domain/report code"
+    },
+    {
+      "path": "out/framework/adapters/tla/LocalActions.tla",
+      "status": "modified",
+      "added_lines": 45,
+      "removed_lines": 26,
+      "bytes": 9576,
+      "kind": "target binding/domain/report code"
+    },
+    {
+      "path": "out/framework/adapters/tla/ModelDomains.tla",
+      "status": "modified",
+      "added_lines": 6,
+      "removed_lines": 1,
+      "bytes": 2797,
+      "kind": "target binding/domain/report code"
+    },
+    {
+      "path": "out/framework/adapters/tla/run.py",
+      "status": "modified",
+      "added_lines": 4,
+      "removed_lines": 3,
+      "bytes": 3073,
+      "kind": "target binding/domain/report code"
+    },
+    {
+      "path": "out/framework/targets/etcd/audit_inputs.py",
+      "status": "modified",
+      "added_lines": 8,
+      "removed_lines": 0,
+      "bytes": 1659,
+      "kind": "target binding/domain/report code"
+    },
+    {
+      "path": "out/framework/targets/etcd/domain_v02.py",
+      "status": "added",
+      "added_lines": 55,
+      "removed_lines": 0,
+      "bytes": 5152,
+      "kind": "target binding/domain/report code"
+    },
+    {
+      "path": "out/framework/targets/etcd/manifest-old.json",
+      "status": "added",
+      "added_lines": 94,
+      "removed_lines": 0,
+      "bytes": 2954,
+      "kind": "generated domain/manifest"
+    },
+    {
+      "path": "out/framework/targets/etcd/manifest.json",
+      "status": "modified",
+      "added_lines": 23,
+      "removed_lines": 5,
+      "bytes": 2916,
+      "kind": "generated domain/manifest"
+    },
+    {
+      "path": "out/framework/targets/etcd/model-seeds.json",
+      "status": "modified",
+      "added_lines": 3043,
+      "removed_lines": 49,
+      "bytes": 104624,
+      "kind": "generated domain/manifest"
+    },
+    {
+      "path": "out/framework/targets/etcd/observations.md",
+      "status": "modified",
+      "added_lines": 26,
+      "removed_lines": 25,
+      "bytes": 8371,
+      "kind": "documentation"
+    },
+    {
+      "path": "out/framework/targets/etcd/replay.py",
+      "status": "added",
+      "added_lines": 28,
+      "removed_lines": 0,
+      "bytes": 2033,
+      "kind": "target binding/domain/report code"
+    },
+    {
+      "path": "out/framework/targets/etcd/suite.json",
+      "status": "added",
+      "added_lines": 184,
+      "removed_lines": 0,
+      "bytes": 4823,
+      "kind": "generated domain/manifest"
+    },
+    {
+      "path": "out/framework/targets/etcd/summarize.py",
+      "status": "modified",
+      "added_lines": 164,
+      "removed_lines": 59,
+      "bytes": 26606,
+      "kind": "target binding/domain/report code"
+    }
+  ],
+  "timing": {
+    "start_utc": "2026-09-22T18:11:43+00:00",
+    "first_current_compatible_run_utc": "2026-09-22T18:16:04.715386+00:00",
+    "first_compatible_seconds": 261.715386,
+    "last_executable_binding_edit_utc": "2026-09-22T18:23:37.885088+00:00",
+    "executable_adaptation_seconds": 714.885088,
+    "reporting_completed_utc": "2026-09-22T18:29:35.034471+00:00",
+    "total_wall_seconds": 1260.066275,
+    "note": "Wall time includes local inspection, binding/domain/model work, testing, reporting and final artifact audit. Individual command times are separately recorded; no labor-time precision claimed.",
+    "final_artifact_audit_utc": "2026-09-22T18:32:43.066275+00:00"
+  },
+  "execution_time": {
+    "final_suite_inner_seconds": 16.625496711581945,
+    "max_tlc_invocation_seconds": 2.168690698221326,
+    "commands": [
+      {
+        "command": [
+          "timeout",
+          "90s",
+          "/usr/local/go/bin/go",
+          "test",
+          "-run",
+          "^TestActionValidation$",
+          "-count=1",
+          "-v",
+          "."
+        ],
+        "cwd": "/workspace/new/source",
+        "env": {
+          "GOMAXPROCS": "2",
+          "GOTMPDIR": "/workspace/out/tmp",
+          "TMPDIR": "/workspace/out/tmp",
+          "GOCACHE": "/workspace/out/go-cache",
+          "GOPROXY": "off",
+          "CGO_ENABLED": "0",
+          "AV_INPUT": "/workspace/out/cases/code-inputs.json",
+          "AV_OUTPUT": "/workspace/out/cases/v02-final-02/baseline-code/implementation.jsonl"
+        },
+        "duration_seconds": 0.3146604225039482,
+        "exit_code": 0,
+        "run": "baseline-code",
+        "engine": "implementation",
+        "outer_timeout_seconds": 90,
+        "GOMAXPROCS": 2
+      },
+      {
+        "command": [
+          "/usr/bin/java",
+          "-XX:+UseParallelGC",
+          "-Xmx2G",
+          "-Djava.io.tmpdir=/workspace/out/tmp",
+          "-cp",
+          "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+          "tlc2.TLC",
+          "-workers",
+          "1",
+          "-metadir",
+          "/workspace/out/cases/v02-final-02/baseline-code/model/raw/states",
+          "-config",
+          "LocalActions.cfg",
+          "LocalActions"
+        ],
+        "cwd": "/workspace/out/cases/v02-final-02/baseline-code/model/raw",
+        "duration_seconds": 2.168690698221326,
+        "exit_code": 0,
+        "run": "baseline-code",
+        "engine": "model",
+        "tlc_states": {
+          "generated": 593,
+          "distinct": 464
+        },
+        "workers": 1,
+        "heap_gb": 2,
+        "outer_timeout_seconds": 175
+      },
+      {
+        "command": [
+          "/usr/bin/java",
+          "-XX:+UseParallelGC",
+          "-Xmx2G",
+          "-Djava.io.tmpdir=/workspace/out/tmp",
+          "-cp",
+          "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+          "tlc2.TLC",
+          "-workers",
+          "1",
+          "-metadir",
+          "/workspace/out/cases/v02-final-02/baseline-code/model/node/states",
+          "-config",
+          "LocalActions.cfg",
+          "LocalActions"
+        ],
+        "cwd": "/workspace/out/cases/v02-final-02/baseline-code/model/node",
+        "duration_seconds": 1.1163983065634966,
+        "exit_code": 0,
+        "run": "baseline-code",
+        "engine": "model",
+        "tlc_states": {
+          "generated": 185,
+          "distinct": 56
+        },
+        "workers": 1,
+        "heap_gb": 2,
+        "outer_timeout_seconds": 175
+      },
+      {
+        "command": [
+          "timeout",
+          "90s",
+          "/usr/local/go/bin/go",
+          "test",
+          "-run",
+          "^TestActionValidation$",
+          "-count=1",
+          "-v",
+          "."
+        ],
+        "cwd": "/workspace/new/source",
+        "env": {
+          "GOMAXPROCS": "2",
+          "GOTMPDIR": "/workspace/out/tmp",
+          "TMPDIR": "/workspace/out/tmp",
+          "GOCACHE": "/workspace/out/go-cache",
+          "GOPROXY": "off",
+          "CGO_ENABLED": "0",
+          "AV_INPUT": "/workspace/out/cases/v02-final-02/baseline-model/generated-cases.json",
+          "AV_OUTPUT": "/workspace/out/cases/v02-final-02/baseline-model/implementation.jsonl"
+        },
+        "duration_seconds": 0.31474800780415535,
+        "exit_code": 0,
+        "run": "baseline-model",
+        "engine": "implementation",
+        "outer_timeout_seconds": 90,
+        "GOMAXPROCS": 2
+      },
+      {
+        "command": [
+          "/usr/bin/java",
+          "-XX:+UseParallelGC",
+          "-Xmx2G",
+          "-Djava.io.tmpdir=/workspace/out/tmp",
+          "-cp",
+          "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+          "tlc2.TLC",
+          "-workers",
+          "1",
+          "-metadir",
+          "/workspace/out/cases/v02-final-02/baseline-model/model/raw/states",
+          "-config",
+          "LocalActions.cfg",
+          "LocalActions"
+        ],
+        "cwd": "/workspace/out/cases/v02-final-02/baseline-model/model/raw",
+        "duration_seconds": 1.1662344355136156,
+        "exit_code": 0,
+        "run": "baseline-model",
+        "engine": "model",
+        "tlc_states": {
+          "generated": 279,
+          "distinct": 202
+        },
+        "workers": 1,
+        "heap_gb": 2,
+        "outer_timeout_seconds": 175
+      },
+      {
+        "command": [
+          "/usr/bin/java",
+          "-XX:+UseParallelGC",
+          "-Xmx2G",
+          "-Djava.io.tmpdir=/workspace/out/tmp",
+          "-cp",
+          "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+          "tlc2.TLC",
+          "-workers",
+          "1",
+          "-metadir",
+          "/workspace/out/cases/v02-final-02/baseline-model/model/node/states",
+          "-config",
+          "LocalActions.cfg",
+          "LocalActions"
+        ],
+        "cwd": "/workspace/out/cases/v02-final-02/baseline-model/model/node",
+        "duration_seconds": 1.066342679783702,
+        "exit_code": 0,
+        "run": "baseline-model",
+        "engine": "model",
+        "tlc_states": {
+          "generated": 111,
+          "distinct": 34
+        },
+        "workers": 1,
+        "heap_gb": 2,
+        "outer_timeout_seconds": 175
+      },
+      {
+        "command": [
+          "timeout",
+          "90s",
+          "/usr/local/go/bin/go",
+          "test",
+          "-run",
+          "^TestActionValidation$",
+          "-count=1",
+          "-v",
+          "."
+        ],
+        "cwd": "/workspace/new/source",
+        "env": {
+          "GOMAXPROCS": "2",
+          "GOTMPDIR": "/workspace/out/tmp",
+          "TMPDIR": "/workspace/out/tmp",
+          "GOCACHE": "/workspace/out/go-cache",
+          "GOPROXY": "off",
+          "CGO_ENABLED": "0",
+          "AV_INPUT": "/workspace/out/cases/code-inputs.json",
+          "AV_OUTPUT": "/workspace/out/cases/v02-final-02/repaired-code/implementation.jsonl"
+        },
+        "duration_seconds": 0.3147403923794627,
+        "exit_code": 0,
+        "run": "repaired-code",
+        "engine": "implementation",
+        "outer_timeout_seconds": 90,
+        "GOMAXPROCS": 2
+      },
+      {
+        "command": [
+          "/usr/bin/java",
+          "-XX:+UseParallelGC",
+          "-Xmx2G",
+          "-Djava.io.tmpdir=/workspace/out/tmp",
+          "-cp",
+          "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+          "tlc2.TLC",
+          "-workers",
+          "1",
+          "-metadir",
+          "/workspace/out/cases/v02-final-02/repaired-code/model/raw/states",
+          "-config",
+          "LocalActions.cfg",
+          "LocalActions"
+        ],
+        "cwd": "/workspace/out/cases/v02-final-02/repaired-code/model/raw",
+        "duration_seconds": 2.1188270738348365,
+        "exit_code": 0,
+        "run": "repaired-code",
+        "engine": "model",
+        "tlc_states": {
+          "generated": 629,
+          "distinct": 468
+        },
+        "workers": 1,
+        "heap_gb": 2,
+        "outer_timeout_seconds": 175
+      },
+      {
+        "command": [
+          "/usr/bin/java",
+          "-XX:+UseParallelGC",
+          "-Xmx2G",
+          "-Djava.io.tmpdir=/workspace/out/tmp",
+          "-cp",
+          "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+          "tlc2.TLC",
+          "-workers",
+          "1",
+          "-metadir",
+          "/workspace/out/cases/v02-final-02/repaired-code/model/node/states",
+          "-config",
+          "LocalActions.cfg",
+          "LocalActions"
+        ],
+        "cwd": "/workspace/out/cases/v02-final-02/repaired-code/model/node",
+        "duration_seconds": 1.1168022565543652,
+        "exit_code": 0,
+        "run": "repaired-code",
+        "engine": "model",
+        "tlc_states": {
+          "generated": 185,
+          "distinct": 56
+        },
+        "workers": 1,
+        "heap_gb": 2,
+        "outer_timeout_seconds": 175
+      },
+      {
+        "command": [
+          "timeout",
+          "90s",
+          "/usr/local/go/bin/go",
+          "test",
+          "-run",
+          "^TestActionValidation$",
+          "-count=1",
+          "-v",
+          "."
+        ],
+        "cwd": "/workspace/new/source",
+        "env": {
+          "GOMAXPROCS": "2",
+          "GOTMPDIR": "/workspace/out/tmp",
+          "TMPDIR": "/workspace/out/tmp",
+          "GOCACHE": "/workspace/out/go-cache",
+          "GOPROXY": "off",
+          "CGO_ENABLED": "0",
+          "AV_INPUT": "/workspace/out/cases/v02-final-02/repaired-model/generated-cases.json",
+          "AV_OUTPUT": "/workspace/out/cases/v02-final-02/repaired-model/implementation.jsonl"
+        },
+        "duration_seconds": 0.3147012246772647,
+        "exit_code": 0,
+        "run": "repaired-model",
+        "engine": "implementation",
+        "outer_timeout_seconds": 90,
+        "GOMAXPROCS": 2
+      },
+      {
+        "command": [
+          "/usr/bin/java",
+          "-XX:+UseParallelGC",
+          "-Xmx2G",
+          "-Djava.io.tmpdir=/workspace/out/tmp",
+          "-cp",
+          "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+          "tlc2.TLC",
+          "-workers",
+          "1",
+          "-metadir",
+          "/workspace/out/cases/v02-final-02/repaired-model/model/raw/states",
+          "-config",
+          "LocalActions.cfg",
+          "LocalActions"
+        ],
+        "cwd": "/workspace/out/cases/v02-final-02/repaired-model/model/raw",
+        "duration_seconds": 1.1665413593873382,
+        "exit_code": 0,
+        "run": "repaired-model",
+        "engine": "model",
+        "tlc_states": {
+          "generated": 307,
+          "distinct": 206
+        },
+        "workers": 1,
+        "heap_gb": 2,
+        "outer_timeout_seconds": 175
+      },
+      {
+        "command": [
+          "/usr/bin/java",
+          "-XX:+UseParallelGC",
+          "-Xmx2G",
+          "-Djava.io.tmpdir=/workspace/out/tmp",
+          "-cp",
+          "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+          "tlc2.TLC",
+          "-workers",
+          "1",
+          "-metadir",
+          "/workspace/out/cases/v02-final-02/repaired-model/model/node/states",
+          "-config",
+          "LocalActions.cfg",
+          "LocalActions"
+        ],
+        "cwd": "/workspace/out/cases/v02-final-02/repaired-model/model/node",
+        "duration_seconds": 1.0664713997393847,
+        "exit_code": 0,
+        "run": "repaired-model",
+        "engine": "model",
+        "tlc_states": {
+          "generated": 111,
+          "distinct": 34
+        },
+        "workers": 1,
+        "heap_gb": 2,
+        "outer_timeout_seconds": 175
+      },
+      {
+        "command": [
+          "timeout",
+          "90s",
+          "/usr/local/go/bin/go",
+          "test",
+          "-run",
+          "^TestActionValidation$",
+          "-count=1",
+          "-v",
+          "."
+        ],
+        "cwd": "/workspace/old/source",
+        "env": {
+          "GOMAXPROCS": "2",
+          "GOTMPDIR": "/workspace/out/tmp",
+          "TMPDIR": "/workspace/out/tmp",
+          "GOCACHE": "/workspace/out/go-cache",
+          "GOPROXY": "off",
+          "CGO_ENABLED": "0",
+          "AV_INPUT": "/workspace/out/cases/version-inputs.json",
+          "AV_OUTPUT": "/workspace/out/cases/v02-final-02/old-version-subset/implementation.jsonl"
+        },
+        "duration_seconds": 1.0166542092338204,
+        "exit_code": 0,
+        "run": "old-version-subset",
+        "engine": "implementation",
+        "outer_timeout_seconds": 90,
+        "GOMAXPROCS": 2
+      },
+      {
+        "command": [
+          "/usr/bin/java",
+          "-XX:+UseParallelGC",
+          "-Xmx2G",
+          "-Djava.io.tmpdir=/workspace/out/tmp",
+          "-cp",
+          "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+          "tlc2.TLC",
+          "-workers",
+          "1",
+          "-metadir",
+          "/workspace/out/cases/v02-final-02/old-version-subset/model/raw/states",
+          "-config",
+          "LocalActions.cfg",
+          "LocalActions"
+        ],
+        "cwd": "/workspace/out/cases/v02-final-02/old-version-subset/model/raw",
+        "duration_seconds": 1.0663411375135183,
+        "exit_code": 0,
+        "run": "old-version-subset",
+        "engine": "model",
+        "tlc_states": {
+          "generated": 67,
+          "distinct": 40
+        },
+        "workers": 1,
+        "heap_gb": 2,
+        "outer_timeout_seconds": 175
+      },
+      {
+        "command": [
+          "/usr/bin/java",
+          "-XX:+UseParallelGC",
+          "-Xmx2G",
+          "-Djava.io.tmpdir=/workspace/out/tmp",
+          "-cp",
+          "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+          "tlc2.TLC",
+          "-workers",
+          "1",
+          "-metadir",
+          "/workspace/out/cases/v02-final-02/old-version-subset/model/node/states",
+          "-config",
+          "LocalActions.cfg",
+          "LocalActions"
+        ],
+        "cwd": "/workspace/out/cases/v02-final-02/old-version-subset/model/node",
+        "duration_seconds": 1.0164428744465113,
+        "exit_code": 0,
+        "run": "old-version-subset",
+        "engine": "model",
+        "tlc_states": {
+          "generated": 37,
+          "distinct": 10
+        },
+        "workers": 1,
+        "heap_gb": 2,
+        "outer_timeout_seconds": 175
+      },
+      {
+        "command": [
+          "timeout",
+          "90s",
+          "/usr/local/go/bin/go",
+          "test",
+          "-run",
+          "^TestActionValidation$",
+          "-count=1",
+          "-v",
+          "."
+        ],
+        "cwd": "/workspace/new/source",
+        "env": {
+          "GOMAXPROCS": "2",
+          "GOTMPDIR": "/workspace/out/tmp",
+          "TMPDIR": "/workspace/out/tmp",
+          "GOCACHE": "/workspace/out/go-cache",
+          "GOPROXY": "off",
+          "CGO_ENABLED": "0",
+          "AV_INPUT": "/workspace/out/cases/invalid-inputs.json",
+          "AV_OUTPUT": "/workspace/out/cases/v02-final-02/invalid-inputs/implementation.jsonl"
+        },
+        "duration_seconds": 0.2646051598712802,
+        "exit_code": 0,
+        "run": "invalid-inputs",
+        "engine": "implementation",
+        "outer_timeout_seconds": 90,
+        "GOMAXPROCS": 2
+      },
+      {
+        "command": [
+          "/usr/bin/java",
+          "-XX:+UseParallelGC",
+          "-Xmx2G",
+          "-Djava.io.tmpdir=/workspace/out/tmp",
+          "-cp",
+          "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+          "tlc2.TLC",
+          "-workers",
+          "1",
+          "-metadir",
+          "/workspace/out/cases/v02-final-02/invalid-inputs/model/raw/states",
+          "-config",
+          "LocalActions.cfg",
+          "LocalActions"
+        ],
+        "cwd": "/workspace/out/cases/v02-final-02/invalid-inputs/model/raw",
+        "duration_seconds": 1.0162950735539198,
+        "exit_code": 0,
+        "run": "invalid-inputs",
+        "engine": "model",
+        "tlc_states": {
+          "generated": 12,
+          "distinct": 12
+        },
+        "workers": 1,
+        "heap_gb": 2,
+        "outer_timeout_seconds": 175
+      }
+    ]
+  },
+  "validation": {
+    "structural_audit": {
+      "checked": 342,
+      "valid": 342,
+      "errors": []
+    },
+    "invalid_audit": {
+      "checked": 6,
+      "valid": 0,
+      "errors": [
+        {
+          "id": "invalid-restore-overlap",
+          "path": "out/cases/invalid-inputs.json",
+          "error": "AssertionError"
+        },
+        {
+          "id": "invalid-restore-staged-without-joint",
+          "path": "out/cases/invalid-inputs.json",
+          "error": "AssertionError"
+        },
+        {
+          "id": "invalid-restore-empty-incoming",
+          "path": "out/cases/invalid-inputs.json",
+          "error": "AssertionError"
+        },
+        {
+          "id": "invalid-restart-overlap",
+          "path": "out/cases/invalid-inputs.json",
+          "error": "AssertionError"
+        },
+        {
+          "id": "invalid-restart-staged-without-joint",
+          "path": "out/cases/invalid-inputs.json",
+          "error": "AssertionError"
+        },
+        {
+          "id": "invalid-restart-empty-incoming",
+          "path": "out/cases/invalid-inputs.json",
+          "error": "AssertionError"
+        }
+      ]
+    },
+    "generic_unit_tests": 8,
+    "generic_tests_log": "out/adaptation/runner-tests.log",
+    "source_tests": [
+      "out/adaptation/source-tests.log",
+      "out/adaptation/source-package-tests.log"
+    ],
+    "supplemental_commands": {
+      "generic-tests": {
+        "log": "out/adaptation/runner-tests.log",
+        "exit_code": 0,
+        "manifest_command": {
+          "name": "generic-tests",
+          "command": [
+            "python3",
+            "-m",
+            "unittest",
+            "discover",
+            "-s",
+            "out/framework",
+            "-p",
+            "test_runner.py",
+            "-v"
+          ],
+          "cwd": ".",
+          "timeout_seconds": 20,
+          "expected_exit": 0
+        }
+      },
+      "valid-input-audit": {
+        "log": "out/adaptation/valid-input-audit.json",
+        "exit_code": 0,
+        "manifest_command": {
+          "name": "valid-input-audit",
+          "command": [
+            "python3",
+            "out/framework/targets/etcd/audit_inputs.py",
+            "out/cases/code-inputs.json",
+            "{output_root}/baseline-model/generated-cases.json"
+          ],
+          "cwd": ".",
+          "timeout_seconds": 20,
+          "expected_exit": 0
+        }
+      },
+      "invalid-input-audit": {
+        "log": "out/adaptation/invalid-input-audit.json",
+        "exit_code": 1,
+        "manifest_command": {
+          "name": "invalid-input-audit",
+          "command": [
+            "python3",
+            "out/framework/targets/etcd/audit_inputs.py",
+            "out/cases/invalid-inputs.json"
+          ],
+          "cwd": ".",
+          "timeout_seconds": 20,
+          "expected_exit": 1
+        }
+      },
+      "source-tests": {
+        "log": "out/adaptation/source-tests.log",
+        "exit_code": 0,
+        "tool_wall_seconds": 0.624943323,
+        "manifest_command": {
+          "name": "source-tests",
+          "command": [
+            "timeout",
+            "90s",
+            "/usr/local/go/bin/go",
+            "test",
+            "-run",
+            "Test(RawNodeConsumeReady|Learner.*|Restore.*|Node.*)$",
+            "-count=1",
+            ".",
+            "./confchange",
+            "./quorum",
+            "./tracker",
+            "./raftpb"
+          ],
+          "cwd": "new/source",
+          "env": {
+            "GOMAXPROCS": "2",
+            "GOCACHE": "{root}/out/go-cache",
+            "GOTMPDIR": "{root}/out/tmp",
+            "TMPDIR": "{root}/out/tmp",
+            "GOPROXY": "off",
+            "GOSUMDB": "off",
+            "GOFLAGS": "-mod=readonly",
+            "GOTOOLCHAIN": "local",
+            "CGO_ENABLED": "0"
+          },
+          "timeout_seconds": 95,
+          "expected_exit": 0
+        }
+      },
+      "source-package-tests": {
+        "log": "out/adaptation/source-package-tests.log",
+        "exit_code": 0,
+        "tool_wall_seconds": 0.312168371,
+        "manifest_command": {
+          "name": "source-package-tests",
+          "command": [
+            "timeout",
+            "90s",
+            "/usr/local/go/bin/go",
+            "test",
+            "-count=1",
+            "./confchange",
+            "./quorum",
+            "./tracker",
+            "./raftpb"
+          ],
+          "cwd": "new/source",
+          "env": {
+            "GOMAXPROCS": "2",
+            "GOCACHE": "{root}/out/go-cache",
+            "GOTMPDIR": "{root}/out/tmp",
+            "TMPDIR": "{root}/out/tmp",
+            "GOPROXY": "off",
+            "GOSUMDB": "off",
+            "GOFLAGS": "-mod=readonly",
+            "GOTOOLCHAIN": "local",
+            "CGO_ENABLED": "0"
+          },
+          "timeout_seconds": 95,
+          "expected_exit": 0
+        }
+      }
+    },
+    "coordinator_controls_preserved": "framework-negative-controls.json",
+    "coordinator_prior_certification_preserved": "prior-rerun.json"
+  },
+  "portable_manifest": "out/framework/targets/etcd/suite.json",
+  "reusable_invocation": "python3 out/framework/targets/etcd/replay.py",
+  "limits": [
+    "No global protocol search or safety-invariant evaluation. No distributed reachability proof; all local injected states need a separate reachability argument before system-bug claims.",
+    "Two directions share vocabulary and projections; correlated mapping mistakes remain possible. TLC selects finite symbolic descriptors and executes original model actions, not a separate Python oracle.",
+    "Node uses actual channels and deterministic barriers, but there is no scheduler enumeration, cancellation, removed-node proposal gating, or arbitrary concurrent caller coverage.",
+    "Four-server action domain excludes the quorum sort allocation threshold; supplied package tests are supplemental, not bidirectional comparisons.",
+    "No arbitrary bytes/unknown protobuf fields, snapshot data, remote/lease read semantics, disk failures, post-restart application replay, broad pagination, transport or crash histories.",
+    "Empty Node Ready delivery, response inputs from unknown peers and local messages through public RawNode.Step are outside the supported action domain.",
+    "Observer histories and invariant predicates are untouched; recommended observer correction and potentially intended implementation-defect properties need the later invariant phase."
+  ]
+}

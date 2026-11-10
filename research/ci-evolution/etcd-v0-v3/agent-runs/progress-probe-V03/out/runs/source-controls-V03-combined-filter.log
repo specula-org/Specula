@@ -1,0 +1,103 @@
+=== RUN   TestUncommittedEntryLimit
+raft2026/09/22 20:47:49 INFO: 1 switched to configuration voters=(1 2 3)
+raft2026/09/22 20:47:49 INFO: 1 became follower at term 0
+raft2026/09/22 20:47:49 INFO: newRaft 1 [peers: [1,2,3], term: 0, commit: 0, applied: 0, lastindex: 0, lastterm: 0]
+raft2026/09/22 20:47:49 INFO: 1 became candidate at term 1
+raft2026/09/22 20:47:49 INFO: 1 became leader at term 1
+--- PASS: TestUncommittedEntryLimit (0.00s)
+=== RUN   TestRawNodeProposeAndConfChange
+=== RUN   TestRawNodeProposeAndConfChange/#00
+raft2026/09/22 20:47:49 INFO: 1 switched to configuration voters=(1)
+raft2026/09/22 20:47:49 INFO: 1 became follower at term 0
+raft2026/09/22 20:47:49 INFO: newRaft 1 [peers: [1], term: 0, commit: 0, applied: 0, lastindex: 0, lastterm: 0]
+raft2026/09/22 20:47:49 INFO: 1 is starting a new election at term 0
+raft2026/09/22 20:47:49 INFO: 1 became candidate at term 1
+raft2026/09/22 20:47:49 INFO: 1 received MsgVoteResp from 1 at term 1
+raft2026/09/22 20:47:49 INFO: 1 became leader at term 1
+raft2026/09/22 20:47:49 INFO: 1 switched to configuration voters=(1 2)
+=== RUN   TestRawNodeProposeAndConfChange/#01
+raft2026/09/22 20:47:49 INFO: 1 switched to configuration voters=(1)
+raft2026/09/22 20:47:49 INFO: 1 became follower at term 0
+raft2026/09/22 20:47:49 INFO: newRaft 1 [peers: [1], term: 0, commit: 0, applied: 0, lastindex: 0, lastterm: 0]
+raft2026/09/22 20:47:49 INFO: 1 is starting a new election at term 0
+raft2026/09/22 20:47:49 INFO: 1 became candidate at term 1
+raft2026/09/22 20:47:49 INFO: 1 received MsgVoteResp from 1 at term 1
+raft2026/09/22 20:47:49 INFO: 1 became leader at term 1
+raft2026/09/22 20:47:49 INFO: 1 switched to configuration voters=(1 2)
+=== RUN   TestRawNodeProposeAndConfChange/#02
+raft2026/09/22 20:47:49 INFO: 1 switched to configuration voters=(1)
+raft2026/09/22 20:47:49 INFO: 1 became follower at term 0
+raft2026/09/22 20:47:49 INFO: newRaft 1 [peers: [1], term: 0, commit: 0, applied: 0, lastindex: 0, lastterm: 0]
+raft2026/09/22 20:47:49 INFO: 1 is starting a new election at term 0
+raft2026/09/22 20:47:49 INFO: 1 became candidate at term 1
+raft2026/09/22 20:47:49 INFO: 1 received MsgVoteResp from 1 at term 1
+raft2026/09/22 20:47:49 INFO: 1 became leader at term 1
+raft2026/09/22 20:47:49 INFO: 1 switched to configuration voters=(1) learners=(2)
+=== RUN   TestRawNodeProposeAndConfChange/#03
+raft2026/09/22 20:47:49 INFO: 1 switched to configuration voters=(1)
+raft2026/09/22 20:47:49 INFO: 1 became follower at term 0
+raft2026/09/22 20:47:49 INFO: newRaft 1 [peers: [1], term: 0, commit: 0, applied: 0, lastindex: 0, lastterm: 0]
+raft2026/09/22 20:47:49 INFO: 1 is starting a new election at term 0
+raft2026/09/22 20:47:49 INFO: 1 became candidate at term 1
+raft2026/09/22 20:47:49 INFO: 1 received MsgVoteResp from 1 at term 1
+raft2026/09/22 20:47:49 INFO: 1 became leader at term 1
+raft2026/09/22 20:47:49 INFO: 1 switched to configuration voters=(1)&&(1) learners=(2)
+    rawnode_test.go:347: leaving joint state manually
+raft2026/09/22 20:47:49 INFO: 1 switched to configuration voters=(1) learners=(2)
+=== RUN   TestRawNodeProposeAndConfChange/#04
+raft2026/09/22 20:47:49 INFO: 1 switched to configuration voters=(1)
+raft2026/09/22 20:47:49 INFO: 1 became follower at term 0
+raft2026/09/22 20:47:49 INFO: newRaft 1 [peers: [1], term: 0, commit: 0, applied: 0, lastindex: 0, lastterm: 0]
+raft2026/09/22 20:47:49 INFO: 1 is starting a new election at term 0
+raft2026/09/22 20:47:49 INFO: 1 became candidate at term 1
+raft2026/09/22 20:47:49 INFO: 1 received MsgVoteResp from 1 at term 1
+raft2026/09/22 20:47:49 INFO: 1 became leader at term 1
+raft2026/09/22 20:47:49 INFO: 1 switched to configuration voters=(1)&&(1) learners=(2) autoleave
+raft2026/09/22 20:47:49 INFO: initiating automatic transition out of joint configuration voters=(1)&&(1) learners=(2) autoleave
+raft2026/09/22 20:47:49 INFO: 1 switched to configuration voters=(1) learners=(2)
+=== RUN   TestRawNodeProposeAndConfChange/#05
+raft2026/09/22 20:47:49 INFO: 1 switched to configuration voters=(1)
+raft2026/09/22 20:47:49 INFO: 1 became follower at term 0
+raft2026/09/22 20:47:49 INFO: newRaft 1 [peers: [1], term: 0, commit: 0, applied: 0, lastindex: 0, lastterm: 0]
+raft2026/09/22 20:47:49 INFO: 1 is starting a new election at term 0
+raft2026/09/22 20:47:49 INFO: 1 became candidate at term 1
+raft2026/09/22 20:47:49 INFO: 1 received MsgVoteResp from 1 at term 1
+raft2026/09/22 20:47:49 INFO: 1 became leader at term 1
+raft2026/09/22 20:47:49 INFO: 1 switched to configuration voters=(2)&&(1) learners=(3) learners_next=(1) autoleave
+raft2026/09/22 20:47:49 INFO: initiating automatic transition out of joint configuration voters=(2)&&(1) learners=(3) learners_next=(1) autoleave
+raft2026/09/22 20:47:49 INFO: 1 switched to configuration voters=(2) learners=(1 3)
+=== RUN   TestRawNodeProposeAndConfChange/#06
+raft2026/09/22 20:47:49 INFO: 1 switched to configuration voters=(1)
+raft2026/09/22 20:47:49 INFO: 1 became follower at term 0
+raft2026/09/22 20:47:49 INFO: newRaft 1 [peers: [1], term: 0, commit: 0, applied: 0, lastindex: 0, lastterm: 0]
+raft2026/09/22 20:47:49 INFO: 1 is starting a new election at term 0
+raft2026/09/22 20:47:49 INFO: 1 became candidate at term 1
+raft2026/09/22 20:47:49 INFO: 1 received MsgVoteResp from 1 at term 1
+raft2026/09/22 20:47:49 INFO: 1 became leader at term 1
+raft2026/09/22 20:47:49 INFO: 1 switched to configuration voters=(2)&&(1) learners=(3) learners_next=(1)
+    rawnode_test.go:347: leaving joint state manually
+raft2026/09/22 20:47:49 INFO: 1 switched to configuration voters=(2) learners=(1 3)
+=== RUN   TestRawNodeProposeAndConfChange/#07
+raft2026/09/22 20:47:49 INFO: 1 switched to configuration voters=(1)
+raft2026/09/22 20:47:49 INFO: 1 became follower at term 0
+raft2026/09/22 20:47:49 INFO: newRaft 1 [peers: [1], term: 0, commit: 0, applied: 0, lastindex: 0, lastterm: 0]
+raft2026/09/22 20:47:49 INFO: 1 is starting a new election at term 0
+raft2026/09/22 20:47:49 INFO: 1 became candidate at term 1
+raft2026/09/22 20:47:49 INFO: 1 received MsgVoteResp from 1 at term 1
+raft2026/09/22 20:47:49 INFO: 1 became leader at term 1
+raft2026/09/22 20:47:49 INFO: 1 switched to configuration voters=(2)&&(1) learners=(3) learners_next=(1) autoleave
+raft2026/09/22 20:47:49 INFO: initiating automatic transition out of joint configuration voters=(2)&&(1) learners=(3) learners_next=(1) autoleave
+raft2026/09/22 20:47:49 INFO: 1 switched to configuration voters=(2) learners=(1 3)
+--- PASS: TestRawNodeProposeAndConfChange (0.00s)
+    --- PASS: TestRawNodeProposeAndConfChange/#00 (0.00s)
+    --- PASS: TestRawNodeProposeAndConfChange/#01 (0.00s)
+    --- PASS: TestRawNodeProposeAndConfChange/#02 (0.00s)
+    --- PASS: TestRawNodeProposeAndConfChange/#03 (0.00s)
+    --- PASS: TestRawNodeProposeAndConfChange/#04 (0.00s)
+    --- PASS: TestRawNodeProposeAndConfChange/#05 (0.00s)
+    --- PASS: TestRawNodeProposeAndConfChange/#06 (0.00s)
+    --- PASS: TestRawNodeProposeAndConfChange/#07 (0.00s)
+=== RUN   TestInteraction
+--- PASS: TestInteraction (0.00s)
+PASS
+ok  	go.etcd.io/etcd/raft	0.008s

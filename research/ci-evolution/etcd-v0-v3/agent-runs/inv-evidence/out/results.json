@@ -1,0 +1,625 @@
+{
+  "phase": "validation of frozen proposed edits only",
+  "scope": "Local state/action and property-record validation; no global campaign, liveness validation, completeness or independent-generation score.",
+  "accepted": [
+    {
+      "id": "joint-quorum",
+      "versions": [
+        "V01"
+      ],
+      "properties": [
+        "QuorumAccounting"
+      ],
+      "status": "accepted",
+      "classification": "representation_and_observer_migration",
+      "reason": "Use both voter halves. A union majority can fail one half; the native V00 flat projection is explicitly lossy.",
+      "witnesses": [
+        "joint-union-majority"
+      ],
+      "controls": [
+        "joint-both-majorities",
+        "nonvoter-contribution"
+      ],
+      "requirement_evidence": [
+        "joint_quorum"
+      ],
+      "implementation_evidence": "out/validation/differential-replays.json",
+      "limits": "Local validation only; source observations do not define the requirement."
+    },
+    {
+      "id": "predecessor-bootstrap",
+      "versions": [
+        "V01",
+        "V02",
+        "V03"
+      ],
+      "properties": [
+        "ConfigurationTransitionSafety"
+      ],
+      "status": "accepted",
+      "classification": "pre_existing_property_repair",
+      "reason": "Exempt only exact BootLog entries. id=0 leave still requires its predecessor configuration.",
+      "witnesses": [
+        "leave-id-zero-wrong-predecessor",
+        "configuration-leave-commit-bad"
+      ],
+      "controls": [
+        "leave-joint-predecessor",
+        "actual-bootstrap-exemption",
+        "configuration-leave-commit-good"
+      ],
+      "requirement_evidence": [
+        "predecessor",
+        "joint_quorum"
+      ],
+      "implementation_evidence": "out/validation/differential-replays.json",
+      "limits": "Local validation only; source observations do not define the requirement."
+    },
+    {
+      "id": "campaign-self-quorum",
+      "versions": [
+        "V01",
+        "V02",
+        "V03"
+      ],
+      "properties": [
+        "CampaignDecisionEligibility"
+      ],
+      "status": "accepted",
+      "classification": "pre_existing_property_repair",
+      "reason": "Use JointWon only in CampaignContract; global read IsSingleton is unchanged. Pending V2 obligations remain.",
+      "witnesses": [
+        "joint-self-quorum-False",
+        "joint-self-quorum-True"
+      ],
+      "controls": [
+        "pending-v2-retained-obligation-False",
+        "pending-v2-retained-obligation-True"
+      ],
+      "requirement_evidence": [
+        "campaign_self",
+        "serialization"
+      ],
+      "implementation_evidence": "out/validation/differential-replays.json",
+      "limits": "Local validation only; source observations do not define the requirement."
+    },
+    {
+      "id": "advance-append",
+      "versions": [
+        "V01",
+        "V02",
+        "V03"
+      ],
+      "properties": [
+        "AckPreservation"
+      ],
+      "status": "accepted",
+      "classification": "legitimate_relaxation_with_new_serialization_coverage",
+      "reason": "Allow only the independently justified canonical automatic leave, preserve the prior prefix/cursor/snapshot and forbid another outstanding internal leave.",
+      "witnesses": [
+        "valid-auto-append"
+      ],
+      "controls": [
+        "prefix-only-is-too-weak",
+        "empty-v2-is-not-necessarily-leave",
+        "captured-cursor-retained",
+        "newer-snapshot-retained",
+        "outstanding-leave-not-duplicated"
+      ],
+      "requirement_evidence": [
+        "serialization",
+        "auto_leave_old"
+      ],
+      "implementation_evidence": "out/validation/differential-replays.json",
+      "limits": "Local validation only; source observations do not define the requirement."
+    },
+    {
+      "id": "learner-grants",
+      "versions": [
+        "V02",
+        "V03"
+      ],
+      "properties": [
+        "VoteDecisionEligibility",
+        "LearnerEligibility"
+      ],
+      "status": "accepted",
+      "classification": "requirement_change",
+      "reason": "Learners use ordinary exact vote/log/lease/term checks; learner campaigns remain forbidden.",
+      "witnesses": [
+        "learner-grant",
+        "learner-grant-history"
+      ],
+      "controls": [
+        "learner-stale-log-cannot-grant",
+        "learner-campaign-still-forbidden"
+      ],
+      "requirement_evidence": [
+        "learner_vote"
+      ],
+      "implementation_evidence": "out/validation/differential-replays.json",
+      "limits": "Local validation only; source observations do not define the requirement."
+    },
+    {
+      "id": "ready-ownership",
+      "versions": [
+        "V02",
+        "V03"
+      ],
+      "properties": [
+        "ReadyOwnership",
+        "AdvancePreservesPendingOutput"
+      ],
+      "status": "accepted",
+      "classification": "requirement_change_and_observer_migration",
+      "reason": "Public Ready accepts outputs; Advance preserves later pending output. Record returned batch and ownership fields.",
+      "witnesses": [
+        "ready-acceptance",
+        "advance-later-output-survives"
+      ],
+      "controls": [
+        "old-ready-retention-forbidden",
+        "ready-quota-still-owned-by-advance",
+        "advance-later-output-allowed"
+      ],
+      "requirement_evidence": [
+        "ready",
+        "advance_outputs_test"
+      ],
+      "implementation_evidence": "out/validation/differential-replays.json",
+      "limits": "Local validation only; source observations do not define the requirement."
+    },
+    {
+      "id": "read-loss-observer",
+      "versions": [
+        "V02",
+        "V03"
+      ],
+      "properties": [
+        "ReadyAccounting"
+      ],
+      "status": "accepted",
+      "classification": "observer_repair",
+      "reason": "Supply actual pre/post pending-read loss on every Advance to the unchanged original pagination/accounting predicate.",
+      "witnesses": [
+        "false-lost-read-observer"
+      ],
+      "controls": [
+        "empty-batch-must-not-hide-read-loss"
+      ],
+      "requirement_evidence": [
+        "ready",
+        "advance_outputs_test"
+      ],
+      "implementation_evidence": "out/validation/differential-replays.json",
+      "limits": "Local validation only; source observations do not define the requirement."
+    },
+    {
+      "id": "old-auto-attempt",
+      "versions": [
+        "V01",
+        "V02"
+      ],
+      "properties": [
+        "AutoLeaveAdvance",
+        "AutoLeaveAttemptExactness"
+      ],
+      "status": "accepted",
+      "classification": "observer_repair_and_new_exactness_coverage",
+      "reason": "Include positive cursor and independently compute per-call quota admission and canonical append; stale decision markers are not evidence.",
+      "witnesses": [
+        "positive-cursor-observer"
+      ],
+      "controls": [
+        "valid-auto-append",
+        "empty-v2-is-not-necessarily-leave"
+      ],
+      "requirement_evidence": [
+        "auto_leave_old"
+      ],
+      "implementation_evidence": "out/validation/differential-replays.json",
+      "limits": "Local validation only; source observations do not define the requirement."
+    },
+    {
+      "id": "v03-auto-effect",
+      "versions": [
+        "V03"
+      ],
+      "properties": [
+        "AutoLeaveAdvance"
+      ],
+      "status": "accepted",
+      "classification": "requirement_change_and_observer_migration",
+      "reason": "Require crossing, exactly one zero-payload canonical leave, updated pending barrier and exact quota release. This is only a local effect property.",
+      "witnesses": [
+        "old-auto-effect-not-enough",
+        "noncrossing-no-leave"
+      ],
+      "controls": [
+        "auto-pending-barrier",
+        "valid-auto-append"
+      ],
+      "requirement_evidence": [
+        "auto_effect",
+        "auto_progress",
+        "serialization"
+      ],
+      "implementation_evidence": "out/validation/differential-replays.json",
+      "limits": "Local validation only; source observations do not define the requirement."
+    },
+    {
+      "id": "v03-zero-payload",
+      "versions": [
+        "V03"
+      ],
+      "properties": [
+        "OutcomeSoundness"
+      ],
+      "status": "accepted",
+      "classification": "legitimate_relaxation",
+      "reason": "Zero effective payload bypasses quota; positive payload retains the old cap and other admission branches.",
+      "witnesses": [
+        "zero-payload-outcome"
+      ],
+      "controls": [
+        "positive-payload-control",
+        "positive-payload-illegal-accept"
+      ],
+      "requirement_evidence": [
+        "zero_payload_test"
+      ],
+      "implementation_evidence": "out/validation/differential-replays.json",
+      "limits": "Local validation only; source observations do not define the requirement."
+    },
+    {
+      "id": "v03-phase-admission",
+      "versions": [
+        "V03"
+      ],
+      "properties": [
+        "ProposalConfigurationDecisions"
+      ],
+      "status": "accepted",
+      "classification": "requirement_change_and_pre_existing_content_repair",
+      "reason": "Independent left-to-right content oracle; only accepted config entries advance pending. Preserve documented LeaveJoint classification and exact content/weights.",
+      "witnesses": [
+        "v03-prop-simple-0-empty-auto",
+        "v03-prop-joint-0-v2",
+        "v03-prop-batch-joint-add-then-leave",
+        "v03-prop-batch-simple-leave-then-add"
+      ],
+      "controls": [
+        "documented-leave-classification",
+        "old-behavior-v03-prop-joint-0-v2",
+        "old-behavior-v03-prop-batch-joint-add-then-leave"
+      ],
+      "requirement_evidence": [
+        "leave_classification",
+        "proposal_phase"
+      ],
+      "implementation_evidence": "out/validation/differential-replays.json",
+      "limits": "Local validation only; source observations do not define the requirement."
+    },
+    {
+      "id": "v03-transfer-demotion",
+      "versions": [
+        "V03"
+      ],
+      "properties": [
+        "TransferCancellationOnConfigurationChange"
+      ],
+      "status": "accepted",
+      "classification": "new_callback_coverage_of_requirement_change",
+      "reason": "Cancel only when target leaves the voter union; preserve staged outgoing voters. Keep self-demoted/removed leader and fatal early returns outside this accepted claim.",
+      "witnesses": [
+        "old-demotion-transfer-remains",
+        "v03-apply-demote-Leader",
+        "v03-apply-leave-demote-Leader"
+      ],
+      "controls": [
+        "v03-apply-staged-demote-Leader",
+        "mutation-v03-apply-staged-demote-Leader",
+        "mutation-v03-apply-demote-Leader"
+      ],
+      "requirement_evidence": [
+        "transfer"
+      ],
+      "implementation_evidence": "out/validation/differential-replays.json",
+      "limits": "Local validation only; source observations do not define the requirement."
+    }
+  ],
+  "rejected": [
+    {
+      "id": "old-auto-pending-preservation",
+      "status": "rejected",
+      "kind": "validation-draft-overconstraint-not-frozen-judgment",
+      "reason": "Successful V01/V02 automatic leave must not be required to preserve the old pending index. Accept a corrected index; keep serialization controls.",
+      "evidence": "out/validation/rejected-pending-overconstraint/reason.json"
+    },
+    {
+      "id": "legacy-conf-only-campaign",
+      "status": "rejected",
+      "kind": "pilot_deliberate_weakening_not_frozen_judgment",
+      "reason": "Accepts both forbidden pending-V2 campaign observations.",
+      "evidence": "coordinator-property-pilot/out/result-02.json"
+    },
+    {
+      "id": "prefix-only-advance",
+      "status": "rejected",
+      "kind": "nearby_mutant_not_frozen_judgment",
+      "reason": "Accepts an unrelated suffix appended by Advance.",
+      "evidence": "prefix-only-is-too-weak"
+    },
+    {
+      "id": "any-empty-v2-leave",
+      "status": "rejected",
+      "kind": "overbroad_existing_predicate",
+      "reason": "Empty JointExplicit is not the documented LeaveJoint value.",
+      "evidence": "empty-v2-is-not-necessarily-leave"
+    },
+    {
+      "id": "length-only-proposal-leave",
+      "status": "rejected",
+      "kind": "implementation_derived_alternative_not_frozen_judgment",
+      "reason": "Implementation admits empty JointExplicit in joint state; preserve stricter documented API contract.",
+      "evidence": "documented-leave-classification"
+    }
+  ],
+  "unresolved_and_deferred": [
+    {
+      "id": "V03-U4",
+      "status": "unresolved",
+      "reason": "Allowed early Advance versus later configuration callback may miss the crossing trigger. No fair-service progress driver was executed.",
+      "draft": "out/revised-spec/V03/Maintenance.tla:AutoLeaveCompletionUnder"
+    },
+    {
+      "id": "V03-U9",
+      "status": "unresolved",
+      "reason": "Eventual automatic leave and other temporal targets are not validated by these local safety/effect checks.",
+      "draft": "out/revised-spec/V03/Maintenance.tla:AutoLeaveCompletionUnder"
+    },
+    {
+      "id": "V01-V02-auto-progress",
+      "status": "unresolved",
+      "reason": "Serialization failures remain visible; quota retry and eventual completion were not established."
+    },
+    {
+      "id": "rich-configuration-provenance",
+      "status": "deferred",
+      "reason": "Helper application does not supply actual committed request/context provenance for complete EffectContract validation. Preserve inherited operators; do not invent handoff or bootstrap evidence."
+    },
+    {
+      "id": "snapshot-dispatch-observer",
+      "status": "deferred",
+      "reason": "V03 snapshot-dispatch observer repair and source-only restoration extras are outside this minimal selected edit set; no acceptance of the old oracle inferred."
+    },
+    {
+      "id": "source-only-extras",
+      "status": "deferred",
+      "reason": "Preview/helper ordering, probing/progress initialization additions, encoding/copies, harness/concurrency/logger, API errors, and other noncore proposals deferred by named entry in decision-dispositions.json."
+    },
+    {
+      "id": "pending-on-quota-drop",
+      "status": "unresolved",
+      "reason": "Proposal candidate checks preserved log and exact decision, but does not settle pending mutation on quota drop."
+    },
+    {
+      "id": "self-demoted-leader-policy",
+      "status": "unresolved",
+      "reason": "Transfer cancellation claim covers leaders that remain voters; early return policy requires separate adjudication."
+    },
+    {
+      "id": "V00-native-Go",
+      "status": "unsupported",
+      "reason": "No native V00 Go binding executed. V2/joint/automatic-leave API/state unavailable; native flat TLC comparison and lifted property tests are explicit."
+    }
+  ],
+  "validation": {
+    "replay_cases_per_version": 44,
+    "matched_code_model_pairs": 132,
+    "replay_counts": {
+      "V01": {
+        "match": 44
+      },
+      "V02": {
+        "match": 44
+      },
+      "V03": {
+        "match": 44
+      }
+    },
+    "final_replay_tags": {
+      "V01": "final-review",
+      "V02": "final-review",
+      "V03": "final"
+    },
+    "tlc_truth_pairs": 97,
+    "truth_pair_kinds": {
+      "allowed-control": 14,
+      "semantic-witness": 30,
+      "mutation-negative": 28,
+      "retained-negative": 6,
+      "observer-witness": 4,
+      "old-behavior-control": 11,
+      "actual-replay-requirement-failure": 1,
+      "new-coverage": 3
+    },
+    "observer_record_checks": 102,
+    "syntax_modules_checked": 15,
+    "generic_comparator_tests_passed": 8,
+    "pilot_reused": "coordinator-property-pilot/out/result-02.json",
+    "native_V00_TLC": "out/validation/native-quorum/native-results.json",
+    "native_V00_Go": "unsupported",
+    "selected_invariant_configurations": {
+      "V01": "out/revised-spec/V01/Maintenance.cfg",
+      "V02": "out/revised-spec/V02/Maintenance.cfg",
+      "V03": "out/revised-spec/V03/Maintenance.cfg"
+    },
+    "behavior_repairs": [],
+    "liveness": "not validated; U4/U9 remain unresolved"
+  },
+  "evidence": {
+    "truth_tables": "out/validation/truth-tables.json",
+    "witnesses_with_replays": "out/validation/witness-evidence.json",
+    "all_version_replays": "out/validation/differential-replays.json",
+    "requirement_evidence": "out/validation/requirements.json",
+    "observer_migrations": "out/validation/observer-migrations.json",
+    "observer_checks": "out/validation/observer-checks.json",
+    "state_domain_mapping": "out/validation/domain-and-mapping.md",
+    "frozen_decision_dispositions": "out/validation/decision-dispositions.json",
+    "commands": "out/validation/command-index.json",
+    "reproduce": "out/validation/README.md",
+    "triage": "out/validation/behavior-repairs.json"
+  },
+  "integrity": {
+    "packet_files_checked": 520,
+    "packet_differences": [],
+    "behavior_modules_unchanged": {
+      "V01": true,
+      "V02": true,
+      "V03": true
+    },
+    "generic_framework_unchanged": true,
+    "global_read_singleton_unchanged": true
+  },
+  "costs": {
+    "wall_seconds_since_input_hash_capture": 1791.3616771697998,
+    "inspection_before_hash_capture_seconds": "not measured",
+    "final_replay_engine_seconds": 54.61806482914835,
+    "all_recorded_replay_engine_seconds_including_failed_and_diagnostic_runs": 335.6173998573795,
+    "successful_witness_seconds": 145.09807749465108,
+    "native_quorum_seconds": 2.6205911859869957,
+    "syntax_seconds": 6.639476464129984,
+    "limits": {
+      "Go_test_timeout_seconds": 90,
+      "TLC_action_timeout_seconds": 80,
+      "TLC_witness_reproduction_timeout_seconds": 180,
+      "TLC_heap": "2 GiB",
+      "TLC_workers": 1,
+      "Go_GOMAXPROCS": 2
+    },
+    "footprint": {
+      "V01": {
+        "new_maintenance_lines": 83,
+        "selected_invariants": [
+          "ElectionSafety",
+          "LogMatching",
+          "LeaderCompleteness",
+          "CommittedHistory",
+          "AppliedAgreement",
+          "TypeOK",
+          "LogStructure",
+          "VoteRecovery",
+          "RecoveryBacking",
+          "PromiseBacking",
+          "ConfigurationOrigin",
+          "RevisedConfigurationTransitionSafety",
+          "LearnerEligibility",
+          "QuorumAccounting",
+          "ReplicationEvidence",
+          "SnapshotBacking",
+          "RevisedAckPreservation",
+          "ReadyAccounting",
+          "QuotaIntegrity",
+          "OutcomeSoundness",
+          "ReadBasis",
+          "ReadApplication",
+          "ReadCorrelation",
+          "NoUnexpectedFatal",
+          "VoteDecisionEligibility",
+          "RevisedCampaignDecisionEligibility",
+          "TransferDecisionEligibility",
+          "RequestCorrelatedConfigurationEffects",
+          "ProposalConfigurationDecisions",
+          "JointConfigurationShape",
+          "JointSnapshotRecovery",
+          "RevisedAutoLeaveAdvance"
+        ],
+        "original_behavior_edits": 0
+      },
+      "V02": {
+        "new_maintenance_lines": 99,
+        "selected_invariants": [
+          "ElectionSafety",
+          "LogMatching",
+          "LeaderCompleteness",
+          "CommittedHistory",
+          "AppliedAgreement",
+          "TypeOK",
+          "LogStructure",
+          "VoteRecovery",
+          "RecoveryBacking",
+          "PromiseBacking",
+          "ConfigurationOrigin",
+          "RevisedConfigurationTransitionSafety",
+          "LearnerEligibility",
+          "QuorumAccounting",
+          "ReplicationEvidence",
+          "SnapshotBacking",
+          "RevisedAckPreservation",
+          "RevisedReadyAccounting",
+          "QuotaIntegrity",
+          "OutcomeSoundness",
+          "ReadBasis",
+          "ReadApplication",
+          "ReadCorrelation",
+          "NoUnexpectedFatal",
+          "VoteDecisionEligibility",
+          "RevisedCampaignDecisionEligibility",
+          "TransferDecisionEligibility",
+          "RequestCorrelatedConfigurationEffects",
+          "ProposalConfigurationDecisions",
+          "JointConfigurationShape",
+          "JointSnapshotRecovery",
+          "RevisedAutoLeaveAdvance",
+          "RevisedReadyOwnership",
+          "AdvancePreservesPendingOutput"
+        ],
+        "original_behavior_edits": 0
+      },
+      "V03": {
+        "new_maintenance_lines": 149,
+        "selected_invariants": [
+          "ElectionSafety",
+          "LogMatching",
+          "LeaderCompleteness",
+          "CommittedHistory",
+          "AppliedAgreement",
+          "TypeOK",
+          "LogStructure",
+          "VoteRecovery",
+          "RecoveryBacking",
+          "PromiseBacking",
+          "ConfigurationOrigin",
+          "RevisedConfigurationTransitionSafety",
+          "LearnerEligibility",
+          "QuorumAccounting",
+          "ReplicationEvidence",
+          "SnapshotBacking",
+          "RevisedAckPreservation",
+          "RevisedReadyAccounting",
+          "QuotaIntegrity",
+          "RevisedOutcomeSoundness",
+          "ReadBasis",
+          "ReadApplication",
+          "ReadCorrelation",
+          "NoUnexpectedFatal",
+          "VoteDecisionEligibility",
+          "RevisedCampaignDecisionEligibility",
+          "TransferDecisionEligibility",
+          "RequestCorrelatedConfigurationEffects",
+          "RevisedProposalConfigurationDecisions",
+          "JointConfigurationShape",
+          "JointSnapshotRecovery",
+          "RevisedAutoLeaveAdvance",
+          "RevisedReadyOwnership",
+          "AdvancePreservesPendingOutput",
+          "TransferCancellationOnConfigurationChange"
+        ],
+        "original_behavior_edits": 0
+      }
+    },
+    "validation_artifact_bytes": 59542813,
+    "cache_and_tmp_bytes_excluded": true
+  }
+}

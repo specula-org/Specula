@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "run_id": "20260915-173143-1152",
+  "findings": [
+    {
+      "id": "CR-1",
+      "status": "FIXED",
+      "evidence": "confirmed-bugs.md"
+    },
+    {
+      "id": "CR-2",
+      "status": "NEEDS MORE INFO",
+      "evidence": "confirmed-bugs.md"
+    },
+    {
+      "id": "CR-3",
+      "status": "REPRODUCED",
+      "evidence": "confirmed-bugs.md"
+    },
+    {
+      "id": "CR-4",
+      "status": "DROPPED",
+      "evidence": "confirmed-bugs.md"
+    },
+    {
+      "id": "CR-5",
+      "status": "NEEDS MORE INFO",
+      "evidence": "confirmed-bugs.md"
+    },
+    {
+      "id": "CR-6",
+      "status": "FIXED",
+      "evidence": "confirmed-bugs.md"
+    },
+    {
+      "id": "MC-1",
+      "status": "FIXED",
+      "evidence": "confirmed-bugs.md"
+    },
+    {
+      "id": "MC-2",
+      "status": "REPRODUCED",
+      "evidence": "confirmed-bugs.md"
+    }
+  ]
+}

@@ -1,0 +1,80 @@
+130:Promotable(r) == r.id \in VoterIDs(r.config) /\ r.id \notin r.config.learners
+177:    !.prs=[n \in Members(r) |-> Progress(IF n=r.id THEN Last(r) ELSE 0,Last(r)+1,FALSE)]]
+188:             b==[a EXCEPT !.prs[r.id]=MaybeUpdate(@,Last(a),Hist(a))]
+193:    ELSE IF r.id \notin DOMAIN r.prs THEN Fatal(r,"leader missing self progress")
+194:    ELSE LET win==[node |-> r.id, term |-> r.term, hist |-> Hist(r),
+196:             a==[Reset(r,r.term,timeout) EXCEPT !.role="Leader", !.lead=r.id,
+198:                 !.prs[r.id]=BecomeReplicate(@)]
+216:                     [Message("MsgSnap",r.id,to,r.term) EXCEPT !.snapshot=snap])
+222:                msg==[Message("MsgApp",r.id,to,r.term) EXCEPT
+226:\* raft.go:1078-1084; finite recursion sends all allowed nonempty batches atomically.
+233:BcastAppend(r) == BroadcastAppend(r,Members(r)\{r.id})
+237:        m==[Message("MsgHeartbeat",r.id,n,r.term) EXCEPT
+240:BcastHeartbeat(r,ctx) == BroadcastHeartbeat(r,Members(r)\{r.id},ctx)
+241:LastContext(r) == IF r.readQueue= <<>> THEN 0 ELSE r.readQueue[Len(r.readQueue)].id
+245:        m==[Message(IF pre THEN "MsgPreVote" ELSE "MsgVote",r.id,n,
+251:    LET a==[Reset(r,r.term+1,timeout) EXCEPT !.role="Candidate", !.vote=r.id, !.yes={r.id},
+252:             !.campaigns=@ \cup {[node |-> r.id, learner |-> r.id\in r.config.learners]}]
+254:       ELSE BroadcastVotes(a,VoterIDs(a.config)\{a.id},FALSE,forced)
+257:    LET a==[r EXCEPT !.role="PreCandidate", !.lead=0, !.yes={r.id}, !.no={},
+258:             !.campaigns=@ \cup {[node |-> r.id, learner |-> r.id\in r.config.learners]}]
+260:       ELSE BroadcastVotes(a,VoterIDs(a.config)\{a.id},TRUE,FALSE)
+283:             {[node |-> r.id, learner |-> r.id\in r.config.learners,
+286:    IN Send(b,[Message(ty,r.id,m.from,IF grant THEN m.term ELSE r.term) EXCEPT !.reject=~grant])
+290:        Send(r,[Message("MsgAppResp",r.id,m.from,r.term) EXCEPT
+293:        Send(r,[Message("MsgAppResp",r.id,m.from,r.term) EXCEPT
+304:            [Message("MsgAppResp",r.id,m.from,r.term) EXCEPT
+309:       [Message("MsgHeartbeatResp",r.id,m.from,r.term) EXCEPT !.context=m.context])
+322:    ELSE IF r.id\notin s.config.voters\cup s.config.learners THEN r
+329:                     Progress(IF n=r.id THEN s.index-1 ELSE 0,s.index,TRUE)]]
+331:    Send(a,[Message("MsgAppResp",r.id,m.from,a.term) EXCEPT
+350:    ELSE IF r.id\notin Members(r) THEN [r EXCEPT !.decision="DropRemoved"]
+356:ReadRecord(r,m) == [EmptyRead EXCEPT !.id=m.context, !.rid=m.request, !.requester=m.from,
+357:    !.index=r.commit, !.term=r.term, !.leader=r.id, !.config=r.config,
+358:    !.acks={r.id}, !.hist=Prefix(Hist(r),r.commit)]
+359:DeliverReadState(r,rd) == IF rd.requester\in {0,r.id}
+361:    ELSE Send(r,[Message("MsgReadIndexResp",r.id,rd.requester,r.term) EXCEPT
+362:          !.index=rd.index, !.context=rd.id, !.request=rd.id, !.read=rd])
+366:            !.confirmConfig=r.config, !.confirmAcks={r.id}, !.confirmTerm=r.term])
+368:    ELSE LET exists==\E k \in DOMAIN r.readQueue:r.readQueue[k].id=m.context
+377:    LET ks=={k \in DOMAIN r.readQueue:r.readQueue[k].id=m.context} IN
+405:                  THEN Send(e,Message("MsgTimeoutNow",e.id,m.from,e.term)) ELSE e
+422:         IF m.from=r.id THEN a ELSE
+425:         THEN Send(b,Message("MsgTimeoutNow",r.id,m.from,r.term))
+429:    LET a==IF r.id\in Members(r) THEN [r EXCEPT !.prs[r.id].active=TRUE] ELSE r
+433:                         IF n=b.id THEN b.prs[n] ELSE [b.prs[n] EXCEPT !.active=FALSE]]]
+467:                ELSE Send([r EXCEPT !.decision="Forwarded"],[m EXCEPT !.from=r.id, !.to=r.lead])
+471:      [] m.type="MsgTransferLeader" -> IF r.lead=0 THEN r ELSE Send(r,[m EXCEPT !.from=r.id, !.to=r.lead])
+473:      [] m.type="MsgReadIndex" -> IF r.lead=0 THEN r ELSE Send(r,[m EXCEPT !.from=r.id, !.to=r.lead])
+488:        THEN Send(r,Message("MsgAppResp",r.id,m.from,r.term))
+490:             Send(r,[Message("MsgPreVoteResp",r.id,m.from,r.term) EXCEPT !.reject=TRUE]) ELSE r
+537:CanceledEntry(e) == e.kind#"V2" /\ e.id\in CancelChanges
+648:    [node |-> r.id, learner |-> r.id\in r.config.learners,
+682:    [node |-> r.id, voters |-> VoterIDs(r.config), config |-> r.config,
+713:    [node |-> r.id, target |-> target, voters |-> VoterIDs(r.config), learners |-> r.config.learners,
+729:    [node |-> r.id, entry |-> e, before |-> r.config, after |-> a.config,
+731:     request |-> IF e.id\in DOMAIN qs THEN qs[e.id] ELSE EmptyRequest]
+739:       /\ IF e.id=0 /\ e.kind="AddVoter" THEN
+741:          ELSE IF e.id=0 THEN IsLeave(e)
+742:          ELSE e.id\in RequestId /\ q.handoff /\ q.kind=e.kind /\
+747:    [node |-> r.id, role |-> r.role, config |-> r.config, voters |-> VoterIDs(r.config), learners |-> r.config.learners,
+772:                 /\ e.kind=want.kind /\ e.id=want.id /\ e.target=want.target
+774:                 /\ (e.id#0 => e.id\in RequestId /\ o.requests[e.id].kind=e.kind /\
+775:                      IF e.kind="V2" THEN o.requests[e.id].changes=e.changes
+776:                      ELSE o.requests[e.id].target=e.target)
+796:         LET q==requests[p.id] e==RequestEntry(q,p.id) IN
+827:        readySeq |-> 0, nodeLead |-> 0, propcEnabled |-> FALSE, decision |-> "", wins |-> {}, grants |-> {}, campaigns |-> {},
+856:WrapperLoop(r) == IF r.id\in RawNodes THEN r ELSE
+887:               h[k].kind="Remove" /\ h[k].target=target /\ h[k].id\notin CancelChanges /\
+955:             sourceMember |-> r.id\in m.snapshot.config.voters\cup m.snapshot.config.learners,
+956:             fullMember |-> r.id\in VoterIDs(m.snapshot.config)\cup m.snapshot.config.learners,
+987:    IN [EmptyReady EXCEPT !.active=TRUE, !.id=r.readySeq+1,
+1006:            !.readySeq=b.id,
+1104:             Append(@,[batch |-> b.id, snapshot |-> b.snapshot, entries |-> b.committed])]
+1141:              batchSnap |-> b.snapshot.index, afterSnap |-> a.usnap.index,
+1200:    /\ \E k\in DOMAIN application[n].hist:application[n].hist[k].id=id
+1201:    /\ LET k==MinSet({p\in DOMAIN application[n].hist:application[n].hist[p].id=id})
+1217:       IN /\ rd.id=q.context
+1335:       (c.hist[k].kind\in ConfKinds /\ c.hist[k].id#0) =>
+1360:    /\ (a.oldSnap#0 /\ a.oldSnap#a.batchSnap => a.afterSnap=a.oldSnap)
+1437:    x.rd.id=x.context /\ x.rd.rid=x.id /\ requests[x.id].handoff

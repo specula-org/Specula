@@ -1,0 +1,39 @@
+[
+  {
+    "label": "v01-baseline",
+    "exit_code": 0,
+    "seconds": 15.700348040089011,
+    "counts": {
+      "behavioral_mismatch": 5,
+      "match": 1
+    },
+    "total": 6
+  },
+  {
+    "label": "v01-repaired",
+    "exit_code": 0,
+    "seconds": 5.978524275124073,
+    "counts": {
+      "match": 6
+    },
+    "total": 6
+  },
+  {
+    "label": "v02-repaired",
+    "exit_code": 0,
+    "seconds": 12.443624961189926,
+    "counts": {
+      "match": 479
+    },
+    "total": 479
+  },
+  {
+    "label": "v02-repaired-model-inputs",
+    "exit_code": 0,
+    "seconds": 7.481481824070215,
+    "counts": {
+      "match": 174
+    },
+    "total": 174
+  }
+]

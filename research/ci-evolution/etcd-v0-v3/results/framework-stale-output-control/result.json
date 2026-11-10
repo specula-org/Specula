@@ -1,0 +1,21 @@
+{
+  "synthetic_test": true,
+  "purpose": "check whether a successfully disabled model action can return stale exported results",
+  "results": [
+    {
+      "label": "enabled",
+      "exit_code": 1,
+      "exported_results": 0
+    },
+    {
+      "label": "disabled-reused",
+      "exit_code": 1,
+      "exported_results": 0
+    },
+    {
+      "label": "disabled-fresh",
+      "exit_code": 1,
+      "exported_results": 0
+    }
+  ]
+}

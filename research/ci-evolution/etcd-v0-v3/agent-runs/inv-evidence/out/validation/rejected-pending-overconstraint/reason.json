@@ -1,0 +1,5 @@
+{
+  "status": "rejected",
+  "origin": "validation draft, not frozen first judgment",
+  "reason": "No supplied requirement requires preserving the old pending index after a successful V01/V02 automatic leave. Such a condition codifies an implementation defect and rejects a legitimate repair."
+}

@@ -1,0 +1,212 @@
+[
+  {
+    "version": "V01",
+    "module": "Maintenance",
+    "command": [
+      "java",
+      "-cp",
+      "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+      "tla2sany.SANY",
+      "Maintenance.tla"
+    ],
+    "cwd": "/workspace/out/revised-spec/V01",
+    "seconds": 0.42384520824998617,
+    "passed": true
+  },
+  {
+    "version": "V01",
+    "module": "base",
+    "command": [
+      "java",
+      "-cp",
+      "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+      "tla2sany.SANY",
+      "base.tla"
+    ],
+    "cwd": "/workspace/out/revised-spec/V01",
+    "seconds": 0.42045186273753643,
+    "passed": true
+  },
+  {
+    "version": "V01",
+    "module": "MC",
+    "command": [
+      "java",
+      "-cp",
+      "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+      "tla2sany.SANY",
+      "MC.tla"
+    ],
+    "cwd": "/workspace/out/revised-spec/V01",
+    "seconds": 0.4422392239794135,
+    "passed": true
+  },
+  {
+    "version": "V01",
+    "module": "Update",
+    "command": [
+      "java",
+      "-cp",
+      "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+      "tla2sany.SANY",
+      "Update.tla"
+    ],
+    "cwd": "/workspace/out/revised-spec/V01",
+    "seconds": 0.46717757917940617,
+    "passed": true
+  },
+  {
+    "version": "V01",
+    "module": "Trace",
+    "command": [
+      "java",
+      "-cp",
+      "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+      "tla2sany.SANY",
+      "Trace.tla"
+    ],
+    "cwd": "/workspace/out/revised-spec/V01",
+    "seconds": 0.4421978835016489,
+    "passed": true
+  },
+  {
+    "version": "V02",
+    "module": "Maintenance",
+    "command": [
+      "java",
+      "-cp",
+      "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+      "tla2sany.SANY",
+      "Maintenance.tla"
+    ],
+    "cwd": "/workspace/out/revised-spec/V02",
+    "seconds": 0.4610663987696171,
+    "passed": true
+  },
+  {
+    "version": "V02",
+    "module": "base",
+    "command": [
+      "java",
+      "-cp",
+      "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+      "tla2sany.SANY",
+      "base.tla"
+    ],
+    "cwd": "/workspace/out/revised-spec/V02",
+    "seconds": 0.4322839044034481,
+    "passed": true
+  },
+  {
+    "version": "V02",
+    "module": "MC",
+    "command": [
+      "java",
+      "-cp",
+      "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+      "tla2sany.SANY",
+      "MC.tla"
+    ],
+    "cwd": "/workspace/out/revised-spec/V02",
+    "seconds": 0.42342783510684967,
+    "passed": true
+  },
+  {
+    "version": "V02",
+    "module": "Update",
+    "command": [
+      "java",
+      "-cp",
+      "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+      "tla2sany.SANY",
+      "Update.tla"
+    ],
+    "cwd": "/workspace/out/revised-spec/V02",
+    "seconds": 0.47937406599521637,
+    "passed": true
+  },
+  {
+    "version": "V02",
+    "module": "Trace",
+    "command": [
+      "java",
+      "-cp",
+      "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+      "tla2sany.SANY",
+      "Trace.tla"
+    ],
+    "cwd": "/workspace/out/revised-spec/V02",
+    "seconds": 0.45214722864329815,
+    "passed": true
+  },
+  {
+    "version": "V03",
+    "module": "Maintenance",
+    "command": [
+      "java",
+      "-cp",
+      "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+      "tla2sany.SANY",
+      "Maintenance.tla"
+    ],
+    "cwd": "/workspace/out/revised-spec/V03",
+    "seconds": 0.44842667877674103,
+    "passed": true
+  },
+  {
+    "version": "V03",
+    "module": "base",
+    "command": [
+      "java",
+      "-cp",
+      "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+      "tla2sany.SANY",
+      "base.tla"
+    ],
+    "cwd": "/workspace/out/revised-spec/V03",
+    "seconds": 0.43288999050855637,
+    "passed": true
+  },
+  {
+    "version": "V03",
+    "module": "MC",
+    "command": [
+      "java",
+      "-cp",
+      "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+      "tla2sany.SANY",
+      "MC.tla"
+    ],
+    "cwd": "/workspace/out/revised-spec/V03",
+    "seconds": 0.43515913654118776,
+    "passed": true
+  },
+  {
+    "version": "V03",
+    "module": "Update",
+    "command": [
+      "java",
+      "-cp",
+      "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+      "tla2sany.SANY",
+      "Update.tla"
+    ],
+    "cwd": "/workspace/out/revised-spec/V03",
+    "seconds": 0.44512312300503254,
+    "passed": true
+  },
+  {
+    "version": "V03",
+    "module": "Trace",
+    "command": [
+      "java",
+      "-cp",
+      "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+      "tla2sany.SANY",
+      "Trace.tla"
+    ],
+    "cwd": "/workspace/out/revised-spec/V03",
+    "seconds": 0.4336663447320461,
+    "passed": true
+  }
+]

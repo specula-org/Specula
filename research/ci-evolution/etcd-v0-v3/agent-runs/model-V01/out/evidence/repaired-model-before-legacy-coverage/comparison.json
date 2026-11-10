@@ -1,0 +1,378 @@
+{
+  "protocol": "action-validation/v1",
+  "route": "model-to-code",
+  "spec": "out/repaired-spec",
+  "counts": {
+    "match": 41
+  },
+  "total": 41,
+  "commands": [
+    {
+      "engine": "model",
+      "command": [
+        "python3",
+        "/workspace/out/framework/adapters/tla/run.py",
+        "--input",
+        "/workspace/out/framework/targets/etcd/model-seeds.json",
+        "--output",
+        "/workspace/out/cases/repaired-model/model.jsonl",
+        "--spec",
+        "/workspace/out/repaired-spec",
+        "--work",
+        "/workspace/out/cases/repaired-model/model",
+        "--generate"
+      ],
+      "duration_seconds": 2.1687997737899423,
+      "exit_code": 0
+    },
+    {
+      "engine": "implementation",
+      "command": [
+        "python3",
+        "/workspace/out/framework/adapters/go/run.py",
+        "--input",
+        "/workspace/out/cases/repaired-model/generated-cases.json",
+        "--output",
+        "/workspace/out/cases/repaired-model/implementation.jsonl",
+        "--work",
+        "/workspace/out/cases/repaired-model/implementation"
+      ],
+      "duration_seconds": 0.3147960864007473,
+      "exit_code": 0
+    }
+  ],
+  "results": [
+    {
+      "id": "tlc-ack-joint-1",
+      "action": "readack",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-advance-raw-True-2-0-Leader-2-0-0",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-advance-raw-True-2-0-Leader-2-0-16",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-advance-raw-True-2-0-Leader-2-2-0",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-advance-raw-True-2-0-Leader-2-2-16",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-apply-joint-demote-Auto-0",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-apply-joint-demote-Auto-1",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-apply-joint-demote-JointExplicit-0",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-apply-joint-demote-JointExplicit-1",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-apply-joint-demote-JointImplicit-0",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-apply-joint-demote-JointImplicit-1",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-apply-simple-demote-Auto-0",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-apply-simple-demote-Auto-1",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-apply-simple-demote-JointExplicit-0",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-apply-simple-demote-JointExplicit-1",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-apply-simple-demote-JointImplicit-0",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-apply-simple-demote-JointImplicit-1",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-hup-V2-False-1-FALSE",
+      "action": "hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-hup-V2-False-1-TRUE",
+      "action": "hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-hup-V2-False-2-FALSE",
+      "action": "hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-hup-V2-False-2-TRUE",
+      "action": "hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-proposal-V2-0-0-0-0-0",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-proposal-V2-0-0-0-0-15",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-proposal-V2-0-0-0-0-16",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-proposal-V2-0-0-0-2-0",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-proposal-V2-0-0-0-2-15",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-proposal-V2-0-0-0-2-16",
+      "action": "proposal",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-quorum-joint-0-2",
+      "action": "checkquorum",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-quorum-joint-0-3",
+      "action": "checkquorum",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-quorum-joint-0-4",
+      "action": "checkquorum",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-read-joint-single-False-1",
+      "action": "read",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-read-joint-single-False-2",
+      "action": "read",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-ready-raw-False-2-1-Leader-2",
+      "action": "ready_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-restart-joint",
+      "action": "restart",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-restore-joint-2",
+      "action": "restore",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-restore-joint-3",
+      "action": "restore",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-advance-node-True-2-0-Leader-2-0-0",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-advance-node-True-2-0-Leader-2-0-16",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-advance-node-True-2-0-Leader-2-2-0",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-advance-node-True-2-0-Leader-2-2-16",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "tlc-ready-node-False-2-1-Leader-2",
+      "action": "ready_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    }
+  ],
+  "extra_results": {
+    "implementation": [],
+    "model": []
+  }
+}

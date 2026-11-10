@@ -1,0 +1,571 @@
+{
+  "created_at": "2026-09-22T17:29:55.750849+00:00",
+  "root": "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx",
+  "specula_head": "08b6e42705e3735961417152fd5e8e18c594a3f8",
+  "versions": [
+    {
+      "id": "V00",
+      "revision": "d58d5d159ae1a1f644a10003f2d8b3b807cd0b3a",
+      "date": "2019-07-13T16:22:33+02:00",
+      "tree": "6c2150a885cda9365fada1da329394c7a789fef6",
+      "source": "public/versions/V00/source",
+      "source_manifest_sha256": "dcbf70789ca3d252a8c409d3a66db4370c9d06fa4d8fae58cc662be15289e402",
+      "files": 52,
+      "verified_source_files": 52,
+      "build_overlay": [
+        "go.mod",
+        "go.sum"
+      ],
+      "prior_model": {
+        "run": "v00-registered-20260913-174822",
+        "path": "/home/ubuntu/specula-etcd-ci-init-20260912.FNeLj3NS/ci-clean/runs/v00-registered-20260913-174822/etcd-raft/.specula-output/spec",
+        "files": [
+          {
+            "path": "ConfigurationProgress.tla",
+            "sha256": "bb3f126d8aa376e482f5604641c9bcc74a9684673ccd2feaf0764cf968ddf6ea"
+          },
+          {
+            "path": "MC.cfg",
+            "sha256": "b923bf1e332d83214567bf35015f2ad5a2d57fb0d921370ac230441f58786785"
+          },
+          {
+            "path": "MC.tla",
+            "sha256": "c49b8ffdf096a4a192fe9f2890425b5140412bce08713c81068bb882940b570c"
+          },
+          {
+            "path": "MC_hunt_1_durability.cfg",
+            "sha256": "eec62528985c6ddcac591d086b3b6c68639e398cfe20ef299236df683d5e76aa"
+          },
+          {
+            "path": "MC_hunt_1_parallel.cfg",
+            "sha256": "81e2dfc2d4dc8004ce21221a56db20cc06f0da9b5be3fc4a03e86d3ed37a826c"
+          },
+          {
+            "path": "MC_hunt_1_same_batch.cfg",
+            "sha256": "35fd2ced6d93a9c13a0d9e9a880e28ff58de158bb66b95b6eac9483f34541b42"
+          },
+          {
+            "path": "MC_hunt_2_election_transfer.cfg",
+            "sha256": "dab03271cd88ffa32abd4b9ec47e542ceb0ab25cc6a9e7c7caebcdc2927fce9a"
+          },
+          {
+            "path": "MC_hunt_3_configuration_application.cfg",
+            "sha256": "1518750805c1c9230ec9f5150d3ce4551ff4b4a8e69d1594b982188b31d14448"
+          },
+          {
+            "path": "MC_hunt_3_node.cfg",
+            "sha256": "389b8874f4d6246ad3967b29fd578ed4a4307e94317ae20eaba70cf41560f186"
+          },
+          {
+            "path": "MC_hunt_4_replication_snapshot.cfg",
+            "sha256": "d4c33445d7bd3e9db47686491e4412025b517dbb026f40b81abda020d8242268"
+          },
+          {
+            "path": "MC_hunt_5_reads.cfg",
+            "sha256": "7887d8c10e27afb48d0db514a79ca5a1716de584e1fc828a376c2c1218e9e499"
+          },
+          {
+            "path": "MC_hunt_5_singleton.cfg",
+            "sha256": "7d44000c20e51f41ab6323cebcc381ea232ffded39d86e6c438b89d19c316ebf"
+          },
+          {
+            "path": "MC_hunt_6_outcomes.cfg",
+            "sha256": "2af31013132c189cfb0d45cb9134304121edc465346445f308361aea3ca8c21c"
+          },
+          {
+            "path": "MC_smoke.cfg",
+            "sha256": "0a75b78049b4d06725e5df48e1e850c1ac4b93b91017fbd3e961dd6f4552890c"
+          },
+          {
+            "path": "Quality.tla",
+            "sha256": "37adb1c9c39fcc810f443fed68943301b945627a1d9d0b32a84495b9ee2fd6b5"
+          },
+          {
+            "path": "QualityCampaignObservations.tla",
+            "sha256": "081e6622eb8de1798fda9172c14048c5b3b3a23e2e08c14105b37fd96270fef7"
+          },
+          {
+            "path": "QualityDecisions.tla",
+            "sha256": "a5469586c3eeba5f82cb2fb0edc8056dcbadb3604cbf7b9d4225f3be0975df5d"
+          },
+          {
+            "path": "QualityManagement.tla",
+            "sha256": "99c31a6591fdaeeb6df416c574dfedaa951fa3906e25453598a1a2ecd30134b2"
+          },
+          {
+            "path": "QualityTrace.cfg",
+            "sha256": "f2d9ed9a4d271a86d76f0f7af5ccb29874b047f2fff1aba36223aec0a2935670"
+          },
+          {
+            "path": "QualityTrace.tla",
+            "sha256": "afcd07a18e2fb1247f9e1042643569417a6c13398591522be2474627b546193c"
+          },
+          {
+            "path": "SourceAlignmentChecks.cfg",
+            "sha256": "ca27056ab375483be6221090c6fc79d8239bf3f848fa4b2eefc120f4a1346394"
+          },
+          {
+            "path": "SourceAlignmentChecks.tla",
+            "sha256": "aac7562758538ac15392d6cbc84ece5427b408bd805bd139319bc23ccdbfbe64"
+          },
+          {
+            "path": "Trace.cfg",
+            "sha256": "cb91c7dd454f10ae1168d53c633189086048776d30ad278710684261e5bcc562"
+          },
+          {
+            "path": "Trace.tla",
+            "sha256": "723d617dc65b59b10f9aa1a5f89d231594ae275b1988dbf079b304544c2abe5a"
+          },
+          {
+            "path": "base.cfg",
+            "sha256": "ff0790549d609d84742c16a8c70a3f9fb0819820207e4e5468d3a7d9f54eaae0"
+          },
+          {
+            "path": "base.tla",
+            "sha256": "d73a782af8f3cfdb51fe77e43aae03dcdfad6e1f54c88b47d335170d9531f938"
+          }
+        ],
+        "status": "retained_baseline"
+      }
+    },
+    {
+      "id": "V01",
+      "revision": "46580dcf61734b12ae757dbabdf31c2b862acd68",
+      "date": "2019-07-23T10:40:03+02:00",
+      "tree": "ee6171e6cc423bb5f7a5f66064bb4d1904923886",
+      "source": "public/versions/V01/source",
+      "source_manifest_sha256": "248e15de15a6169448b2ed7d2372d09185fdafa9950c2d78f48e20249814299b",
+      "files": 66,
+      "previous": "V00",
+      "commits": 13,
+      "first_parent_commits": 12,
+      "diff": "public/updates/V01.patch",
+      "diff_sha256": "4521a4de4e3c2746d4e81d626574320a5b0d6780c2410977847a4e0c9ac347e1",
+      "verified_source_files": 66,
+      "build_overlay": [
+        "go.mod",
+        "go.sum"
+      ],
+      "prior_model": {
+        "run": "20260913-175006-a818",
+        "path": "/home/ubuntu/specula-etcd-ci-init-20260912.FNeLj3NS/ci-clean/runs/20260913-175006-a818/etcd-raft/.specula-output/spec",
+        "files": [
+          {
+            "path": "ConfigurationProgress.tla",
+            "sha256": "bb3f126d8aa376e482f5604641c9bcc74a9684673ccd2feaf0764cf968ddf6ea"
+          },
+          {
+            "path": "MC.cfg",
+            "sha256": "b923bf1e332d83214567bf35015f2ad5a2d57fb0d921370ac230441f58786785"
+          },
+          {
+            "path": "MC.tla",
+            "sha256": "c8c3ac98a7ba0ea6c15177243816366ba6716040c2bac8cad997884361cbf841"
+          },
+          {
+            "path": "MC_hunt_1_durability.cfg",
+            "sha256": "eec62528985c6ddcac591d086b3b6c68639e398cfe20ef299236df683d5e76aa"
+          },
+          {
+            "path": "MC_hunt_1_parallel.cfg",
+            "sha256": "81e2dfc2d4dc8004ce21221a56db20cc06f0da9b5be3fc4a03e86d3ed37a826c"
+          },
+          {
+            "path": "MC_hunt_1_same_batch.cfg",
+            "sha256": "35fd2ced6d93a9c13a0d9e9a880e28ff58de158bb66b95b6eac9483f34541b42"
+          },
+          {
+            "path": "MC_hunt_2_election_transfer.cfg",
+            "sha256": "dab03271cd88ffa32abd4b9ec47e542ceb0ab25cc6a9e7c7caebcdc2927fce9a"
+          },
+          {
+            "path": "MC_hunt_3_configuration_application.cfg",
+            "sha256": "1518750805c1c9230ec9f5150d3ce4551ff4b4a8e69d1594b982188b31d14448"
+          },
+          {
+            "path": "MC_hunt_3_node.cfg",
+            "sha256": "389b8874f4d6246ad3967b29fd578ed4a4307e94317ae20eaba70cf41560f186"
+          },
+          {
+            "path": "MC_hunt_4_replication_snapshot.cfg",
+            "sha256": "d4c33445d7bd3e9db47686491e4412025b517dbb026f40b81abda020d8242268"
+          },
+          {
+            "path": "MC_hunt_5_reads.cfg",
+            "sha256": "7887d8c10e27afb48d0db514a79ca5a1716de584e1fc828a376c2c1218e9e499"
+          },
+          {
+            "path": "MC_hunt_5_singleton.cfg",
+            "sha256": "7d44000c20e51f41ab6323cebcc381ea232ffded39d86e6c438b89d19c316ebf"
+          },
+          {
+            "path": "MC_hunt_6_outcomes.cfg",
+            "sha256": "2af31013132c189cfb0d45cb9134304121edc465346445f308361aea3ca8c21c"
+          },
+          {
+            "path": "MC_smoke.cfg",
+            "sha256": "0a75b78049b4d06725e5df48e1e850c1ac4b93b91017fbd3e961dd6f4552890c"
+          },
+          {
+            "path": "Quality.tla",
+            "sha256": "37adb1c9c39fcc810f443fed68943301b945627a1d9d0b32a84495b9ee2fd6b5"
+          },
+          {
+            "path": "QualityCampaignObservations.tla",
+            "sha256": "081e6622eb8de1798fda9172c14048c5b3b3a23e2e08c14105b37fd96270fef7"
+          },
+          {
+            "path": "QualityDecisions.tla",
+            "sha256": "a5469586c3eeba5f82cb2fb0edc8056dcbadb3604cbf7b9d4225f3be0975df5d"
+          },
+          {
+            "path": "QualityManagement.tla",
+            "sha256": "99c31a6591fdaeeb6df416c574dfedaa951fa3906e25453598a1a2ecd30134b2"
+          },
+          {
+            "path": "QualityTrace.cfg",
+            "sha256": "f2d9ed9a4d271a86d76f0f7af5ccb29874b047f2fff1aba36223aec0a2935670"
+          },
+          {
+            "path": "QualityTrace.tla",
+            "sha256": "afcd07a18e2fb1247f9e1042643569417a6c13398591522be2474627b546193c"
+          },
+          {
+            "path": "SourceAlignmentChecks.cfg",
+            "sha256": "ca27056ab375483be6221090c6fc79d8239bf3f848fa4b2eefc120f4a1346394"
+          },
+          {
+            "path": "SourceAlignmentChecks.tla",
+            "sha256": "aac7562758538ac15392d6cbc84ece5427b408bd805bd139319bc23ccdbfbe64"
+          },
+          {
+            "path": "Trace.cfg",
+            "sha256": "cb91c7dd454f10ae1168d53c633189086048776d30ad278710684261e5bcc562"
+          },
+          {
+            "path": "Trace.tla",
+            "sha256": "d788d6d0f49f68dca05628a46e2111b197f42bed8b4556595e2dcd7335984242"
+          },
+          {
+            "path": "TraceCorrespondence.cfg",
+            "sha256": "4e899facc61437e1abf5a2d6c3654dc428f20f298c818e4e9ffcc584e0d6ec21"
+          },
+          {
+            "path": "Update.tla",
+            "sha256": "1d4cf43566876eb8f130ded0b3ca9780b72cff2989903500c7b45cf85cc042fc"
+          },
+          {
+            "path": "UpdateWitness.tla",
+            "sha256": "b5a4db8bf30c3d126c2f81981a78f15078aae9a81ef60da05f4743a745458831"
+          },
+          {
+            "path": "UpdateWitness_autoleave.cfg",
+            "sha256": "f7b099d04ecea821301de46e6efc32e71455a79c791512a4f9840afcf4a2b54f"
+          },
+          {
+            "path": "UpdateWitness_joint.cfg",
+            "sha256": "321971b7f3923d19940a329c46103e1e601bbcdcd669dbc29fb1614f48816383"
+          },
+          {
+            "path": "UpdateWitness_recovery.cfg",
+            "sha256": "cef32987f991ff063edd43568baf85bf46f1a3d88586232d387defdf28b31419"
+          },
+          {
+            "path": "Update_focused.cfg",
+            "sha256": "fdb9eb17cacfd41a02a940edf34297bc7eb0227848841e4134a63de7c689bee9"
+          },
+          {
+            "path": "Update_full.cfg",
+            "sha256": "9c9a3ca3c169e062447256357ff57016046d535e16b14264c65175608b110465"
+          },
+          {
+            "path": "Update_hunt_autoleave.cfg",
+            "sha256": "37359f4330342c9e21429885a0f8af3595991c77c8b9620bf54b6213865f1c47"
+          },
+          {
+            "path": "Update_hunt_joint.cfg",
+            "sha256": "44635b2b8a2e3389ddd35ec347ca40df5df163cb0d19a8562e1042180e0da7eb"
+          },
+          {
+            "path": "Update_hunt_recovery.cfg",
+            "sha256": "44266dfc021567ec87acd12062d80fdf606ae2ab97b429691218d353336db1d8"
+          },
+          {
+            "path": "base.cfg",
+            "sha256": "ff0790549d609d84742c16a8c70a3f9fb0819820207e4e5468d3a7d9f54eaae0"
+          },
+          {
+            "path": "base.tla",
+            "sha256": "64eeb61c48a53696d2df245bc13eec2543f15ee9ec29e91e93037c421f42b2f7"
+          }
+        ],
+        "status": "retained_baseline"
+      }
+    },
+    {
+      "id": "V02",
+      "revision": "3ea6503e58b03833d7d32a4ffcd3a76db9ea2520",
+      "date": "2019-08-09T20:13:04+02:00",
+      "tree": "2eef750674b903f32e33e25926d4971a5863f670",
+      "source": "public/versions/V02/source",
+      "source_manifest_sha256": "34c16881bdb83f60ad453497165f276c8801f99420856ee4f565e6bb1c37b8ef",
+      "files": 70,
+      "previous": "V01",
+      "commits": 15,
+      "first_parent_commits": 9,
+      "diff": "public/updates/V02.patch",
+      "diff_sha256": "d787b72ea3ae6b746f79ef034d5df8c0978503d58db24f876dfc9c9b2acb7803",
+      "verified_source_files": 70,
+      "build_overlay": [
+        "go.mod",
+        "go.sum"
+      ],
+      "prior_model": {
+        "run": "20260915-173143-1152",
+        "path": "/home/ubuntu/specula-etcd-ci-init-20260912.FNeLj3NS/ci-clean/runs/20260915-173143-1152/etcd-raft/.specula-output/spec",
+        "files": [
+          {
+            "path": "ConfigurationProgress.tla",
+            "sha256": "bb3f126d8aa376e482f5604641c9bcc74a9684673ccd2feaf0764cf968ddf6ea"
+          },
+          {
+            "path": "MC.cfg",
+            "sha256": "b923bf1e332d83214567bf35015f2ad5a2d57fb0d921370ac230441f58786785"
+          },
+          {
+            "path": "MC.tla",
+            "sha256": "c8c3ac98a7ba0ea6c15177243816366ba6716040c2bac8cad997884361cbf841"
+          },
+          {
+            "path": "MC_hunt_1_durability.cfg",
+            "sha256": "eec62528985c6ddcac591d086b3b6c68639e398cfe20ef299236df683d5e76aa"
+          },
+          {
+            "path": "MC_hunt_1_parallel.cfg",
+            "sha256": "81e2dfc2d4dc8004ce21221a56db20cc06f0da9b5be3fc4a03e86d3ed37a826c"
+          },
+          {
+            "path": "MC_hunt_1_same_batch.cfg",
+            "sha256": "35fd2ced6d93a9c13a0d9e9a880e28ff58de158bb66b95b6eac9483f34541b42"
+          },
+          {
+            "path": "MC_hunt_2_election_transfer.cfg",
+            "sha256": "dab03271cd88ffa32abd4b9ec47e542ceb0ab25cc6a9e7c7caebcdc2927fce9a"
+          },
+          {
+            "path": "MC_hunt_3_configuration_application.cfg",
+            "sha256": "1518750805c1c9230ec9f5150d3ce4551ff4b4a8e69d1594b982188b31d14448"
+          },
+          {
+            "path": "MC_hunt_3_node.cfg",
+            "sha256": "389b8874f4d6246ad3967b29fd578ed4a4307e94317ae20eaba70cf41560f186"
+          },
+          {
+            "path": "MC_hunt_4_replication_snapshot.cfg",
+            "sha256": "d4c33445d7bd3e9db47686491e4412025b517dbb026f40b81abda020d8242268"
+          },
+          {
+            "path": "MC_hunt_5_reads.cfg",
+            "sha256": "7887d8c10e27afb48d0db514a79ca5a1716de584e1fc828a376c2c1218e9e499"
+          },
+          {
+            "path": "MC_hunt_5_singleton.cfg",
+            "sha256": "7d44000c20e51f41ab6323cebcc381ea232ffded39d86e6c438b89d19c316ebf"
+          },
+          {
+            "path": "MC_hunt_6_outcomes.cfg",
+            "sha256": "2af31013132c189cfb0d45cb9134304121edc465346445f308361aea3ca8c21c"
+          },
+          {
+            "path": "MC_smoke.cfg",
+            "sha256": "0a75b78049b4d06725e5df48e1e850c1ac4b93b91017fbd3e961dd6f4552890c"
+          },
+          {
+            "path": "Quality.tla",
+            "sha256": "37adb1c9c39fcc810f443fed68943301b945627a1d9d0b32a84495b9ee2fd6b5"
+          },
+          {
+            "path": "QualityCampaignObservations.tla",
+            "sha256": "081e6622eb8de1798fda9172c14048c5b3b3a23e2e08c14105b37fd96270fef7"
+          },
+          {
+            "path": "QualityDecisions.tla",
+            "sha256": "a5469586c3eeba5f82cb2fb0edc8056dcbadb3604cbf7b9d4225f3be0975df5d"
+          },
+          {
+            "path": "QualityManagement.tla",
+            "sha256": "99c31a6591fdaeeb6df416c574dfedaa951fa3906e25453598a1a2ecd30134b2"
+          },
+          {
+            "path": "QualityTrace.cfg",
+            "sha256": "f2d9ed9a4d271a86d76f0f7af5ccb29874b047f2fff1aba36223aec0a2935670"
+          },
+          {
+            "path": "QualityTrace.tla",
+            "sha256": "afcd07a18e2fb1247f9e1042643569417a6c13398591522be2474627b546193c"
+          },
+          {
+            "path": "SourceAlignmentChecks.cfg",
+            "sha256": "ca27056ab375483be6221090c6fc79d8239bf3f848fa4b2eefc120f4a1346394"
+          },
+          {
+            "path": "SourceAlignmentChecks.tla",
+            "sha256": "aac7562758538ac15392d6cbc84ece5427b408bd805bd139319bc23ccdbfbe64"
+          },
+          {
+            "path": "Trace.cfg",
+            "sha256": "ccb07599bce658b031bc9de4d5d57bb1e81ce7f68c04ae855aea9306c641478e"
+          },
+          {
+            "path": "Trace.tla",
+            "sha256": "d788d6d0f49f68dca05628a46e2111b197f42bed8b4556595e2dcd7335984242"
+          },
+          {
+            "path": "TraceCorrespondence.cfg",
+            "sha256": "68f7a1d8a50c1b39e05935386239333530788ff2d5e445b31441a7ca370acd38"
+          },
+          {
+            "path": "Update.tla",
+            "sha256": "b34d202fac57dea54cb0eb63410dd536e3864c1d9f76b272cc77b94b09eaa8cf"
+          },
+          {
+            "path": "UpdateWitness.tla",
+            "sha256": "614d89552a7ddcb9799b6beccc273c87c018614a747ae0caad41438516535359"
+          },
+          {
+            "path": "UpdateWitness_autoleave.cfg",
+            "sha256": "f7b099d04ecea821301de46e6efc32e71455a79c791512a4f9840afcf4a2b54f"
+          },
+          {
+            "path": "UpdateWitness_current.cfg",
+            "sha256": "095eb8809377c4fa0b77c5a32303652a0b2fb3b337d0a67c28a70984cc83cccc"
+          },
+          {
+            "path": "UpdateWitness_joint.cfg",
+            "sha256": "321971b7f3923d19940a329c46103e1e601bbcdcd669dbc29fb1614f48816383"
+          },
+          {
+            "path": "UpdateWitness_recovery.cfg",
+            "sha256": "cef32987f991ff063edd43568baf85bf46f1a3d88586232d387defdf28b31419"
+          },
+          {
+            "path": "Update_focused.cfg",
+            "sha256": "be76e3198243e1659bc4271f183d1efbef972476697660f75cb30000e90345f7"
+          },
+          {
+            "path": "Update_full.cfg",
+            "sha256": "cc6d657c7701990a69470cd34f3519f745ea669f8cd150d855de0d26b834055c"
+          },
+          {
+            "path": "Update_hunt_autoleave.cfg",
+            "sha256": "37359f4330342c9e21429885a0f8af3595991c77c8b9620bf54b6213865f1c47"
+          },
+          {
+            "path": "Update_hunt_joint.cfg",
+            "sha256": "44635b2b8a2e3389ddd35ec347ca40df5df163cb0d19a8562e1042180e0da7eb"
+          },
+          {
+            "path": "Update_hunt_learner_vote.cfg",
+            "sha256": "65d011595b4e4af0f6c040fd0d36dede0082948780a574955a62f622dca3d088"
+          },
+          {
+            "path": "Update_hunt_outgoing_snapshot.cfg",
+            "sha256": "5daf538ff55296438999c9a13c10ef4171f7f2098f9cd0baa5199c615ed2dfee"
+          },
+          {
+            "path": "Update_hunt_ready.cfg",
+            "sha256": "151be97938fa2b4f25e7c052f9e3c7beb6dc7b9215809f127e474c30713acec4"
+          },
+          {
+            "path": "Update_hunt_recovery.cfg",
+            "sha256": "44266dfc021567ec87acd12062d80fdf606ae2ab97b429691218d353336db1d8"
+          },
+          {
+            "path": "base.cfg",
+            "sha256": "ff0790549d609d84742c16a8c70a3f9fb0819820207e4e5468d3a7d9f54eaae0"
+          },
+          {
+            "path": "base.tla",
+            "sha256": "0e3e9526fac33b99bf2113c1e95c07536b424860e86d2d06b515f137f6421f5e"
+          }
+        ],
+        "status": "unfinished_workflow"
+      }
+    },
+    {
+      "id": "V03",
+      "revision": "bd3c759d61f003970d62095f04f3df5d977c8c78",
+      "date": "2020-02-25T12:35:51+01:00",
+      "tree": "78085b5b45b822e29fb429c47ce99e30c291d21a",
+      "source": "public/versions/V03/source",
+      "source_manifest_sha256": "4ef44147f529dee0ca30f33455620ef8da5d97e83ce5626b0f23ef85b220c5d4",
+      "files": 95,
+      "previous": "V02",
+      "commits": 21,
+      "first_parent_commits": 19,
+      "diff": "public/updates/V03.patch",
+      "diff_sha256": "774eae4a9845b3331a2899e4e17e41524dae83de27072b0616e4e266c011e1e7",
+      "verified_source_files": 95,
+      "build_overlay": [
+        "go.mod",
+        "go.sum"
+      ]
+    }
+  ],
+  "api_experiments": {
+    "status": "authorized",
+    "primary_model": "gpt-6-astra",
+    "reproduction_model": "gpt-5.5",
+    "cost_limit_usd": null,
+    "user_authorized_no_cost_cap": true,
+    "effort": "xhigh",
+    "concurrency": 3,
+    "concurrency_note": "Up to three independent authorized experiments: property validation, progress-property search, and gpt-5.5 code reproduction. Packets remain isolated."
+  },
+  "integration": "none; experiment files only",
+  "primary_known_bugs": [
+    {
+      "id": "A",
+      "topic": "Membership application and election eligibility",
+      "old": "6cef4ce94288d46bc89d2e302ad5bf20f9fd80a8",
+      "introducing": "46580dcf61734b12ae757dbabdf31c2b862acd68",
+      "fixed": "e6ce29637cf1fb0edcca636842e02d0de85567bd",
+      "introduced_at": "V01",
+      "first_selected_fixed": "V04",
+      "expected_affected_checkpoints": [
+        "V01",
+        "V02",
+        "V03"
+      ],
+      "issue": "https://github.com/etcd-io/etcd/issues/12133",
+      "repair": "https://github.com/etcd-io/etcd/pull/12134",
+      "runtime_observation": "Ineligible campaign disrupts an existing leader; no same-term dual-leader claim.",
+      "old_control": "The newer configuration API is absent; use the semantically equivalent legacy operation.",
+      "repetitions_per_revision": 3
+    },
+    {
+      "id": "B",
+      "topic": "Automatic membership transition progress",
+      "old": "fee72134d5de0afca4041a45634232da5af4d592",
+      "introducing": "bd3c759d61f003970d62095f04f3df5d977c8c78",
+      "fixed": "477ebd836aa0a74e3201d50d1dcfaa095e5abc18",
+      "introduced_at": "V03",
+      "first_selected_fixed": "V04",
+      "expected_affected_checkpoints": [
+        "V03"
+      ],
+      "issue": "https://github.com/etcd-io/etcd/issues/12136",
+      "repair": "https://github.com/etcd-io/etcd/pull/12137",
+      "runtime_observation": "Membership transition stalls and subsequent membership work does not apply while ordinary log work continues.",
+      "old_control": "Same public-API scenario across the three revisions.",
+      "repetitions_per_revision": 3
+    }
+  ],
+  "acceptance": {
+    "required_historical_bugs": [
+      "A",
+      "B"
+    ],
+    "additional_findings": "regressions_reported_separately"
+  }
+}

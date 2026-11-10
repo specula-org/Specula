@@ -1,0 +1,208 @@
+     published |-> FALSE,
+     queued |-> FALSE,
+     remainingMessages |-> <<>>,
+     fromApplied |-> 0,
+     started |-> {} ] >>
+/\ history = [ acks |-> {},
+  applied |-> {},
+  readyChecks |-> {},
+  autoLeaveChecks |-> {},
+  lostReads |-> {},
+  campaigns |-> {},
+  commitUses |-> {},
+  wins |-> {},
+  grants |-> {},
+  obligations |-> {},
+  promises |-> {},
+  writes |-> {},
+  readResults |-> {},
+  recovery |-> {},
+  outcomes |-> {},
+  snapshots |-> {},
+  liveOK |-> TRUE,
+  sent |-> {},
+  events |-> {} ]
+/\ captured = [ snapshot |->
+      [ config |->
+            [ voters |-> {},
+              outgoing |-> {},
+              learners |-> {},
+              learnersNext |-> {},
+              autoLeave |-> FALSE ],
+        term |-> 0,
+        index |-> 0,
+        hist |-> <<>> ],
+  hist |-> <<>>,
+  entries |-> <<>>,
+  id |-> 0,
+  active |-> FALSE,
+  messages |-> <<>>,
+  reads |-> <<>>,
+  hs |-> [term |-> 0, commit |-> 0, vote |-> 0],
+  hasHS |-> FALSE,
+  ss |-> [lead |-> 0, role |-> "Follower"],
+  hasSS |-> FALSE,
+  committed |-> <<>>,
+  mustSync |-> FALSE,
+  cursor |-> 0,
+  done |-> {},
+  installed |-> {},
+  published |-> FALSE,
+  queued |-> FALSE,
+  remainingMessages |-> <<>>,
+  fromApplied |-> 0,
+  started |-> {} ]
+/\ selected = [ input |->
+      [ snapshot |->
+            [ config |->
+                  [ voters |-> <<1, 2, 3>>,
+                    outgoing |-> <<>>,
+                    learners |-> <<>>,
+                    learnersNext |-> <<>>,
+                    autoLeave |-> FALSE ],
+              term |-> 3,
+              index |-> 3 ],
+        fromId |-> 2,
+        context |-> 7,
+        entries |-> <<>>,
+        entry |->
+            [ kind |-> "AddLearner",
+              term |-> 0,
+              index |-> 0,
+              changes |-> <<[kind |-> "AddLearner", target |-> 3]>>,
+              transition |-> "Legacy",
+              weight |-> 6,
+              encoded |-> 14,
+              target |-> 3 ],
+        message |->
+            [ term |-> 2,
+              index |-> 0,
+              type |-> "MsgHup",
+              fromId |-> 2,
+              to |-> 1,
+              logTerm |-> 0,
+              commit |-> 0,
+              reject |-> FALSE,
+              hint |-> 0,
+              context |-> 0,
+              forced |-> FALSE,
+              entries |-> <<>> ],
+        between |-> <<>> ],
+  action |-> "apply",
+  id |-> "v03-apply-demote-Leader",
+  pre |->
+      [ config |->
+            [ voters |-> <<1, 2, 3>>,
+              outgoing |-> <<>>,
+              learners |-> <<>>,
+              learnersNext |-> <<>>,
+              autoLeave |-> FALSE ],
+        term |-> 2,
+        commit |-> 2,
+        log |->
+            << [ kind |-> "Normal",
+                 term |-> 2,
+                 index |-> 1,
+                 changes |-> <<>>,
+                 transition |-> "Legacy",
+                 weight |-> 0,
+                 encoded |-> 8,
+                 target |-> 0 ],
+               [ kind |-> "Normal",
+                 term |-> 2,
+                 index |-> 2,
+                 changes |-> <<>>,
+                 transition |-> "Legacy",
+                 weight |-> 1,
+                 encoded |-> 9,
+                 target |-> 0 ] >>,
+        vote |-> 0,
+        lead |-> 1,
+        role |-> "Leader",
+        votes |-> <<>>,
+        uoff |-> 3,
+        applied |-> 2,
+        pending |-> 0,
+        quota |-> 0,
+        transfer |-> 3,
+        prs |->
+            << [ id |-> 1,
+                 pending |-> 0,
+                 match |-> 2,
+                 next |-> 3,
+                 active |-> FALSE,
+                 mode |-> "Replicate",
+                 probe |-> FALSE,
+                 inflight |-> <<>> ],
+               [ id |-> 2,
+                 pending |-> 0,
+                 match |-> 0,
+                 next |-> 3,
+                 active |-> FALSE,
+                 mode |-> "Probe",
+                 probe |-> FALSE,
+                 inflight |-> <<>> ],
+               [ id |-> 3,
+                 pending |-> 0,
+                 match |-> 0,
+                 next |-> 3,
+                 active |-> FALSE,
+                 mode |-> "Probe",
+                 probe |-> FALSE,
+                 inflight |-> <<>> ] >>,
+        messages |-> <<>>,
+        reads |-> <<>>,
+        readQueue |-> <<>>,
+        preVote |-> FALSE,
+        checkQuorum |-> FALSE,
+        elapsed |-> 0,
+        heartbeat |-> 0,
+        prevHS |-> [term |-> 2, commit |-> 2, vote |-> 0],
+        prevSS |-> [lead |-> 1, role |-> "Leader"] ],
+  protocol |-> "action-validation/v1",
+  meta |->
+      [ origin |-> "source",
+        reachability |->
+            "locally valid injected state; no cluster trace claimed",
+        version |-> "V03",
+        source |-> "supplied update.patch and changed functions/callers" ] ]
+
+Error: The error occurred when TLC was evaluating the nested
+expressions at the following positions:
+0. Line 148, column 12 to line 153, column 20 in LocalActions
+1. Line 148, column 12 to line 148, column 22 in LocalActions
+2. Line 140, column 16 to line 147, column 79 in LocalActions
+3. Line 140, column 16 to line 140, column 141 in LocalActions
+4. Line 140, column 19 to line 140, column 141 in LocalActions
+5. Line 140, column 19 to line 140, column 86 in LocalActions
+6. Line 140, column 19 to line 140, column 25 in LocalActions
+7. Line 140, column 30 to line 140, column 86 in LocalActions
+8. Line 140, column 91 to line 140, column 141 in LocalActions
+9. Line 140, column 101 to line 140, column 141 in LocalActions
+10. Line 140, column 103 to line 140, column 110 in LocalActions
+11. Line 140, column 112 to line 140, column 117 in LocalActions
+12. Line 140, column 119 to line 140, column 126 in LocalActions
+13. Line 140, column 128 to line 140, column 139 in LocalActions
+14. Line 141, column 5 to line 147, column 79 in LocalActions
+15. Line 142, column 4 to line 147, column 79 in LocalActions
+16. Line 142, column 7 to line 142, column 16 in LocalActions
+17. Line 143, column 7 to line 147, column 79 in LocalActions
+18. Line 146, column 19 to line 147, column 79 in LocalActions
+19. Line 146, column 22 to line 146, column 55 in LocalActions
+20. Line 147, column 22 to line 147, column 79 in LocalActions
+21. Line 147, column 32 to line 147, column 79 in LocalActions
+22. Line 147, column 34 to line 147, column 37 in LocalActions
+23. Line 147, column 39 to line 147, column 43 in LocalActions
+24. Line 147, column 45 to line 147, column 55 in LocalActions
+25. Line 147, column 57 to line 147, column 64 in LocalActions
+26. Line 147, column 66 to line 147, column 69 in LocalActions
+27. Line 147, column 71 to line 147, column 77 in LocalActions
+28. Line 149, column 5 to line 153, column 20 in LocalActions
+29. Line 149, column 14 to line 153, column 20 in LocalActions
+30. Line 152, column 17 to line 153, column 20 in LocalActions
+
+
+37 states generated, 37 distinct states found, 36 states left on queue.
+The depth of the complete state graph search is 1.
+Finished in 05s at (2026-09-22 20:22:19)
+

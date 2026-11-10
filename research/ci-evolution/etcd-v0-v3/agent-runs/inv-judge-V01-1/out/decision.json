@@ -1,0 +1,1405 @@
+{
+  "overall_decision": "modify_and_extend_selectively",
+  "reason": "Retain Raft safety and decision contracts. Migrate single-configuration observers to joint configurations and V2 entries; change only contracts supported by the new API/tests; add missing lifecycle, copy, restoration, and auto-leave obligations. Several source defects must remain visible. No property is removed and completeness is not claimed.",
+  "assessment": {
+    "phase": "independent initial judgment, before validation",
+    "inputs": [
+      "old/source",
+      "new/source",
+      "update.patch",
+      "old/spec"
+    ],
+    "methods": "Static reading only, within /workspace. No tests, TLC, browsing, agents, experiment history, or source/spec edits.",
+    "expressions": "Proposed predicates are specifications for later maintenance, not executable TLA+ supplied in this phase.",
+    "comparison": "Old properties cannot literally consume a new record schema. Representation witnesses compare the old predicate through its stated legacy projection with the proposed predicate. Keep entries have no logical old/proposed disagreement; their concrete controls identify an edit that would be wrong.",
+    "categories": [
+      "unchanged_requirement",
+      "semantic_requirement_change",
+      "representation_or_observer_migration",
+      "pre_existing_property_defect_repair",
+      "new_coverage_for_required_behavior"
+    ],
+    "removal_decision": "none"
+  },
+  "shared_predicates": {
+    "configuration": "C=(I,O,L,N,A): incoming voters, outgoing voters, active learners, staged learners, AutoLeave. U(C)=I union O; Members(C)=U(C) union L. N is a subset of O, not an additional learner set. Legacy configurations embed as (voters,{},learners,{},FALSE).",
+    "quorum": "Majority(S,Y) iff |S intersect Y| > floor(|S|/2). JointWon(C,Y) iff I is nonempty and Majority(I,Y) and (O is empty or Majority(O,Y)). Election loss occurs if either nonempty constituent majority cannot win with remaining votes. Commit index is min(majorityIndex(I),majorityIndex(O)), with empty O contributing infinity, and commitment still requires the current-term rule.",
+    "configuration_entries": "IsConf(e) iff wire type is EntryConfChange or EntryConfChangeV2, including a context-only/empty V2 leave entry. Retain ordered changes, transition mode, opaque context, wire version, payload/encoded sizes, and independent request identity. Distinguish origin=Client(request), Bootstrap(peer), or AutoLeave(enter-entry,leader-term); id=0 alone is not proof of bootstrap.",
+    "configuration_effect": "For V1, normalize to one change and Auto transition, preserving Context; NodeID=0 is an ignored operation, not an empty V2 leave. For V2, empty Changes with Auto transition (Context ignored for classification) means LeaveJoint. Non-Auto transition or more than one change means EnterJoint; Auto and JointImplicit set A=TRUE, JointExplicit sets A=FALSE. Otherwise use Simple. An empty explicitly joint change ENTERS joint state. Only successfully applied entries change active configuration.",
+    "apply_ops": "Fold operations in order, atomically to external observers. Ignore NodeID=0. AddVoter adds to I and removes from L,N. AddLearner removes from I and stages in N if the ID is in O, otherwise adds to L; a staged learner remains a voter in O. Remove deletes from I,L,N and retains progress iff still in O; removing an unknown ID is idempotent. Update changes no membership. EnterJoint copies old I to O before the fold. LeaveJoint sets L'=L union N, O'=N'={}, A'=FALSE, and drops progress for IDs outside I union L'.",
+    "valid_change": "Simple requires O empty, nonempty resulting I, and at most one voter in the symmetric difference of old/new I. EnterJoint requires nonempty old I, empty old O, and nonempty resulting I. LeaveJoint requires nonempty O. Both input and successful output obey configuration/progress invariants. Validate independently of the source's returned error or success.",
+    "configuration_provenance": "ConfigAt(anchor,history,k) replays successful committed configuration callbacks from an explicitly authorized constructor/snapshot anchor. Anchors carry configuration, log index/term, and provenance. Synthetic bootstrap logs remain supported; a manually populated Storage.InitialState is not required to invent AddVoter entries. No snapshot or source post-state is used as its own independent correctness oracle.",
+    "auto_leave_eligible": "Current leader in a valid AutoLeave joint configuration, enter change applied, acknowledgement cursor reaches the relevant pending barrier, and no un-applied leave/other configuration entry already occupies that barrier. An automatic exit is an ordinary V2 configuration entry requiring persistence, joint commitment and application. A failed quota attempt is not an appended entry.",
+    "witnesses": "IDs are concrete node IDs 1,2,3,4; indexes/terms are local examples, to be embedded in suitable later bounds. Mutation witnesses need not be claimed reachable in the unmodified implementation."
+  },
+  "entries": [
+    {
+      "name": "ElectionSafety",
+      "decision": "keep",
+      "change": [
+        "unchanged_requirement"
+      ],
+      "evidence": [
+        "old/spec/base.tla:1135; BecomeLeader:165 and Observe:739",
+        "new/source/raft.go:769 campaign; new/source/quorum/joint.go:61 VoteResult"
+      ],
+      "proposed_predicate": "Unchanged: every pair of actual leadership wins in the same term has the same node. Continue recording every win, including wins with invalid quorum evidence.",
+      "disagreement_witness": {
+        "state_or_transition": "Two nodes 1 and 2 both become leader in term 7, possibly using different constituent quorums.",
+        "old": "FAIL",
+        "proposed": "FAIL"
+      },
+      "control": "No disagreement for keep. A proposed per-configuration exception would incorrectly pass."
+    },
+    {
+      "name": "LogMatching",
+      "decision": "keep",
+      "change": [
+        "unchanged_requirement"
+      ],
+      "evidence": [
+        "old/spec/base.tla:1136",
+        "new/source/raft.go:1328 handleAppendEntries; old/source/log.go:88 maybeAppend"
+      ],
+      "proposed_predicate": "Unchanged: equal positive term at a shared index entails equal complete prefixes. Entry equality includes the V2 payload after the shared entry-schema migration.",
+      "disagreement_witness": {
+        "state_or_transition": "Logs have entry (term=4,index=8) but different earlier commands or different V2 Changes at index 7.",
+        "old": "FAIL",
+        "proposed": "FAIL"
+      },
+      "control": "No exemption for configuration entries or joint phases."
+    },
+    {
+      "name": "LeaderCompleteness",
+      "decision": "keep",
+      "change": [
+        "unchanged_requirement",
+        "representation_or_observer_migration"
+      ],
+      "evidence": [
+        "old/spec/base.tla:1140; DurableObligations:733",
+        "new/source/raftpb/raft.proto:134; new/source/quorum/joint.go:49"
+      ],
+      "proposed_predicate": "Keep w.term>c.term => Covers(w.hist,c.hist). Migrate durable-quorum observations to JointWon and retain independent actual-commit and published-promise observations; never suppress a win because its quorum is invalid.",
+      "disagreement_witness": {
+        "state_or_transition": "Prefix through index 9 is durably committed by both majorities in term 4; node 3 wins term 5 without index 9.",
+        "old": "FAIL",
+        "proposed": "FAIL"
+      },
+      "control": "Identical requirement on the same obligation; no relaxation for membership replacement."
+    },
+    {
+      "name": "CommittedHistory",
+      "decision": "keep",
+      "change": [
+        "unchanged_requirement",
+        "representation_or_observer_migration"
+      ],
+      "evidence": [
+        "old/spec/base.tla:1142; SetCore:751; DurableObligations:733; ProtocolPublish:939",
+        "new/source/quorum/joint.go:49"
+      ],
+      "proposed_predicate": "Keep live commitment preservation and compatibility of all committed obligations and live committed prefixes. Migrate only the configuration data in durable-quorum evidence; retain all actual commitUses.",
+      "disagreement_witness": {
+        "state_or_transition": "A leader in joint state replaces a previously committed command at index 6, or another leader commits an incompatible prefix.",
+        "old": "FAIL",
+        "proposed": "FAIL"
+      },
+      "control": "Joint reconfiguration permits no incompatible committed histories."
+    },
+    {
+      "name": "AppliedAgreement",
+      "decision": "keep",
+      "change": [
+        "unchanged_requirement"
+      ],
+      "evidence": [
+        "old/spec/base.tla:1146; ProtocolApplyEntry:1003",
+        "new/source/node.go:169; new/source/raftpb/raft.proto:139"
+      ],
+      "proposed_predicate": "Unchanged Compatible(a,b) for all observed application histories; entry identity includes the whole atomic V2 batch.",
+      "disagreement_witness": {
+        "state_or_transition": "Applications at nodes 1 and 2 have incompatible commands/configuration batch payloads at index 8.",
+        "old": "FAIL",
+        "proposed": "FAIL"
+      },
+      "control": "Do not exempt configuration entries from applied-prefix agreement."
+    },
+    {
+      "name": "VoteRecovery",
+      "decision": "keep",
+      "change": [
+        "unchanged_requirement"
+      ],
+      "evidence": [
+        "old/spec/base.tla:1148; RestartCore:1099",
+        "old/source/rawnode.go:85 empty-log inference",
+        "new/source/rawnode.go:46 NewRawNode; new/source/raft.go:1512 loadState"
+      ],
+      "proposed_predicate": "Unchanged durable term/vote lower bound: recovered term >= savedTerm and same-term recovery preserves nonzero savedVote. Remove implicit empty-log bootstrap from the restart adapter, not from the property.",
+      "disagreement_witness": {
+        "state_or_transition": "Empty durable log, HardState=(term=5,vote=2,commit=0), then restart. Resetting to term 1 violates the contract; new constructor should retain term 5/vote 2.",
+        "old": "FAIL on reset; PASS on preservation",
+        "proposed": "same"
+      },
+      "control": "An implementation improvement does not require weakening or replacing VoteRecovery."
+    },
+    {
+      "name": "RecoveryBacking",
+      "decision": "keep",
+      "change": [
+        "unchanged_requirement"
+      ],
+      "evidence": [
+        "old/spec/base.tla:1150",
+        "new/source/rawnode.go:46; new/source/node.go:233; new/source/storage.go:InitialState"
+      ],
+      "proposed_predicate": "Keep recovered committed-index and applied-prefix backing by nonmissing durable log/snapshot history. Use anchored prefix evidence for manual bootstrap.",
+      "disagreement_witness": {
+        "state_or_transition": "Restart reports commit=8 but disk/snapshot covers only index 7.",
+        "old": "FAIL",
+        "proposed": "FAIL"
+      },
+      "control": "No synthetic filling of missing entries to accommodate new bootstrap APIs."
+    },
+    {
+      "name": "PromiseBacking",
+      "decision": "keep",
+      "change": [
+        "unchanged_requirement"
+      ],
+      "evidence": [
+        "old/spec/base.tla:1154; PromiseOK:932; ProtocolPublish:939",
+        "old/source/README.md:116; new/source/node.go:59"
+      ],
+      "proposed_predicate": "Keep every published promise backed. An omitted unchanged Ready.HardState uses the already durable HardState; it does not waive vote/term or append-response durability.",
+      "disagreement_witness": {
+        "state_or_transition": "Restart has durable term 5/vote 2 and emits no HardState: a matching vote response is backed. A term-6 vote response before persisting term 6 is not.",
+        "old": "PASS first / FAIL second",
+        "proposed": "same"
+      },
+      "control": "Do not require redundant HardState emission; do not weaken persistence ordering."
+    },
+    {
+      "name": "ConfigurationOrigin",
+      "decision": "modify",
+      "change": [
+        "representation_or_observer_migration"
+      ],
+      "evidence": [
+        "old/spec/base.tla:1156; ConfigOf:475; InitialRaft:703; Restore:281",
+        "new/source/rawnode.go:39; new/source/rawnode_test.go:509 TestRawNodeStart",
+        "new/source/raftpb/raft.proto:96; new/source/node.go:169"
+      ],
+      "proposed_predicate": "Keep committed/constructor/snapshot provenance, prefix backing and application-time activation. Replace ConfigOf's flat unanchored fold with ConfigAt over the complete configuration and authorized anchor. Accept internal AutoLeave only with a recorded causal enter entry; proposal/Ready/Advance alone does not apply the exit.",
+      "disagreement_witness": {
+        "state_or_transition": "Storage is manually anchored at index 1/term 0 with voters {1}, no fake AddVoter log. Alternatively a joint snapshot says I={1,2},O={2,3},N={3},A=TRUE but restart retains only I.",
+        "old": "Rejects legitimate nonempty config with no synthetic changes; projected check can miss lost O,N,A",
+        "proposed": "PASS authorized anchor / FAIL lossy restore"
+      }
+    },
+    {
+      "name": "ConfigurationTransitionSafety",
+      "decision": "modify",
+      "change": [
+        "representation_or_observer_migration"
+      ],
+      "evidence": [
+        "old/spec/base.tla:1161; MaybeCommit:125",
+        "old/source/README.md:193",
+        "new/source/raftpb/raft.proto:139; new/source/quorum/joint.go:49"
+      ],
+      "proposed_predicate": "For every newly committed configuration entry except proven constructor bootstrap, require the committing voter configuration to equal its predecessor configuration's complete (I,O), and require supporting majorities of both components. Enter commits under the predecessor simple config; leave commits under the predecessor joint config. Do not skip auto-generated entries because request id is zero; ignore A/L/N only for quorum equality.",
+      "disagreement_witness": {
+        "state_or_transition": "Enter at index 10 yields I={1,2},O={2,3}. AutoLeave entry 11 has internal id=0 and is committed using only acknowledgements {1,2}.",
+        "old": "Can PASS by id=0 exemption, or by projecting voters to I/union",
+        "proposed": "FAIL: missing outgoing majority"
+      },
+      "note": "Preserve predecessor-config safety; do not replace it with the tautology 'the quorum equals whatever configuration the implementation used'."
+    },
+    {
+      "name": "LearnerEligibility",
+      "decision": "keep",
+      "change": [
+        "unchanged_requirement",
+        "representation_or_observer_migration"
+      ],
+      "evidence": [
+        "old/spec/base.tla:1167; StepVote:244; campaign observations:223",
+        "new/source/confchange/confchange.go:213; new/source/raft_test.go:3918"
+      ],
+      "proposed_predicate": "Keep no actual learner grants or campaigns. Migrate learner observations to actual active learner role/IsLearner; staged learners in N are still voters in O. Observe the runtime flag independently and check its coherence via TypeOK.",
+      "disagreement_witness": {
+        "state_or_transition": "I={2},O={1},N={1},L={}: node 1 may campaign/vote. After leave, L={1}: node 1 must not campaign/vote.",
+        "old": "PASS first / FAIL second under faithful role observations",
+        "proposed": "same"
+      },
+      "control": "Treating N as learners immediately would be a false edit."
+    },
+    {
+      "name": "QuorumAccounting",
+      "decision": "modify",
+      "change": [
+        "representation_or_observer_migration"
+      ],
+      "evidence": [
+        "old/spec/base.tla:1169; Won:110; MaybeCommit:125; BecomeLeader:165",
+        "new/source/tracker/tracker.go:165,178,230; new/source/quorum/joint.go:49"
+      ],
+      "proposed_predicate": "Record full C on each actual win/commit, require nonempty I, JointWon(C,yes/matches), and matches subset U(C). Preserve current-term commitment in the core/commit decision observer. Empty O is neutral, never a replacement for a nonempty I.",
+      "disagreement_witness": {
+        "state_or_transition": "I={1,2},O={2,3}, matching/voting IDs={1,2}. Both incoming and union majorities hold but outgoing majority does not.",
+        "old": "PASS under either common flat projection",
+        "proposed": "FAIL"
+      },
+      "note": "Quorum helpers already support joint sets in old/source; the old TLA observer does not."
+    },
+    {
+      "name": "ReplicationEvidence",
+      "decision": "keep",
+      "change": [
+        "unchanged_requirement",
+        "representation_or_observer_migration"
+      ],
+      "evidence": [
+        "old/spec/base.tla:1173; Members:108",
+        "new/source/confchange/confchange.go:240; new/source/tracker/progress.go"
+      ],
+      "proposed_predicate": "Keep evidence backing every positive follower Match, excluding only the leader's self-progress. Migrate Members to I union O union L, including outgoing-only/staged voters.",
+      "disagreement_witness": {
+        "state_or_transition": "Outgoing-only node 3 has Match=9 but its last acknowledged prefix covers only 7.",
+        "old": "FAIL if observer includes node 3; incoming-only projection misses it",
+        "proposed": "FAIL"
+      },
+      "control": "Requirement unchanged; domain migration prevents a silent coverage loss."
+    },
+    {
+      "name": "SnapshotBacking",
+      "decision": "modify",
+      "change": [
+        "representation_or_observer_migration"
+      ],
+      "evidence": [
+        "old/spec/base.tla:1179; ProtocolCreateSnapshot:1060; SnapshotValid",
+        "new/source/node.go:173; new/source/raftpb/raft.proto:96; new/source/raft.go:1364"
+      ],
+      "proposed_predicate": "Keep index/term/history backing and strengthen the migrated equality to all fields of ConfigAt at the snapshot anchor/index. Observe caller-provided and persisted configuration independently, including O,N,A; validate manual anchors explicitly.",
+      "disagreement_witness": {
+        "state_or_transition": "At index 10 correct C=(I={2},O={1},L={3},N={1},A=TRUE); a snapshot drops O,N,A but preserves I,L, index and term.",
+        "old": "PASS through old flat configuration projection",
+        "proposed": "FAIL"
+      }
+    },
+    {
+      "name": "AckPreservation",
+      "decision": "modify",
+      "change": [
+        "semantic_requirement_change",
+        "representation_or_observer_migration"
+      ],
+      "evidence": [
+        "old/spec/base.tla:1184; AdvanceCore:966; ProtocolAdvance:978",
+        "new/source/raft.go:554; new/source/log_unstable.go:77"
+      ],
+      "proposed_predicate": "Retain exact captured applied cursor and snapshot/stable endpoint protection. Normally afterHist=beforeHist; only an eligible, successfully admitted automatic leave may yield afterHist=beforeHist concatenated with exactly one V2 leave entry at last+1/currentTerm with causal origin. Preserve all old entries exactly. Check eligibility, quota, outstanding leave and pending barrier independently; merely requiring Covers is too weak.",
+      "disagreement_witness": {
+        "state_or_transition": "Leader term 4, valid AutoLeave joint config, enter index 10 applied by this Ready, no outstanding leave, available quota, history length 10: Advance appends leave entry 11.",
+        "old": "FAIL because before!=after",
+        "proposed": "PASS; appending a normal entry, rewriting index 9, or appending a second outstanding leave still FAILS"
+      }
+    },
+    {
+      "name": "ReadyAccounting",
+      "decision": "keep",
+      "change": [
+        "unchanged_requirement",
+        "representation_or_observer_migration"
+      ],
+      "evidence": [
+        "old/spec/base.tla:1188; ProtocolReady:860; ProtocolAdvance:978",
+        "new/source/rawnode.go:122,143,158; new/source/node.go:294,387; new/source/node_test.go:655"
+      ],
+      "proposed_predicate": "Keep no lost read states and contiguous bounded committed-page cursor (not HardState.Commit). Migrate observations to actual accepted/delivered batches; repeated read-only RawNode.Ready peeks are not fresh deliveries. Node accepts before later core work; RawNode Advance combines acceptance and completion under its caller contract.",
+      "disagreement_witness": {
+        "state_or_transition": "Node accepts read A in batch b, receives read B while b is handled, then advances b. Erasing B or jumping applied from page end 5 to HardState.Commit=8 violates the retained property.",
+        "old": "FAIL",
+        "proposed": "FAIL"
+      },
+      "control": "No permission to discard intervening Node reads; the RawNode caller restriction must not be imposed on Node."
+    },
+    {
+      "name": "QuotaIntegrity",
+      "decision": "keep",
+      "change": [
+        "unchanged_requirement",
+        "representation_or_observer_migration"
+      ],
+      "evidence": [
+        "old/spec/base.tla:1197; ProtocolReady:860",
+        "new/source/raft.go:554,1541; new/source/rawnode_test.go:TestRawNodeBoundedLogGrowthWithPartition",
+        "update.patch deletion of TestNodeBoundedLogGrowthWithPartition"
+      ],
+      "proposed_predicate": "Keep nonnegative quota, quota bounded by unapplied payload weight, bounded ordered inflights. Move debit from Ready to Advance and account for actual V2 payloads, including the positive-size automatic leave. Do not replace the oversized-first-entry exception with a universal quota<=MaxUncommitted bound.",
+      "disagreement_witness": {
+        "state_or_transition": "Quota=8, committed batch payload=8, Ready merely observed; quota remains 8 until Advance. An oversized first payload 12 with MaxUncommitted=8 remains permitted. Unbounded subsequent growth is forbidden.",
+        "old": "PASS for both permitted states",
+        "proposed": "same"
+      },
+      "control": "Old inequality does not require early debit; test deletion does not remove quota protection. New timing needs a separate decision property."
+    },
+    {
+      "name": "OutcomeSoundness",
+      "decision": "modify",
+      "change": [
+        "representation_or_observer_migration",
+        "pre_existing_property_defect_repair"
+      ],
+      "evidence": [
+        "old/spec/base.tla:1205; ProtocolPropose:785 (weight from RewriteConf)",
+        "new/source/raft.go:999; new/source/node.go:437"
+      ],
+      "proposed_predicate": "Keep ExpectedDecision's admission/rejection rules. Observe member using progress membership over I,O,L and compute effective proposal payload weight independently from original input plus the declarative rewrite predicate, not by calling implementation RewriteConf. Do not treat nil/Handoff as durable completion.",
+      "disagreement_witness": {
+        "state_or_transition": "Leader quota=1, limit=2, pendingConf>applied, request is configuration payload weight=3. Required rewrite is an empty normal entry, so acceptance is allowed. A mutant fails rewriting and records DropQuota with its own weight=3.",
+        "old": "OutcomeSoundness alone can PASS because its weight observer repeats the mutant rewrite",
+        "proposed": "FAIL: independent expected weight is zero"
+      },
+      "note": "This correlated observer weakness predates V2; it is not a new quota requirement."
+    },
+    {
+      "name": "ReadBasis",
+      "decision": "modify",
+      "change": [
+        "representation_or_observer_migration"
+      ],
+      "evidence": [
+        "old/spec/base.tla:1213; ReadOnlyRecvAck:332; ReleaseReadPrefix:329",
+        "new/source/raft.go:1032,1146; new/source/tracker/tracker.go:146"
+      ],
+      "proposed_predicate": "Keep complete-read freshness, write-prefix coverage and confirmation-term requirements. Record full admission and confirmation configs; leader belongs to U(confirmConfig), JointWon(confirmConfig,acks), and provenance holds. Restrict the no-current-term-entry singleton exception to O={} and I={leader}, matching IsSingleton. Use configuration at confirmation, not necessarily admission.",
+      "disagreement_witness": {
+        "state_or_transition": "I={1},O={1,2,3}, leader 1, only self acknowledged. Old projection treats it as a singleton; a returned and completed read would pass its quorum/singleton clauses.",
+        "old": "PASS for an otherwise valid old projected singleton read",
+        "proposed": "FAIL until outgoing quorum and current-term fence hold"
+      }
+    },
+    {
+      "name": "ReadApplication",
+      "decision": "keep",
+      "change": [
+        "unchanged_requirement"
+      ],
+      "evidence": [
+        "old/spec/base.tla:1223; ProtocolCompleteRead:1044",
+        "new/source/node.go:63; old/source/read_only.go:19"
+      ],
+      "proposed_predicate": "Unchanged Covers(application,read.hist) and applied application length >= read.index. Keep Inclusive/Strict caller variants separate; the update supplies no reason to change the read fence.",
+      "disagreement_witness": {
+        "state_or_transition": "Read index=9 with caller application prefix length 8, including a read obtained during joint configuration.",
+        "old": "FAIL",
+        "proposed": "FAIL"
+      },
+      "control": "Joint confirmation does not replace application-side fencing."
+    },
+    {
+      "name": "ReadCorrelation",
+      "decision": "keep",
+      "change": [
+        "unchanged_requirement"
+      ],
+      "evidence": [
+        "old/spec/base.tla:1225; ProtocolCompleteRead:1044",
+        "new/source/node.go:65; new/source/rawnode.go:ReadIndex; old/source/read_only.go"
+      ],
+      "proposed_predicate": "Unchanged request-context equality, request identity and handoff requirement. Preserve independent identities through batching; configuration V2 Context changes do not relax read correlation.",
+      "disagreement_witness": {
+        "state_or_transition": "Read request q2 completes using q1's ReadState even though both indexes are 9.",
+        "old": "FAIL",
+        "proposed": "FAIL"
+      },
+      "control": "Ready refactoring does not permit stale-context delivery."
+    },
+    {
+      "name": "NoUnexpectedFatal",
+      "decision": "modify",
+      "change": [
+        "semantic_requirement_change",
+        "representation_or_observer_migration"
+      ],
+      "evidence": [
+        "old/spec/base.tla:1227; ApplyConfCore:477",
+        "new/source/raft_test.go:3175 TestRemoveNode; new/source/confchange/testdata/simple_safety.txt",
+        "new/source/confchange/confchange.go:133,158; new/source/raft.go:1455"
+      ],
+      "proposed_predicate": "Retain absence of unexpected fatal events for valid protocol/caller executions. Classify explicitly injected negative API cases independently: final-voter removal and documented invalid Changer transitions must reject without installing state, and core ApplyConfChange currently reports these by panic. Do not classify a protocol-generated duplicate exit, legal V2 campaign/restore, or arbitrary implementation panic as expected merely because it failed. ConfigurationChangeValidation supplies the exact error contract.",
+      "disagreement_witness": {
+        "state_or_transition": "Explicit negative test applies Remove(1) to C.I={1}. The new documented/tested result is a panic with C unchanged. In contrast a generated second leave that later panics is unexpected.",
+        "old": "FAIL on either panic",
+        "proposed": "PASS expected negative API rejection / FAIL generated duplicate exit"
+      },
+      "note": "Do not drop NoUnexpectedFatal, disable it globally, or forbid unknown removals to hide a defect."
+    },
+    {
+      "name": "TypeOK",
+      "decision": "modify",
+      "change": [
+        "representation_or_observer_migration",
+        "new_coverage_for_required_behavior"
+      ],
+      "evidence": [
+        "old/spec/base.tla:1230",
+        "new/source/tracker/tracker.go:25; new/source/confchange/confchange.go:281"
+      ],
+      "proposed_predicate": "Keep all old scalar/log/progress domains. Require I,O,L,N subset Server; (I union O) intersect L={}; N subset O, N intersect I={}, N intersect L={}; domain(prs)=I union O union L; IsLearner iff ID in L; nonjoint implies N={} and A=FALSE. Permit empty initial/unconfigured nodes, but successful changes cannot empty I. At the Go boundary require documented nil normalization separately from semantic empty sets.",
+      "disagreement_witness": {
+        "state_or_transition": "I={2},O={1},N={1},L={}, but progress[1].IsLearner=TRUE, or progress[1] is dropped.",
+        "old": "Can PASS an incoming-only old projection; old record cannot express N",
+        "proposed": "FAIL"
+      }
+    },
+    {
+      "name": "LogStructure",
+      "decision": "keep",
+      "change": [
+        "unchanged_requirement"
+      ],
+      "evidence": [
+        "old/spec/base.tla:1243",
+        "new/source/raft.go:554; new/source/log.go:199"
+      ],
+      "proposed_predicate": "Unchanged applied<=commit<=Last, indexed log continuity and unstable bounds.",
+      "disagreement_witness": {
+        "state_or_transition": "Advance applies cursor 11 while commit=10, or appends auto-leave with a gap at index 12.",
+        "old": "FAIL",
+        "proposed": "FAIL"
+      },
+      "control": "Auto-generated entries obey ordinary index/cursor bounds."
+    },
+    {
+      "name": "VoteDecisionEligibility",
+      "decision": "keep",
+      "change": [
+        "unchanged_requirement",
+        "representation_or_observer_migration"
+      ],
+      "evidence": [
+        "old/spec/base.tla:543,552,696",
+        "new/source/raft.go:823,923; new/source/confchange/confchange.go:213"
+      ],
+      "proposed_predicate": "Keep VoteContract in full: lease, stale/future PreVote, term reset, log freshness, one real vote, learner suppression, exact response count. Observe active learner/IsLearner faithfully; do not require request sender or removed nonlearner receiver to be in incoming voters.",
+      "disagreement_witness": {
+        "state_or_transition": "Outgoing-only staged voter 1 receives a fresh same-term vote request with no prior vote/leader and grants it. After its demotion completes, the same request must be ignored.",
+        "old": "PASS before leave / FAIL erroneous grant after leave",
+        "proposed": "same"
+      },
+      "control": "A blanket rejection for LearnersNext or outgoing-only voters is not authorized."
+    },
+    {
+      "name": "CampaignDecisionEligibility",
+      "decision": "modify",
+      "change": [
+        "representation_or_observer_migration"
+      ],
+      "evidence": [
+        "old/spec/base.tla:576,585,697; ConfKinds:65",
+        "new/source/raft.go:769,897,1580; new/source/raft_test.go:3064,3918"
+      ],
+      "proposed_predicate": "Keep promotability, due-tick, pending-applied scan and exact request/role/term contracts. Observe full C, use U(C) for recipients, JointWon(C,{self}) for immediate election, and IsConf for all committed-but-unapplied entries. Do not imitate numOfPendingConf's V1-only filter.",
+      "disagreement_witness": {
+        "state_or_transition": "Node 1 is promotable, term 4, applied=9, commit=10; entry 10 is V2 EnterJoint and has not been applied. Hup starts term 5 and sends votes.",
+        "old": "Old ConfKinds/legacy observation can miss V2 and permit campaigning",
+        "proposed": "FAIL: pending V2 must block Hup; source presently appears to violate this"
+      }
+    },
+    {
+      "name": "TransferDecisionEligibility",
+      "decision": "modify",
+      "change": [
+        "representation_or_observer_migration"
+      ],
+      "evidence": [
+        "old/spec/base.tla:606,613,698",
+        "new/source/raft.go:1069,1188; new/source/confchange/confchange.go:213"
+      ],
+      "proposed_predicate": "Keep exact transfer invocation decisions: missing/active-learner/same-target ignored; self aborts another transfer; an eligible different target resets elapsed and becomes transferee; send TimeoutNow immediately iff caught up. Membership uses U(C) union L and learner excludes N.",
+      "disagreement_witness": {
+        "state_or_transition": "Leader 2, C.I={2},O={1},N={1}, target=1, no old transfer, target Match=Last.",
+        "old": "An incoming-only or N-as-learner observer expects ignore",
+        "proposed": "PASS accepting target 1 and sending TimeoutNow"
+      },
+      "note": "Outgoing-only voters remain eligible until leaving joint; later revalidation is a separate obligation."
+    },
+    {
+      "name": "RequestCorrelatedConfigurationEffects",
+      "decision": "modify",
+      "change": [
+        "semantic_requirement_change",
+        "representation_or_observer_migration"
+      ],
+      "evidence": [
+        "old/spec/base.tla:622,629,699; ConfigAfter:468",
+        "new/source/confchange/confchange.go:49,95,133,186,213,240",
+        "new/source/raftpb/confchange.go:48,74,101; new/source/raft_test.go:3098",
+        "new/source/rawnode_test.go:104 TestRawNodeProposeAndConfChange"
+      ],
+      "proposed_predicate": "Observe every V1/V2 application with complete before/after config, committed entry, original request/batch, version/context and outcome. For valid success require exactly the shared atomic configuration_effect/apply_ops result. Client identity must match the entire ordered batch/context and handoff; bootstrap and automatic leave require explicit provenance. Preserve deterministic per-operation NodeID=0 cancellation without confusing an empty V2 with cancellation. Invalid direct applications obey ConfigurationChangeValidation, not a fabricated successful fold.",
+      "disagreement_witness": {
+        "state_or_transition": "From I={1,2}, apply committed legacy AddLearner(2): correct result I={1},L={2}. Also Auto V2 [AddVoter(2),AddLearner(1)] from {1} yields I={2},O={1},N={1},A=TRUE.",
+        "old": "FAIL correct simple demotion (old contract requires no-op); cannot express atomic joint batch",
+        "proposed": "PASS correct demotion/joint batch; FAIL omitted/reordered operation or lost context"
+      },
+      "note": "Demotion and idempotent unknown removal are semantic changes supported by tests. Ordinary AddVoter, promotion, duplicate add, Update and zero-ID no-op requirements remain."
+    },
+    {
+      "name": "ProposalConfigurationDecisions",
+      "decision": "modify",
+      "change": [
+        "representation_or_observer_migration",
+        "pre_existing_property_defect_repair"
+      ],
+      "evidence": [
+        "old/spec/base.tla:642,650,700; QualityEvent:674",
+        "new/source/raft.go:1013; new/source/node.go:132; new/source/rawnode_test.go:104",
+        "old/source/raft_test.go:3060 TestNewLeaderPendingConfig; new/source/raft.go:746"
+      ],
+      "proposed_predicate": "Retain per-entry pending rewrite and both-direction admission, with IsConf covering V1/V2; a V2 batch occupies one entry, not one pending slot per sub-operation. Observe afterPending and verify first eligible config sets lastBefore+position, later configs rewrite to exact empty normal entries, even if quota later rejects append. Strengthen accepted content to preserve full ordered payload/context/version, identity, weight and assigned term/index; old property checked only kind/id/target and did not observe afterPending.",
+      "disagreement_witness": {
+        "state_or_transition": "pending<=applied; one configuration entry is appended correctly, but pendingConfIndex incorrectly remains unchanged. Or a V2 entry retains its ID while dropping its second change.",
+        "old": "PASS first even for V1; legacy scalar projection can PASS second",
+        "proposed": "FAIL both"
+      },
+      "note": "Pending post-state/full-content checks repair old weakness; applying them to V2 is an observer migration. AutoLeave's direct append requires its own observer."
+    },
+    {
+      "name": "MCTypeOK",
+      "decision": "modify",
+      "change": [
+        "representation_or_observer_migration"
+      ],
+      "evidence": [
+        "old/spec/MC.tla:61",
+        "old/spec/base.tla:1230; old/spec/MC.cfg"
+      ],
+      "proposed_predicate": "Inherit migrated TypeOK; keep nonnegative bounded fault counters unchanged. Extend workload representation to V2 and explicit bootstrap modes without disguising search bounds as correctness assumptions.",
+      "disagreement_witness": {
+        "state_or_transition": "Well-typed joint config violates staged-learner/progress consistency while every fault counter is within its bound.",
+        "old": "Old flattened type check may PASS",
+        "proposed": "FAIL via TypeOK"
+      }
+    },
+    {
+      "name": "ElectionProgress",
+      "decision": "keep",
+      "change": [
+        "unchanged_requirement",
+        "representation_or_observer_migration"
+      ],
+      "evidence": [
+        "old/spec/MC.tla:101; fairness comments:75",
+        "new/source/raft.go:769; new/source/quorum/joint.go:61"
+      ],
+      "proposed_predicate": "Keep the temporal implication with stable services, common configuration, a promotable fairly campaigning node, quiet campaign and fair caller/network. CommonConfiguration compares full C and Promotable uses U(C) excluding active learners. No finite-MC liveness result is claimed.",
+      "disagreement_witness": {
+        "state_or_transition": "A stable common joint config I={1,2},O={2,3} has both majorities live and votes serviced, but all eligible campaigns remain forever blocked.",
+        "old": "FAIL given premises",
+        "proposed": "FAIL"
+      },
+      "control": "Requirement unchanged; do not weaken to a single constituent's availability or claim that bounded fault exhaustion proves progress."
+    },
+    {
+      "name": "CatchupProgress",
+      "decision": "keep",
+      "change": [
+        "unchanged_requirement",
+        "representation_or_observer_migration"
+      ],
+      "evidence": [
+        "old/spec/MC.tla:105",
+        "new/source/confchange/confchange.go:240; new/source/raft.go:1364"
+      ],
+      "proposed_predicate": "Keep eventual application of committed indexes for continuously tracked peers under existing service/caller/network/tick premises. Members includes outgoing-only voters and staged learners while joint persists.",
+      "disagreement_witness": {
+        "state_or_transition": "Stable leader 2, I={2},O={1},N={1}; peer 1 remains tracked forever but never catches up to committed index 10 despite fair service.",
+        "old": "FAIL if old Members observation includes 1; flat incoming-only domain misses it",
+        "proposed": "FAIL"
+      },
+      "control": "No exemption for a voter scheduled for demotion."
+    },
+    {
+      "name": "ManagementProgress",
+      "decision": "keep",
+      "change": [
+        "unchanged_requirement",
+        "representation_or_observer_migration"
+      ],
+      "evidence": [
+        "old/spec/MC.tla:111",
+        "new/source/node.go:169; new/source/raftpb/raft.proto:134"
+      ],
+      "proposed_predicate": "Keep committed valid client configuration entries eventually appearing in the ordered application history, extending IsConf and request identity to whole V2 batches. Invalid direct API cases are separate. The existing RequestId quantifier does not cover internally generated exits; add AutoLeaveProgress.",
+      "disagreement_witness": {
+        "state_or_transition": "A committed valid client V2 entry at index 10 never gets its callback under stable services and fair caller work.",
+        "old": "FAIL once represented as a configuration entry",
+        "proposed": "FAIL"
+      },
+      "control": "This property says nothing about generating or committing a leave entry."
+    },
+    {
+      "name": "TransferSettlement",
+      "decision": "keep",
+      "change": [
+        "unchanged_requirement"
+      ],
+      "evidence": [
+        "old/spec/MC.tla:115",
+        "new/source/raft.go:tickHeartbeat and abortLeaderTransfer; new/source/raft_test.go:TestLeaderTransferTimeout"
+      ],
+      "proposed_predicate": "Keep eventual transfer clearance or loss of leadership under the existing tick/service/no-replacement premises. Do not equate this with successful election of a transferee.",
+      "disagreement_witness": {
+        "state_or_transition": "Transfer target=2 remains set forever while eligible ticks occur and no replacement transfer is requested.",
+        "old": "FAIL",
+        "proposed": "FAIL"
+      },
+      "control": "A transfer that times out still satisfies this property; it does not establish new demotion revalidation."
+    },
+    {
+      "name": "ReadProgress",
+      "decision": "keep",
+      "change": [
+        "unchanged_requirement"
+      ],
+      "evidence": [
+        "old/spec/MC.tla:121",
+        "new/source/rawnode.go:122; new/source/node.go:63"
+      ],
+      "proposed_predicate": "Keep the existing enabled correlated-read completion implication. It is intentionally downstream of ReadState delivery and cannot establish joint confirmation or no lost pre-delivery reads.",
+      "disagreement_witness": {
+        "state_or_transition": "A correlated ReadState is present with a reachable application fence, completion is strongly fair, but the request never completes.",
+        "old": "FAIL",
+        "proposed": "FAIL"
+      },
+      "control": "Do not claim this proves eventual issuance of a ReadState."
+    },
+    {
+      "name": "ConfigurationChangeValidation",
+      "decision": "add",
+      "change": [
+        "semantic_requirement_change",
+        "new_coverage_for_required_behavior"
+      ],
+      "evidence": [
+        "new/source/confchange/confchange.go:27,49,95,133,158,281,342",
+        "new/source/confchange/testdata/simple_safety.txt; joint_safety.txt; simple_idempotency.txt",
+        "new/source/raft_test.go:3175"
+      ],
+      "proposed_predicate": "For every direct Changer operation, success iff shared valid_change holds, result exactly equals the specified atomic fold, and caller's original Config/Progress values are unchanged by the call. On error no partial result may be installed. Direct core ApplyConfChange's documented negative cases panic before installing a new config. Preserve unknown-removal idempotence, duplicate operations, Update and per-operation zero-ID no-op; whole V2 EnterJoint is not generally idempotent.",
+      "disagreement_witness": {
+        "state_or_transition": "C.I={1,2},O={}; Simple(Remove1,Add3) attempts two voter differences. Or C.I={1} with Remove9. Or Remove1 removes the last voter.",
+        "old": "No general validation property; flat EffectContract can accept unsafe multi-change/empty outputs and unknown removal is canceled by the default model adapter",
+        "proposed": "FAIL unsafe successful multi-change/last removal; PASS unchanged unknown removal; require atomic rejection for invalid cases"
+      }
+    },
+    {
+      "name": "ConfigurationProgressPreservation",
+      "decision": "add",
+      "change": [
+        "new_coverage_for_required_behavior"
+      ],
+      "evidence": [
+        "new/source/confchange/confchange.go:186,213,240,256,342",
+        "new/source/confchange/testdata/joint_learners_next.txt; simple_promote_demote.txt",
+        "old/spec/base.tla:ReplicationEvidence,QuotaIntegrity,ApplyConfCore"
+      ],
+      "proposed_predicate": "Across successful changes preserve Match, Next, state, pending snapshot, probe and inflight state for a continuously retained peer, changing only its membership/IsLearner role as specified. Newly created progress has Match=0,Next=Last+1,empty inflights,Probe,RecentActive=TRUE. Outgoing-only peers keep progress until leave; promotion/demotion preserves existing activity in this implementation. Removed-and-recreated within the operation sequence is a newly initialized peer, except the explicitly saved progress on demotion.",
+      "disagreement_witness": {
+        "state_or_transition": "Peer 1 has Match=7,Next=8,Replicate and inflights=[8,9]; entering I={2},O={1},N={1}, then leaving must keep its replication position while changing it to learner. A mutant resets it to Match=0,Next=1.",
+        "old": "ReplicationEvidence and QuotaIntegrity can PASS a reset to zero",
+        "proposed": "FAIL lost progress"
+      },
+      "note": "Old ApplyConfCore also marks promotions active; the new Changer does not. Migrate that model behavior without weakening evidence/quota requirements."
+    },
+    {
+      "name": "ConfigurationCommitReevaluation",
+      "decision": "add",
+      "change": [
+        "new_coverage_for_required_behavior"
+      ],
+      "evidence": [
+        "new/source/raft.go:1493; old/source/raft.go:1479",
+        "new/source/confchange/testdata/simple_promote_demote.txt",
+        "old/spec/base.tla:QuorumAccounting and ApplyConfCore"
+      ],
+      "proposed_predicate": "After a valid configuration callback on a remaining voter leader, compute the independent new joint quorum index from preserved progress. If it exceeds commit and its log term is current, advance commit to it and perform normal broadcast processing; otherwise leave commit unchanged. Apply this to demotion and leaving joint as well as explicit Remove. Never use outgoing-only acknowledgements after leave or incoming-only acknowledgements before leave.",
+      "disagreement_witness": {
+        "state_or_transition": "Leader 1 has joint I={1,2},O={1,2,3,4}, Match(1)=Match(2)=10, Match(3)=Match(4)=8, commit=8, term(10)=current. Applying a committed LeaveJoint removes O, so the new quorum index becomes 10 and commitment must be reevaluated.",
+        "old": "QuorumAccounting can PASS a leader that never performs a commit attempt",
+        "proposed": "FAIL missing required reevaluation"
+      },
+      "note": "Safety for any actual advancement remains covered by QuorumAccounting and ConfigurationTransitionSafety."
+    },
+    {
+      "name": "AutoLeaveSerialization",
+      "decision": "add",
+      "change": [
+        "semantic_requirement_change",
+        "new_coverage_for_required_behavior"
+      ],
+      "evidence": [
+        "new/source/raft.go:554,1013; pendingConfIndex comment:280",
+        "new/source/raftpb/raft.proto:80,134",
+        "new/source/rawnode_test.go:104"
+      ],
+      "proposed_predicate": "Observe every internal auto-leave attempt and append, not just client Propose. An eligible successful attempt appends exactly one ordinary V2 leave, records its causal enter and marks its index as the pending barrier; no second configuration entry is appended while this leave is un-applied. No auto entry for JointExplicit, no change of active C before callback, no persistence or quorum exemption.",
+      "disagreement_witness": {
+        "state_or_transition": "Leader has enter at 10, applied=9, pending=10, normal entries 11,12 already committed, and Ready page ends at 10. Advance appends leave 13 with room in quota. Before leave applies, next Ready page ends at 11. With pending still 10 a second Advance appends leave 14.",
+        "old": "ProposalConfigurationDecisions observes neither Advance; ManagementProgress ignores internal id=0. Old AckPreservation rejects even the first legitimate append",
+        "proposed": "PASS one exit with pending=13; FAIL second exit"
+      },
+      "note": "Narrow AckPreservation's extension exception together with this obligation; do not allow arbitrary or repeated suffix growth."
+    },
+    {
+      "name": "AutoLeaveProgress",
+      "decision": "add",
+      "change": [
+        "semantic_requirement_change",
+        "new_coverage_for_required_behavior"
+      ],
+      "evidence": [
+        "new/source/raft.go:561,573,581",
+        "new/source/tracker/tracker.go:28; new/source/raftpb/raft.proto:80",
+        "old/spec/MC.tla:ManagementProgress"
+      ],
+      "proposed_predicate": "Under continuing fair caller, persistence, network and ticks, an eligible surviving voter leader, stable legal configuration, and eventually available quorums of both sides and quota, an AutoLeave joint configuration eventually has its one leave entry proposed, committed and applied, ending with O=N={} and A=FALSE. No further client write may be required as a hidden premise. Retry failed admission and resume after leader change; JointExplicit has no autonomous-exit obligation.",
+      "disagreement_witness": {
+        "state_or_transition": "At the first eligible Advance: enter entry at 10 consumes all quota (8/8), no later entries, cursor=10,pending=10. Zero V2 serializes to 2 bytes. Auto append fails, then Advance debits the entry and quota becomes 0. No new client writes; heartbeats keep both quorums live.",
+        "old": "Existing properties can all tolerate remaining joint forever; ManagementProgress only applies an already committed client request",
+        "proposed": "FAIL if no retry ever occurs; PASS eventual single committed/applied exit"
+      },
+      "note": "This is a temporal obligation, not established by a finite safety check."
+    },
+    {
+      "name": "SnapshotConfigurationRestoration",
+      "decision": "add",
+      "change": [
+        "new_coverage_for_required_behavior",
+        "representation_or_observer_migration"
+      ],
+      "evidence": [
+        "new/source/node.go:233; new/source/raft.go:321,1364,1416",
+        "new/source/raftpb/raft.proto:96; new/source/rawnode.go:39",
+        "old/spec/base.tla:Restore,RestartCore,SnapshotBacking,ConfigurationOrigin"
+      ],
+      "proposed_predicate": "A successful full snapshot restore or constructor using Storage.InitialState must reconstruct all I,O,L,N,A and coherent progress/learner roles exactly from the independently backed ConfState. Outgoing-only/staged IDs are legitimate snapshot recipients. Preserve obsolete/term-matching fast-forward behavior: a fast-forward need not install config immediately, but must eventually apply ordered configuration entries. ConfigurationOrigin and SnapshotBacking remain additional checks.",
+      "disagreement_witness": {
+        "state_or_transition": "Persist C=(I={2},O={1},L={3},N={1},A=TRUE) at index 10. Restart node 2; separately deliver that needed, nonmatching snapshot to outgoing-only node 1.",
+        "old": "Old flattened snapshot observer cannot detect discarded O,N,A, and has no outgoing-only membership case",
+        "proposed": "FAIL lossy restart or rejecting node 1 solely because it is only in NodesJoint"
+      }
+    },
+    {
+      "name": "ReadyPeekAndAcceptance",
+      "decision": "add",
+      "change": [
+        "semantic_requirement_change",
+        "representation_or_observer_migration",
+        "new_coverage_for_required_behavior"
+      ],
+      "evidence": [
+        "new/source/rawnode.go:122,143,158,185; new/source/node.go:294,387",
+        "old/spec/base.tla:ProtocolReady,AdvanceCore"
+      ],
+      "proposed_predicate": "RawNode.Ready and HasReady are observational: without intervening mutation repeated calls preserve all core state, quota and pending work and return equivalent work. Distinguish discardable peek, acceptance and completion. Node acceptance clears exactly delivered messages/read states and records SoftState; completion advances the captured batch, debits quota and records HardState. RawNode Advance combines those phases under its supported handling discipline. Peeking alone cannot acknowledge or enqueue application work.",
+      "disagreement_witness": {
+        "state_or_transition": "RawNode has outgoing message m, read A and quota 3. Call Ready twice and discard both. Both results contain the same pending work, core messages/readStates/quota are unchanged.",
+        "old": "Old ProtocolReady clears messages/debits quota and models one active delivery; old invariants do not assert observational purity",
+        "proposed": "PASS pure peek; FAIL dropped work or quota release on peek"
+      }
+    },
+    {
+      "name": "ReadyHardStateDeltaAndMustSync",
+      "decision": "add",
+      "change": [
+        "semantic_requirement_change",
+        "representation_or_observer_migration",
+        "new_coverage_for_required_behavior"
+      ],
+      "evidence": [
+        "new/source/rawnode.go:46,158; new/source/node.go:294",
+        "new/source/node_test.go:655 TestNodeRestart,702 TestNodeRestartFromSnapshot",
+        "old/spec/base.tla:NewReady,RestartCore; new/source/node.go:newReady",
+        "old/source/node_test.go:642 and new/source/node_test.go:655 show the changed expectation"
+      ],
+      "proposed_predicate": "Initialize previous HardState from durable recovery; Ready emits nonempty HardState iff current nonempty HardState differs from the acknowledged baseline. MustSync iff there are unstable entries or a changed term/vote, not merely changed commit. Bootstrap resets its baseline to empty so newly manufactured term-1 entries/HardState are emitted. Node and RawNode agree under equivalent inputs.",
+      "disagreement_witness": {
+        "state_or_transition": "Storage contains durable HS=(term=1,vote=0,commit=3), entries already stable, application behind. Restart emits committed entries only, empty Ready.HardState and MustSync=FALSE.",
+        "old": "Old Node adapter emits redundant HS and MustSync=TRUE, while existing safety checks may still PASS",
+        "proposed": "PASS new delta result; FAIL redundant emission in this tested API behavior"
+      },
+      "note": "Persisted-state safety requirements are unchanged despite a changed Ready representation."
+    },
+    {
+      "name": "QuotaReleaseTiming",
+      "decision": "add",
+      "change": [
+        "semantic_requirement_change",
+        "new_coverage_for_required_behavior"
+      ],
+      "evidence": [
+        "new/source/rawnode.go:132,158; new/source/raft.go:554,581,1541",
+        "old/spec/base.tla:ProtocolReady,QuotaIntegrity"
+      ],
+      "proposed_predicate": "Ready/acceptReady do not release uncommitted payload quota. At successful completion, quota'=max(0,currentQuota+weight(successfully appended automatic entry)-Weight(rd.CommittedEntries)); use current completion-time quota, not the captured Ready value. A failed automatic attempt adds zero. Retain independent admission calculations, oversized-first exception and saturating subtraction.",
+      "disagreement_witness": {
+        "state_or_transition": "Node leader quota=2 and Max=2 delivers a committed batch of weight 2 but has not received Advance. Another nonempty proposal arrives. Until Advance it is quota-dropped; after Advance it can be accepted.",
+        "old": "Old action releases at Ready and allows earlier proposal; QuotaIntegrity alone permits both counters",
+        "proposed": "Require drop-before/accept-after under the new API timing"
+      }
+    },
+    {
+      "name": "ExplicitBootstrapLifecycle",
+      "decision": "add",
+      "change": [
+        "semantic_requirement_change",
+        "representation_or_observer_migration",
+        "new_coverage_for_required_behavior"
+      ],
+      "evidence": [
+        "new/source/bootstrap.go:23; new/source/rawnode.go:39; new/source/node.go:209",
+        "new/source/rawnode_test.go:509; new/source/node_test.go:TestNodeStart",
+        "old/spec/base.tla:InitialRaft,RestartCore"
+      ],
+      "proposed_predicate": "NewRawNode reconstructs Storage and does not infer bootstrap from LastIndex=0. Explicit Bootstrap on fresh empty storage and nonempty peers creates sequential term-1 V1 AddNode entries, commits but does not mark them applied, preinstalls all peers, and exposes the entries via Ready. Empty peers/nonempty storage return errors without installation. StartNode requires peers; joining uses RestartNode. Manual Storage anchor is also supported.",
+      "disagreement_witness": {
+        "state_or_transition": "NewRawNode on empty storage with HS=(term=5,vote=2,commit=0) retains term/vote and produces no bootstrap entries; Bootstrap([]) returns error. Valid Bootstrap([1,2]) yields entries 1,2 and applied=0.",
+        "old": "Old constructor infers fresh bootstrap/term1; no standalone bootstrap error property",
+        "proposed": "PASS explicit lifecycle; FAIL implicit term reset, missing callback entries or mutation on rejected bootstrap"
+      }
+    },
+    {
+      "name": "ConfigurationAndStatusCopies",
+      "decision": "add",
+      "change": [
+        "new_coverage_for_required_behavior"
+      ],
+      "evidence": [
+        "new/source/tracker/tracker.go:94; new/source/tracker/inflights.go:43",
+        "new/source/status.go:44,69; new/source/rawnode.go:197; new/source/rawnode_test.go:689"
+      ],
+      "proposed_predicate": "Config.Clone returns an equal value including AutoLeave, with no shared mutable maps. Inflights.Clone preserves counters, capacity, ring contents and order with independent backing storage. Status includes equal BasicStatus and full copied Config; Progress is present only for a leader and is a value/deep-inflight copy. Mutating snapshots/copies never mutates live state and subsequent live mutations never mutate the saved copy. WithProgress's documented nil inflight view remains distinct.",
+      "disagreement_witness": {
+        "state_or_transition": "Live C.I={1,2},O={1},A=TRUE. Read Status or Clone; returned A must remain TRUE. Mutate returned voters and inflight buffer and confirm live values stay unchanged.",
+        "old": "Old suite has no status/copy observer and can PASS even with lost flag or aliasing",
+        "proposed": "FAIL omitted AutoLeave or shared state; PASS faithful independent copy"
+      }
+    },
+    {
+      "name": "ConfChangeEncodingAndPublicRepresentation",
+      "decision": "add",
+      "change": [
+        "representation_or_observer_migration",
+        "new_coverage_for_required_behavior"
+      ],
+      "evidence": [
+        "new/source/raftpb/confchange.go:32,48,74,101; new/source/raftpb/raft.proto:96,122,134",
+        "new/source/quorum/majority.go:105; new/source/tracker/tracker.go:202",
+        "new/source/rawnode_test.go:104"
+      ],
+      "proposed_predicate": "MarshalConfChange preserves V1 versus V2 entry tag, ordered Changes, transition and opaque Context; decoding round-trips known semantic fields. V1 AsV2 preserves Type/NodeID/Context but has no protobuf ID field, so request correlation is an independent ghost/application identity. ConfState exposes separately sorted, duplicate-free I,O,L,N and A; empty set/slice normalization follows the Go contracts, without flattening voters. V1 zero-NodeID and empty/context-only V2 remain semantically distinct.",
+      "disagreement_witness": {
+        "state_or_transition": "Encode V2 [Remove2,Add3] with JointExplicit and Context='q7'; decode must retain both operations and order. V1 NodeID=0 is a no-op in simple state; V2 Context='q7' with no changes is leave and rejects when nonjoint.",
+        "old": "Old scalar kind/target observer cannot distinguish many lost operations/transition/context cases; sets cannot check sorted/nil presentation",
+        "proposed": "FAIL semantic loss or conflation; PASS required public representation"
+      }
+    },
+    {
+      "name": "CheckQuorumDecision",
+      "decision": "add",
+      "change": [
+        "new_coverage_for_required_behavior",
+        "representation_or_observer_migration"
+      ],
+      "evidence": [
+        "new/source/tracker/tracker.go:178; new/source/raft.go:976",
+        "old/spec/base.tla:StepCheckQuorum,QuorumAccounting",
+        "new/source/raft_test.go:3140 TestAddNodeCheckQuorum"
+      ],
+      "proposed_predicate": "Observe each CheckQuorum decision. Mark self active if tracked, count only nonlearner voters, and stay leader iff JointWon(C,active); otherwise become follower in the same term. Clear other peers' activity afterward. Preserve new-peer RecentActive grace without manufacturing quorum on only one side.",
+      "disagreement_witness": {
+        "state_or_transition": "I={1,2},O={2,3}, leader 1, active={1,2}; outgoing voter 3 inactive, grace exhausted.",
+        "old": "QuorumAccounting only observes wins/commits and can PASS a leader that wrongly remains active",
+        "proposed": "FAIL remaining leader; require step-down"
+      }
+    },
+    {
+      "name": "ReadIndexDecisionBasis",
+      "decision": "add",
+      "change": [
+        "new_coverage_for_required_behavior",
+        "representation_or_observer_migration"
+      ],
+      "evidence": [
+        "new/source/raft.go:1032,1146; new/source/tracker/tracker.go:146",
+        "old/spec/base.tla:ReadBasis,ReadOnlyRecvAck,ReleaseReadPrefix"
+      ],
+      "proposed_predicate": "Record actual safe-read releases even if the caller never completes a read. Nonjoint I={leader} permits singleton shortcut; otherwise require a current-term committed entry and confirmation acknowledgements satisfying JointWon in the configuration actually used at confirmation. Releasing a later context may release its ordered prefix, with that confirmation evidence attached to all released reads. Do not require the configuration to remain equal to its admission value.",
+      "disagreement_witness": {
+        "state_or_transition": "I={1},O={1,2,3}, only leader self-ack; a buggy implementation emits a ReadState and the caller never consumes it.",
+        "old": "ReadBasis is vacuous without readResults",
+        "proposed": "FAIL release without outgoing quorum"
+      },
+      "note": "ReadBasis continues to check completed linearizable reads; this closes a distinct pre-completion observation gap."
+    },
+    {
+      "name": "NodeProposalChannelMembershipTransition",
+      "decision": "add",
+      "change": [
+        "semantic_requirement_change",
+        "representation_or_observer_migration",
+        "new_coverage_for_required_behavior"
+      ],
+      "evidence": [
+        "new/source/node.go:353; old/source/node.go:369",
+        "old/spec/base.tla:WrapperLoop,ProtocolApplyEntry,ProtocolPropose"
+      ],
+      "proposed_predicate": "Observe before/after progress membership at every V1/V2 configuration callback. A previously present local node that becomes absent has its Node proposal channel disabled. Do not disable an already-absent catching-up node solely because a callback did not add it, or an outgoing-only node while it remains in the joint configuration. Preserve leader-change re-enable behavior as an observed implementation behavior, without claiming that it proves re-admission.",
+      "disagreement_witness": {
+        "state_or_transition": "Node 1 is in outgoing only after a removal EnterJoint, so proposals remain enabled; applying empty V2 LeaveJoint removes it from progress and must disable the channel even though there is no single target=1.",
+        "old": "Old e.target=n trigger misses the empty leave entry",
+        "proposed": "FAIL enabled-after-complete-removal; PASS still-enabled during outgoing membership"
+      }
+    },
+    {
+      "name": "TransferTargetRevalidation",
+      "decision": "unresolved",
+      "change": [
+        "new_coverage_for_required_behavior"
+      ],
+      "evidence": [
+        "old/spec/base.tla:TransferContract,TransferSettlement",
+        "new/source/raft.go:1124,1188,1502; new/source/confchange/confchange.go:213"
+      ],
+      "proposed_predicate": "Required lower bound: a completed transfer/campaign must obey active learner eligibility; preserve TransferSettlement. Proposed stronger predicate for validation: after target becomes an active learner, abort the outstanding transfer and never issue a fresh TimeoutNow to it. Immediate abort is not explicitly specified by supplied tests, so retain as unresolved rather than silently expanding TransferDecisionEligibility's invocation contract.",
+      "disagreement_witness": {
+        "state_or_transition": "Leader 1 has a lagging transfer to 2; a previously committed change demotes 2 to learner. Progress[2] remains, so applyConfChange does not abort. Later MsgAppResp raises Match to Last and sends TimeoutNow to 2.",
+        "old": "Invocation-only TransferDecisionEligibility and timeout settlement can PASS",
+        "proposed": "Stronger predicate would FAIL; target-side LearnerEligibility must still prevent a campaign"
+      }
+    }
+  ],
+  "important_updated_behaviors_already_covered": [
+    {
+      "behavior": "Ordinary one-entry configuration serialization, including mixed V1/V2 entry proposals",
+      "properties": [
+        "ProposalConfigurationDecisions"
+      ],
+      "actual_observer_explanation": "QualityEvent captures both local Propose and received MsgProp; ProposalContract independently identifies configuration positions after pending>applied or an earlier config in the same message, requires exact empty-normal replacement, and checks acceptance as well as rejection. Its pending rewrite contract is retained after IsConf/schema migration. A V2 Changes list is one entry. This does not cover direct auto-leave appends, pending post-state, or unrepresented payload fields."
+    },
+    {
+      "behavior": "Normal add/promote/duplicate/Update and deterministic zero-ID callback behavior",
+      "properties": [
+        "RequestCorrelatedConfigurationEffects"
+      ],
+      "actual_observer_explanation": "EffectObservation records the committed entry, before/after membership and request. EffectContract already requires exact set results and q.handoff/kind/target, and distinguishes application cancellation from API cancellation. Keep those ordinary cases; replace the unsupported-demotion branch and extend the observation to atomic V2 operations, provenance and error outcomes."
+    },
+    {
+      "behavior": "Eligibility of actual learners and pending configuration campaign blocking",
+      "properties": [
+        "LearnerEligibility",
+        "VoteDecisionEligibility",
+        "CampaignDecisionEligibility",
+        "TransferDecisionEligibility"
+      ],
+      "actual_observer_explanation": "LearnerEligibility examines recorded grants/campaigns; VoteContract checks exact responses and term/vote effects, not just a final role. CampaignContract already scans (applied,commit] for semantic configuration entries and checks expected requests. TransferContract checks both acceptance and rejection, elapsed reset and immediate TimeoutNow. Active/staged role and recipient-set observations must migrate, but these requirements must not be weakened to match a V1-only source scan."
+    },
+    {
+      "behavior": "Safety of commitment after demotion or leaving joint",
+      "properties": [
+        "QuorumAccounting",
+        "ConfigurationTransitionSafety",
+        "CommittedHistory",
+        "LeaderCompleteness"
+      ],
+      "actual_observer_explanation": "MaybeCommit records actual voters/matches, oldCommit and prefix in commitUses; the former two properties check backing and predecessor configuration. The latter two protect histories. Migrate evidence to both voter sets and include internal exit entries. These properties do not require the implementation to attempt a newly possible commit, hence ConfigurationCommitReevaluation is additional."
+    },
+    {
+      "behavior": "Ready pagination and preservation of work across Node's internal refactor",
+      "properties": [
+        "ReadyAccounting",
+        "AckPreservation",
+        "ReadCorrelation"
+      ],
+      "actual_observer_explanation": "readyChecks records page start, first index, cursor, entries, snapshot and commit. ReadyAccounting requires a contiguous page and cursor equal to its final committed entry (or snapshot), not the whole HardState commit. ProtocolAdvance records exact captured cursor and unmatched-snapshot preservation; lostReads tracks read states erased without delivery. Keep these checks, migrate acceptance boundaries, and narrowly allow auto-leave suffix append."
+    },
+    {
+      "behavior": "Restart omits unchanged HardState without sacrificing durability",
+      "properties": [
+        "VoteRecovery",
+        "RecoveryBacking",
+        "PromiseBacking"
+      ],
+      "actual_observer_explanation": "VoteRecovery compares saved and recovered term/vote; RecoveryBacking checks committed/applied history against durable data; PromiseOK evaluates actual disk term/vote and append prefix when a message is published. None requires redundantly resending already durable HardState. They already permit the new safe behavior; the exact Ready delta/MustSync result needs a separate added check."
+    },
+    {
+      "behavior": "Deferred quota release and retained replication flow control",
+      "properties": [
+        "QuotaIntegrity",
+        "OutcomeSoundness",
+        "ReplicationEvidence"
+      ],
+      "actual_observer_explanation": "QuotaIntegrity is an inequality over unapplied payload and an inflight bound/order check, so moving release to Advance is not grounds for changing it. OutcomeSoundness checks actual admission against quota, subject to the identified weight-observer repair. ReplicationEvidence requires each positive remote Match to have an acknowledged prefix; it does not confuse transport snapshot success with replication evidence or assert Next>Match. These controls remain despite a deleted Node quota test."
+    },
+    {
+      "behavior": "Reads confirmed after a configuration change and read-prefix batching",
+      "properties": [
+        "ReadBasis",
+        "ReadApplication",
+        "ReadCorrelation"
+      ],
+      "actual_observer_explanation": "ReadOnlyRecvAck uses the current configuration, and ReleaseReadPrefix attaches that confirmation config/acks/term to every released prefix record. ReadBasis checks those witnesses at actual completion; it does not require confirmation config to equal admission config. Extend its quorum predicate to both sides while retaining application prefix and request identity checks. ReadState issuance without any completion remains a separate gap."
+    }
+  ],
+  "suspected_implementation_or_model_defects": [
+    {
+      "id": "D1",
+      "kind": "source",
+      "confidence": "high from static code",
+      "title": "V2 entries are omitted from the campaign pending scan",
+      "evidence": [
+        "new/source/raft.go:907 calls numOfPendingConf",
+        "new/source/raft.go:1580 counts EntryConfChange only",
+        "new/source/raft.go:1016 recognizes both versions for proposals"
+      ],
+      "witness": "Promotable follower, applied=9,commit=10,committed V2 change at 10; MsgHup campaigns before applying it.",
+      "preserve_properties": [
+        "CampaignDecisionEligibility",
+        "ConfigurationTransitionSafety",
+        "ElectionSafety"
+      ],
+      "disposition": "Count V2 in the requirement. Do not narrow the property to the implementation's V1 filter."
+    },
+    {
+      "id": "D2",
+      "kind": "source",
+      "confidence": "high from static code",
+      "title": "Snapshot and InitialState reconstruction discard joint configuration",
+      "evidence": [
+        "new/source/raft.go:331-365 newRaft consumes only Nodes/Learners",
+        "new/source/raft.go:1387 membership test considers only Nodes/Learners",
+        "new/source/raft.go:1416 rebuilds only Nodes/Learners",
+        "new/source/raftpb/raft.proto:96-114 defines NodesJoint/LearnersNext/AutoLeave"
+      ],
+      "witness": "Restart node 2 from index-10 C=(I={2},O={1},L={3},N={1},A=TRUE), or send the same nonmatching snapshot to outgoing-only node 1.",
+      "preserve_properties": [
+        "ConfigurationOrigin",
+        "SnapshotBacking",
+        "SnapshotConfigurationRestoration",
+        "QuorumAccounting"
+      ],
+      "disposition": "Observe the stored and reconstructed fields separately. Never flatten the snapshot to make equality pass."
+    },
+    {
+      "id": "D3",
+      "kind": "source",
+      "confidence": "high from static code",
+      "title": "Config.Clone does not copy AutoLeave",
+      "evidence": [
+        "new/source/tracker/tracker.go:95-111",
+        "new/source/status.go:76 uses Config.Clone",
+        "new/source/rawnode_test.go:689 only checks a nonjoint status"
+      ],
+      "witness": "Clone or Status of a joint config with AutoLeave=TRUE returns AutoLeave=FALSE while maps are copied.",
+      "preserve_properties": [
+        "ConfigurationAndStatusCopies"
+      ],
+      "disposition": "Require full value equality, not merely map independence. EnterJoint sets the flag after cloning and LeaveJoint intentionally clears it, so do not claim this alone proves the normal auto-leave path loses its live flag."
+    },
+    {
+      "id": "D4",
+      "kind": "source",
+      "confidence": "strong suspicion; reachability to be validated",
+      "title": "Successful automatic leave does not advance the pending configuration barrier",
+      "evidence": [
+        "new/source/raft.go:561-580 assigns pendingConfIndex only on failed append",
+        "new/source/raft.go:633 appendEntry does not set it",
+        "new/source/raft.go:1017 proposal serialization uses it"
+      ],
+      "witness": "Enter at 10, committed normals through 12, paginated Advance(10) appends leave13; pending stays10. Advance(11) can append leave14 before13 applies. Applying14 after13 exits joint panics.",
+      "preserve_properties": [
+        "AutoLeaveSerialization",
+        "AckPreservation",
+        "ProposalConfigurationDecisions",
+        "NoUnexpectedFatal"
+      ],
+      "disposition": "Do not allow arbitrary suffix growth or exempt every id=0 entry as bootstrap. A protocol-generated invalid second leave is unexpected."
+    },
+    {
+      "id": "D5",
+      "kind": "source",
+      "confidence": "strong suspicion; temporal witness pending",
+      "title": "Quota rejection can strand automatic exit",
+      "evidence": [
+        "new/source/raft.go:573 quota failure occurs before reduceUncommittedSize at581",
+        "new/source/raftpb/raft.pb.go:767 and954: zero V2 has encoded Transition field, payload size2"
+      ],
+      "witness": "Eligible enter at10 fills quota8/8; Advance attempts a 2-byte exit, fails, then frees quota8. No later committed entries or client writes cause another cursor-bearing Advance.",
+      "preserve_properties": [
+        "AutoLeaveProgress",
+        "QuotaReleaseTiming"
+      ],
+      "disposition": "Do not assume free quota before every auto attempt or continuing external writes merely to make progress true."
+    },
+    {
+      "id": "D6",
+      "kind": "source",
+      "confidence": "observed branch gap; stronger transfer contract unresolved",
+      "title": "Demotion leaves stale serving/transfer state",
+      "evidence": [
+        "new/source/raft.go:1478 returns without stepping down a demoted leader",
+        "new/source/raft.go:1035 singleton read path",
+        "new/source/raft.go:1502 aborts transfer only if progress is absent",
+        "new/source/raft.go:1124 sends TimeoutNow without a new learner check"
+      ],
+      "witness": "Leader1 is demoted to learner with sole voter2 and remains StateLeader; it can take singleton ReadIndex shortcut. Separately, a transferee demoted to learner remains in progress and can later receive TimeoutNow.",
+      "preserve_properties": [
+        "ReadBasis",
+        "ReadIndexDecisionBasis",
+        "LearnerEligibility",
+        "TransferDecisionEligibility",
+        "TransferSettlement"
+      ],
+      "disposition": "Do not redefine a learner as eligible or allow unbacked completed reads. Whether immediate transfer abort/leader step-down itself is mandatory is unresolved; unsafe serving is still forbidden."
+    },
+    {
+      "id": "D7",
+      "kind": "source",
+      "confidence": "latent branch defect, reachability unresolved",
+      "title": "Simple can return nil error from an invariant-error branch",
+      "evidence": [
+        "new/source/confchange/confchange.go:150-152"
+      ],
+      "witness": "If the post-apply checkInvariants fails after a successful checkAndCopy, Simple returns an empty Config/Progress and nil error. A valid-input sequence reaching this branch has not been established.",
+      "preserve_properties": [
+        "ConfigurationChangeValidation",
+        "TypeOK"
+      ],
+      "disposition": "Require rejection and no install for invalid outputs. Do not claim a demonstrated reachable execution."
+    },
+    {
+      "id": "D8",
+      "kind": "source/documentation",
+      "confidence": "static discrepancy",
+      "title": "Bootstrap rejection is ignored by StartNode; joining documentation is stale",
+      "evidence": [
+        "new/source/node.go:224 ignores rn.Bootstrap(peers) error",
+        "new/source/bootstrap.go:30-40 rejects nonempty Storage",
+        "new/source/node.go:213 rejects zero peers",
+        "new/source/README.md:84 still recommends StartNode(c,nil)"
+      ],
+      "witness": "StartNode on nonempty storage silently continues with the reconstructed node after Bootstrap rejects supplied peers. StartNode(c,nil) now panics despite README's join example.",
+      "preserve_properties": [
+        "ExplicitBootstrapLifecycle",
+        "VoteRecovery",
+        "ConfigurationOrigin"
+      ],
+      "disposition": "Use explicit new constructor contract for model migration; keep error propagation/documentation conflict visible and do not infer erased or overwritten durable data."
+    },
+    {
+      "id": "M1",
+      "kind": "model coverage/representation",
+      "confidence": "directly visible",
+      "title": "Old model cannot express key updated states or actions",
+      "evidence": [
+        "old/spec/base.tla:54 EmptyConfig;65 ConfKinds;703 InitialRaft;1099 RestartCore",
+        "old/spec/MC.tla:22; old/spec/MC.cfg:43",
+        "old/spec/Trace.tla:62-71"
+      ],
+      "witness": "There is no entry carrying multiple ordered changes/transition, no outgoing/staged/AutoLeave fields, no internal exit action, no Ready peek or explicit bootstrap action. Reusing the old workload can pass without exercising any of these.",
+      "preserve_properties": [
+        "all existing safety controls"
+      ],
+      "disposition": "Migrate protocol representation and observers before interpreting validation; preserve observable failures rather than deriving post-state from desired invariants."
+    },
+    {
+      "id": "M2",
+      "kind": "pre-existing property/observer defects",
+      "confidence": "directly visible",
+      "title": "Proposal observation is incomplete and outcome weight is correlated with the implementation",
+      "evidence": [
+        "old/spec/base.tla:642-670 lacks afterPending/full payload checks",
+        "old/spec/base.tla:798 uses RewriteConf to compute outcome weight"
+      ],
+      "witness": "Append the right V1 entry but fail to advance pendingConfIndex; ProposalContract still passes. An incorrect rewrite reused for observed expected weight can make OutcomeSoundness pass the wrong rejection.",
+      "preserve_properties": [
+        "ProposalConfigurationDecisions",
+        "OutcomeSoundness"
+      ],
+      "disposition": "Repair these targeted defects independently of adding V2. No other old property is rewritten just for uniformity."
+    },
+    {
+      "id": "M3",
+      "kind": "model/source correspondence",
+      "confidence": "directly visible",
+      "title": "Raw Ready handling and wrapper timing must be re-mapped",
+      "evidence": [
+        "old/spec/base.tla:860 debits Ready and allows subsequent core calls",
+        "old/spec/base.tla:966-989 clears Raw read states at Advance",
+        "new/source/rawnode.go:122-191 separates peek/accept/commit",
+        "new/source/node.go:294-397"
+      ],
+      "witness": "The old harness runs Raw Ready, then Step generating a new read, then Advance and reports loss. The new Raw API forbids handling-time Step; Node's split acceptance still permits later messages and must preserve them.",
+      "preserve_properties": [
+        "ReadyAccounting",
+        "ReadCorrelation",
+        "AckPreservation"
+      ],
+      "disposition": "Classify caller legality explicitly and separately for Node/RawNode; retain mandatory configuration callbacks and expose Node interleavings."
+    },
+    {
+      "id": "M4",
+      "kind": "test coverage limitation",
+      "confidence": "explicit test comment",
+      "title": "Joint exit source test bypasses consensus",
+      "evidence": [
+        "new/source/rawnode_test.go:345 comment beginning 'Lie and pretend the ConfChange applied'",
+        "new/source/confchange/quick_test.go:29 compares configuration transformations"
+      ],
+      "witness": "TestRawNodeProposeAndConfChange applies the leave entry with only one node even when a joint quorum is unavailable.",
+      "preserve_properties": [
+        "ConfigurationTransitionSafety",
+        "QuorumAccounting",
+        "AutoLeaveProgress"
+      ],
+      "disposition": "Use the test as evidence of desired transformations/API payloads only; it is not evidence of quorum commitment or eventual exit."
+    }
+  ],
+  "unresolved_obligations": [
+    {
+      "id": "U1",
+      "obligation": "Validate all proposed witnesses against migrated models and source",
+      "status": "not executed by instruction",
+      "details": "No reachable-state, test-pass, TLC-pass, or complete-coverage claim. Safety mutations and temporal counterexamples are explicitly distinguished."
+    },
+    {
+      "id": "U2",
+      "obligation": "Resolve exact RawNode handling discipline around ApplyConfChange",
+      "status": "contract ambiguity",
+      "evidence": [
+        "new/source/rawnode.go:122 forbids operations that alter state while handling Ready",
+        "new/source/rawnode_test.go:227-253 calls ApplyConfChange before Advance",
+        "new/source/node.go:169 requires callbacks"
+      ],
+      "details": "At least Step/Tick/Propose during a handled Raw batch are forbidden. Required configuration callbacks cannot simply be banned to prune failures. Keep Node's asynchronous accepted-batch interleavings and its documented early Advance support."
+    },
+    {
+      "id": "U3",
+      "obligation": "Exercise joint progress without hidden external-work assumptions",
+      "status": "new liveness driver required",
+      "evidence": [
+        "old/spec/MC.tla:75-80; MC.cfg comments out temporal properties"
+      ],
+      "details": "Cover quota-failure retry, success with paginated committed tail, leader change, restart with AutoLeave, and removal/demotion of the current leader. Specify available majorities of both sides, persistence/caller/network/tick fairness and a future eligible leader. Stable-leader assumptions must not exclude the intended leader-change recovery cases."
+    },
+    {
+      "id": "U4",
+      "obligation": "Preserve actual before/after source observations",
+      "status": "instrumentation migration required",
+      "details": "Trace post-state must carry complete config, runtime learner flags, entry payloads, origin, pending index, request correlation, Ready phase and durable anchors. Recompute only independent ghost evidence; do not reconstruct actual O,N,A from the desired change and then claim the implementation preserved them. Sets erase sorted/nil and aliasing behavior, so those added obligations need source-level witnesses."
+    },
+    {
+      "id": "U5",
+      "obligation": "Clarify rejected configuration proposal handling and transfer revalidation",
+      "status": "partly unresolved",
+      "details": "Changer rejects nesting/simple-in-joint/empty-result; core panics and ProposeConfChange does not prevalidate sequence legality. Distinguish caller-invalid negative tests from invalid internal auto-leave generation. Decide whether immediate abort of a newly demoted transferee is a public obligation; retain learner campaign/read safety regardless."
+    },
+    {
+      "id": "U6",
+      "obligation": "Complete constructor/bootstrap edge coverage",
+      "status": "partly unresolved",
+      "details": "Validate StartNode's ignored Bootstrap error, repeated Bootstrap before storage persistence, manual anchors with no fake log, and stale README advice. Bootstrap is documented for first use; do not silently treat repeated calls as authorized restart or manufacture an input restriction based on observed failure."
+    },
+    {
+      "id": "U7",
+      "obligation": "Retain scenario controls and finite-domain transparency",
+      "status": "coverage work pending",
+      "details": "Run existing nonjoint V1, no-V2/AutoLeave-off, learner, storage, snapshot, read, proposal and quota controls alongside V2 witnesses. Include outgoing-only replication/election/transfer, staged demotion, explicit/implicit/auto transition, zero-ID cancellation, nonjoint leave rejection, joint snapshot, Node and RawNode. Extend limits/workloads explicitly; no experiment history consulted."
+    },
+    {
+      "id": "U8",
+      "obligation": "Keep unrelated read/API limitations separate",
+      "status": "unchanged gaps",
+      "details": "The old model covers safe reads and caller fence variants, not a complete lease-time model. No update evidence justifies changing Inclusive versus Strict fences or unique request/node identity assumptions. Status aliasing, protobuf presentation and BasicStatus allocation claims are outside old TLA state; semantic/copy predicates are supplied, while allocation performance is not asserted as a Raft invariant."
+    },
+    {
+      "id": "U9",
+      "obligation": "Check the latent Simple invariant-error path",
+      "status": "reachability unknown",
+      "details": "Find a valid input reaching D7 or show preservation makes that branch unreachable; do not report it as a tested failure."
+    }
+  ],
+  "maintenance_summary": {
+    "old_property_entries": 35,
+    "keep": [
+      "ElectionSafety",
+      "LogMatching",
+      "LeaderCompleteness",
+      "CommittedHistory",
+      "AppliedAgreement",
+      "VoteRecovery",
+      "RecoveryBacking",
+      "PromiseBacking",
+      "LearnerEligibility",
+      "ReplicationEvidence",
+      "ReadyAccounting",
+      "QuotaIntegrity",
+      "ReadApplication",
+      "ReadCorrelation",
+      "LogStructure",
+      "VoteDecisionEligibility",
+      "ElectionProgress",
+      "CatchupProgress",
+      "ManagementProgress",
+      "TransferSettlement",
+      "ReadProgress"
+    ],
+    "modify": [
+      "ConfigurationOrigin",
+      "ConfigurationTransitionSafety",
+      "QuorumAccounting",
+      "SnapshotBacking",
+      "AckPreservation",
+      "OutcomeSoundness",
+      "ReadBasis",
+      "NoUnexpectedFatal",
+      "TypeOK",
+      "CampaignDecisionEligibility",
+      "TransferDecisionEligibility",
+      "RequestCorrelatedConfigurationEffects",
+      "ProposalConfigurationDecisions",
+      "MCTypeOK"
+    ],
+    "add": [
+      "ConfigurationChangeValidation",
+      "ConfigurationProgressPreservation",
+      "ConfigurationCommitReevaluation",
+      "AutoLeaveSerialization",
+      "AutoLeaveProgress",
+      "SnapshotConfigurationRestoration",
+      "ReadyPeekAndAcceptance",
+      "ReadyHardStateDeltaAndMustSync",
+      "QuotaReleaseTiming",
+      "ExplicitBootstrapLifecycle",
+      "ConfigurationAndStatusCopies",
+      "ConfChangeEncodingAndPublicRepresentation",
+      "CheckQuorumDecision",
+      "ReadIndexDecisionBasis",
+      "NodeProposalChannelMembershipTransition"
+    ],
+    "remove": [],
+    "unresolved": [
+      "TransferTargetRevalidation"
+    ],
+    "semantic_changes": "Voter demotion; richer joint/leave operations; explicit bootstrap and new documented rejection cases; read-only Ready/changed completion and delta timing; narrowly allowed Advance auto-leave append. These are separated from unchanged consensus safety.",
+    "representation_migrations": "Joint voter sets and active/staged learners; full entry payload/version/origin; anchored configuration provenance; Node/Raw Ready phases; complete trace/status fields.",
+    "pre_existing_repairs": "Observe and check pendingConfIndex and complete proposal content; compute OutcomeSoundness effective weight independently of implementation rewrite. Do not regenerate unaffected properties."
+  }
+}

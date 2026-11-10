@@ -1,0 +1,31 @@
+{
+  "name": "leadership-v03",
+  "version": "V03",
+  "module": "C03Progress",
+  "config": "leadership.cfg",
+  "seconds_limit": 300,
+  "elapsed_seconds": 300.3474018573761,
+  "exit_code": 124,
+  "command": [
+    "timeout",
+    "--signal=TERM",
+    "--kill-after=5s",
+    "300s",
+    "java",
+    "-Xmx4g",
+    "-Dtlc2.TLC.progressInterval=10",
+    "-cp",
+    "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+    "tlc2.TLC",
+    "-workers",
+    "1",
+    "-nowarning",
+    "-dumpTrace",
+    "json",
+    "counterexample.json",
+    "-config",
+    "leadership.cfg",
+    "C03Progress"
+  ],
+  "trace": "/workspace/out/joint-autoleave-prefix-inputs.ndjson"
+}

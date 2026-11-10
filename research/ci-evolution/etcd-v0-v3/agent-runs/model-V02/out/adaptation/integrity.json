@@ -1,0 +1,17 @@
+{
+  "immutable_supplied_files_checked": 223,
+  "changed": [],
+  "generic_unchanged": {
+    "runner.py": "4e9700051929787ad462aca97f97c91ac8a03cb415893c745f8b9698be923679",
+    "protocol.schema.json": "c737e33e6d53f49412c4a80a6f7fddef39552309fec0cb1e8c8cdd5b2d1ed885",
+    "test_runner.py": "247fdcf893031fecb0a1c4dfe06a80b3b79562899596fc06a35b01ae5cdd0fb7"
+  },
+  "safety_predicates_and_decision_contracts_unchanged": true,
+  "other_spec_files_unchanged": true,
+  "behavior_operators_changed": [
+    "IsLeave",
+    "ProtocolReady",
+    "AdvanceCore"
+  ],
+  "observer_changes_applied": false
+}

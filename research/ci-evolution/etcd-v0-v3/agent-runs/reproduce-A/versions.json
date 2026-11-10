@@ -1,0 +1,22 @@
+[
+  {
+    "id": "V00",
+    "revision": "d58d5d159ae1a1f644a10003f2d8b3b807cd0b3a",
+    "source_manifest_sha256": "dcbf70789ca3d252a8c409d3a66db4370c9d06fa4d8fae58cc662be15289e402"
+  },
+  {
+    "id": "V01",
+    "revision": "46580dcf61734b12ae757dbabdf31c2b862acd68",
+    "source_manifest_sha256": "248e15de15a6169448b2ed7d2372d09185fdafa9950c2d78f48e20249814299b"
+  },
+  {
+    "id": "V02",
+    "revision": "3ea6503e58b03833d7d32a4ffcd3a76db9ea2520",
+    "source_manifest_sha256": "34c16881bdb83f60ad453497165f276c8801f99420856ee4f565e6bb1c37b8ef"
+  },
+  {
+    "id": "V03",
+    "revision": "bd3c759d61f003970d62095f04f3df5d977c8c78",
+    "source_manifest_sha256": "4ef44147f529dee0ca30f33455620ef8da5d97e83ce5626b0f23ef85b220c5d4"
+  }
+]

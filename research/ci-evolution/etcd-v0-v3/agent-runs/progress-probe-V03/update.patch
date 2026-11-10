@@ -1,0 +1,4249 @@
+diff --git a/README.md b/README.md
+index 83cf040..5f67517 100644
+--- a/README.md
++++ b/README.md
+@@ -5,7 +5,7 @@ The state machine is kept in sync through the use of a replicated log.
+ For more details on Raft, see "In Search of an Understandable Consensus Algorithm"
+ (https://raft.github.io/raft.pdf) by Diego Ongaro and John Ousterhout.
+ 
+-This Raft library is stable and feature complete. As of 2016, it is **the most widely used** Raft library in production, serving tens of thousands clusters each day. It powers distributed systems such as etcd, Kubernetes, Docker Swarm, Cloud Foundry Diego, CockroachDB, TiDB, Project Calico, Flannel, and more.
++This Raft library is stable and feature complete. As of 2016, it is **the most widely used** Raft library in production, serving tens of thousands clusters each day. It powers distributed systems such as etcd, Kubernetes, Docker Swarm, Cloud Foundry Diego, CockroachDB, TiDB, Project Calico, Flannel, Hyperledger and more.
+ 
+ Most Raft implementations have a monolithic design, including storage handling, messaging serialization, and network transport. This library instead follows a minimalistic design philosophy by only implementing the core raft algorithm. This minimalism buys flexibility, determinism, and performance.
+ 
+@@ -59,7 +59,7 @@ The primary object in raft is a Node. Either start a Node from scratch using raf
+ To start a three-node cluster
+ ```go
+   storage := raft.NewMemoryStorage()
+-  c := &Config{
++  c := &raft.Config{
+     ID:              0x01,
+     ElectionTick:    10,
+     HeartbeatTick:   1,
+@@ -95,7 +95,7 @@ To restart a node from previous state:
+   storage.SetHardState(state)
+   storage.Append(entries)
+ 
+-  c := &Config{
++  c := &raft.Config{
+     ID:              0x01,
+     ElectionTick:    10,
+     HeartbeatTick:   1,
+diff --git a/confchange/confchange.go b/confchange/confchange.go
+index 58c74bf..741f811 100644
+--- a/confchange/confchange.go
++++ b/confchange/confchange.go
+@@ -142,9 +142,6 @@ func (c Changer) Simple(ccs ...pb.ConfChangeSingle) (tracker.Config, tracker.Pro
+ 	if n := symdiff(incoming(c.Tracker.Voters), incoming(cfg.Voters)); n > 1 {
+ 		return tracker.Config{}, nil, errors.New("more than one voter changed without entering joint config")
+ 	}
+-	if err := checkInvariants(cfg, prs); err != nil {
+-		return tracker.Config{}, tracker.ProgressMap{}, nil
+-	}
+ 
+ 	return checkAndReturn(cfg, prs)
+ }
+@@ -257,11 +254,15 @@ func (c Changer) initProgress(cfg *tracker.Config, prs tracker.ProgressMap, id u
+ 		nilAwareAdd(&cfg.Learners, id)
+ 	}
+ 	prs[id] = &tracker.Progress{
+-		// We initialize Progress.Next with lastIndex+1 so that the peer will be
+-		// probed without an index first.
++		// Initializing the Progress with the last index means that the follower
++		// can be probed (with the last index).
+ 		//
+-		// TODO(tbg): verify that, this is just my best guess.
+-		Next:      c.LastIndex + 1,
++		// TODO(tbg): seems awfully optimistic. Using the first index would be
++		// better. The general expectation here is that the follower has no log
++		// at all (and will thus likely need a snapshot), though the app may
++		// have applied a snapshot out of band before adding the replica (thus
++		// making the first index the better choice).
++		Next:      c.LastIndex,
+ 		Match:     0,
+ 		Inflights: tracker.NewInflights(c.Tracker.MaxInflight),
+ 		IsLearner: isLearner,
+diff --git a/confchange/testdata/joint_autoleave.txt b/confchange/testdata/joint_autoleave.txt
+index be855f7..9ec8cb0 100644
+--- a/confchange/testdata/joint_autoleave.txt
++++ b/confchange/testdata/joint_autoleave.txt
+@@ -5,16 +5,16 @@ simple
+ v1
+ ----
+ voters=(1)
+-1: StateProbe match=0 next=1
++1: StateProbe match=0 next=0
+ 
+ # Autoleave is reflected in the config.
+ enter-joint autoleave=true
+ v2 v3
+ ----
+ voters=(1 2 3)&&(1) autoleave
+-1: StateProbe match=0 next=1
+-2: StateProbe match=0 next=2
+-3: StateProbe match=0 next=2
++1: StateProbe match=0 next=0
++2: StateProbe match=0 next=1
++3: StateProbe match=0 next=1
+ 
+ # Can't enter-joint twice, even if autoleave changes.
+ enter-joint autoleave=false
+@@ -24,6 +24,6 @@ config is already joint
+ leave-joint
+ ----
+ voters=(1 2 3)
+-1: StateProbe match=0 next=1
+-2: StateProbe match=0 next=2
+-3: StateProbe match=0 next=2
++1: StateProbe match=0 next=0
++2: StateProbe match=0 next=1
++3: StateProbe match=0 next=1
+diff --git a/confchange/testdata/joint_idempotency.txt b/confchange/testdata/joint_idempotency.txt
+index 2bd3144..6d1346b 100644
+--- a/confchange/testdata/joint_idempotency.txt
++++ b/confchange/testdata/joint_idempotency.txt
+@@ -5,19 +5,19 @@ simple
+ v1
+ ----
+ voters=(1)
+-1: StateProbe match=0 next=1
++1: StateProbe match=0 next=0
+ 
+ enter-joint
+ r1 r2 r9 v2 v3 v4 v2 v3 v4 l2 l2 r4 r4 l1 l1
+ ----
+ voters=(3)&&(1) learners=(2) learners_next=(1)
+-1: StateProbe match=0 next=1
+-2: StateProbe match=0 next=2 learner
+-3: StateProbe match=0 next=2
++1: StateProbe match=0 next=0
++2: StateProbe match=0 next=1 learner
++3: StateProbe match=0 next=1
+ 
+ leave-joint
+ ----
+ voters=(3) learners=(1 2)
+-1: StateProbe match=0 next=1 learner
+-2: StateProbe match=0 next=2 learner
+-3: StateProbe match=0 next=2
++1: StateProbe match=0 next=0 learner
++2: StateProbe match=0 next=1 learner
++3: StateProbe match=0 next=1
+diff --git a/confchange/testdata/joint_learners_next.txt b/confchange/testdata/joint_learners_next.txt
+index e3ddf4c..df1da7d 100644
+--- a/confchange/testdata/joint_learners_next.txt
++++ b/confchange/testdata/joint_learners_next.txt
+@@ -8,17 +8,17 @@ simple
+ v1
+ ----
+ voters=(1)
+-1: StateProbe match=0 next=1
++1: StateProbe match=0 next=0
+ 
+ enter-joint
+ v2 l1
+ ----
+ voters=(2)&&(1) learners_next=(1)
+-1: StateProbe match=0 next=1
+-2: StateProbe match=0 next=2
++1: StateProbe match=0 next=0
++2: StateProbe match=0 next=1
+ 
+ leave-joint
+ ----
+ voters=(2) learners=(1)
+-1: StateProbe match=0 next=1 learner
+-2: StateProbe match=0 next=2
++1: StateProbe match=0 next=0 learner
++2: StateProbe match=0 next=1
+diff --git a/confchange/testdata/joint_safety.txt b/confchange/testdata/joint_safety.txt
+index f123b60..75d11b1 100644
+--- a/confchange/testdata/joint_safety.txt
++++ b/confchange/testdata/joint_safety.txt
+@@ -15,7 +15,7 @@ simple
+ v1
+ ----
+ voters=(1)
+-1: StateProbe match=0 next=4
++1: StateProbe match=0 next=3
+ 
+ leave-joint
+ ----
+@@ -25,7 +25,7 @@ can't leave a non-joint config
+ enter-joint
+ ----
+ voters=(1)&&(1)
+-1: StateProbe match=0 next=4
++1: StateProbe match=0 next=3
+ 
+ enter-joint
+ ----
+@@ -34,7 +34,7 @@ config is already joint
+ leave-joint
+ ----
+ voters=(1)
+-1: StateProbe match=0 next=4
++1: StateProbe match=0 next=3
+ 
+ leave-joint
+ ----
+@@ -45,10 +45,10 @@ enter-joint
+ r1 v2 v3 l4
+ ----
+ voters=(2 3)&&(1) learners=(4)
+-1: StateProbe match=0 next=4
+-2: StateProbe match=0 next=10
+-3: StateProbe match=0 next=10
+-4: StateProbe match=0 next=10 learner
++1: StateProbe match=0 next=3
++2: StateProbe match=0 next=9
++3: StateProbe match=0 next=9
++4: StateProbe match=0 next=9 learner
+ 
+ enter-joint
+ ----
+@@ -67,15 +67,15 @@ can't apply simple config change in joint config
+ leave-joint
+ ----
+ voters=(2 3) learners=(4)
+-2: StateProbe match=0 next=10
+-3: StateProbe match=0 next=10
+-4: StateProbe match=0 next=10 learner
++2: StateProbe match=0 next=9
++3: StateProbe match=0 next=9
++4: StateProbe match=0 next=9 learner
+ 
+ simple
+ l9
+ ----
+ voters=(2 3) learners=(4 9)
+-2: StateProbe match=0 next=10
+-3: StateProbe match=0 next=10
+-4: StateProbe match=0 next=10 learner
+-9: StateProbe match=0 next=15 learner
++2: StateProbe match=0 next=9
++3: StateProbe match=0 next=9
++4: StateProbe match=0 next=9 learner
++9: StateProbe match=0 next=14 learner
+diff --git a/confchange/testdata/simple_idempotency.txt b/confchange/testdata/simple_idempotency.txt
+index a663a88..2f7ca2e 100644
+--- a/confchange/testdata/simple_idempotency.txt
++++ b/confchange/testdata/simple_idempotency.txt
+@@ -2,68 +2,68 @@ simple
+ v1
+ ----
+ voters=(1)
+-1: StateProbe match=0 next=1
++1: StateProbe match=0 next=0
+ 
+ simple
+ v1
+ ----
+ voters=(1)
+-1: StateProbe match=0 next=1
++1: StateProbe match=0 next=0
+ 
+ simple
+ v2
+ ----
+ voters=(1 2)
+-1: StateProbe match=0 next=1
+-2: StateProbe match=0 next=3
++1: StateProbe match=0 next=0
++2: StateProbe match=0 next=2
+ 
+ simple
+ l1
+ ----
+ voters=(2) learners=(1)
+-1: StateProbe match=0 next=1 learner
+-2: StateProbe match=0 next=3
++1: StateProbe match=0 next=0 learner
++2: StateProbe match=0 next=2
+ 
+ simple
+ l1
+ ----
+ voters=(2) learners=(1)
+-1: StateProbe match=0 next=1 learner
+-2: StateProbe match=0 next=3
++1: StateProbe match=0 next=0 learner
++2: StateProbe match=0 next=2
+ 
+ simple
+ r1
+ ----
+ voters=(2)
+-2: StateProbe match=0 next=3
++2: StateProbe match=0 next=2
+ 
+ simple
+ r1
+ ----
+ voters=(2)
+-2: StateProbe match=0 next=3
++2: StateProbe match=0 next=2
+ 
+ simple
+ v3
+ ----
+ voters=(2 3)
+-2: StateProbe match=0 next=3
+-3: StateProbe match=0 next=8
++2: StateProbe match=0 next=2
++3: StateProbe match=0 next=7
+ 
+ simple
+ r3
+ ----
+ voters=(2)
+-2: StateProbe match=0 next=3
++2: StateProbe match=0 next=2
+ 
+ simple
+ r3
+ ----
+ voters=(2)
+-2: StateProbe match=0 next=3
++2: StateProbe match=0 next=2
+ 
+ simple
+ r4
+ ----
+ voters=(2)
+-2: StateProbe match=0 next=3
++2: StateProbe match=0 next=2
+diff --git a/confchange/testdata/simple_promote_demote.txt b/confchange/testdata/simple_promote_demote.txt
+index 651bc15..52369b4 100644
+--- a/confchange/testdata/simple_promote_demote.txt
++++ b/confchange/testdata/simple_promote_demote.txt
+@@ -4,22 +4,22 @@ simple
+ v1
+ ----
+ voters=(1)
+-1: StateProbe match=0 next=1
++1: StateProbe match=0 next=0
+ 
+ simple
+ v2
+ ----
+ voters=(1 2)
+-1: StateProbe match=0 next=1
+-2: StateProbe match=0 next=2
++1: StateProbe match=0 next=0
++2: StateProbe match=0 next=1
+ 
+ simple
+ v3
+ ----
+ voters=(1 2 3)
+-1: StateProbe match=0 next=1
+-2: StateProbe match=0 next=2
+-3: StateProbe match=0 next=3
++1: StateProbe match=0 next=0
++2: StateProbe match=0 next=1
++3: StateProbe match=0 next=2
+ 
+ # Can atomically demote and promote without a hitch.
+ # This is pointless, but possible.
+@@ -27,18 +27,18 @@ simple
+ l1 v1
+ ----
+ voters=(1 2 3)
+-1: StateProbe match=0 next=1
+-2: StateProbe match=0 next=2
+-3: StateProbe match=0 next=3
++1: StateProbe match=0 next=0
++2: StateProbe match=0 next=1
++3: StateProbe match=0 next=2
+ 
+ # Can demote a voter.
+ simple
+ l2
+ ----
+ voters=(1 3) learners=(2)
+-1: StateProbe match=0 next=1
+-2: StateProbe match=0 next=2 learner
+-3: StateProbe match=0 next=3
++1: StateProbe match=0 next=0
++2: StateProbe match=0 next=1 learner
++3: StateProbe match=0 next=2
+ 
+ # Can atomically promote and demote the same voter.
+ # This is pointless, but possible.
+@@ -46,15 +46,15 @@ simple
+ v2 l2
+ ----
+ voters=(1 3) learners=(2)
+-1: StateProbe match=0 next=1
+-2: StateProbe match=0 next=2 learner
+-3: StateProbe match=0 next=3
++1: StateProbe match=0 next=0
++2: StateProbe match=0 next=1 learner
++3: StateProbe match=0 next=2
+ 
+ # Can promote a voter.
+ simple
+ v2
+ ----
+ voters=(1 2 3)
+-1: StateProbe match=0 next=1
+-2: StateProbe match=0 next=2
+-3: StateProbe match=0 next=3
++1: StateProbe match=0 next=0
++2: StateProbe match=0 next=1
++3: StateProbe match=0 next=2
+diff --git a/confchange/testdata/simple_safety.txt b/confchange/testdata/simple_safety.txt
+index b360737..6566c5f 100644
+--- a/confchange/testdata/simple_safety.txt
++++ b/confchange/testdata/simple_safety.txt
+@@ -7,15 +7,15 @@ simple
+ v1
+ ----
+ voters=(1)
+-1: StateProbe match=0 next=2
++1: StateProbe match=0 next=1
+ 
+ simple
+ v2 l3
+ ----
+ voters=(1 2) learners=(3)
+-1: StateProbe match=0 next=2
+-2: StateProbe match=0 next=3
+-3: StateProbe match=0 next=3 learner
++1: StateProbe match=0 next=1
++2: StateProbe match=0 next=2
++3: StateProbe match=0 next=2 learner
+ 
+ simple
+ r1 v5
+@@ -46,11 +46,11 @@ simple
+ l2 l3 l4 l5
+ ----
+ voters=(1) learners=(2 3 4 5)
+-1: StateProbe match=0 next=2
+-2: StateProbe match=0 next=3 learner
+-3: StateProbe match=0 next=3 learner
+-4: StateProbe match=0 next=9 learner
+-5: StateProbe match=0 next=9 learner
++1: StateProbe match=0 next=1
++2: StateProbe match=0 next=2 learner
++3: StateProbe match=0 next=2 learner
++4: StateProbe match=0 next=8 learner
++5: StateProbe match=0 next=8 learner
+ 
+ simple
+ r1
+@@ -61,4 +61,4 @@ simple
+ r2 r3 r4 r5
+ ----
+ voters=(1)
+-1: StateProbe match=0 next=2
++1: StateProbe match=0 next=1
+diff --git a/confchange/testdata/update.txt b/confchange/testdata/update.txt
+index ffc2922..50a703c 100644
+--- a/confchange/testdata/update.txt
++++ b/confchange/testdata/update.txt
+@@ -6,18 +6,18 @@ simple
+ v1
+ ----
+ voters=(1)
+-1: StateProbe match=0 next=1
++1: StateProbe match=0 next=0
+ 
+ simple
+ v2 u1
+ ----
+ voters=(1 2)
+-1: StateProbe match=0 next=1
+-2: StateProbe match=0 next=2
++1: StateProbe match=0 next=0
++2: StateProbe match=0 next=1
+ 
+ simple
+ u1 u2 u3 u1 u2 u3
+ ----
+ voters=(1 2)
+-1: StateProbe match=0 next=1
+-2: StateProbe match=0 next=2
++1: StateProbe match=0 next=0
++2: StateProbe match=0 next=1
+diff --git a/confchange/testdata/zero.txt b/confchange/testdata/zero.txt
+index 226ade0..5e0d46f 100644
+--- a/confchange/testdata/zero.txt
++++ b/confchange/testdata/zero.txt
+@@ -3,4 +3,4 @@ simple
+ v1 r0 v0 l0
+ ----
+ voters=(1)
+-1: StateProbe match=0 next=1
++1: StateProbe match=0 next=0
+diff --git a/interaction_test.go b/interaction_test.go
+new file mode 100644
+index 0000000..c8b8cb0
+--- /dev/null
++++ b/interaction_test.go
+@@ -0,0 +1,34 @@
++// Copyright 2019 The etcd Authors
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package raft_test
++
++import (
++	"testing"
++
++	"github.com/cockroachdb/datadriven"
++	"go.etcd.io/etcd/raft/rafttest"
++)
++
++func TestInteraction(t *testing.T) {
++	// NB: if this test fails, run `go test ./raft -rewrite` and inspect the
++	// diff. Only commit the changes if you understand what caused them and if
++	// they are desired.
++	datadriven.Walk(t, "testdata", func(t *testing.T, path string) {
++		env := rafttest.NewInteractionEnv(nil)
++		datadriven.RunTest(t, path, func(d *datadriven.TestData) string {
++			return env.Handle(t, *d)
++		})
++	})
++}
+diff --git a/log_test.go b/log_test.go
+index a9ee6ce..603ba6e 100644
+--- a/log_test.go
++++ b/log_test.go
+@@ -265,7 +265,7 @@ func TestLogMaybeAppend(t *testing.T) {
+ 					t.Fatalf("unexpected error %v", err)
+ 				}
+ 				if !reflect.DeepEqual(tt.ents, gents) {
+-					t.Errorf("%d: appended entries = %v, want %v", i, gents, tt.ents)
++					t.Errorf("#%d: appended entries = %v, want %v", i, gents, tt.ents)
+ 				}
+ 			}
+ 		}()
+@@ -426,7 +426,7 @@ func TestUnstableEnts(t *testing.T) {
+ 
+ 		ents := raftLog.unstableEntries()
+ 		if l := len(ents); l > 0 {
+-			raftLog.stableTo(ents[l-1].Index, ents[l-i].Term)
++			raftLog.stableTo(ents[l-1].Index, ents[l-1].Term)
+ 		}
+ 		if !reflect.DeepEqual(ents, tt.wents) {
+ 			t.Errorf("#%d: unstableEnts = %+v, want %+v", i, ents, tt.wents)
+@@ -671,13 +671,13 @@ func TestIsOutOfBounds(t *testing.T) {
+ 			}()
+ 			err := l.mustCheckOutOfBounds(tt.lo, tt.hi)
+ 			if tt.wpanic {
+-				t.Errorf("%d: panic = %v, want %v", i, false, true)
++				t.Errorf("#%d: panic = %v, want %v", i, false, true)
+ 			}
+ 			if tt.wErrCompacted && err != ErrCompacted {
+-				t.Errorf("%d: err = %v, want %v", i, err, ErrCompacted)
++				t.Errorf("#%d: err = %v, want %v", i, err, ErrCompacted)
+ 			}
+ 			if !tt.wErrCompacted && err != nil {
+-				t.Errorf("%d: unexpected err %v", i, err)
++				t.Errorf("#%d: unexpected err %v", i, err)
+ 			}
+ 		}()
+ 	}
+diff --git a/log_unstable.go b/log_unstable.go
+index 1005bf6..1bff5a7 100644
+--- a/log_unstable.go
++++ b/log_unstable.go
+@@ -55,10 +55,7 @@ func (u *unstable) maybeLastIndex() (uint64, bool) {
+ // is any.
+ func (u *unstable) maybeTerm(i uint64) (uint64, bool) {
+ 	if i < u.offset {
+-		if u.snapshot == nil {
+-			return 0, false
+-		}
+-		if u.snapshot.Metadata.Index == i {
++		if u.snapshot != nil && u.snapshot.Metadata.Index == i {
+ 			return u.snapshot.Metadata.Term, true
+ 		}
+ 		return 0, false
+@@ -71,6 +68,7 @@ func (u *unstable) maybeTerm(i uint64) (uint64, bool) {
+ 	if i > last {
+ 		return 0, false
+ 	}
++
+ 	return u.entries[i-u.offset].Term, true
+ }
+ 
+diff --git a/raft.go b/raft.go
+index 62e7964..90eedfe 100644
+--- a/raft.go
++++ b/raft.go
+@@ -20,6 +20,7 @@ import (
+ 	"fmt"
+ 	"math"
+ 	"math/rand"
++	"sort"
+ 	"strings"
+ 	"sync"
+ 	"time"
+@@ -366,7 +367,7 @@ func newRaft(c *Config) *raft {
+ 	}
+ 	assertConfStatesEquivalent(r.logger, cs, r.switchToConfig(cfg, prs))
+ 
+-	if !isHardStateEqual(hs, emptyState) {
++	if !IsEmptyHardState(hs) {
+ 		r.loadState(hs)
+ 	}
+ 	if c.Applied > 0 {
+@@ -529,7 +530,6 @@ func (r *raft) bcastAppend() {
+ 		if id == r.id {
+ 			return
+ 		}
+-
+ 		r.sendAppend(id)
+ 	})
+ }
+@@ -554,35 +554,34 @@ func (r *raft) bcastHeartbeatWithCtx(ctx []byte) {
+ }
+ 
+ func (r *raft) advance(rd Ready) {
++	r.reduceUncommittedSize(rd.CommittedEntries)
++
+ 	// If entries were applied (or a snapshot), update our cursor for
+ 	// the next Ready. Note that if the current HardState contains a
+ 	// new Commit index, this does not mean that we're also applying
+ 	// all of the new entries due to commit pagination by size.
+-	if index := rd.appliedCursor(); index > 0 {
+-		r.raftLog.appliedTo(index)
+-		if r.prs.Config.AutoLeave && index >= r.pendingConfIndex && r.state == StateLeader {
++	if newApplied := rd.appliedCursor(); newApplied > 0 {
++		oldApplied := r.raftLog.applied
++		r.raftLog.appliedTo(newApplied)
++
++		if r.prs.Config.AutoLeave && oldApplied < r.pendingConfIndex && newApplied >= r.pendingConfIndex && r.state == StateLeader {
+ 			// If the current (and most recent, at least for this leader's term)
+-			// configuration should be auto-left, initiate that now.
+-			ccdata, err := (&pb.ConfChangeV2{}).Marshal()
+-			if err != nil {
+-				panic(err)
+-			}
++			// configuration should be auto-left, initiate that now. We use a
++			// nil Data which unmarshals into an empty ConfChangeV2 and has the
++			// benefit that appendEntry can never refuse it based on its size
++			// (which registers as zero).
+ 			ent := pb.Entry{
+ 				Type: pb.EntryConfChangeV2,
+-				Data: ccdata,
++				Data: nil,
+ 			}
++			// There's no way in which this proposal should be able to be rejected.
+ 			if !r.appendEntry(ent) {
+-				// If we could not append the entry, bump the pending conf index
+-				// so that we'll try again later.
+-				//
+-				// TODO(tbg): test this case.
+-				r.pendingConfIndex = r.raftLog.lastIndex()
+-			} else {
+-				r.logger.Infof("initiating automatic transition out of joint configuration %s", r.prs.Config)
++				panic("refused un-refusable auto-leaving ConfChangeV2")
+ 			}
++			r.pendingConfIndex = r.raftLog.lastIndex()
++			r.logger.Infof("initiating automatic transition out of joint configuration %s", r.prs.Config)
+ 		}
+ 	}
+-	r.reduceUncommittedSize(rd.CommittedEntries)
+ 
+ 	if len(rd.Entries) > 0 {
+ 		e := rd.Entries[len(rd.Entries)-1]
+@@ -795,7 +794,16 @@ func (r *raft) campaign(t CampaignType) {
+ 		}
+ 		return
+ 	}
+-	for id := range r.prs.Voters.IDs() {
++	var ids []uint64
++	{
++		idMap := r.prs.Voters.IDs()
++		ids = make([]uint64, 0, len(idMap))
++		for id := range idMap {
++			ids = append(ids, id)
++		}
++		sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
++	}
++	for _, id := range ids {
+ 		if id == r.id {
+ 			continue
+ 		}
+@@ -1027,10 +1035,36 @@ func stepLeader(r *raft, m pb.Message) error {
+ 
+ 		for i := range m.Entries {
+ 			e := &m.Entries[i]
+-			if e.Type == pb.EntryConfChange || e.Type == pb.EntryConfChangeV2 {
+-				if r.pendingConfIndex > r.raftLog.applied {
+-					r.logger.Infof("%x propose conf %s ignored since pending unapplied configuration [index %d, applied %d]",
+-						r.id, e, r.pendingConfIndex, r.raftLog.applied)
++			var cc pb.ConfChangeI
++			if e.Type == pb.EntryConfChange {
++				var ccc pb.ConfChange
++				if err := ccc.Unmarshal(e.Data); err != nil {
++					panic(err)
++				}
++				cc = ccc
++			} else if e.Type == pb.EntryConfChangeV2 {
++				var ccc pb.ConfChangeV2
++				if err := ccc.Unmarshal(e.Data); err != nil {
++					panic(err)
++				}
++				cc = ccc
++			}
++			if cc != nil {
++				alreadyPending := r.pendingConfIndex > r.raftLog.applied
++				alreadyJoint := len(r.prs.Config.Voters[1]) > 0
++				wantsLeaveJoint := len(cc.AsV2().Changes) == 0
++
++				var refused string
++				if alreadyPending {
++					refused = fmt.Sprintf("possible unapplied conf change at index %d (applied to %d)", r.pendingConfIndex, r.raftLog.applied)
++				} else if alreadyJoint && !wantsLeaveJoint {
++					refused = "must transition out of joint config first"
++				} else if !alreadyJoint && wantsLeaveJoint {
++					refused = "not in joint state; refusing empty conf change"
++				}
++
++				if refused != "" {
++					r.logger.Infof("%x ignoring conf change %v at config %s: %s", r.id, cc, r.prs.Config, refused)
+ 					m.Entries[i] = pb.Entry{Type: pb.EntryNormal}
+ 				} else {
+ 					r.pendingConfIndex = r.raftLog.lastIndex() + uint64(i) + 1
+@@ -1064,7 +1098,7 @@ func stepLeader(r *raft, m pb.Message) error {
+ 			case ReadOnlyLeaseBased:
+ 				ri := r.raftLog.committed
+ 				if m.From == None || m.From == r.id { // from local member
+-					r.readStates = append(r.readStates, ReadState{Index: r.raftLog.committed, RequestCtx: m.Entries[0].Data})
++					r.readStates = append(r.readStates, ReadState{Index: ri, RequestCtx: m.Entries[0].Data})
+ 				} else {
+ 					r.send(pb.Message{To: m.From, Type: pb.MsgReadIndexResp, Index: ri, Entries: m.Entries})
+ 				}
+@@ -1396,7 +1430,7 @@ func (r *raft) restore(s pb.Snapshot) bool {
+ 	}
+ 
+ 	// More defense-in-depth: throw away snapshot if recipient is not in the
+-	// config. This shouuldn't ever happen (at the time of writing) but lots of
++	// config. This shouldn't ever happen (at the time of writing) but lots of
+ 	// code here and there assumes that r.id is in the progress tracker.
+ 	found := false
+ 	cs := s.Metadata.ConfState
+@@ -1518,13 +1552,21 @@ func (r *raft) switchToConfig(cfg tracker.Config, prs tracker.ProgressMap) pb.Co
+ 	if r.state != StateLeader || len(cs.Voters) == 0 {
+ 		return cs
+ 	}
++
+ 	if r.maybeCommit() {
+-		// The quorum size may have been reduced (but not to zero), so see if
+-		// any pending entries can be committed.
++		// If the configuration change means that more entries are committed now,
++		// broadcast/append to everyone in the updated config.
+ 		r.bcastAppend()
++	} else {
++		// Otherwise, still probe the newly added replicas; there's no reason to
++		// let them wait out a heartbeat interval (or the next incoming
++		// proposal).
++		r.prs.Visit(func(id uint64, pr *tracker.Progress) {
++			r.maybeSendAppend(id, false /* sendIfEmpty */)
++		})
+ 	}
+-	// If the the leadTransferee was removed, abort the leadership transfer.
+-	if _, tOK := r.prs.Progress[r.leadTransferee]; !tOK && r.leadTransferee != 0 {
++	// If the the leadTransferee was removed or demoted, abort the leadership transfer.
++	if _, tOK := r.prs.Config.Voters.IDs()[r.leadTransferee]; !tOK && r.leadTransferee != 0 {
+ 		r.abortLeaderTransfer()
+ 	}
+ 
+@@ -1564,16 +1606,21 @@ func (r *raft) abortLeaderTransfer() {
+ // If the new entries would exceed the limit, the method returns false. If not,
+ // the increase in uncommitted entry size is recorded and the method returns
+ // true.
++// Configuration changes are never refused.
+ func (r *raft) increaseUncommittedSize(ents []pb.Entry) bool {
+ 	var s uint64
+ 	for _, e := range ents {
+ 		s += uint64(PayloadSize(e))
+ 	}
+ 
+-	if r.uncommittedSize > 0 && r.uncommittedSize+s > r.maxUncommittedSize {
++	if r.uncommittedSize > 0 && s > 0 && r.uncommittedSize+s > r.maxUncommittedSize {
+ 		// If the uncommitted tail of the Raft log is empty, allow any size
+ 		// proposal. Otherwise, limit the size of the uncommitted tail of the
+ 		// log and drop any proposal that would push the size over the limit.
++		// Note the added requirement s>0 which is used to make sure that
++		// appending single empty entries to the log always succeeds, used both
++		// for replicating a new leader's initial empty entry, and for
++		// auto-leaving joint configurations.
+ 		return false
+ 	}
+ 	r.uncommittedSize += s
+diff --git a/raft_snap_test.go b/raft_snap_test.go
+index d49c883..070f3a2 100644
+--- a/raft_snap_test.go
++++ b/raft_snap_test.go
+@@ -18,7 +18,6 @@ import (
+ 	"testing"
+ 
+ 	pb "go.etcd.io/etcd/raft/raftpb"
+-	"go.etcd.io/etcd/raft/tracker"
+ )
+ 
+ var (
+@@ -112,125 +111,6 @@ func TestSnapshotSucceed(t *testing.T) {
+ 	}
+ }
+ 
+-// TestSnapshotSucceedViaAppResp regression tests the situation in which a snap-
+-// shot is sent to a follower at the most recent index (i.e. the snapshot index
+-// is the leader's last index is the committed index). In that situation, a bug
+-// in the past left the follower in probing status until the next log entry was
+-// committed.
+-func TestSnapshotSucceedViaAppResp(t *testing.T) {
+-	s1 := NewMemoryStorage()
+-	// Create a single-node leader.
+-	n1 := newTestRaft(1, []uint64{1}, 10, 1, s1)
+-	n1.becomeCandidate()
+-	n1.becomeLeader()
+-	// We need to add a second empty entry so that we can truncate the first
+-	// one away.
+-	n1.Step(pb.Message{Type: pb.MsgProp, Entries: []pb.Entry{{}}})
+-
+-	rd := newReady(n1, &SoftState{}, pb.HardState{})
+-	s1.Append(rd.Entries)
+-	s1.SetHardState(rd.HardState)
+-
+-	if exp, ci := s1.lastIndex(), n1.raftLog.committed; ci != exp {
+-		t.Fatalf("unexpected committed index %d, wanted %d: %+v", ci, exp, s1)
+-	}
+-
+-	// Force a log truncation.
+-	if err := s1.Compact(1); err != nil {
+-		t.Fatal(err)
+-	}
+-
+-	// Add a follower to the group. Do this in a clandestine way for simplicity.
+-	// Also set up a snapshot that will be sent to the follower.
+-	n1.applyConfChange(pb.ConfChange{NodeID: 2, Type: pb.ConfChangeAddNode}.AsV2())
+-	s1.snapshot = pb.Snapshot{
+-		Metadata: pb.SnapshotMetadata{
+-			ConfState: pb.ConfState{Voters: []uint64{1, 2}},
+-			Index:     s1.lastIndex(),
+-			Term:      s1.ents[len(s1.ents)-1].Term,
+-		},
+-	}
+-
+-	noMessage := pb.MessageType(-1)
+-	mustSend := func(from, to *raft, typ pb.MessageType) pb.Message {
+-		t.Helper()
+-		for i, msg := range from.msgs {
+-			if msg.From != from.id || msg.To != to.id || msg.Type != typ {
+-				continue
+-			}
+-			t.Log(DescribeMessage(msg, func([]byte) string { return "" }))
+-			if len(msg.Entries) > 0 {
+-				t.Log(DescribeEntries(msg.Entries, func(b []byte) string { return string(b) }))
+-			}
+-			if err := to.Step(msg); err != nil {
+-				t.Fatalf("%v: %s", msg, err)
+-			}
+-			from.msgs = append(from.msgs[:i], from.msgs[i+1:]...)
+-			return msg
+-		}
+-		if typ == noMessage {
+-			if len(from.msgs) == 0 {
+-				return pb.Message{}
+-			}
+-			t.Fatalf("expected no more messages, but got %d->%d %v", from.id, to.id, from.msgs)
+-		}
+-		t.Fatalf("message %d->%d %s not found in %v", from.id, to.id, typ, from.msgs)
+-		return pb.Message{} // unreachable
+-	}
+-
+-	// Create the follower that will receive the snapshot.
+-	s2 := NewMemoryStorage()
+-	n2 := newTestRaft(2, []uint64{1, 2}, 10, 1, s2)
+-
+-	// Let the leader probe the follower.
+-	if !n1.maybeSendAppend(2, true /* sendIfEmpty */) {
+-		t.Fatalf("expected message to be sent")
+-	}
+-	if msg := mustSend(n1, n2, pb.MsgApp); len(msg.Entries) > 0 {
+-		// For this test to work, the leader must not have anything to append
+-		// to the follower right now.
+-		t.Fatalf("unexpectedly appending entries %v", msg.Entries)
+-	}
+-
+-	// Follower rejects the append (because it doesn't have any log entries)
+-	if msg := mustSend(n2, n1, pb.MsgAppResp); !msg.Reject {
+-		t.Fatalf("expected a rejection with zero hint, got reject=%t hint=%d", msg.Reject, msg.RejectHint)
+-	}
+-
+-	const expIdx = 2
+-	// Leader sends snapshot due to RejectHint of zero (we set up the raft log
+-	// to start at index 2).
+-	if msg := mustSend(n1, n2, pb.MsgSnap); msg.Snapshot.Metadata.Index != expIdx {
+-		t.Fatalf("expected snapshot at index %d, got %d", expIdx, msg.Snapshot.Metadata.Index)
+-	}
+-
+-	// n2 reacts to snapshot with MsgAppResp.
+-	if msg := mustSend(n2, n1, pb.MsgAppResp); msg.Index != expIdx {
+-		t.Fatalf("expected AppResp at index %d, got %d", expIdx, msg.Index)
+-	}
+-
+-	// Leader sends MsgApp to communicate commit index.
+-	if msg := mustSend(n1, n2, pb.MsgApp); msg.Commit != expIdx {
+-		t.Fatalf("expected commit index %d, got %d", expIdx, msg.Commit)
+-	}
+-
+-	// Follower responds.
+-	mustSend(n2, n1, pb.MsgAppResp)
+-
+-	// Leader has correct state for follower.
+-	pr := n1.prs.Progress[2]
+-	if pr.State != tracker.StateReplicate {
+-		t.Fatalf("unexpected state %v", pr)
+-	}
+-	if pr.Match != expIdx || pr.Next != expIdx+1 {
+-		t.Fatalf("expected match = %d, next = %d; got match = %d and next = %d", expIdx, expIdx+1, pr.Match, pr.Next)
+-	}
+-
+-	// Leader and follower are done.
+-	mustSend(n1, n2, noMessage)
+-	mustSend(n2, n1, noMessage)
+-}
+-
+ func TestSnapshotAbort(t *testing.T) {
+ 	storage := NewMemoryStorage()
+ 	sm := newTestRaft(1, []uint64{1, 2}, 10, 1, storage)
+diff --git a/raft_test.go b/raft_test.go
+index b4e935e..9432bd0 100644
+--- a/raft_test.go
++++ b/raft_test.go
+@@ -186,6 +186,10 @@ func TestUncommittedEntryLimit(t *testing.T) {
+ 	testEntry := pb.Entry{Data: []byte("testdata")}
+ 	maxEntrySize := maxEntries * PayloadSize(testEntry)
+ 
++	if n := PayloadSize(pb.Entry{Data: nil}); n != 0 {
++		t.Fatal("entry with no Data must have zero payload size")
++	}
++
+ 	cfg := newTestConfig(1, []uint64{1, 2, 3}, 5, 1, NewMemoryStorage())
+ 	cfg.MaxUncommittedEntriesSize = uint64(maxEntrySize)
+ 	cfg.MaxInflightMsgs = 2 * 1024 // avoid interference
+@@ -244,10 +248,19 @@ func TestUncommittedEntryLimit(t *testing.T) {
+ 		t.Fatalf("proposal not dropped: %v", err)
+ 	}
+ 
++	// But we can always append an entry with no Data. This is used both for the
++	// leader's first empty entry and for auto-transitioning out of joint config
++	// states.
++	if err := r.Step(
++		pb.Message{From: 1, To: 1, Type: pb.MsgProp, Entries: []pb.Entry{{}}},
++	); err != nil {
++		t.Fatal(err)
++	}
++
+ 	// Read messages and reduce the uncommitted size as if we had committed
+ 	// these entries.
+ 	ms = r.readMessages()
+-	if e := 1 * numFollowers; len(ms) != e {
++	if e := 2 * numFollowers; len(ms) != e {
+ 		t.Fatalf("expected %d messages, got %d", e, len(ms))
+ 	}
+ 	r.reduceUncommittedSize(propEnts)
+@@ -3601,6 +3614,38 @@ func TestLeaderTransferRemoveNode(t *testing.T) {
+ 	checkLeaderTransferState(t, lead, StateLeader, 1)
+ }
+ 
++func TestLeaderTransferDemoteNode(t *testing.T) {
++	nt := newNetwork(nil, nil, nil)
++	nt.send(pb.Message{From: 1, To: 1, Type: pb.MsgHup})
++
++	nt.ignore(pb.MsgTimeoutNow)
++
++	lead := nt.peers[1].(*raft)
++
++	// The leadTransferee is demoted when leadship transferring.
++	nt.send(pb.Message{From: 3, To: 1, Type: pb.MsgTransferLeader})
++	if lead.leadTransferee != 3 {
++		t.Fatalf("wait transferring, leadTransferee = %v, want %v", lead.leadTransferee, 3)
++	}
++
++	lead.applyConfChange(pb.ConfChangeV2{
++		Changes: []pb.ConfChangeSingle{
++			{
++				Type:   pb.ConfChangeRemoveNode,
++				NodeID: 3,
++			},
++			{
++				Type:   pb.ConfChangeAddLearnerNode,
++				NodeID: 3,
++			},
++		},
++	})
++
++	// Make the Raft group commit the LeaveJoint entry.
++	lead.applyConfChange(pb.ConfChangeV2{})
++	checkLeaderTransferState(t, lead, StateLeader, 1)
++}
++
+ // TestLeaderTransferBack verifies leadership can transfer back to self when last transfer is pending.
+ func TestLeaderTransferBack(t *testing.T) {
+ 	nt := newNetwork(nil, nil, nil)
+diff --git a/raftpb/confchange.go b/raftpb/confchange.go
+index a91c18d..47fae65 100644
+--- a/raftpb/confchange.go
++++ b/raftpb/confchange.go
+@@ -16,6 +16,8 @@ package raftpb
+ 
+ import (
+ 	"fmt"
++	"strconv"
++	"strings"
+ 
+ 	"github.com/gogo/protobuf/proto"
+ )
+@@ -71,7 +73,7 @@ func (c ConfChangeV2) AsV1() (ConfChange, bool) { return ConfChange{}, false }
+ // than one change or if the use of Joint Consensus was requested explicitly.
+ // The first bool can only be true if second one is, and indicates whether the
+ // Joint State will be left automatically.
+-func (c *ConfChangeV2) EnterJoint() (autoLeave bool, ok bool) {
++func (c ConfChangeV2) EnterJoint() (autoLeave bool, ok bool) {
+ 	// NB: in theory, more config changes could qualify for the "simple"
+ 	// protocol but it depends on the config on top of which the changes apply.
+ 	// For example, adding two learners is not OK if both nodes are part of the
+@@ -98,8 +100,71 @@ func (c *ConfChangeV2) EnterJoint() (autoLeave bool, ok bool) {
+ // LeaveJoint is true if the configuration change leaves a joint configuration.
+ // This is the case if the ConfChangeV2 is zero, with the possible exception of
+ // the Context field.
+-func (c *ConfChangeV2) LeaveJoint() bool {
+-	cpy := *c
+-	cpy.Context = nil
+-	return proto.Equal(&cpy, &ConfChangeV2{})
++func (c ConfChangeV2) LeaveJoint() bool {
++	// NB: c is already a copy.
++	c.Context = nil
++	return proto.Equal(&c, &ConfChangeV2{})
++}
++
++// ConfChangesFromString parses a Space-delimited sequence of operations into a
++// slice of ConfChangeSingle. The supported operations are:
++// - vn: make n a voter,
++// - ln: make n a learner,
++// - rn: remove n, and
++// - un: update n.
++func ConfChangesFromString(s string) ([]ConfChangeSingle, error) {
++	var ccs []ConfChangeSingle
++	toks := strings.Split(strings.TrimSpace(s), " ")
++	if toks[0] == "" {
++		toks = nil
++	}
++	for _, tok := range toks {
++		if len(tok) < 2 {
++			return nil, fmt.Errorf("unknown token %s", tok)
++		}
++		var cc ConfChangeSingle
++		switch tok[0] {
++		case 'v':
++			cc.Type = ConfChangeAddNode
++		case 'l':
++			cc.Type = ConfChangeAddLearnerNode
++		case 'r':
++			cc.Type = ConfChangeRemoveNode
++		case 'u':
++			cc.Type = ConfChangeUpdateNode
++		default:
++			return nil, fmt.Errorf("unknown input: %s", tok)
++		}
++		id, err := strconv.ParseUint(tok[1:], 10, 64)
++		if err != nil {
++			return nil, err
++		}
++		cc.NodeID = id
++		ccs = append(ccs, cc)
++	}
++	return ccs, nil
++}
++
++// ConfChangesToString is the inverse to ConfChangesFromString.
++func ConfChangesToString(ccs []ConfChangeSingle) string {
++	var buf strings.Builder
++	for i, cc := range ccs {
++		if i > 0 {
++			buf.WriteByte(' ')
++		}
++		switch cc.Type {
++		case ConfChangeAddNode:
++			buf.WriteByte('v')
++		case ConfChangeAddLearnerNode:
++			buf.WriteByte('l')
++		case ConfChangeRemoveNode:
++			buf.WriteByte('r')
++		case ConfChangeUpdateNode:
++			buf.WriteByte('u')
++		default:
++			buf.WriteString("unknown")
++		}
++		fmt.Fprintf(&buf, "%d", cc.NodeID)
++	}
++	return buf.String()
+ }
+diff --git a/rafttest/interaction_env.go b/rafttest/interaction_env.go
+new file mode 100644
+index 0000000..c0ec44f
+--- /dev/null
++++ b/rafttest/interaction_env.go
+@@ -0,0 +1,90 @@
++// Copyright 2019 The etcd Authors
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package rafttest
++
++import (
++	"fmt"
++	"math"
++	"strings"
++
++	"go.etcd.io/etcd/raft"
++	pb "go.etcd.io/etcd/raft/raftpb"
++)
++
++// InteractionOpts groups the options for an InteractionEnv.
++type InteractionOpts struct {
++	OnConfig func(*raft.Config)
++}
++
++// A Node is a member of a raft group tested via an InteractionEnv.
++type Node struct {
++	*raft.RawNode
++	Storage
++
++	Config  *raft.Config
++	History []pb.Snapshot
++}
++
++// InteractionEnv facilitates testing of complex interactions between the
++// members of a raft group.
++type InteractionEnv struct {
++	Options  *InteractionOpts
++	Nodes    []Node
++	Messages []pb.Message // in-flight messages
++
++	Output *RedirectLogger
++}
++
++// NewInteractionEnv initializes an InteractionEnv. opts may be nil.
++func NewInteractionEnv(opts *InteractionOpts) *InteractionEnv {
++	if opts == nil {
++		opts = &InteractionOpts{}
++	}
++	return &InteractionEnv{
++		Options: opts,
++		Output: &RedirectLogger{
++			Builder: &strings.Builder{},
++		},
++	}
++}
++
++// Storage is the interface used by InteractionEnv. It is comprised of raft's
++// Storage interface plus access to operations that maintain the log and drive
++// the Ready handling loop.
++type Storage interface {
++	raft.Storage
++	SetHardState(state pb.HardState) error
++	ApplySnapshot(pb.Snapshot) error
++	Compact(newFirstIndex uint64) error
++	Append([]pb.Entry) error
++}
++
++// defaultRaftConfig sets up a *raft.Config with reasonable testing defaults.
++// In particular, no limits are set.
++func defaultRaftConfig(id uint64, applied uint64, s raft.Storage) *raft.Config {
++	return &raft.Config{
++		ID:              id,
++		Applied:         applied,
++		ElectionTick:    3,
++		HeartbeatTick:   1,
++		Storage:         s,
++		MaxSizePerMsg:   math.MaxUint64,
++		MaxInflightMsgs: math.MaxInt32,
++	}
++}
++
++func defaultEntryFormatter(b []byte) string {
++	return fmt.Sprintf("%q", b)
++}
+diff --git a/rafttest/interaction_env_handler.go b/rafttest/interaction_env_handler.go
+new file mode 100644
+index 0000000..0576a98
+--- /dev/null
++++ b/rafttest/interaction_env_handler.go
+@@ -0,0 +1,176 @@
++// Copyright 2019 The etcd Authors
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package rafttest
++
++import (
++	"fmt"
++	"strconv"
++	"testing"
++
++	"github.com/cockroachdb/datadriven"
++)
++
++// Handle is the entrypoint for data-driven interaction testing. Commands and
++// parameters are parsed from the supplied TestData. Errors during data parsing
++// are reported via the supplied *testing.T; errors from the raft nodes and the
++// storage engine are reported to the output buffer.
++func (env *InteractionEnv) Handle(t *testing.T, d datadriven.TestData) string {
++	env.Output.Reset()
++	var err error
++	switch d.Cmd {
++	case "_breakpoint":
++		// This is a helper case to attach a debugger to when a problem needs
++		// to be investigated in a longer test file. In such a case, add the
++		// following stanza immediately before the interesting behavior starts:
++		//
++		// _breakpoint:
++		// ----
++		// ok
++		//
++		// and set a breakpoint on the `case` above.
++	case "add-nodes":
++		// Example:
++		//
++		// add-nodes <number-of-nodes-to-add> voters=(1 2 3) learners=(4 5) index=2 content=foo
++		err = env.handleAddNodes(t, d)
++	case "campaign":
++		// Example:
++		//
++		// campaign <id-of-candidate>
++		err = env.handleCampaign(t, d)
++	case "compact":
++		// Example:
++		//
++		// compact <id> <new-first-index>
++		err = env.handleCompact(t, d)
++	case "deliver-msgs":
++		// Deliver the messages for a given recipient.
++		//
++		// Example:
++		//
++		// deliver-msgs <idx>
++		err = env.handleDeliverMsgs(t, d)
++	case "process-ready":
++		// Example:
++		//
++		// process-ready 3
++		err = env.handleProcessReady(t, d)
++	case "log-level":
++		// Set the log level. NONE disables all output, including from the test
++		// harness (except errors).
++		//
++		// Example:
++		//
++		// log-level WARN
++		err = env.handleLogLevel(t, d)
++	case "raft-log":
++		// Print the Raft log.
++		//
++		// Example:
++		//
++		// raft-log 3
++		err = env.handleRaftLog(t, d)
++	case "stabilize":
++		// Deliver messages to and run process-ready on the set of IDs until
++		// no more work is to be done.
++		//
++		// Example:
++		//
++		// stabilize 1 4
++		err = env.handleStabilize(t, d)
++	case "status":
++		// Print Raft status.
++		//
++		// Example:
++		//
++		// status 5
++		err = env.handleStatus(t, d)
++	case "tick-heartbeat":
++		// Tick a heartbeat interval.
++		//
++		// Example:
++		//
++		// tick-heartbeat 3
++		err = env.handleTickHeartbeat(t, d)
++	case "propose":
++		// Propose an entry.
++		//
++		// Example:
++		//
++		// propose 1 foo
++		err = env.handlePropose(t, d)
++	case "propose-conf-change":
++		// Propose a configuration change.
++		//
++		// Example:
++		//
++		// propose-conf-change transition=explicit
++		// v1 v3 l4 r5
++		//
++		// Example:
++		//
++		// propose-conf-change v1=true
++		// v5
++		err = env.handleProposeConfChange(t, d)
++	default:
++		err = fmt.Errorf("unknown command")
++	}
++	if err != nil {
++		env.Output.WriteString(err.Error())
++	}
++	// NB: the highest log level suppresses all output, including that of the
++	// handlers. This comes in useful during setup which can be chatty.
++	// However, errors are always logged.
++	if env.Output.Len() == 0 {
++		return "ok"
++	}
++	if env.Output.Lvl == len(lvlNames)-1 {
++		if err != nil {
++			return err.Error()
++		}
++		return "ok (quiet)"
++	}
++	return env.Output.String()
++}
++
++func firstAsInt(t *testing.T, d datadriven.TestData) int {
++	t.Helper()
++	n, err := strconv.Atoi(d.CmdArgs[0].Key)
++	if err != nil {
++		t.Fatal(err)
++	}
++	return n
++}
++
++func firstAsNodeIdx(t *testing.T, d datadriven.TestData) int {
++	t.Helper()
++	n := firstAsInt(t, d)
++	return n - 1
++}
++
++func ints(t *testing.T, d datadriven.TestData) []int {
++	var ints []int
++	for i := 0; i < len(d.CmdArgs); i++ {
++		if len(d.CmdArgs[i].Vals) != 0 {
++			continue
++		}
++		n, err := strconv.Atoi(d.CmdArgs[i].Key)
++		if err != nil {
++			t.Fatal(err)
++		}
++		ints = append(ints, n)
++	}
++	return ints
++}
+diff --git a/rafttest/interaction_env_handler_add_nodes.go b/rafttest/interaction_env_handler_add_nodes.go
+new file mode 100644
+index 0000000..a68a2cb
+--- /dev/null
++++ b/rafttest/interaction_env_handler_add_nodes.go
+@@ -0,0 +1,136 @@
++// Copyright 2019 The etcd Authors
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package rafttest
++
++import (
++	"errors"
++	"fmt"
++	"reflect"
++	"testing"
++
++	"github.com/cockroachdb/datadriven"
++	"go.etcd.io/etcd/raft"
++	pb "go.etcd.io/etcd/raft/raftpb"
++)
++
++func (env *InteractionEnv) handleAddNodes(t *testing.T, d datadriven.TestData) error {
++	n := firstAsInt(t, d)
++	var snap pb.Snapshot
++	for _, arg := range d.CmdArgs[1:] {
++		for i := range arg.Vals {
++			switch arg.Key {
++			case "voters":
++				var id uint64
++				arg.Scan(t, i, &id)
++				snap.Metadata.ConfState.Voters = append(snap.Metadata.ConfState.Voters, id)
++			case "learners":
++				var id uint64
++				arg.Scan(t, i, &id)
++				snap.Metadata.ConfState.Learners = append(snap.Metadata.ConfState.Learners, id)
++			case "index":
++				arg.Scan(t, i, &snap.Metadata.Index)
++			case "content":
++				arg.Scan(t, i, &snap.Data)
++			}
++		}
++	}
++	return env.AddNodes(n, snap)
++}
++
++type snapOverrideStorage struct {
++	Storage
++	snapshotOverride func() (pb.Snapshot, error)
++}
++
++func (s snapOverrideStorage) Snapshot() (pb.Snapshot, error) {
++	if s.snapshotOverride != nil {
++		return s.snapshotOverride()
++	}
++	return s.Storage.Snapshot()
++}
++
++var _ raft.Storage = snapOverrideStorage{}
++
++// AddNodes adds n new nodes initializes from the given snapshot (which may be
++// empty). They will be assigned consecutive IDs.
++func (env *InteractionEnv) AddNodes(n int, snap pb.Snapshot) error {
++	bootstrap := !reflect.DeepEqual(snap, pb.Snapshot{})
++	for i := 0; i < n; i++ {
++		id := uint64(1 + len(env.Nodes))
++		s := snapOverrideStorage{
++			Storage: raft.NewMemoryStorage(),
++			// When you ask for a snapshot, you get the most recent snapshot.
++			//
++			// TODO(tbg): this is sort of clunky, but MemoryStorage itself will
++			// give you some fixed snapshot and also the snapshot changes
++			// whenever you compact the logs and vice versa, so it's all a bit
++			// awkward to use.
++			snapshotOverride: func() (pb.Snapshot, error) {
++				snaps := env.Nodes[int(id-1)].History
++				return snaps[len(snaps)-1], nil
++			},
++		}
++		if bootstrap {
++			// NB: we could make this work with 1, but MemoryStorage just
++			// doesn't play well with that and it's not a loss of generality.
++			if snap.Metadata.Index <= 1 {
++				return errors.New("index must be specified as > 1 due to bootstrap")
++			}
++			snap.Metadata.Term = 1
++			if err := s.ApplySnapshot(snap); err != nil {
++				return err
++			}
++			fi, err := s.FirstIndex()
++			if err != nil {
++				return err
++			}
++			// At the time of writing and for *MemoryStorage, applying a
++			// snapshot also truncates appropriately, but this would change with
++			// other storage engines potentially.
++			if exp := snap.Metadata.Index + 1; fi != exp {
++				return fmt.Errorf("failed to establish first index %d; got %d", exp, fi)
++			}
++		}
++		cfg := defaultRaftConfig(id, snap.Metadata.Index, s)
++		if env.Options.OnConfig != nil {
++			env.Options.OnConfig(cfg)
++			if cfg.ID != id {
++				// This could be supported but then we need to do more work
++				// translating back and forth -- not worth it.
++				return errors.New("OnConfig must not change the ID")
++			}
++		}
++		if cfg.Logger != nil {
++			return errors.New("OnConfig must not set Logger")
++		}
++		cfg.Logger = env.Output
++
++		rn, err := raft.NewRawNode(cfg)
++		if err != nil {
++			return err
++		}
++
++		node := Node{
++			RawNode: rn,
++			// TODO(tbg): allow a more general Storage, as long as it also allows
++			// us to apply snapshots, append entries, and update the HardState.
++			Storage: s,
++			Config:  cfg,
++			History: []pb.Snapshot{snap},
++		}
++		env.Nodes = append(env.Nodes, node)
++	}
++	return nil
++}
+diff --git a/rafttest/interaction_env_handler_campaign.go b/rafttest/interaction_env_handler_campaign.go
+new file mode 100644
+index 0000000..bde5cc4
+--- /dev/null
++++ b/rafttest/interaction_env_handler_campaign.go
+@@ -0,0 +1,31 @@
++// Copyright 2019 The etcd Authors
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package rafttest
++
++import (
++	"testing"
++
++	"github.com/cockroachdb/datadriven"
++)
++
++func (env *InteractionEnv) handleCampaign(t *testing.T, d datadriven.TestData) error {
++	idx := firstAsNodeIdx(t, d)
++	return env.Campaign(t, idx)
++}
++
++// Campaign the node at the given index.
++func (env *InteractionEnv) Campaign(t *testing.T, idx int) error {
++	return env.Nodes[idx].Campaign()
++}
+diff --git a/rafttest/interaction_env_handler_compact.go b/rafttest/interaction_env_handler_compact.go
+new file mode 100644
+index 0000000..25fa1d2
+--- /dev/null
++++ b/rafttest/interaction_env_handler_compact.go
+@@ -0,0 +1,40 @@
++// Copyright 2019 The etcd Authors
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package rafttest
++
++import (
++	"strconv"
++	"testing"
++
++	"github.com/cockroachdb/datadriven"
++)
++
++func (env *InteractionEnv) handleCompact(t *testing.T, d datadriven.TestData) error {
++	idx := firstAsNodeIdx(t, d)
++	newFirstIndex, err := strconv.ParseUint(d.CmdArgs[1].Key, 10, 64)
++	if err != nil {
++		return err
++	}
++	return env.Compact(idx, newFirstIndex)
++}
++
++// Compact truncates the log on the node at index idx so that the supplied new
++// first index results.
++func (env *InteractionEnv) Compact(idx int, newFirstIndex uint64) error {
++	if err := env.Nodes[idx].Compact(newFirstIndex); err != nil {
++		return err
++	}
++	return env.RaftLog(idx)
++}
+diff --git a/rafttest/interaction_env_handler_deliver_msgs.go b/rafttest/interaction_env_handler_deliver_msgs.go
+new file mode 100644
+index 0000000..2f59df9
+--- /dev/null
++++ b/rafttest/interaction_env_handler_deliver_msgs.go
+@@ -0,0 +1,94 @@
++// Copyright 2019 The etcd Authors
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package rafttest
++
++import (
++	"fmt"
++	"strconv"
++	"testing"
++
++	"github.com/cockroachdb/datadriven"
++	"go.etcd.io/etcd/raft"
++	"go.etcd.io/etcd/raft/raftpb"
++)
++
++func (env *InteractionEnv) handleDeliverMsgs(t *testing.T, d datadriven.TestData) error {
++	var rs []Recipient
++	for _, arg := range d.CmdArgs {
++		if len(arg.Vals) == 0 {
++			id, err := strconv.ParseUint(arg.Key, 10, 64)
++			if err != nil {
++				t.Fatal(err)
++			}
++			rs = append(rs, Recipient{ID: id})
++		}
++		for i := range arg.Vals {
++			switch arg.Key {
++			case "drop":
++				var id uint64
++				arg.Scan(t, i, &id)
++				var found bool
++				for _, r := range rs {
++					if r.ID == id {
++						found = true
++					}
++				}
++				if found {
++					t.Fatalf("can't both deliver and drop msgs to %d", id)
++				}
++				rs = append(rs, Recipient{ID: id, Drop: true})
++			}
++		}
++	}
++
++	if n := env.DeliverMsgs(rs...); n == 0 {
++		env.Output.WriteString("no messages\n")
++	}
++	return nil
++}
++
++type Recipient struct {
++	ID   uint64
++	Drop bool
++}
++
++// DeliverMsgs goes through env.Messages and, depending on the Drop flag,
++// delivers or drops messages to the specified Recipients. Returns the
++// number of messages handled (i.e. delivered or dropped). A handled message
++// is removed from env.Messages.
++func (env *InteractionEnv) DeliverMsgs(rs ...Recipient) int {
++	var n int
++	for _, r := range rs {
++		var msgs []raftpb.Message
++		msgs, env.Messages = splitMsgs(env.Messages, r.ID)
++		n += len(msgs)
++		for _, msg := range msgs {
++			if r.Drop {
++				fmt.Fprint(env.Output, "dropped: ")
++			}
++			fmt.Fprintln(env.Output, raft.DescribeMessage(msg, defaultEntryFormatter))
++			if r.Drop {
++				// NB: it's allowed to drop messages to nodes that haven't been instantiated yet,
++				// we haven't used msg.To yet.
++				continue
++			}
++			toIdx := int(msg.To - 1)
++			if err := env.Nodes[toIdx].Step(msg); err != nil {
++				env.Output.WriteString(err.Error())
++			}
++		}
++	}
++	return n
++}
+diff --git a/rafttest/interaction_env_handler_log_level.go b/rafttest/interaction_env_handler_log_level.go
+new file mode 100644
+index 0000000..a61ba37
+--- /dev/null
++++ b/rafttest/interaction_env_handler_log_level.go
+@@ -0,0 +1,37 @@
++// Copyright 2019 The etcd Authors
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package rafttest
++
++import (
++	"fmt"
++	"strings"
++	"testing"
++
++	"github.com/cockroachdb/datadriven"
++)
++
++func (env *InteractionEnv) handleLogLevel(t *testing.T, d datadriven.TestData) error {
++	return env.LogLevel(d.CmdArgs[0].Key)
++}
++
++func (env *InteractionEnv) LogLevel(name string) error {
++	for i, s := range lvlNames {
++		if strings.ToLower(s) == strings.ToLower(name) {
++			env.Output.Lvl = i
++			return nil
++		}
++	}
++	return fmt.Errorf("log levels must be either of %v", lvlNames)
++}
+diff --git a/rafttest/interaction_env_handler_process_ready.go b/rafttest/interaction_env_handler_process_ready.go
+new file mode 100644
+index 0000000..165c1f0
+--- /dev/null
++++ b/rafttest/interaction_env_handler_process_ready.go
+@@ -0,0 +1,94 @@
++// Copyright 2019 The etcd Authors
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package rafttest
++
++import (
++	"testing"
++
++	"github.com/cockroachdb/datadriven"
++	"go.etcd.io/etcd/raft"
++	"go.etcd.io/etcd/raft/raftpb"
++)
++
++func (env *InteractionEnv) handleProcessReady(t *testing.T, d datadriven.TestData) error {
++	idx := firstAsNodeIdx(t, d)
++	return env.ProcessReady(idx)
++}
++
++// ProcessReady runs Ready handling on the node with the given index.
++func (env *InteractionEnv) ProcessReady(idx int) error {
++	// TODO(tbg): Allow simulating crashes here.
++	rn, s := env.Nodes[idx].RawNode, env.Nodes[idx].Storage
++	rd := rn.Ready()
++	env.Output.WriteString(raft.DescribeReady(rd, defaultEntryFormatter))
++	// TODO(tbg): the order of operations here is not necessarily safe. See:
++	// https://github.com/etcd-io/etcd/pull/10861
++	if !raft.IsEmptyHardState(rd.HardState) {
++		if err := s.SetHardState(rd.HardState); err != nil {
++			return err
++		}
++	}
++	if err := s.Append(rd.Entries); err != nil {
++		return err
++	}
++	if !raft.IsEmptySnap(rd.Snapshot) {
++		if err := s.ApplySnapshot(rd.Snapshot); err != nil {
++			return err
++		}
++	}
++	for _, ent := range rd.CommittedEntries {
++		var update []byte
++		var cs *raftpb.ConfState
++		switch ent.Type {
++		case raftpb.EntryConfChange:
++			var cc raftpb.ConfChange
++			if err := cc.Unmarshal(ent.Data); err != nil {
++				return err
++			}
++			update = cc.Context
++			cs = rn.ApplyConfChange(cc)
++		case raftpb.EntryConfChangeV2:
++			var cc raftpb.ConfChangeV2
++			if err := cc.Unmarshal(ent.Data); err != nil {
++				return err
++			}
++			cs = rn.ApplyConfChange(cc)
++			update = cc.Context
++		default:
++			update = ent.Data
++		}
++
++		// Record the new state by starting with the current state and applying
++		// the command.
++		lastSnap := env.Nodes[idx].History[len(env.Nodes[idx].History)-1]
++		var snap raftpb.Snapshot
++		snap.Data = append(snap.Data, lastSnap.Data...)
++		// NB: this hard-codes an "appender" state machine.
++		snap.Data = append(snap.Data, update...)
++		snap.Metadata.Index = ent.Index
++		snap.Metadata.Term = ent.Term
++		if cs == nil {
++			sl := env.Nodes[idx].History
++			cs = &sl[len(sl)-1].Metadata.ConfState
++		}
++		snap.Metadata.ConfState = *cs
++		env.Nodes[idx].History = append(env.Nodes[idx].History, snap)
++	}
++	for _, msg := range rd.Messages {
++		env.Messages = append(env.Messages, msg)
++	}
++	rn.Advance(rd)
++	return nil
++}
+diff --git a/rafttest/interaction_env_handler_propose.go b/rafttest/interaction_env_handler_propose.go
+new file mode 100644
+index 0000000..7e88323
+--- /dev/null
++++ b/rafttest/interaction_env_handler_propose.go
+@@ -0,0 +1,34 @@
++// Copyright 2019 The etcd Authors
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package rafttest
++
++import (
++	"testing"
++
++	"github.com/cockroachdb/datadriven"
++)
++
++func (env *InteractionEnv) handlePropose(t *testing.T, d datadriven.TestData) error {
++	idx := firstAsNodeIdx(t, d)
++	if len(d.CmdArgs) != 2 || len(d.CmdArgs[1].Vals) > 0 {
++		t.Fatalf("expected exactly one key with no vals: %+v", d.CmdArgs[1:])
++	}
++	return env.Propose(idx, []byte(d.CmdArgs[1].Key))
++}
++
++// Propose a regular entry.
++func (env *InteractionEnv) Propose(idx int, data []byte) error {
++	return env.Nodes[idx].Propose(data)
++}
+diff --git a/rafttest/interaction_env_handler_propose_conf_change.go b/rafttest/interaction_env_handler_propose_conf_change.go
+new file mode 100644
+index 0000000..2783396
+--- /dev/null
++++ b/rafttest/interaction_env_handler_propose_conf_change.go
+@@ -0,0 +1,82 @@
++// Copyright 2019 The etcd Authors
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package rafttest
++
++import (
++	"fmt"
++	"strconv"
++	"testing"
++
++	"github.com/cockroachdb/datadriven"
++	"go.etcd.io/etcd/raft/raftpb"
++)
++
++func (env *InteractionEnv) handleProposeConfChange(t *testing.T, d datadriven.TestData) error {
++	idx := firstAsNodeIdx(t, d)
++	var v1 bool
++	transition := raftpb.ConfChangeTransitionAuto
++	for _, arg := range d.CmdArgs[1:] {
++		for _, val := range arg.Vals {
++			switch arg.Key {
++			case "v1":
++				var err error
++				v1, err = strconv.ParseBool(val)
++				if err != nil {
++					return err
++				}
++			case "transition":
++				switch val {
++				case "auto":
++					transition = raftpb.ConfChangeTransitionAuto
++				case "implicit":
++					transition = raftpb.ConfChangeTransitionJointImplicit
++				case "explicit":
++					transition = raftpb.ConfChangeTransitionJointExplicit
++				default:
++					return fmt.Errorf("unknown transition %s", val)
++				}
++			default:
++				return fmt.Errorf("unknown command %s", arg.Key)
++			}
++		}
++	}
++
++	ccs, err := raftpb.ConfChangesFromString(d.Input)
++	if err != nil {
++		return err
++	}
++
++	var c raftpb.ConfChangeI
++	if v1 {
++		if len(ccs) > 1 || transition != raftpb.ConfChangeTransitionAuto {
++			return fmt.Errorf("v1 conf change can only have one operation and no transition")
++		}
++		c = raftpb.ConfChange{
++			Type:   ccs[0].Type,
++			NodeID: ccs[0].NodeID,
++		}
++	} else {
++		c = raftpb.ConfChangeV2{
++			Transition: transition,
++			Changes:    ccs,
++		}
++	}
++	return env.ProposeConfChange(idx, c)
++}
++
++// ProposeConfChange proposes a configuration change on the node with the given index.
++func (env *InteractionEnv) ProposeConfChange(idx int, c raftpb.ConfChangeI) error {
++	return env.Nodes[idx].ProposeConfChange(c)
++}
+diff --git a/rafttest/interaction_env_handler_raft_log.go b/rafttest/interaction_env_handler_raft_log.go
+new file mode 100644
+index 0000000..a99db29
+--- /dev/null
++++ b/rafttest/interaction_env_handler_raft_log.go
+@@ -0,0 +1,60 @@
++// Copyright 2019 The etcd Authors
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package rafttest
++
++import (
++	"fmt"
++	"math"
++	"testing"
++
++	"github.com/cockroachdb/datadriven"
++	"go.etcd.io/etcd/raft"
++)
++
++func (env *InteractionEnv) writeErr(err error) {
++	if err != nil {
++		env.Output.WriteString(err.Error())
++	}
++}
++
++func (env *InteractionEnv) handleRaftLog(t *testing.T, d datadriven.TestData) error {
++	idx := firstAsNodeIdx(t, d)
++	return env.RaftLog(idx)
++}
++
++// RaftLog pretty prints the raft log to the output buffer.
++func (env *InteractionEnv) RaftLog(idx int) error {
++	s := env.Nodes[idx].Storage
++	fi, err := s.FirstIndex()
++	if err != nil {
++		return err
++	}
++	li, err := s.LastIndex()
++	if err != nil {
++		return err
++	}
++	if li < fi {
++		// TODO(tbg): this is what MemoryStorage returns, but unclear if it's
++		// the "correct" thing to do.
++		fmt.Fprintf(env.Output, "log is empty: first index=%d, last index=%d", fi, li)
++		return nil
++	}
++	ents, err := s.Entries(fi, li+1, math.MaxUint64)
++	if err != nil {
++		return err
++	}
++	env.Output.WriteString(raft.DescribeEntries(ents, defaultEntryFormatter))
++	return err
++}
+diff --git a/rafttest/interaction_env_handler_stabilize.go b/rafttest/interaction_env_handler_stabilize.go
+new file mode 100644
+index 0000000..935d69c
+--- /dev/null
++++ b/rafttest/interaction_env_handler_stabilize.go
+@@ -0,0 +1,94 @@
++// Copyright 2019 The etcd Authors
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package rafttest
++
++import (
++	"bufio"
++	"fmt"
++	"strings"
++	"testing"
++
++	"github.com/cockroachdb/datadriven"
++	"go.etcd.io/etcd/raft/raftpb"
++)
++
++func (env *InteractionEnv) handleStabilize(t *testing.T, d datadriven.TestData) error {
++	var idxs []int
++	for _, id := range ints(t, d) {
++		idxs = append(idxs, id-1)
++	}
++	return env.Stabilize(idxs...)
++}
++
++// Stabilize repeatedly runs Ready handling on and message delivery to the set
++// of nodes specified via the idxs slice until reaching a fixed point.
++func (env *InteractionEnv) Stabilize(idxs ...int) error {
++	var nodes []Node
++	for _, idx := range idxs {
++		nodes = append(nodes, env.Nodes[idx])
++	}
++	if len(nodes) == 0 {
++		nodes = env.Nodes
++	}
++
++	withIndent := func(f func()) {
++		orig := env.Output.Builder
++		env.Output.Builder = &strings.Builder{}
++		f()
++
++		scanner := bufio.NewScanner(strings.NewReader(env.Output.Builder.String()))
++		for scanner.Scan() {
++			orig.WriteString("  " + scanner.Text() + "\n")
++		}
++		env.Output.Builder = orig
++	}
++
++	for {
++		done := true
++		for _, rn := range nodes {
++			if rn.HasReady() {
++				done = false
++				idx := int(rn.Status().ID - 1)
++				fmt.Fprintf(env.Output, "> %d handling Ready\n", idx+1)
++				withIndent(func() { env.ProcessReady(idx) })
++			}
++		}
++		for _, rn := range nodes {
++			id := rn.Status().ID
++			// NB: we grab the messages just to see whether to print the header.
++			// DeliverMsgs will do it again.
++			if msgs, _ := splitMsgs(env.Messages, id); len(msgs) > 0 {
++				fmt.Fprintf(env.Output, "> %d receiving messages\n", id)
++				withIndent(func() { env.DeliverMsgs(Recipient{ID: id}) })
++				done = false
++			}
++		}
++		if done {
++			return nil
++		}
++	}
++}
++
++func splitMsgs(msgs []raftpb.Message, to uint64) (toMsgs []raftpb.Message, rmdr []raftpb.Message) {
++	// NB: this method does not reorder messages.
++	for _, msg := range msgs {
++		if msg.To == to {
++			toMsgs = append(toMsgs, msg)
++		} else {
++			rmdr = append(rmdr, msg)
++		}
++	}
++	return toMsgs, rmdr
++}
+diff --git a/rafttest/interaction_env_handler_status.go b/rafttest/interaction_env_handler_status.go
+new file mode 100644
+index 0000000..3a0c953
+--- /dev/null
++++ b/rafttest/interaction_env_handler_status.go
+@@ -0,0 +1,42 @@
++// Copyright 2019 The etcd Authors
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package rafttest
++
++import (
++	"fmt"
++	"testing"
++
++	"github.com/cockroachdb/datadriven"
++	"go.etcd.io/etcd/raft/tracker"
++)
++
++func (env *InteractionEnv) handleStatus(t *testing.T, d datadriven.TestData) error {
++	idx := firstAsNodeIdx(t, d)
++	return env.Status(idx)
++}
++
++// Status pretty-prints the raft status for the node at the given index to the output
++// buffer.
++func (env *InteractionEnv) Status(idx int) error {
++	// TODO(tbg): actually print the full status.
++	st := env.Nodes[idx].Status()
++	m := tracker.ProgressMap{}
++	for id, pr := range st.Progress {
++		pr := pr // loop-local copy
++		m[id] = &pr
++	}
++	fmt.Fprint(env.Output, m)
++	return nil
++}
+diff --git a/rafttest/interaction_env_handler_tick_heartbeat.go b/rafttest/interaction_env_handler_tick_heartbeat.go
+new file mode 100644
+index 0000000..349ca78
+--- /dev/null
++++ b/rafttest/interaction_env_handler_tick_heartbeat.go
+@@ -0,0 +1,34 @@
++// Copyright 2019 The etcd Authors
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package rafttest
++
++import (
++	"testing"
++
++	"github.com/cockroachdb/datadriven"
++)
++
++func (env *InteractionEnv) handleTickHeartbeat(t *testing.T, d datadriven.TestData) error {
++	idx := firstAsNodeIdx(t, d)
++	return env.Tick(idx, env.Nodes[idx].Config.HeartbeatTick)
++}
++
++// Tick the node at the given index the given number of times.
++func (env *InteractionEnv) Tick(idx int, num int) error {
++	for i := 0; i < num; i++ {
++		env.Nodes[idx].Tick()
++	}
++	return nil
++}
+diff --git a/rafttest/interaction_env_logger.go b/rafttest/interaction_env_logger.go
+new file mode 100644
+index 0000000..00fd57e
+--- /dev/null
++++ b/rafttest/interaction_env_logger.go
+@@ -0,0 +1,107 @@
++// Copyright 2019 The etcd Authors
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package rafttest
++
++import (
++	"fmt"
++	"strings"
++
++	"go.etcd.io/etcd/raft"
++)
++
++type logLevels [6]string
++
++func (l logLevels) strToLev(s string) int {
++	for i, lvl := range l {
++		if strings.ToUpper(s) == lvl {
++			return i
++		}
++	}
++	panic(fmt.Sprintf("unknown level %q", s))
++}
++
++var lvlNames logLevels = [...]string{"DEBUG", "INFO", "WARN", "ERROR", "FATAL", "NONE"}
++
++type RedirectLogger struct {
++	*strings.Builder
++	Lvl int // 0 = DEBUG, 1 = INFO, 2 = WARNING, 3 = ERROR, 4 = FATAL, 5 = NONE
++}
++
++var _ raft.Logger = (*RedirectLogger)(nil)
++
++func (l *RedirectLogger) printf(lvl int, format string, args ...interface{}) {
++	if l.Lvl <= lvl {
++		fmt.Fprint(l, lvlNames[lvl], " ")
++		fmt.Fprintf(l, format, args...)
++		if n := len(format); n > 0 && format[n-1] != '\n' {
++			l.WriteByte('\n')
++		}
++	}
++}
++func (l *RedirectLogger) print(lvl int, args ...interface{}) {
++	if l.Lvl <= lvl {
++		fmt.Fprint(l, lvlNames[lvl], " ")
++		fmt.Fprintln(l, args...)
++	}
++}
++
++func (l *RedirectLogger) Debug(v ...interface{}) {
++	l.print(0, v...)
++}
++
++func (l *RedirectLogger) Debugf(format string, v ...interface{}) {
++	l.printf(0, format, v...)
++}
++
++func (l *RedirectLogger) Info(v ...interface{}) {
++	l.print(1, v...)
++}
++
++func (l *RedirectLogger) Infof(format string, v ...interface{}) {
++	l.printf(1, format, v...)
++}
++
++func (l *RedirectLogger) Warning(v ...interface{}) {
++	l.print(2, v...)
++}
++
++func (l *RedirectLogger) Warningf(format string, v ...interface{}) {
++	l.printf(2, format, v...)
++}
++
++func (l *RedirectLogger) Error(v ...interface{}) {
++	l.print(3, v...)
++}
++
++func (l *RedirectLogger) Errorf(format string, v ...interface{}) {
++	l.printf(3, format, v...)
++}
++
++func (l *RedirectLogger) Fatal(v ...interface{}) {
++	l.print(4, v...)
++}
++
++func (l *RedirectLogger) Fatalf(format string, v ...interface{}) {
++
++	l.printf(4, format, v...)
++}
++
++func (l *RedirectLogger) Panic(v ...interface{}) {
++	l.print(4, v...)
++}
++
++func (l *RedirectLogger) Panicf(format string, v ...interface{}) {
++	l.printf(4, format, v...)
++}
+diff --git a/rafttest/network.go b/rafttest/network.go
+index ee30fc0..5e7cdf5 100644
+--- a/rafttest/network.go
++++ b/rafttest/network.go
+@@ -44,6 +44,7 @@ type network interface {
+ }
+ 
+ type raftNetwork struct {
++	rand         *rand.Rand
+ 	mu           sync.Mutex
+ 	disconnected map[uint64]bool
+ 	dropmap      map[conn]float64
+@@ -62,6 +63,7 @@ type delay struct {
+ 
+ func newRaftNetwork(nodes ...uint64) *raftNetwork {
+ 	pn := &raftNetwork{
++		rand:         rand.New(rand.NewSource(1)),
+ 		recvQueues:   make(map[uint64]chan raftpb.Message),
+ 		dropmap:      make(map[conn]float64),
+ 		delaymap:     make(map[conn]delay),
+@@ -91,12 +93,12 @@ func (rn *raftNetwork) send(m raftpb.Message) {
+ 	if to == nil {
+ 		return
+ 	}
+-	if drop != 0 && rand.Float64() < drop {
++	if drop != 0 && rn.rand.Float64() < drop {
+ 		return
+ 	}
+ 	// TODO: shall we dl without blocking the send call?
+-	if dl.d != 0 && rand.Float64() < dl.rate {
+-		rd := rand.Int63n(int64(dl.d))
++	if dl.d != 0 && rn.rand.Float64() < dl.rate {
++		rd := rn.rand.Int63n(int64(dl.d))
+ 		time.Sleep(time.Duration(rd))
+ 	}
+ 
+diff --git a/rawnode_test.go b/rawnode_test.go
+index 2651aff..15e3090 100644
+--- a/rawnode_test.go
++++ b/rawnode_test.go
+@@ -200,11 +200,12 @@ func TestRawNodeProposeAndConfChange(t *testing.T) {
+ 		},
+ 		// Ditto implicit.
+ 		{
+-			pb.ConfChangeV2{Changes: []pb.ConfChangeSingle{
+-				{NodeID: 2, Type: pb.ConfChangeAddNode},
+-				{NodeID: 1, Type: pb.ConfChangeAddLearnerNode},
+-				{NodeID: 3, Type: pb.ConfChangeAddLearnerNode},
+-			},
++			pb.ConfChangeV2{
++				Changes: []pb.ConfChangeSingle{
++					{NodeID: 2, Type: pb.ConfChangeAddNode},
++					{NodeID: 1, Type: pb.ConfChangeAddLearnerNode},
++					{NodeID: 3, Type: pb.ConfChangeAddLearnerNode},
++				},
+ 				Transition: pb.ConfChangeTransitionJointImplicit,
+ 			},
+ 			pb.ConfState{
+@@ -282,7 +283,9 @@ func TestRawNodeProposeAndConfChange(t *testing.T) {
+ 			}
+ 
+ 			// Check that the last index is exactly the conf change we put in,
+-			// down to the bits.
++			// down to the bits. Note that this comes from the Storage, which
++			// will not reflect any unstable entries that we'll only be presented
++			// with in the next Ready.
+ 			lastIndex, err = s.LastIndex()
+ 			if err != nil {
+ 				t.Fatal(err)
+@@ -313,7 +316,17 @@ func TestRawNodeProposeAndConfChange(t *testing.T) {
+ 				t.Fatalf("exp:\n%+v\nact:\n%+v", exp, cs)
+ 			}
+ 
+-			if exp, act := lastIndex, rawNode.raft.pendingConfIndex; exp != act {
++			var maybePlusOne uint64
++			if autoLeave, ok := tc.cc.AsV2().EnterJoint(); ok && autoLeave {
++				// If this is an auto-leaving joint conf change, it will have
++				// appended the entry that auto-leaves, so add one to the last
++				// index that forms the basis of our expectations on
++				// pendingConfIndex. (Recall that lastIndex was taken from stable
++				// storage, but this auto-leaving entry isn't on stable storage
++				// yet).
++				maybePlusOne = 1
++			}
++			if exp, act := lastIndex+maybePlusOne, rawNode.raft.pendingConfIndex; exp != act {
+ 				t.Fatalf("pendingConfIndex: expected %d, got %d", exp, act)
+ 			}
+ 
+diff --git a/storage.go b/storage.go
+index 14ad686..6be5745 100644
+--- a/storage.go
++++ b/storage.go
+@@ -44,6 +44,8 @@ var ErrSnapshotTemporarilyUnavailable = errors.New("snapshot is temporarily unav
+ // become inoperable and refuse to participate in elections; the
+ // application is responsible for cleanup and recovery in this case.
+ type Storage interface {
++	// TODO(tbg): split this into two interfaces, LogStorage and StateStorage.
++
+ 	// InitialState returns the saved HardState and ConfState information.
+ 	InitialState() (pb.HardState, pb.ConfState, error)
+ 	// Entries returns a slice of log entries in the range [lo,hi).
+diff --git a/storage_test.go b/storage_test.go
+index a4759e0..5563795 100644
+--- a/storage_test.go
++++ b/storage_test.go
+@@ -106,7 +106,7 @@ func TestStorageLastIndex(t *testing.T) {
+ 		t.Errorf("err = %v, want nil", err)
+ 	}
+ 	if last != 5 {
+-		t.Errorf("term = %d, want %d", last, 5)
++		t.Errorf("last = %d, want %d", last, 5)
+ 	}
+ 
+ 	s.Append([]pb.Entry{{Index: 6, Term: 5}})
+@@ -115,7 +115,7 @@ func TestStorageLastIndex(t *testing.T) {
+ 		t.Errorf("err = %v, want nil", err)
+ 	}
+ 	if last != 6 {
+-		t.Errorf("last = %d, want %d", last, 5)
++		t.Errorf("last = %d, want %d", last, 6)
+ 	}
+ }
+ 
+diff --git a/testdata/campaign.txt b/testdata/campaign.txt
+new file mode 100644
+index 0000000..c5deb2d
+--- /dev/null
++++ b/testdata/campaign.txt
+@@ -0,0 +1,117 @@
++log-level info
++----
++ok
++
++add-nodes 3 voters=(1,2,3) index=2
++----
++INFO 1 switched to configuration voters=(1 2 3)
++INFO 1 became follower at term 0
++INFO newRaft 1 [peers: [1,2,3], term: 0, commit: 2, applied: 2, lastindex: 2, lastterm: 1]
++INFO 2 switched to configuration voters=(1 2 3)
++INFO 2 became follower at term 0
++INFO newRaft 2 [peers: [1,2,3], term: 0, commit: 2, applied: 2, lastindex: 2, lastterm: 1]
++INFO 3 switched to configuration voters=(1 2 3)
++INFO 3 became follower at term 0
++INFO newRaft 3 [peers: [1,2,3], term: 0, commit: 2, applied: 2, lastindex: 2, lastterm: 1]
++
++campaign 1
++----
++INFO 1 is starting a new election at term 0
++INFO 1 became candidate at term 1
++INFO 1 received MsgVoteResp from 1 at term 1
++INFO 1 [logterm: 1, index: 2] sent MsgVote request to 2 at term 1
++INFO 1 [logterm: 1, index: 2] sent MsgVote request to 3 at term 1
++
++stabilize
++----
++> 1 handling Ready
++  Ready MustSync=true:
++  Lead:0 State:StateCandidate
++  HardState Term:1 Vote:1 Commit:2
++  Messages:
++  1->2 MsgVote Term:1 Log:1/2
++  1->3 MsgVote Term:1 Log:1/2
++> 2 receiving messages
++  1->2 MsgVote Term:1 Log:1/2
++  INFO 2 [term: 0] received a MsgVote message with higher term from 1 [term: 1]
++  INFO 2 became follower at term 1
++  INFO 2 [logterm: 1, index: 2, vote: 0] cast MsgVote for 1 [logterm: 1, index: 2] at term 1
++> 3 receiving messages
++  1->3 MsgVote Term:1 Log:1/2
++  INFO 3 [term: 0] received a MsgVote message with higher term from 1 [term: 1]
++  INFO 3 became follower at term 1
++  INFO 3 [logterm: 1, index: 2, vote: 0] cast MsgVote for 1 [logterm: 1, index: 2] at term 1
++> 2 handling Ready
++  Ready MustSync=true:
++  HardState Term:1 Vote:1 Commit:2
++  Messages:
++  2->1 MsgVoteResp Term:1 Log:0/0
++> 3 handling Ready
++  Ready MustSync=true:
++  HardState Term:1 Vote:1 Commit:2
++  Messages:
++  3->1 MsgVoteResp Term:1 Log:0/0
++> 1 receiving messages
++  2->1 MsgVoteResp Term:1 Log:0/0
++  INFO 1 received MsgVoteResp from 2 at term 1
++  INFO 1 has received 2 MsgVoteResp votes and 0 vote rejections
++  INFO 1 became leader at term 1
++  3->1 MsgVoteResp Term:1 Log:0/0
++> 1 handling Ready
++  Ready MustSync=true:
++  Lead:1 State:StateLeader
++  Entries:
++  1/3 EntryNormal ""
++  Messages:
++  1->2 MsgApp Term:1 Log:1/2 Commit:2 Entries:[1/3 EntryNormal ""]
++  1->3 MsgApp Term:1 Log:1/2 Commit:2 Entries:[1/3 EntryNormal ""]
++> 2 receiving messages
++  1->2 MsgApp Term:1 Log:1/2 Commit:2 Entries:[1/3 EntryNormal ""]
++> 3 receiving messages
++  1->3 MsgApp Term:1 Log:1/2 Commit:2 Entries:[1/3 EntryNormal ""]
++> 2 handling Ready
++  Ready MustSync=true:
++  Lead:1 State:StateFollower
++  Entries:
++  1/3 EntryNormal ""
++  Messages:
++  2->1 MsgAppResp Term:1 Log:0/3
++> 3 handling Ready
++  Ready MustSync=true:
++  Lead:1 State:StateFollower
++  Entries:
++  1/3 EntryNormal ""
++  Messages:
++  3->1 MsgAppResp Term:1 Log:0/3
++> 1 receiving messages
++  2->1 MsgAppResp Term:1 Log:0/3
++  3->1 MsgAppResp Term:1 Log:0/3
++> 1 handling Ready
++  Ready MustSync=false:
++  HardState Term:1 Vote:1 Commit:3
++  CommittedEntries:
++  1/3 EntryNormal ""
++  Messages:
++  1->2 MsgApp Term:1 Log:1/3 Commit:3
++  1->3 MsgApp Term:1 Log:1/3 Commit:3
++> 2 receiving messages
++  1->2 MsgApp Term:1 Log:1/3 Commit:3
++> 3 receiving messages
++  1->3 MsgApp Term:1 Log:1/3 Commit:3
++> 2 handling Ready
++  Ready MustSync=false:
++  HardState Term:1 Vote:1 Commit:3
++  CommittedEntries:
++  1/3 EntryNormal ""
++  Messages:
++  2->1 MsgAppResp Term:1 Log:0/3
++> 3 handling Ready
++  Ready MustSync=false:
++  HardState Term:1 Vote:1 Commit:3
++  CommittedEntries:
++  1/3 EntryNormal ""
++  Messages:
++  3->1 MsgAppResp Term:1 Log:0/3
++> 1 receiving messages
++  2->1 MsgAppResp Term:1 Log:0/3
++  3->1 MsgAppResp Term:1 Log:0/3
+diff --git a/testdata/campaign_learner_must_vote.txt b/testdata/campaign_learner_must_vote.txt
+new file mode 100644
+index 0000000..c9a95ad
+--- /dev/null
++++ b/testdata/campaign_learner_must_vote.txt
+@@ -0,0 +1,152 @@
++# Regression test that verifies that learners can vote. This holds only in the
++# sense that if a learner is asked to vote, a candidate believes that they are a
++# voter based on its current config, which may be more recent than that of the
++# learner. If learners which are actually voters but don't know it yet don't
++# vote in that situation, the raft group may end up unavailable despite a quorum
++# of voters (as of the latest config) being available.
++#
++# See:
++# https://github.com/etcd-io/etcd/pull/10998
++
++# Turn output off during boilerplate.
++log-level none
++----
++ok
++
++# Bootstrap three nodes.
++add-nodes 3 voters=(1,2) learners=(3) index=2
++----
++ok
++
++# n1 gets to be leader.
++campaign 1
++----
++ok
++
++stabilize
++----
++ok (quiet)
++
++# Propose a conf change on n1 that promotes n3 to voter.
++propose-conf-change 1
++v3
++----
++ok
++
++# Commit and fully apply said conf change. n1 and n2 now consider n3 a voter.
++stabilize 1 2
++----
++ok (quiet)
++
++# Drop all inflight messages to 3. We don't want it to be caught up when it is
++# asked to vote.
++deliver-msgs drop=(3)
++----
++ok (quiet)
++
++# We now pretend that n1 is dead, and n2 is trying to become leader.
++
++log-level debug
++----
++ok
++
++campaign 2
++----
++INFO 2 is starting a new election at term 1
++INFO 2 became candidate at term 2
++INFO 2 received MsgVoteResp from 2 at term 2
++INFO 2 [logterm: 1, index: 4] sent MsgVote request to 1 at term 2
++INFO 2 [logterm: 1, index: 4] sent MsgVote request to 3 at term 2
++
++# Send out the MsgVote requests.
++process-ready 2
++----
++Ready MustSync=true:
++Lead:0 State:StateCandidate
++HardState Term:2 Vote:2 Commit:4
++Messages:
++2->1 MsgVote Term:2 Log:1/4
++2->3 MsgVote Term:2 Log:1/4
++
++# n2 is now campaigning while n1 is down (does not respond). The latest config
++# has n3 as a voter, but n3 doesn't even have the corresponding conf change in
++# its log. Still, it casts a vote for n2 which can in turn become leader and
++# catches up n3.
++stabilize 3
++----
++> 3 receiving messages
++  2->3 MsgVote Term:2 Log:1/4
++  INFO 3 [term: 1] received a MsgVote message with higher term from 2 [term: 2]
++  INFO 3 became follower at term 2
++  INFO 3 [logterm: 1, index: 3, vote: 0] cast MsgVote for 2 [logterm: 1, index: 4] at term 2
++> 3 handling Ready
++  Ready MustSync=true:
++  Lead:0 State:StateFollower
++  HardState Term:2 Vote:2 Commit:3
++  Messages:
++  3->2 MsgVoteResp Term:2 Log:0/0
++
++stabilize 2 3
++----
++> 2 receiving messages
++  3->2 MsgVoteResp Term:2 Log:0/0
++  INFO 2 received MsgVoteResp from 3 at term 2
++  INFO 2 has received 2 MsgVoteResp votes and 0 vote rejections
++  INFO 2 became leader at term 2
++> 2 handling Ready
++  Ready MustSync=true:
++  Lead:2 State:StateLeader
++  Entries:
++  2/5 EntryNormal ""
++  Messages:
++  2->1 MsgApp Term:2 Log:1/4 Commit:4 Entries:[2/5 EntryNormal ""]
++  2->3 MsgApp Term:2 Log:1/4 Commit:4 Entries:[2/5 EntryNormal ""]
++> 3 receiving messages
++  2->3 MsgApp Term:2 Log:1/4 Commit:4 Entries:[2/5 EntryNormal ""]
++  DEBUG 3 [logterm: 0, index: 4] rejected MsgApp [logterm: 1, index: 4] from 2
++> 3 handling Ready
++  Ready MustSync=false:
++  Lead:2 State:StateFollower
++  Messages:
++  3->2 MsgAppResp Term:2 Log:0/4 Rejected (Hint: 3)
++> 2 receiving messages
++  3->2 MsgAppResp Term:2 Log:0/4 Rejected (Hint: 3)
++  DEBUG 2 received MsgAppResp(MsgApp was rejected, lastindex: 3) from 3 for index 4
++  DEBUG 2 decreased progress of 3 to [StateProbe match=0 next=4]
++> 2 handling Ready
++  Ready MustSync=false:
++  Messages:
++  2->3 MsgApp Term:2 Log:1/3 Commit:4 Entries:[1/4 EntryConfChangeV2 v3, 2/5 EntryNormal ""]
++> 3 receiving messages
++  2->3 MsgApp Term:2 Log:1/3 Commit:4 Entries:[1/4 EntryConfChangeV2 v3, 2/5 EntryNormal ""]
++> 3 handling Ready
++  Ready MustSync=true:
++  HardState Term:2 Vote:2 Commit:4
++  Entries:
++  1/4 EntryConfChangeV2 v3
++  2/5 EntryNormal ""
++  CommittedEntries:
++  1/4 EntryConfChangeV2 v3
++  Messages:
++  3->2 MsgAppResp Term:2 Log:0/5
++  INFO 3 switched to configuration voters=(1 2 3)
++> 2 receiving messages
++  3->2 MsgAppResp Term:2 Log:0/5
++> 2 handling Ready
++  Ready MustSync=false:
++  HardState Term:2 Vote:2 Commit:5
++  CommittedEntries:
++  2/5 EntryNormal ""
++  Messages:
++  2->3 MsgApp Term:2 Log:2/5 Commit:5
++> 3 receiving messages
++  2->3 MsgApp Term:2 Log:2/5 Commit:5
++> 3 handling Ready
++  Ready MustSync=false:
++  HardState Term:2 Vote:2 Commit:5
++  CommittedEntries:
++  2/5 EntryNormal ""
++  Messages:
++  3->2 MsgAppResp Term:2 Log:0/5
++> 2 receiving messages
++  3->2 MsgAppResp Term:2 Log:0/5
+diff --git a/testdata/confchange_v1_add_single.txt b/testdata/confchange_v1_add_single.txt
+new file mode 100644
+index 0000000..4f93e4f
+--- /dev/null
++++ b/testdata/confchange_v1_add_single.txt
+@@ -0,0 +1,97 @@
++# Run a V1 membership change that adds a single voter.
++
++# Bootstrap n1.
++add-nodes 1 voters=(1) index=2
++----
++INFO 1 switched to configuration voters=(1)
++INFO 1 became follower at term 0
++INFO newRaft 1 [peers: [1], term: 0, commit: 2, applied: 2, lastindex: 2, lastterm: 1]
++
++campaign 1
++----
++INFO 1 is starting a new election at term 0
++INFO 1 became candidate at term 1
++INFO 1 received MsgVoteResp from 1 at term 1
++INFO 1 became leader at term 1
++
++# Add v2 (with an auto transition).
++propose-conf-change 1 v1=true
++v2
++----
++ok
++
++# Pull n2 out of thin air.
++add-nodes 1
++----
++INFO 2 switched to configuration voters=()
++INFO 2 became follower at term 0
++INFO newRaft 2 [peers: [], term: 0, commit: 0, applied: 0, lastindex: 0, lastterm: 0]
++
++# n1 commits the conf change using itself as commit quorum, immediately transitions into
++# the final config, and catches up n2. Note that it's using an EntryConfChange, not an
++# EntryConfChangeV2, so this is compatible with nodes that don't know about V2 conf changes.
++stabilize
++----
++> 1 handling Ready
++  Ready MustSync=true:
++  Lead:1 State:StateLeader
++  HardState Term:1 Vote:1 Commit:4
++  Entries:
++  1/3 EntryNormal ""
++  1/4 EntryConfChange v2
++  CommittedEntries:
++  1/3 EntryNormal ""
++  1/4 EntryConfChange v2
++  INFO 1 switched to configuration voters=(1 2)
++> 1 handling Ready
++  Ready MustSync=false:
++  Messages:
++  1->2 MsgApp Term:1 Log:1/3 Commit:4 Entries:[1/4 EntryConfChange v2]
++> 2 receiving messages
++  1->2 MsgApp Term:1 Log:1/3 Commit:4 Entries:[1/4 EntryConfChange v2]
++  INFO 2 [term: 0] received a MsgApp message with higher term from 1 [term: 1]
++  INFO 2 became follower at term 1
++  DEBUG 2 [logterm: 0, index: 3] rejected MsgApp [logterm: 1, index: 3] from 1
++> 2 handling Ready
++  Ready MustSync=true:
++  Lead:1 State:StateFollower
++  HardState Term:1 Commit:0
++  Messages:
++  2->1 MsgAppResp Term:1 Log:0/3 Rejected (Hint: 0)
++> 1 receiving messages
++  2->1 MsgAppResp Term:1 Log:0/3 Rejected (Hint: 0)
++  DEBUG 1 received MsgAppResp(MsgApp was rejected, lastindex: 0) from 2 for index 3
++  DEBUG 1 decreased progress of 2 to [StateProbe match=0 next=1]
++  DEBUG 1 [firstindex: 3, commit: 4] sent snapshot[index: 4, term: 1] to 2 [StateProbe match=0 next=1]
++  DEBUG 1 paused sending replication messages to 2 [StateSnapshot match=0 next=1 paused pendingSnap=4]
++> 1 handling Ready
++  Ready MustSync=false:
++  Messages:
++  1->2 MsgSnap Term:1 Log:0/0 Snapshot: Index:4 Term:1 ConfState:Voters:[1 2] VotersOutgoing:[] Learners:[] LearnersNext:[] AutoLeave:false
++> 2 receiving messages
++  1->2 MsgSnap Term:1 Log:0/0 Snapshot: Index:4 Term:1 ConfState:Voters:[1 2] VotersOutgoing:[] Learners:[] LearnersNext:[] AutoLeave:false
++  INFO log [committed=0, applied=0, unstable.offset=1, len(unstable.Entries)=0] starts to restore snapshot [index: 4, term: 1]
++  INFO 2 switched to configuration voters=(1 2)
++  INFO 2 [commit: 4, lastindex: 4, lastterm: 1] restored snapshot [index: 4, term: 1]
++  INFO 2 [commit: 4] restored snapshot [index: 4, term: 1]
++> 2 handling Ready
++  Ready MustSync=false:
++  HardState Term:1 Commit:4
++  Snapshot Index:4 Term:1 ConfState:Voters:[1 2] VotersOutgoing:[] Learners:[] LearnersNext:[] AutoLeave:false
++  Messages:
++  2->1 MsgAppResp Term:1 Log:0/4
++> 1 receiving messages
++  2->1 MsgAppResp Term:1 Log:0/4
++  DEBUG 1 recovered from needing snapshot, resumed sending replication messages to 2 [StateSnapshot match=4 next=5 paused pendingSnap=4]
++> 1 handling Ready
++  Ready MustSync=false:
++  Messages:
++  1->2 MsgApp Term:1 Log:1/4 Commit:4
++> 2 receiving messages
++  1->2 MsgApp Term:1 Log:1/4 Commit:4
++> 2 handling Ready
++  Ready MustSync=false:
++  Messages:
++  2->1 MsgAppResp Term:1 Log:0/4
++> 1 receiving messages
++  2->1 MsgAppResp Term:1 Log:0/4
+diff --git a/testdata/confchange_v1_remove_leader.txt b/testdata/confchange_v1_remove_leader.txt
+new file mode 100644
+index 0000000..8afe8cd
+--- /dev/null
++++ b/testdata/confchange_v1_remove_leader.txt
+@@ -0,0 +1,224 @@
++# We'll turn this back on after the boilerplate.
++log-level none
++----
++ok
++
++# Run a V1 membership change that removes the leader.
++# Bootstrap n1, n2, n3.
++add-nodes 3 voters=(1,2,3) index=2
++----
++ok
++
++campaign 1
++----
++ok
++
++stabilize
++----
++ok (quiet)
++
++log-level debug
++----
++ok
++
++# Start removing n1.
++propose-conf-change 1 v1=true
++r1
++----
++ok
++
++# Propose an extra entry which will be sent out together with the conf change.
++propose 1 foo
++----
++ok
++
++# Send out the corresponding appends.
++process-ready 1
++----
++Ready MustSync=true:
++Entries:
++1/4 EntryConfChange r1
++1/5 EntryNormal "foo"
++Messages:
++1->2 MsgApp Term:1 Log:1/3 Commit:3 Entries:[1/4 EntryConfChange r1]
++1->3 MsgApp Term:1 Log:1/3 Commit:3 Entries:[1/4 EntryConfChange r1]
++1->2 MsgApp Term:1 Log:1/4 Commit:3 Entries:[1/5 EntryNormal "foo"]
++1->3 MsgApp Term:1 Log:1/4 Commit:3 Entries:[1/5 EntryNormal "foo"]
++
++# Send response from n2 (which is enough to commit the entries so far next time
++# n1 runs).
++stabilize 2
++----
++> 2 receiving messages
++  1->2 MsgApp Term:1 Log:1/3 Commit:3 Entries:[1/4 EntryConfChange r1]
++  1->2 MsgApp Term:1 Log:1/4 Commit:3 Entries:[1/5 EntryNormal "foo"]
++> 2 handling Ready
++  Ready MustSync=true:
++  Entries:
++  1/4 EntryConfChange r1
++  1/5 EntryNormal "foo"
++  Messages:
++  2->1 MsgAppResp Term:1 Log:0/4
++  2->1 MsgAppResp Term:1 Log:0/5
++
++# Put another entry in n1's log.
++propose 1 bar
++----
++ok
++
++# n1 applies the conf change, so it has now removed itself. But it still has
++# an uncommitted entry in the log. If the leader unconditionally counted itself
++# as part of the commit quorum, we'd be in trouble. In the block below, we see
++# it send out appends to the other nodes for the 'bar' entry.
++stabilize 1
++----
++> 1 handling Ready
++  Ready MustSync=true:
++  Entries:
++  1/6 EntryNormal "bar"
++  Messages:
++  1->2 MsgApp Term:1 Log:1/5 Commit:3 Entries:[1/6 EntryNormal "bar"]
++  1->3 MsgApp Term:1 Log:1/5 Commit:3 Entries:[1/6 EntryNormal "bar"]
++> 1 receiving messages
++  2->1 MsgAppResp Term:1 Log:0/4
++  2->1 MsgAppResp Term:1 Log:0/5
++> 1 handling Ready
++  Ready MustSync=false:
++  HardState Term:1 Vote:1 Commit:5
++  CommittedEntries:
++  1/4 EntryConfChange r1
++  1/5 EntryNormal "foo"
++  Messages:
++  1->2 MsgApp Term:1 Log:1/6 Commit:4
++  1->3 MsgApp Term:1 Log:1/6 Commit:4
++  1->2 MsgApp Term:1 Log:1/6 Commit:5
++  1->3 MsgApp Term:1 Log:1/6 Commit:5
++  INFO 1 switched to configuration voters=(2 3)
++
++# n2 responds, n3 doesn't yet. Quorum for 'bar' should not be reached...
++stabilize 2
++----
++> 2 receiving messages
++  1->2 MsgApp Term:1 Log:1/5 Commit:3 Entries:[1/6 EntryNormal "bar"]
++  1->2 MsgApp Term:1 Log:1/6 Commit:4
++  1->2 MsgApp Term:1 Log:1/6 Commit:5
++> 2 handling Ready
++  Ready MustSync=true:
++  HardState Term:1 Vote:1 Commit:5
++  Entries:
++  1/6 EntryNormal "bar"
++  CommittedEntries:
++  1/4 EntryConfChange r1
++  1/5 EntryNormal "foo"
++  Messages:
++  2->1 MsgAppResp Term:1 Log:0/6
++  2->1 MsgAppResp Term:1 Log:0/6
++  2->1 MsgAppResp Term:1 Log:0/6
++  INFO 2 switched to configuration voters=(2 3)
++
++# ... which thankfully is what we see on the leader.
++stabilize 1
++----
++> 1 receiving messages
++  2->1 MsgAppResp Term:1 Log:0/6
++  2->1 MsgAppResp Term:1 Log:0/6
++  2->1 MsgAppResp Term:1 Log:0/6
++
++# When n3 responds, quorum is reached and everything falls into place.
++stabilize
++----
++> 3 receiving messages
++  1->3 MsgApp Term:1 Log:1/3 Commit:3 Entries:[1/4 EntryConfChange r1]
++  1->3 MsgApp Term:1 Log:1/4 Commit:3 Entries:[1/5 EntryNormal "foo"]
++  1->3 MsgApp Term:1 Log:1/5 Commit:3 Entries:[1/6 EntryNormal "bar"]
++  1->3 MsgApp Term:1 Log:1/6 Commit:4
++  1->3 MsgApp Term:1 Log:1/6 Commit:5
++> 3 handling Ready
++  Ready MustSync=true:
++  HardState Term:1 Vote:1 Commit:5
++  Entries:
++  1/4 EntryConfChange r1
++  1/5 EntryNormal "foo"
++  1/6 EntryNormal "bar"
++  CommittedEntries:
++  1/4 EntryConfChange r1
++  1/5 EntryNormal "foo"
++  Messages:
++  3->1 MsgAppResp Term:1 Log:0/4
++  3->1 MsgAppResp Term:1 Log:0/5
++  3->1 MsgAppResp Term:1 Log:0/6
++  3->1 MsgAppResp Term:1 Log:0/6
++  3->1 MsgAppResp Term:1 Log:0/6
++  INFO 3 switched to configuration voters=(2 3)
++> 1 receiving messages
++  3->1 MsgAppResp Term:1 Log:0/4
++  3->1 MsgAppResp Term:1 Log:0/5
++  3->1 MsgAppResp Term:1 Log:0/6
++  3->1 MsgAppResp Term:1 Log:0/6
++  3->1 MsgAppResp Term:1 Log:0/6
++> 1 handling Ready
++  Ready MustSync=false:
++  HardState Term:1 Vote:1 Commit:6
++  CommittedEntries:
++  1/6 EntryNormal "bar"
++  Messages:
++  1->2 MsgApp Term:1 Log:1/6 Commit:6
++  1->3 MsgApp Term:1 Log:1/6 Commit:6
++> 2 receiving messages
++  1->2 MsgApp Term:1 Log:1/6 Commit:6
++> 3 receiving messages
++  1->3 MsgApp Term:1 Log:1/6 Commit:6
++> 2 handling Ready
++  Ready MustSync=false:
++  HardState Term:1 Vote:1 Commit:6
++  CommittedEntries:
++  1/6 EntryNormal "bar"
++  Messages:
++  2->1 MsgAppResp Term:1 Log:0/6
++> 3 handling Ready
++  Ready MustSync=false:
++  HardState Term:1 Vote:1 Commit:6
++  CommittedEntries:
++  1/6 EntryNormal "bar"
++  Messages:
++  3->1 MsgAppResp Term:1 Log:0/6
++> 1 receiving messages
++  2->1 MsgAppResp Term:1 Log:0/6
++  3->1 MsgAppResp Term:1 Log:0/6
++
++# However not all is well. n1 is still leader but unconditionally drops all
++# proposals on the floor, so we're effectively stuck if it still heartbeats
++# its followers...
++propose 1 baz
++----
++raft proposal dropped
++
++tick-heartbeat 1
++----
++ok
++
++# ... which, uh oh, it does.
++# TODO(tbg): change behavior so that a leader that is removed immediately steps
++# down, and initiates an optimistic handover.
++stabilize
++----
++> 1 handling Ready
++  Ready MustSync=false:
++  Messages:
++  1->2 MsgHeartbeat Term:1 Log:0/0 Commit:6
++  1->3 MsgHeartbeat Term:1 Log:0/0 Commit:6
++> 2 receiving messages
++  1->2 MsgHeartbeat Term:1 Log:0/0 Commit:6
++> 3 receiving messages
++  1->3 MsgHeartbeat Term:1 Log:0/0 Commit:6
++> 2 handling Ready
++  Ready MustSync=false:
++  Messages:
++  2->1 MsgHeartbeatResp Term:1 Log:0/0
++> 3 handling Ready
++  Ready MustSync=false:
++  Messages:
++  3->1 MsgHeartbeatResp Term:1 Log:0/0
++> 1 receiving messages
++  2->1 MsgHeartbeatResp Term:1 Log:0/0
++  3->1 MsgHeartbeatResp Term:1 Log:0/0
+diff --git a/testdata/confchange_v2_add_double_auto.txt b/testdata/confchange_v2_add_double_auto.txt
+new file mode 100644
+index 0000000..9583102
+--- /dev/null
++++ b/testdata/confchange_v2_add_double_auto.txt
+@@ -0,0 +1,407 @@
++# Run a V2 membership change that adds two voters at once and auto-leaves the
++# joint configuration. (This is the same as specifying an explicit transition
++# since more than one change is being made atomically).
++
++# Bootstrap n1.
++add-nodes 1 voters=(1) index=2
++----
++INFO 1 switched to configuration voters=(1)
++INFO 1 became follower at term 0
++INFO newRaft 1 [peers: [1], term: 0, commit: 2, applied: 2, lastindex: 2, lastterm: 1]
++
++campaign 1
++----
++INFO 1 is starting a new election at term 0
++INFO 1 became candidate at term 1
++INFO 1 received MsgVoteResp from 1 at term 1
++INFO 1 became leader at term 1
++
++propose-conf-change 1 transition=auto
++v2 v3
++----
++ok
++
++# Add two "empty" nodes to the cluster, n2 and n3.
++add-nodes 2
++----
++INFO 2 switched to configuration voters=()
++INFO 2 became follower at term 0
++INFO newRaft 2 [peers: [], term: 0, commit: 0, applied: 0, lastindex: 0, lastterm: 0]
++INFO 3 switched to configuration voters=()
++INFO 3 became follower at term 0
++INFO newRaft 3 [peers: [], term: 0, commit: 0, applied: 0, lastindex: 0, lastterm: 0]
++
++# n1 immediately gets to commit & apply the conf change using only itself. We see that
++# it starts transitioning out of that joint configuration (though we will only see that
++# proposal in the next ready handling loop, when it is emitted). We also see that this
++# is using joint consensus, which it has to since we're carrying out two additions at
++# once.
++process-ready 1
++----
++Ready MustSync=true:
++Lead:1 State:StateLeader
++HardState Term:1 Vote:1 Commit:4
++Entries:
++1/3 EntryNormal ""
++1/4 EntryConfChangeV2 v2 v3
++CommittedEntries:
++1/3 EntryNormal ""
++1/4 EntryConfChangeV2 v2 v3
++INFO 1 switched to configuration voters=(1 2 3)&&(1) autoleave
++INFO initiating automatic transition out of joint configuration voters=(1 2 3)&&(1) autoleave
++
++# n1 immediately probes n2 and n3.
++stabilize 1
++----
++> 1 handling Ready
++  Ready MustSync=true:
++  Entries:
++  1/5 EntryConfChangeV2
++  Messages:
++  1->2 MsgApp Term:1 Log:1/3 Commit:4 Entries:[1/4 EntryConfChangeV2 v2 v3]
++  1->3 MsgApp Term:1 Log:1/3 Commit:4 Entries:[1/4 EntryConfChangeV2 v2 v3]
++
++# First, play out the whole interaction between n1 and n2. We see n1's probe to
++# n2 get rejected (since n2 needs a snapshot); the snapshot is delivered at which
++# point n2 switches to the correct config, and n1 catches it up. This notably
++# includes the empty conf change which gets committed and applied by both and
++# which transitions them out of their joint configuration into the final one (1 2 3).
++stabilize 1 2
++----
++> 2 receiving messages
++  1->2 MsgApp Term:1 Log:1/3 Commit:4 Entries:[1/4 EntryConfChangeV2 v2 v3]
++  INFO 2 [term: 0] received a MsgApp message with higher term from 1 [term: 1]
++  INFO 2 became follower at term 1
++  DEBUG 2 [logterm: 0, index: 3] rejected MsgApp [logterm: 1, index: 3] from 1
++> 2 handling Ready
++  Ready MustSync=true:
++  Lead:1 State:StateFollower
++  HardState Term:1 Commit:0
++  Messages:
++  2->1 MsgAppResp Term:1 Log:0/3 Rejected (Hint: 0)
++> 1 receiving messages
++  2->1 MsgAppResp Term:1 Log:0/3 Rejected (Hint: 0)
++  DEBUG 1 received MsgAppResp(MsgApp was rejected, lastindex: 0) from 2 for index 3
++  DEBUG 1 decreased progress of 2 to [StateProbe match=0 next=1]
++  DEBUG 1 [firstindex: 3, commit: 4] sent snapshot[index: 4, term: 1] to 2 [StateProbe match=0 next=1]
++  DEBUG 1 paused sending replication messages to 2 [StateSnapshot match=0 next=1 paused pendingSnap=4]
++> 1 handling Ready
++  Ready MustSync=false:
++  Messages:
++  1->2 MsgSnap Term:1 Log:0/0 Snapshot: Index:4 Term:1 ConfState:Voters:[1 2 3] VotersOutgoing:[1] Learners:[] LearnersNext:[] AutoLeave:true
++> 2 receiving messages
++  1->2 MsgSnap Term:1 Log:0/0 Snapshot: Index:4 Term:1 ConfState:Voters:[1 2 3] VotersOutgoing:[1] Learners:[] LearnersNext:[] AutoLeave:true
++  INFO log [committed=0, applied=0, unstable.offset=1, len(unstable.Entries)=0] starts to restore snapshot [index: 4, term: 1]
++  INFO 2 switched to configuration voters=(1 2 3)&&(1) autoleave
++  INFO 2 [commit: 4, lastindex: 4, lastterm: 1] restored snapshot [index: 4, term: 1]
++  INFO 2 [commit: 4] restored snapshot [index: 4, term: 1]
++> 2 handling Ready
++  Ready MustSync=false:
++  HardState Term:1 Commit:4
++  Snapshot Index:4 Term:1 ConfState:Voters:[1 2 3] VotersOutgoing:[1] Learners:[] LearnersNext:[] AutoLeave:true
++  Messages:
++  2->1 MsgAppResp Term:1 Log:0/4
++> 1 receiving messages
++  2->1 MsgAppResp Term:1 Log:0/4
++  DEBUG 1 recovered from needing snapshot, resumed sending replication messages to 2 [StateSnapshot match=4 next=5 paused pendingSnap=4]
++> 1 handling Ready
++  Ready MustSync=false:
++  Messages:
++  1->2 MsgApp Term:1 Log:1/4 Commit:4 Entries:[1/5 EntryConfChangeV2]
++> 2 receiving messages
++  1->2 MsgApp Term:1 Log:1/4 Commit:4 Entries:[1/5 EntryConfChangeV2]
++> 2 handling Ready
++  Ready MustSync=true:
++  Entries:
++  1/5 EntryConfChangeV2
++  Messages:
++  2->1 MsgAppResp Term:1 Log:0/5
++> 1 receiving messages
++  2->1 MsgAppResp Term:1 Log:0/5
++> 1 handling Ready
++  Ready MustSync=false:
++  HardState Term:1 Vote:1 Commit:5
++  CommittedEntries:
++  1/5 EntryConfChangeV2
++  Messages:
++  1->2 MsgApp Term:1 Log:1/5 Commit:5
++  INFO 1 switched to configuration voters=(1 2 3)
++> 2 receiving messages
++  1->2 MsgApp Term:1 Log:1/5 Commit:5
++> 2 handling Ready
++  Ready MustSync=false:
++  HardState Term:1 Commit:5
++  CommittedEntries:
++  1/5 EntryConfChangeV2
++  Messages:
++  2->1 MsgAppResp Term:1 Log:0/5
++  INFO 2 switched to configuration voters=(1 2 3)
++> 1 receiving messages
++  2->1 MsgAppResp Term:1 Log:0/5
++
++# n3 immediately receives a snapshot in the final configuration.
++stabilize 1 3
++----
++> 3 receiving messages
++  1->3 MsgApp Term:1 Log:1/3 Commit:4 Entries:[1/4 EntryConfChangeV2 v2 v3]
++  INFO 3 [term: 0] received a MsgApp message with higher term from 1 [term: 1]
++  INFO 3 became follower at term 1
++  DEBUG 3 [logterm: 0, index: 3] rejected MsgApp [logterm: 1, index: 3] from 1
++> 3 handling Ready
++  Ready MustSync=true:
++  Lead:1 State:StateFollower
++  HardState Term:1 Commit:0
++  Messages:
++  3->1 MsgAppResp Term:1 Log:0/3 Rejected (Hint: 0)
++> 1 receiving messages
++  3->1 MsgAppResp Term:1 Log:0/3 Rejected (Hint: 0)
++  DEBUG 1 received MsgAppResp(MsgApp was rejected, lastindex: 0) from 3 for index 3
++  DEBUG 1 decreased progress of 3 to [StateProbe match=0 next=1]
++  DEBUG 1 [firstindex: 3, commit: 5] sent snapshot[index: 5, term: 1] to 3 [StateProbe match=0 next=1]
++  DEBUG 1 paused sending replication messages to 3 [StateSnapshot match=0 next=1 paused pendingSnap=5]
++> 1 handling Ready
++  Ready MustSync=false:
++  Messages:
++  1->3 MsgSnap Term:1 Log:0/0 Snapshot: Index:5 Term:1 ConfState:Voters:[1 2 3] VotersOutgoing:[] Learners:[] LearnersNext:[] AutoLeave:false
++> 3 receiving messages
++  1->3 MsgSnap Term:1 Log:0/0 Snapshot: Index:5 Term:1 ConfState:Voters:[1 2 3] VotersOutgoing:[] Learners:[] LearnersNext:[] AutoLeave:false
++  INFO log [committed=0, applied=0, unstable.offset=1, len(unstable.Entries)=0] starts to restore snapshot [index: 5, term: 1]
++  INFO 3 switched to configuration voters=(1 2 3)
++  INFO 3 [commit: 5, lastindex: 5, lastterm: 1] restored snapshot [index: 5, term: 1]
++  INFO 3 [commit: 5] restored snapshot [index: 5, term: 1]
++> 3 handling Ready
++  Ready MustSync=false:
++  HardState Term:1 Commit:5
++  Snapshot Index:5 Term:1 ConfState:Voters:[1 2 3] VotersOutgoing:[] Learners:[] LearnersNext:[] AutoLeave:false
++  Messages:
++  3->1 MsgAppResp Term:1 Log:0/5
++> 1 receiving messages
++  3->1 MsgAppResp Term:1 Log:0/5
++  DEBUG 1 recovered from needing snapshot, resumed sending replication messages to 3 [StateSnapshot match=5 next=6 paused pendingSnap=5]
++> 1 handling Ready
++  Ready MustSync=false:
++  Messages:
++  1->3 MsgApp Term:1 Log:1/5 Commit:5
++> 3 receiving messages
++  1->3 MsgApp Term:1 Log:1/5 Commit:5
++> 3 handling Ready
++  Ready MustSync=false:
++  Messages:
++  3->1 MsgAppResp Term:1 Log:0/5
++> 1 receiving messages
++  3->1 MsgAppResp Term:1 Log:0/5
++
++# Nothing else happens.
++stabilize
++----
++ok
++
++# Now remove two nodes. What's new here is that the leader will actually have
++# to go to a quorum to commit the transition into the joint config.
++
++propose-conf-change 1
++r2 r3
++----
++ok
++
++# n1 sends out MsgApps.
++stabilize 1
++----
++> 1 handling Ready
++  Ready MustSync=true:
++  Entries:
++  1/6 EntryConfChangeV2 r2 r3
++  Messages:
++  1->2 MsgApp Term:1 Log:1/5 Commit:5 Entries:[1/6 EntryConfChangeV2 r2 r3]
++  1->3 MsgApp Term:1 Log:1/5 Commit:5 Entries:[1/6 EntryConfChangeV2 r2 r3]
++
++# n2, n3 ack them.
++stabilize 2 3
++----
++> 2 receiving messages
++  1->2 MsgApp Term:1 Log:1/5 Commit:5 Entries:[1/6 EntryConfChangeV2 r2 r3]
++> 3 receiving messages
++  1->3 MsgApp Term:1 Log:1/5 Commit:5 Entries:[1/6 EntryConfChangeV2 r2 r3]
++> 2 handling Ready
++  Ready MustSync=true:
++  Entries:
++  1/6 EntryConfChangeV2 r2 r3
++  Messages:
++  2->1 MsgAppResp Term:1 Log:0/6
++> 3 handling Ready
++  Ready MustSync=true:
++  Entries:
++  1/6 EntryConfChangeV2 r2 r3
++  Messages:
++  3->1 MsgAppResp Term:1 Log:0/6
++
++# n1 gets some more proposals. This is part of a regression test: There used to
++# be a bug in which these proposals would prompt the leader to transition out of
++# the same joint state multiple times, which would cause a panic.
++propose 1 foo
++----
++ok
++
++propose 1 bar
++----
++ok
++
++# n1 switches to the joint config, then initiates a transition into the final
++# config.
++stabilize 1
++----
++> 1 handling Ready
++  Ready MustSync=true:
++  Entries:
++  1/7 EntryNormal "foo"
++  1/8 EntryNormal "bar"
++  Messages:
++  1->2 MsgApp Term:1 Log:1/6 Commit:5 Entries:[1/7 EntryNormal "foo"]
++  1->3 MsgApp Term:1 Log:1/6 Commit:5 Entries:[1/7 EntryNormal "foo"]
++  1->2 MsgApp Term:1 Log:1/7 Commit:5 Entries:[1/8 EntryNormal "bar"]
++  1->3 MsgApp Term:1 Log:1/7 Commit:5 Entries:[1/8 EntryNormal "bar"]
++> 1 receiving messages
++  2->1 MsgAppResp Term:1 Log:0/6
++  3->1 MsgAppResp Term:1 Log:0/6
++> 1 handling Ready
++  Ready MustSync=false:
++  HardState Term:1 Vote:1 Commit:6
++  CommittedEntries:
++  1/6 EntryConfChangeV2 r2 r3
++  Messages:
++  1->2 MsgApp Term:1 Log:1/8 Commit:6
++  1->3 MsgApp Term:1 Log:1/8 Commit:6
++  INFO 1 switched to configuration voters=(1)&&(1 2 3) autoleave
++  INFO initiating automatic transition out of joint configuration voters=(1)&&(1 2 3) autoleave
++> 1 handling Ready
++  Ready MustSync=true:
++  Entries:
++  1/9 EntryConfChangeV2
++
++# n2 and n3 also switch to the joint config, and ack the transition out of it.
++stabilize 2 3
++----
++> 2 receiving messages
++  1->2 MsgApp Term:1 Log:1/6 Commit:5 Entries:[1/7 EntryNormal "foo"]
++  1->2 MsgApp Term:1 Log:1/7 Commit:5 Entries:[1/8 EntryNormal "bar"]
++  1->2 MsgApp Term:1 Log:1/8 Commit:6
++> 3 receiving messages
++  1->3 MsgApp Term:1 Log:1/6 Commit:5 Entries:[1/7 EntryNormal "foo"]
++  1->3 MsgApp Term:1 Log:1/7 Commit:5 Entries:[1/8 EntryNormal "bar"]
++  1->3 MsgApp Term:1 Log:1/8 Commit:6
++> 2 handling Ready
++  Ready MustSync=true:
++  HardState Term:1 Commit:6
++  Entries:
++  1/7 EntryNormal "foo"
++  1/8 EntryNormal "bar"
++  CommittedEntries:
++  1/6 EntryConfChangeV2 r2 r3
++  Messages:
++  2->1 MsgAppResp Term:1 Log:0/7
++  2->1 MsgAppResp Term:1 Log:0/8
++  2->1 MsgAppResp Term:1 Log:0/8
++  INFO 2 switched to configuration voters=(1)&&(1 2 3) autoleave
++> 3 handling Ready
++  Ready MustSync=true:
++  HardState Term:1 Commit:6
++  Entries:
++  1/7 EntryNormal "foo"
++  1/8 EntryNormal "bar"
++  CommittedEntries:
++  1/6 EntryConfChangeV2 r2 r3
++  Messages:
++  3->1 MsgAppResp Term:1 Log:0/7
++  3->1 MsgAppResp Term:1 Log:0/8
++  3->1 MsgAppResp Term:1 Log:0/8
++  INFO 3 switched to configuration voters=(1)&&(1 2 3) autoleave
++
++# n2 and n3 also leave the joint config and the dust settles. We see at the very
++# end that n1 receives some messages from them that it refuses because it does
++# not have them in its config any more.
++stabilize
++----
++> 1 receiving messages
++  2->1 MsgAppResp Term:1 Log:0/7
++  2->1 MsgAppResp Term:1 Log:0/8
++  2->1 MsgAppResp Term:1 Log:0/8
++  3->1 MsgAppResp Term:1 Log:0/7
++  3->1 MsgAppResp Term:1 Log:0/8
++  3->1 MsgAppResp Term:1 Log:0/8
++> 1 handling Ready
++  Ready MustSync=false:
++  HardState Term:1 Vote:1 Commit:8
++  CommittedEntries:
++  1/7 EntryNormal "foo"
++  1/8 EntryNormal "bar"
++  Messages:
++  1->2 MsgApp Term:1 Log:1/8 Commit:7 Entries:[1/9 EntryConfChangeV2]
++  1->3 MsgApp Term:1 Log:1/8 Commit:7 Entries:[1/9 EntryConfChangeV2]
++  1->2 MsgApp Term:1 Log:1/9 Commit:8
++  1->3 MsgApp Term:1 Log:1/9 Commit:8
++> 2 receiving messages
++  1->2 MsgApp Term:1 Log:1/8 Commit:7 Entries:[1/9 EntryConfChangeV2]
++  1->2 MsgApp Term:1 Log:1/9 Commit:8
++> 3 receiving messages
++  1->3 MsgApp Term:1 Log:1/8 Commit:7 Entries:[1/9 EntryConfChangeV2]
++  1->3 MsgApp Term:1 Log:1/9 Commit:8
++> 2 handling Ready
++  Ready MustSync=true:
++  HardState Term:1 Commit:8
++  Entries:
++  1/9 EntryConfChangeV2
++  CommittedEntries:
++  1/7 EntryNormal "foo"
++  1/8 EntryNormal "bar"
++  Messages:
++  2->1 MsgAppResp Term:1 Log:0/9
++  2->1 MsgAppResp Term:1 Log:0/9
++> 3 handling Ready
++  Ready MustSync=true:
++  HardState Term:1 Commit:8
++  Entries:
++  1/9 EntryConfChangeV2
++  CommittedEntries:
++  1/7 EntryNormal "foo"
++  1/8 EntryNormal "bar"
++  Messages:
++  3->1 MsgAppResp Term:1 Log:0/9
++  3->1 MsgAppResp Term:1 Log:0/9
++> 1 receiving messages
++  2->1 MsgAppResp Term:1 Log:0/9
++  2->1 MsgAppResp Term:1 Log:0/9
++  3->1 MsgAppResp Term:1 Log:0/9
++  3->1 MsgAppResp Term:1 Log:0/9
++> 1 handling Ready
++  Ready MustSync=false:
++  HardState Term:1 Vote:1 Commit:9
++  CommittedEntries:
++  1/9 EntryConfChangeV2
++  Messages:
++  1->2 MsgApp Term:1 Log:1/9 Commit:9
++  1->3 MsgApp Term:1 Log:1/9 Commit:9
++  INFO 1 switched to configuration voters=(1)
++> 2 receiving messages
++  1->2 MsgApp Term:1 Log:1/9 Commit:9
++> 3 receiving messages
++  1->3 MsgApp Term:1 Log:1/9 Commit:9
++> 2 handling Ready
++  Ready MustSync=false:
++  HardState Term:1 Commit:9
++  CommittedEntries:
++  1/9 EntryConfChangeV2
++  Messages:
++  2->1 MsgAppResp Term:1 Log:0/9
++  INFO 2 switched to configuration voters=(1)
++> 3 handling Ready
++  Ready MustSync=false:
++  HardState Term:1 Commit:9
++  CommittedEntries:
++  1/9 EntryConfChangeV2
++  Messages:
++  3->1 MsgAppResp Term:1 Log:0/9
++  INFO 3 switched to configuration voters=(1)
++> 1 receiving messages
++  2->1 MsgAppResp Term:1 Log:0/9
++  raft: cannot step as peer not found3->1 MsgAppResp Term:1 Log:0/9
++  raft: cannot step as peer not found
+diff --git a/testdata/confchange_v2_add_double_implicit.txt b/testdata/confchange_v2_add_double_implicit.txt
+new file mode 100644
+index 0000000..827e63b
+--- /dev/null
++++ b/testdata/confchange_v2_add_double_implicit.txt
+@@ -0,0 +1,125 @@
++# Run a V2 membership change that adds a single voter but explicitly asks for the
++# use of joint consensus (with auto-leaving).
++
++# TODO(tbg): also verify that if the leader changes while in the joint state, the
++# new leader will auto-transition out of the joint state just the same.
++
++# Bootstrap n1.
++add-nodes 1 voters=(1) index=2
++----
++INFO 1 switched to configuration voters=(1)
++INFO 1 became follower at term 0
++INFO newRaft 1 [peers: [1], term: 0, commit: 2, applied: 2, lastindex: 2, lastterm: 1]
++
++campaign 1
++----
++INFO 1 is starting a new election at term 0
++INFO 1 became candidate at term 1
++INFO 1 received MsgVoteResp from 1 at term 1
++INFO 1 became leader at term 1
++
++propose-conf-change 1 transition=implicit
++v2
++----
++ok
++
++# Add n2.
++add-nodes 1
++----
++INFO 2 switched to configuration voters=()
++INFO 2 became follower at term 0
++INFO newRaft 2 [peers: [], term: 0, commit: 0, applied: 0, lastindex: 0, lastterm: 0]
++
++# n1 commits the conf change using itself as commit quorum, then starts catching up n2.
++# When that's done, it starts auto-transitioning out. Note that the snapshots propagating
++# the joint config have the AutoLeave flag set in their config.
++stabilize 1 2
++----
++> 1 handling Ready
++  Ready MustSync=true:
++  Lead:1 State:StateLeader
++  HardState Term:1 Vote:1 Commit:4
++  Entries:
++  1/3 EntryNormal ""
++  1/4 EntryConfChangeV2 v2
++  CommittedEntries:
++  1/3 EntryNormal ""
++  1/4 EntryConfChangeV2 v2
++  INFO 1 switched to configuration voters=(1 2)&&(1) autoleave
++  INFO initiating automatic transition out of joint configuration voters=(1 2)&&(1) autoleave
++> 1 handling Ready
++  Ready MustSync=true:
++  Entries:
++  1/5 EntryConfChangeV2
++  Messages:
++  1->2 MsgApp Term:1 Log:1/3 Commit:4 Entries:[1/4 EntryConfChangeV2 v2]
++> 2 receiving messages
++  1->2 MsgApp Term:1 Log:1/3 Commit:4 Entries:[1/4 EntryConfChangeV2 v2]
++  INFO 2 [term: 0] received a MsgApp message with higher term from 1 [term: 1]
++  INFO 2 became follower at term 1
++  DEBUG 2 [logterm: 0, index: 3] rejected MsgApp [logterm: 1, index: 3] from 1
++> 2 handling Ready
++  Ready MustSync=true:
++  Lead:1 State:StateFollower
++  HardState Term:1 Commit:0
++  Messages:
++  2->1 MsgAppResp Term:1 Log:0/3 Rejected (Hint: 0)
++> 1 receiving messages
++  2->1 MsgAppResp Term:1 Log:0/3 Rejected (Hint: 0)
++  DEBUG 1 received MsgAppResp(MsgApp was rejected, lastindex: 0) from 2 for index 3
++  DEBUG 1 decreased progress of 2 to [StateProbe match=0 next=1]
++  DEBUG 1 [firstindex: 3, commit: 4] sent snapshot[index: 4, term: 1] to 2 [StateProbe match=0 next=1]
++  DEBUG 1 paused sending replication messages to 2 [StateSnapshot match=0 next=1 paused pendingSnap=4]
++> 1 handling Ready
++  Ready MustSync=false:
++  Messages:
++  1->2 MsgSnap Term:1 Log:0/0 Snapshot: Index:4 Term:1 ConfState:Voters:[1 2] VotersOutgoing:[1] Learners:[] LearnersNext:[] AutoLeave:true
++> 2 receiving messages
++  1->2 MsgSnap Term:1 Log:0/0 Snapshot: Index:4 Term:1 ConfState:Voters:[1 2] VotersOutgoing:[1] Learners:[] LearnersNext:[] AutoLeave:true
++  INFO log [committed=0, applied=0, unstable.offset=1, len(unstable.Entries)=0] starts to restore snapshot [index: 4, term: 1]
++  INFO 2 switched to configuration voters=(1 2)&&(1) autoleave
++  INFO 2 [commit: 4, lastindex: 4, lastterm: 1] restored snapshot [index: 4, term: 1]
++  INFO 2 [commit: 4] restored snapshot [index: 4, term: 1]
++> 2 handling Ready
++  Ready MustSync=false:
++  HardState Term:1 Commit:4
++  Snapshot Index:4 Term:1 ConfState:Voters:[1 2] VotersOutgoing:[1] Learners:[] LearnersNext:[] AutoLeave:true
++  Messages:
++  2->1 MsgAppResp Term:1 Log:0/4
++> 1 receiving messages
++  2->1 MsgAppResp Term:1 Log:0/4
++  DEBUG 1 recovered from needing snapshot, resumed sending replication messages to 2 [StateSnapshot match=4 next=5 paused pendingSnap=4]
++> 1 handling Ready
++  Ready MustSync=false:
++  Messages:
++  1->2 MsgApp Term:1 Log:1/4 Commit:4 Entries:[1/5 EntryConfChangeV2]
++> 2 receiving messages
++  1->2 MsgApp Term:1 Log:1/4 Commit:4 Entries:[1/5 EntryConfChangeV2]
++> 2 handling Ready
++  Ready MustSync=true:
++  Entries:
++  1/5 EntryConfChangeV2
++  Messages:
++  2->1 MsgAppResp Term:1 Log:0/5
++> 1 receiving messages
++  2->1 MsgAppResp Term:1 Log:0/5
++> 1 handling Ready
++  Ready MustSync=false:
++  HardState Term:1 Vote:1 Commit:5
++  CommittedEntries:
++  1/5 EntryConfChangeV2
++  Messages:
++  1->2 MsgApp Term:1 Log:1/5 Commit:5
++  INFO 1 switched to configuration voters=(1 2)
++> 2 receiving messages
++  1->2 MsgApp Term:1 Log:1/5 Commit:5
++> 2 handling Ready
++  Ready MustSync=false:
++  HardState Term:1 Commit:5
++  CommittedEntries:
++  1/5 EntryConfChangeV2
++  Messages:
++  2->1 MsgAppResp Term:1 Log:0/5
++  INFO 2 switched to configuration voters=(1 2)
++> 1 receiving messages
++  2->1 MsgAppResp Term:1 Log:0/5
+diff --git a/testdata/confchange_v2_add_single_auto.txt b/testdata/confchange_v2_add_single_auto.txt
+new file mode 100644
+index 0000000..223a29b
+--- /dev/null
++++ b/testdata/confchange_v2_add_single_auto.txt
+@@ -0,0 +1,98 @@
++# Run a V2 membership change that adds a single voter in auto mode, which means
++# that joint consensus is not used but a direct transition into the new config
++# takes place.
++
++# Bootstrap n1.
++add-nodes 1 voters=(1) index=2
++----
++INFO 1 switched to configuration voters=(1)
++INFO 1 became follower at term 0
++INFO newRaft 1 [peers: [1], term: 0, commit: 2, applied: 2, lastindex: 2, lastterm: 1]
++
++campaign 1
++----
++INFO 1 is starting a new election at term 0
++INFO 1 became candidate at term 1
++INFO 1 received MsgVoteResp from 1 at term 1
++INFO 1 became leader at term 1
++
++# Add v2 (with an auto transition).
++propose-conf-change 1
++v2
++----
++ok
++
++# Pull n2 out of thin air.
++add-nodes 1
++----
++INFO 2 switched to configuration voters=()
++INFO 2 became follower at term 0
++INFO newRaft 2 [peers: [], term: 0, commit: 0, applied: 0, lastindex: 0, lastterm: 0]
++
++# n1 commits the conf change using itself as commit quorum, immediately transitions into
++# the final config, and catches up n2.
++stabilize
++----
++> 1 handling Ready
++  Ready MustSync=true:
++  Lead:1 State:StateLeader
++  HardState Term:1 Vote:1 Commit:4
++  Entries:
++  1/3 EntryNormal ""
++  1/4 EntryConfChangeV2 v2
++  CommittedEntries:
++  1/3 EntryNormal ""
++  1/4 EntryConfChangeV2 v2
++  INFO 1 switched to configuration voters=(1 2)
++> 1 handling Ready
++  Ready MustSync=false:
++  Messages:
++  1->2 MsgApp Term:1 Log:1/3 Commit:4 Entries:[1/4 EntryConfChangeV2 v2]
++> 2 receiving messages
++  1->2 MsgApp Term:1 Log:1/3 Commit:4 Entries:[1/4 EntryConfChangeV2 v2]
++  INFO 2 [term: 0] received a MsgApp message with higher term from 1 [term: 1]
++  INFO 2 became follower at term 1
++  DEBUG 2 [logterm: 0, index: 3] rejected MsgApp [logterm: 1, index: 3] from 1
++> 2 handling Ready
++  Ready MustSync=true:
++  Lead:1 State:StateFollower
++  HardState Term:1 Commit:0
++  Messages:
++  2->1 MsgAppResp Term:1 Log:0/3 Rejected (Hint: 0)
++> 1 receiving messages
++  2->1 MsgAppResp Term:1 Log:0/3 Rejected (Hint: 0)
++  DEBUG 1 received MsgAppResp(MsgApp was rejected, lastindex: 0) from 2 for index 3
++  DEBUG 1 decreased progress of 2 to [StateProbe match=0 next=1]
++  DEBUG 1 [firstindex: 3, commit: 4] sent snapshot[index: 4, term: 1] to 2 [StateProbe match=0 next=1]
++  DEBUG 1 paused sending replication messages to 2 [StateSnapshot match=0 next=1 paused pendingSnap=4]
++> 1 handling Ready
++  Ready MustSync=false:
++  Messages:
++  1->2 MsgSnap Term:1 Log:0/0 Snapshot: Index:4 Term:1 ConfState:Voters:[1 2] VotersOutgoing:[] Learners:[] LearnersNext:[] AutoLeave:false
++> 2 receiving messages
++  1->2 MsgSnap Term:1 Log:0/0 Snapshot: Index:4 Term:1 ConfState:Voters:[1 2] VotersOutgoing:[] Learners:[] LearnersNext:[] AutoLeave:false
++  INFO log [committed=0, applied=0, unstable.offset=1, len(unstable.Entries)=0] starts to restore snapshot [index: 4, term: 1]
++  INFO 2 switched to configuration voters=(1 2)
++  INFO 2 [commit: 4, lastindex: 4, lastterm: 1] restored snapshot [index: 4, term: 1]
++  INFO 2 [commit: 4] restored snapshot [index: 4, term: 1]
++> 2 handling Ready
++  Ready MustSync=false:
++  HardState Term:1 Commit:4
++  Snapshot Index:4 Term:1 ConfState:Voters:[1 2] VotersOutgoing:[] Learners:[] LearnersNext:[] AutoLeave:false
++  Messages:
++  2->1 MsgAppResp Term:1 Log:0/4
++> 1 receiving messages
++  2->1 MsgAppResp Term:1 Log:0/4
++  DEBUG 1 recovered from needing snapshot, resumed sending replication messages to 2 [StateSnapshot match=4 next=5 paused pendingSnap=4]
++> 1 handling Ready
++  Ready MustSync=false:
++  Messages:
++  1->2 MsgApp Term:1 Log:1/4 Commit:4
++> 2 receiving messages
++  1->2 MsgApp Term:1 Log:1/4 Commit:4
++> 2 handling Ready
++  Ready MustSync=false:
++  Messages:
++  2->1 MsgAppResp Term:1 Log:0/4
++> 1 receiving messages
++  2->1 MsgAppResp Term:1 Log:0/4
+diff --git a/testdata/confchange_v2_add_single_explicit.txt b/testdata/confchange_v2_add_single_explicit.txt
+new file mode 100644
+index 0000000..3bb07d8
+--- /dev/null
++++ b/testdata/confchange_v2_add_single_explicit.txt
+@@ -0,0 +1,206 @@
++# Run a V2 membership change that adds a single voter but explicitly asks for the
++# use of joint consensus, including wanting to transition out of the joint config
++# manually.
++
++# Bootstrap n1.
++add-nodes 1 voters=(1) index=2
++----
++INFO 1 switched to configuration voters=(1)
++INFO 1 became follower at term 0
++INFO newRaft 1 [peers: [1], term: 0, commit: 2, applied: 2, lastindex: 2, lastterm: 1]
++
++campaign 1
++----
++INFO 1 is starting a new election at term 0
++INFO 1 became candidate at term 1
++INFO 1 received MsgVoteResp from 1 at term 1
++INFO 1 became leader at term 1
++
++# Add v2 with an explicit transition.
++propose-conf-change 1 transition=explicit
++v2
++----
++ok
++
++# Pull n2 out of thin air.
++add-nodes 1
++----
++INFO 2 switched to configuration voters=()
++INFO 2 became follower at term 0
++INFO newRaft 2 [peers: [], term: 0, commit: 0, applied: 0, lastindex: 0, lastterm: 0]
++
++# n1 commits the conf change using itself as commit quorum, then starts catching up n2.
++# Everyone remains in the joint config. Note that the snapshot below has AutoLeave unset.
++stabilize 1 2
++----
++> 1 handling Ready
++  Ready MustSync=true:
++  Lead:1 State:StateLeader
++  HardState Term:1 Vote:1 Commit:4
++  Entries:
++  1/3 EntryNormal ""
++  1/4 EntryConfChangeV2 v2
++  CommittedEntries:
++  1/3 EntryNormal ""
++  1/4 EntryConfChangeV2 v2
++  INFO 1 switched to configuration voters=(1 2)&&(1)
++> 1 handling Ready
++  Ready MustSync=false:
++  Messages:
++  1->2 MsgApp Term:1 Log:1/3 Commit:4 Entries:[1/4 EntryConfChangeV2 v2]
++> 2 receiving messages
++  1->2 MsgApp Term:1 Log:1/3 Commit:4 Entries:[1/4 EntryConfChangeV2 v2]
++  INFO 2 [term: 0] received a MsgApp message with higher term from 1 [term: 1]
++  INFO 2 became follower at term 1
++  DEBUG 2 [logterm: 0, index: 3] rejected MsgApp [logterm: 1, index: 3] from 1
++> 2 handling Ready
++  Ready MustSync=true:
++  Lead:1 State:StateFollower
++  HardState Term:1 Commit:0
++  Messages:
++  2->1 MsgAppResp Term:1 Log:0/3 Rejected (Hint: 0)
++> 1 receiving messages
++  2->1 MsgAppResp Term:1 Log:0/3 Rejected (Hint: 0)
++  DEBUG 1 received MsgAppResp(MsgApp was rejected, lastindex: 0) from 2 for index 3
++  DEBUG 1 decreased progress of 2 to [StateProbe match=0 next=1]
++  DEBUG 1 [firstindex: 3, commit: 4] sent snapshot[index: 4, term: 1] to 2 [StateProbe match=0 next=1]
++  DEBUG 1 paused sending replication messages to 2 [StateSnapshot match=0 next=1 paused pendingSnap=4]
++> 1 handling Ready
++  Ready MustSync=false:
++  Messages:
++  1->2 MsgSnap Term:1 Log:0/0 Snapshot: Index:4 Term:1 ConfState:Voters:[1 2] VotersOutgoing:[1] Learners:[] LearnersNext:[] AutoLeave:false
++> 2 receiving messages
++  1->2 MsgSnap Term:1 Log:0/0 Snapshot: Index:4 Term:1 ConfState:Voters:[1 2] VotersOutgoing:[1] Learners:[] LearnersNext:[] AutoLeave:false
++  INFO log [committed=0, applied=0, unstable.offset=1, len(unstable.Entries)=0] starts to restore snapshot [index: 4, term: 1]
++  INFO 2 switched to configuration voters=(1 2)&&(1)
++  INFO 2 [commit: 4, lastindex: 4, lastterm: 1] restored snapshot [index: 4, term: 1]
++  INFO 2 [commit: 4] restored snapshot [index: 4, term: 1]
++> 2 handling Ready
++  Ready MustSync=false:
++  HardState Term:1 Commit:4
++  Snapshot Index:4 Term:1 ConfState:Voters:[1 2] VotersOutgoing:[1] Learners:[] LearnersNext:[] AutoLeave:false
++  Messages:
++  2->1 MsgAppResp Term:1 Log:0/4
++> 1 receiving messages
++  2->1 MsgAppResp Term:1 Log:0/4
++  DEBUG 1 recovered from needing snapshot, resumed sending replication messages to 2 [StateSnapshot match=4 next=5 paused pendingSnap=4]
++> 1 handling Ready
++  Ready MustSync=false:
++  Messages:
++  1->2 MsgApp Term:1 Log:1/4 Commit:4
++> 2 receiving messages
++  1->2 MsgApp Term:1 Log:1/4 Commit:4
++> 2 handling Ready
++  Ready MustSync=false:
++  Messages:
++  2->1 MsgAppResp Term:1 Log:0/4
++> 1 receiving messages
++  2->1 MsgAppResp Term:1 Log:0/4
++
++# Check that we're not allowed to change membership again while in the joint state.
++# This leads to an empty entry being proposed instead (index 5 in the stabilize block
++# below).
++propose-conf-change 1
++v3 v4 v5
++----
++INFO 1 ignoring conf change {ConfChangeTransitionAuto [{ConfChangeAddNode 3 []} {ConfChangeAddNode 4 []} {ConfChangeAddNode 5 []}] [] []} at config voters=(1 2)&&(1): must transition out of joint config first
++
++# Propose a transition out of the joint config. We'll see this at index 6 below.
++propose-conf-change 1
++----
++ok
++
++# The group commits the command and everyone switches to the final config.
++stabilize
++----
++> 1 handling Ready
++  Ready MustSync=true:
++  Entries:
++  1/5 EntryNormal ""
++  1/6 EntryConfChangeV2
++  Messages:
++  1->2 MsgApp Term:1 Log:1/4 Commit:4 Entries:[1/5 EntryNormal ""]
++  1->2 MsgApp Term:1 Log:1/5 Commit:4 Entries:[1/6 EntryConfChangeV2]
++> 2 receiving messages
++  1->2 MsgApp Term:1 Log:1/4 Commit:4 Entries:[1/5 EntryNormal ""]
++  1->2 MsgApp Term:1 Log:1/5 Commit:4 Entries:[1/6 EntryConfChangeV2]
++> 2 handling Ready
++  Ready MustSync=true:
++  Entries:
++  1/5 EntryNormal ""
++  1/6 EntryConfChangeV2
++  Messages:
++  2->1 MsgAppResp Term:1 Log:0/5
++  2->1 MsgAppResp Term:1 Log:0/6
++> 1 receiving messages
++  2->1 MsgAppResp Term:1 Log:0/5
++  2->1 MsgAppResp Term:1 Log:0/6
++> 1 handling Ready
++  Ready MustSync=false:
++  HardState Term:1 Vote:1 Commit:6
++  CommittedEntries:
++  1/5 EntryNormal ""
++  1/6 EntryConfChangeV2
++  Messages:
++  1->2 MsgApp Term:1 Log:1/6 Commit:5
++  1->2 MsgApp Term:1 Log:1/6 Commit:6
++  INFO 1 switched to configuration voters=(1 2)
++> 2 receiving messages
++  1->2 MsgApp Term:1 Log:1/6 Commit:5
++  1->2 MsgApp Term:1 Log:1/6 Commit:6
++> 2 handling Ready
++  Ready MustSync=false:
++  HardState Term:1 Commit:6
++  CommittedEntries:
++  1/5 EntryNormal ""
++  1/6 EntryConfChangeV2
++  Messages:
++  2->1 MsgAppResp Term:1 Log:0/6
++  2->1 MsgAppResp Term:1 Log:0/6
++  INFO 2 switched to configuration voters=(1 2)
++> 1 receiving messages
++  2->1 MsgAppResp Term:1 Log:0/6
++  2->1 MsgAppResp Term:1 Log:0/6
++
++# Check that trying to transition out again won't do anything.
++propose-conf-change 1
++----
++INFO 1 ignoring conf change {ConfChangeTransitionAuto [] [] []} at config voters=(1 2): not in joint state; refusing empty conf change
++
++# Finishes work for the empty entry we just proposed.
++stabilize
++----
++> 1 handling Ready
++  Ready MustSync=true:
++  Entries:
++  1/7 EntryNormal ""
++  Messages:
++  1->2 MsgApp Term:1 Log:1/6 Commit:6 Entries:[1/7 EntryNormal ""]
++> 2 receiving messages
++  1->2 MsgApp Term:1 Log:1/6 Commit:6 Entries:[1/7 EntryNormal ""]
++> 2 handling Ready
++  Ready MustSync=true:
++  Entries:
++  1/7 EntryNormal ""
++  Messages:
++  2->1 MsgAppResp Term:1 Log:0/7
++> 1 receiving messages
++  2->1 MsgAppResp Term:1 Log:0/7
++> 1 handling Ready
++  Ready MustSync=false:
++  HardState Term:1 Vote:1 Commit:7
++  CommittedEntries:
++  1/7 EntryNormal ""
++  Messages:
++  1->2 MsgApp Term:1 Log:1/7 Commit:7
++> 2 receiving messages
++  1->2 MsgApp Term:1 Log:1/7 Commit:7
++> 2 handling Ready
++  Ready MustSync=false:
++  HardState Term:1 Commit:7
++  CommittedEntries:
++  1/7 EntryNormal ""
++  Messages:
++  2->1 MsgAppResp Term:1 Log:0/7
++> 1 receiving messages
++  2->1 MsgAppResp Term:1 Log:0/7
+diff --git a/testdata/snapshot_succeed_via_app_resp.txt b/testdata/snapshot_succeed_via_app_resp.txt
+new file mode 100644
+index 0000000..96ded53
+--- /dev/null
++++ b/testdata/snapshot_succeed_via_app_resp.txt
+@@ -0,0 +1,156 @@
++# TestSnapshotSucceedViaAppResp regression tests the situation in which a snap-
++# shot is sent to a follower at the most recent index (i.e. the snapshot index
++# is the leader's last index is the committed index). In that situation, a bug
++# in the past left the follower in probing status until the next log entry was
++# committed.
++#
++# See https://github.com/etcd-io/etcd/pull/10308 for additional background.
++
++# Turn off output during the setup of the test.
++log-level none
++----
++ok
++
++# Start with two nodes, but the config already has a third.
++add-nodes 2 voters=(1,2,3) index=10
++----
++ok
++
++campaign 1
++----
++ok
++
++# Fully replicate everything, including the leader's empty index.
++stabilize
++----
++ok (quiet)
++
++compact 1 11
++----
++ok (quiet)
++
++# Drop inflight messages to n3.
++deliver-msgs drop=(3)
++----
++ok (quiet)
++
++# Show the Raft log messages from now on.
++log-level debug
++----
++ok
++
++status 1
++----
++1: StateReplicate match=11 next=12 inactive
++2: StateReplicate match=11 next=12
++3: StateProbe match=0 next=11 paused inactive
++
++# Add the node that will receive a snapshot (it has no state at all, does not
++# even have a config).
++add-nodes 1
++----
++INFO 3 switched to configuration voters=()
++INFO 3 became follower at term 0
++INFO newRaft 3 [peers: [], term: 0, commit: 0, applied: 0, lastindex: 0, lastterm: 0]
++
++# Time passes on the leader so that it will try the previously missing follower
++# again.
++tick-heartbeat 1
++----
++ok
++
++process-ready 1
++----
++Ready MustSync=false:
++Messages:
++1->2 MsgHeartbeat Term:1 Log:0/0 Commit:11
++1->3 MsgHeartbeat Term:1 Log:0/0
++
++# Iterate until no more work is done by the new peer. It receives the heartbeat
++# and responds.
++stabilize 3
++----
++> 3 receiving messages
++  1->3 MsgHeartbeat Term:1 Log:0/0
++  INFO 3 [term: 0] received a MsgHeartbeat message with higher term from 1 [term: 1]
++  INFO 3 became follower at term 1
++> 3 handling Ready
++  Ready MustSync=true:
++  Lead:1 State:StateFollower
++  HardState Term:1 Commit:0
++  Messages:
++  3->1 MsgHeartbeatResp Term:1 Log:0/0
++
++# The leader in turn will realize that n3 needs a snapshot, which it initiates.
++stabilize 1
++----
++> 1 receiving messages
++  3->1 MsgHeartbeatResp Term:1 Log:0/0
++  DEBUG 1 [firstindex: 12, commit: 11] sent snapshot[index: 11, term: 1] to 3 [StateProbe match=0 next=11]
++  DEBUG 1 paused sending replication messages to 3 [StateSnapshot match=0 next=11 paused pendingSnap=11]
++> 1 handling Ready
++  Ready MustSync=false:
++  Messages:
++  1->3 MsgSnap Term:1 Log:0/0 Snapshot: Index:11 Term:1 ConfState:Voters:[1 2 3] VotersOutgoing:[] Learners:[] LearnersNext:[] AutoLeave:false
++
++status 1
++----
++1: StateReplicate match=11 next=12 inactive
++2: StateReplicate match=11 next=12
++3: StateSnapshot match=0 next=11 paused pendingSnap=11
++
++# Follower applies the snapshot. Note how it reacts with a MsgAppResp upon completion.
++# The snapshot fully catches the follower up (i.e. there are no more log entries it
++# needs to apply after). The bug was that the leader failed to realize that the follower
++# was now fully caught up.
++stabilize 3
++----
++> 3 receiving messages
++  1->3 MsgSnap Term:1 Log:0/0 Snapshot: Index:11 Term:1 ConfState:Voters:[1 2 3] VotersOutgoing:[] Learners:[] LearnersNext:[] AutoLeave:false
++  INFO log [committed=0, applied=0, unstable.offset=1, len(unstable.Entries)=0] starts to restore snapshot [index: 11, term: 1]
++  INFO 3 switched to configuration voters=(1 2 3)
++  INFO 3 [commit: 11, lastindex: 11, lastterm: 1] restored snapshot [index: 11, term: 1]
++  INFO 3 [commit: 11] restored snapshot [index: 11, term: 1]
++> 3 handling Ready
++  Ready MustSync=false:
++  HardState Term:1 Commit:11
++  Snapshot Index:11 Term:1 ConfState:Voters:[1 2 3] VotersOutgoing:[] Learners:[] LearnersNext:[] AutoLeave:false
++  Messages:
++  3->1 MsgAppResp Term:1 Log:0/11
++
++# The MsgAppResp lets the leader move the follower back to replicating state.
++# Leader sends another MsgAppResp, to communicate the updated commit index.
++stabilize 1
++----
++> 1 receiving messages
++  3->1 MsgAppResp Term:1 Log:0/11
++  DEBUG 1 recovered from needing snapshot, resumed sending replication messages to 3 [StateSnapshot match=11 next=12 paused pendingSnap=11]
++> 1 handling Ready
++  Ready MustSync=false:
++  Messages:
++  1->3 MsgApp Term:1 Log:1/11 Commit:11
++
++status 1
++----
++1: StateReplicate match=11 next=12 inactive
++2: StateReplicate match=11 next=12
++3: StateReplicate match=11 next=12
++
++# Let things settle.
++stabilize
++----
++> 2 receiving messages
++  1->2 MsgHeartbeat Term:1 Log:0/0 Commit:11
++> 3 receiving messages
++  1->3 MsgApp Term:1 Log:1/11 Commit:11
++> 2 handling Ready
++  Ready MustSync=false:
++  Messages:
++  2->1 MsgHeartbeatResp Term:1 Log:0/0
++> 3 handling Ready
++  Ready MustSync=false:
++  Messages:
++  3->1 MsgAppResp Term:1 Log:0/11
++> 1 receiving messages
++  2->1 MsgHeartbeatResp Term:1 Log:0/0
++  3->1 MsgAppResp Term:1 Log:0/11
+diff --git a/tracker/progress.go b/tracker/progress.go
+index 697277b..62c81f4 100644
+--- a/tracker/progress.go
++++ b/tracker/progress.go
+@@ -52,6 +52,8 @@ type Progress struct {
+ 	// RecentActive is true if the progress is recently active. Receiving any messages
+ 	// from the corresponding follower indicates the progress is active.
+ 	// RecentActive can be reset to false after an election timeout.
++	//
++	// TODO(tbg): the leader should always have this set to true.
+ 	RecentActive bool
+ 
+ 	// ProbeSent is used while this follower is in StateProbe. When ProbeSent is
+diff --git a/util.go b/util.go
+index 8394f64..785cf73 100644
+--- a/util.go
++++ b/util.go
+@@ -17,6 +17,7 @@ package raft
+ import (
+ 	"bytes"
+ 	"fmt"
++	"strings"
+ 
+ 	pb "go.etcd.io/etcd/raft/raftpb"
+ )
+@@ -60,6 +61,69 @@ func voteRespMsgType(msgt pb.MessageType) pb.MessageType {
+ 	}
+ }
+ 
++func DescribeHardState(hs pb.HardState) string {
++	var buf strings.Builder
++	fmt.Fprintf(&buf, "Term:%d", hs.Term)
++	if hs.Vote != 0 {
++		fmt.Fprintf(&buf, " Vote:%d", hs.Vote)
++	}
++	fmt.Fprintf(&buf, " Commit:%d", hs.Commit)
++	return buf.String()
++}
++
++func DescribeSoftState(ss SoftState) string {
++	return fmt.Sprintf("Lead:%d State:%s", ss.Lead, ss.RaftState)
++}
++
++func DescribeConfState(state pb.ConfState) string {
++	return fmt.Sprintf(
++		"Voters:%v VotersOutgoing:%v Learners:%v LearnersNext:%v AutoLeave:%v",
++		state.Voters, state.VotersOutgoing, state.Learners, state.LearnersNext, state.AutoLeave,
++	)
++}
++
++func DescribeSnapshot(snap pb.Snapshot) string {
++	m := snap.Metadata
++	return fmt.Sprintf("Index:%d Term:%d ConfState:%s", m.Index, m.Term, DescribeConfState(m.ConfState))
++}
++
++func DescribeReady(rd Ready, f EntryFormatter) string {
++	var buf strings.Builder
++	if rd.SoftState != nil {
++		fmt.Fprint(&buf, DescribeSoftState(*rd.SoftState))
++		buf.WriteByte('\n')
++	}
++	if !IsEmptyHardState(rd.HardState) {
++		fmt.Fprintf(&buf, "HardState %s", DescribeHardState(rd.HardState))
++		buf.WriteByte('\n')
++	}
++	if len(rd.ReadStates) > 0 {
++		fmt.Fprintf(&buf, "ReadStates %v\n", rd.ReadStates)
++	}
++	if len(rd.Entries) > 0 {
++		buf.WriteString("Entries:\n")
++		fmt.Fprint(&buf, DescribeEntries(rd.Entries, f))
++	}
++	if !IsEmptySnap(rd.Snapshot) {
++		fmt.Fprintf(&buf, "Snapshot %s\n", DescribeSnapshot(rd.Snapshot))
++	}
++	if len(rd.CommittedEntries) > 0 {
++		buf.WriteString("CommittedEntries:\n")
++		fmt.Fprint(&buf, DescribeEntries(rd.CommittedEntries, f))
++	}
++	if len(rd.Messages) > 0 {
++		buf.WriteString("Messages:\n")
++		for _, msg := range rd.Messages {
++			fmt.Fprint(&buf, DescribeMessage(msg, f))
++			buf.WriteByte('\n')
++		}
++	}
++	if buf.Len() > 0 {
++		return fmt.Sprintf("Ready MustSync=%t:\n%s", rd.MustSync, buf.String())
++	}
++	return "<empty Ready>"
++}
++
+ // EntryFormatter can be implemented by the application to provide human-readable formatting
+ // of entry data. Nil is a valid EntryFormatter and will use a default format.
+ type EntryFormatter func([]byte) string
+@@ -86,7 +150,7 @@ func DescribeMessage(m pb.Message, f EntryFormatter) string {
+ 		fmt.Fprintf(&buf, "]")
+ 	}
+ 	if !IsEmptySnap(m.Snapshot) {
+-		fmt.Fprintf(&buf, " Snapshot:%v", m.Snapshot)
++		fmt.Fprintf(&buf, " Snapshot: %s", DescribeSnapshot(m.Snapshot))
+ 	}
+ 	return buf.String()
+ }
+@@ -100,13 +164,39 @@ func PayloadSize(e pb.Entry) int {
+ // DescribeEntry returns a concise human-readable description of an
+ // Entry for debugging.
+ func DescribeEntry(e pb.Entry, f EntryFormatter) string {
++	if f == nil {
++		f = func(data []byte) string { return fmt.Sprintf("%q", data) }
++	}
++
++	formatConfChange := func(cc pb.ConfChangeI) string {
++		// TODO(tbg): give the EntryFormatter a type argument so that it gets
++		// a chance to expose the Context.
++		return pb.ConfChangesToString(cc.AsV2().Changes)
++	}
++
+ 	var formatted string
+-	if e.Type == pb.EntryNormal && f != nil {
++	switch e.Type {
++	case pb.EntryNormal:
+ 		formatted = f(e.Data)
+-	} else {
+-		formatted = fmt.Sprintf("%q", e.Data)
++	case pb.EntryConfChange:
++		var cc pb.ConfChange
++		if err := cc.Unmarshal(e.Data); err != nil {
++			formatted = err.Error()
++		} else {
++			formatted = formatConfChange(cc)
++		}
++	case pb.EntryConfChangeV2:
++		var cc pb.ConfChangeV2
++		if err := cc.Unmarshal(e.Data); err != nil {
++			formatted = err.Error()
++		} else {
++			formatted = formatConfChange(cc)
++		}
++	}
++	if formatted != "" {
++		formatted = " " + formatted
+ 	}
+-	return fmt.Sprintf("%d/%d %s %s", e.Term, e.Index, e.Type, formatted)
++	return fmt.Sprintf("%d/%d %s%s", e.Term, e.Index, e.Type, formatted)
+ }
+ 
+ // DescribeEntries calls DescribeEntry for each Entry, adding a newline to

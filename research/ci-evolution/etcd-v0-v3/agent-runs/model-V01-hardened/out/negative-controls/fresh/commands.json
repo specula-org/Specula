@@ -1,0 +1,23 @@
+[
+  {
+    "command": [
+      "/usr/bin/java",
+      "-XX:+UseParallelGC",
+      "-Xmx2G",
+      "-Djava.io.tmpdir=/workspace/out/tmp",
+      "-cp",
+      "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+      "tlc2.TLC",
+      "-workers",
+      "1",
+      "-metadir",
+      "/workspace/out/negative-controls/fresh/raw/states",
+      "-config",
+      "LocalActions.cfg",
+      "LocalActions"
+    ],
+    "cwd": "/workspace/out/negative-controls/fresh/raw",
+    "duration_seconds": 1.016173455864191,
+    "exit_code": 0
+  }
+]

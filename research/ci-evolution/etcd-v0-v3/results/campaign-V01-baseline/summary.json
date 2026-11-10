@@ -1,0 +1,278 @@
+{
+  "version": "V01",
+  "label": "baseline",
+  "directions": {
+    "code-driven": {
+      "cases": 24,
+      "mismatches": [
+        {
+          "input": {
+            "kind": "V2",
+            "applied": 3,
+            "pre_vote": false,
+            "learner": false
+          },
+          "code": {
+            "applied": 3,
+            "commit": 4,
+            "last": 4,
+            "lead": 0,
+            "messages": [
+              {
+                "from": 1,
+                "index": 4,
+                "logTerm": 1,
+                "term": 2,
+                "to": 2,
+                "type": "MsgVote"
+              },
+              {
+                "from": 1,
+                "index": 4,
+                "logTerm": 1,
+                "term": 2,
+                "to": 3,
+                "type": "MsgVote"
+              }
+            ],
+            "role": "Candidate",
+            "term": 2,
+            "vote": 1
+          },
+          "model": {
+            "role": "Follower",
+            "term": 1,
+            "vote": 0,
+            "lead": 0,
+            "applied": 3,
+            "commit": 4,
+            "last": 4,
+            "messages": []
+          }
+        },
+        {
+          "input": {
+            "kind": "V2",
+            "applied": 3,
+            "pre_vote": true,
+            "learner": false
+          },
+          "code": {
+            "applied": 3,
+            "commit": 4,
+            "last": 4,
+            "lead": 0,
+            "messages": [
+              {
+                "from": 1,
+                "index": 4,
+                "logTerm": 1,
+                "term": 2,
+                "to": 2,
+                "type": "MsgPreVote"
+              },
+              {
+                "from": 1,
+                "index": 4,
+                "logTerm": 1,
+                "term": 2,
+                "to": 3,
+                "type": "MsgPreVote"
+              }
+            ],
+            "role": "PreCandidate",
+            "term": 1,
+            "vote": 0
+          },
+          "model": {
+            "role": "Follower",
+            "term": 1,
+            "vote": 0,
+            "lead": 0,
+            "applied": 3,
+            "commit": 4,
+            "last": 4,
+            "messages": []
+          }
+        }
+      ]
+    },
+    "model-driven": {
+      "cases": 24,
+      "mismatches": [
+        {
+          "input": {
+            "kind": "V2",
+            "applied": 3,
+            "pre_vote": false,
+            "learner": false
+          },
+          "code": {
+            "applied": 3,
+            "commit": 4,
+            "last": 4,
+            "lead": 0,
+            "messages": [
+              {
+                "from": 1,
+                "index": 4,
+                "logTerm": 1,
+                "term": 2,
+                "to": 2,
+                "type": "MsgVote"
+              },
+              {
+                "from": 1,
+                "index": 4,
+                "logTerm": 1,
+                "term": 2,
+                "to": 3,
+                "type": "MsgVote"
+              }
+            ],
+            "role": "Candidate",
+            "term": 2,
+            "vote": 1
+          },
+          "model": {
+            "role": "Follower",
+            "term": 1,
+            "vote": 0,
+            "lead": 0,
+            "applied": 3,
+            "commit": 4,
+            "last": 4,
+            "messages": []
+          }
+        },
+        {
+          "input": {
+            "kind": "V2",
+            "applied": 3,
+            "pre_vote": true,
+            "learner": false
+          },
+          "code": {
+            "applied": 3,
+            "commit": 4,
+            "last": 4,
+            "lead": 0,
+            "messages": [
+              {
+                "from": 1,
+                "index": 4,
+                "logTerm": 1,
+                "term": 2,
+                "to": 3,
+                "type": "MsgPreVote"
+              },
+              {
+                "from": 1,
+                "index": 4,
+                "logTerm": 1,
+                "term": 2,
+                "to": 2,
+                "type": "MsgPreVote"
+              }
+            ],
+            "role": "PreCandidate",
+            "term": 1,
+            "vote": 0
+          },
+          "model": {
+            "role": "Follower",
+            "term": 1,
+            "vote": 0,
+            "lead": 0,
+            "applied": 3,
+            "commit": 4,
+            "last": 4,
+            "messages": []
+          }
+        }
+      ]
+    }
+  },
+  "scope": "local StepHup projection only",
+  "input_hashes": {
+    "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/work/V01/source/raft.go": "96925161d0ac337097e6443031be166eb251a3a1929da3eb80b0f2fe0ea10e18",
+    "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/work/V01/spec/base.tla": "64eeb61c48a53696d2df245bc13eec2543f15ee9ec29e91e93037c421f42b2f7",
+    "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/framework/run_campaign.py": "332b5808cdfbab7544cb7da9883575720b777d32a94a4af7bfb7187e2dd0e872",
+    "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/work/V01/source/action_validation_campaign_test.go": "0795f0d2330af0f6b66aa121a09657a02da07c3665ccc6be06b1c016f851f1ea",
+    "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/work/V01/spec/ActionCampaign.tla": "ba12aaa5ddbf6e9f15c24e516f4cd07e5d305b7d66136b43904470c5f2697b9f"
+  },
+  "receipts": [
+    {
+      "command": [
+        "java",
+        "-Xmx1G",
+        "-cp",
+        "/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/dist/tla2tools.jar:/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/lib/CommunityModules.jar",
+        "tlc2.TLC",
+        "-workers",
+        "1",
+        "-metadir",
+        "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/results/campaign-V01-baseline/code-driven-states",
+        "-config",
+        "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/results/campaign-V01-baseline/code-driven.cfg",
+        "ActionCampaign.tla"
+      ],
+      "cwd": "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/work/V01/spec",
+      "exit_code": 0,
+      "seconds": 1.3177087800577283,
+      "log": "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/results/campaign-V01-baseline/code-driven-model.log"
+    },
+    {
+      "command": [
+        "/usr/local/go/bin/go",
+        "test",
+        "-count=1",
+        "-run",
+        "^TestActionValidationCampaign$",
+        "-timeout",
+        "120s",
+        "."
+      ],
+      "cwd": "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/work/V01/source",
+      "exit_code": 0,
+      "seconds": 10.838965388014913,
+      "log": "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/results/campaign-V01-baseline/code-driven-code.log"
+    },
+    {
+      "command": [
+        "java",
+        "-Xmx1G",
+        "-cp",
+        "/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/dist/tla2tools.jar:/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/lib/CommunityModules.jar",
+        "tlc2.TLC",
+        "-workers",
+        "1",
+        "-metadir",
+        "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/results/campaign-V01-baseline/model-driven-states",
+        "-config",
+        "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/results/campaign-V01-baseline/model-driven.cfg",
+        "ActionCampaign.tla"
+      ],
+      "cwd": "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/work/V01/spec",
+      "exit_code": 0,
+      "seconds": 1.0165122654289007,
+      "log": "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/results/campaign-V01-baseline/model-driven-model.log"
+    },
+    {
+      "command": [
+        "/usr/local/go/bin/go",
+        "test",
+        "-count=1",
+        "-run",
+        "^TestActionValidationCampaign$",
+        "-timeout",
+        "120s",
+        "."
+      ],
+      "cwd": "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/work/V01/source",
+      "exit_code": 0,
+      "seconds": 0.3145921714603901,
+      "log": "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/results/campaign-V01-baseline/model-driven-code.log"
+    }
+  ]
+}

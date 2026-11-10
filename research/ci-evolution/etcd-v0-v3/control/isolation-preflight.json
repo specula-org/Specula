@@ -1,0 +1,5 @@
+{
+  "exit_code": 1,
+  "stdout": "",
+  "stderr": "bwrap: Can't mkdir parents for /opt/agent-bin/codex: Read-only file system\n"
+}

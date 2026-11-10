@@ -1,0 +1,40 @@
+[
+  {
+    "label": "baseline-code",
+    "exit_code": 0,
+    "seconds": 12.644176119938493,
+    "counts": {
+      "match": 97,
+      "behavioral_mismatch": 8
+    },
+    "total": 105
+  },
+  {
+    "label": "baseline-model",
+    "exit_code": 0,
+    "seconds": 2.6204799162223935,
+    "counts": {
+      "match": 33,
+      "behavioral_mismatch": 10
+    },
+    "total": 43
+  },
+  {
+    "label": "repaired-code",
+    "exit_code": 0,
+    "seconds": 3.0716088386252522,
+    "counts": {
+      "match": 105
+    },
+    "total": 105
+  },
+  {
+    "label": "repaired-model",
+    "exit_code": 0,
+    "seconds": 2.6697011310607195,
+    "counts": {
+      "match": 43
+    },
+    "total": 43
+  }
+]

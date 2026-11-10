@@ -1,0 +1,123 @@
+{
+  "generic-tests": {
+    "log": "out/adaptation/runner-tests.log",
+    "exit_code": 0,
+    "manifest_command": {
+      "name": "generic-tests",
+      "command": [
+        "python3",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "out/framework",
+        "-p",
+        "test_runner.py",
+        "-v"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 20,
+      "expected_exit": 0
+    }
+  },
+  "valid-input-audit": {
+    "log": "out/adaptation/valid-input-audit.json",
+    "exit_code": 0,
+    "manifest_command": {
+      "name": "valid-input-audit",
+      "command": [
+        "python3",
+        "out/framework/targets/etcd/audit_inputs.py",
+        "out/cases/code-inputs.json",
+        "{output_root}/baseline-model/generated-cases.json"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 20,
+      "expected_exit": 0
+    }
+  },
+  "invalid-input-audit": {
+    "log": "out/adaptation/invalid-input-audit.json",
+    "exit_code": 1,
+    "manifest_command": {
+      "name": "invalid-input-audit",
+      "command": [
+        "python3",
+        "out/framework/targets/etcd/audit_inputs.py",
+        "out/cases/invalid-inputs.json"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 20,
+      "expected_exit": 1
+    }
+  },
+  "source-tests": {
+    "log": "out/adaptation/source-tests.log",
+    "exit_code": 0,
+    "tool_wall_seconds": 0.624943323,
+    "manifest_command": {
+      "name": "source-tests",
+      "command": [
+        "timeout",
+        "90s",
+        "/usr/local/go/bin/go",
+        "test",
+        "-run",
+        "Test(RawNodeConsumeReady|Learner.*|Restore.*|Node.*)$",
+        "-count=1",
+        ".",
+        "./confchange",
+        "./quorum",
+        "./tracker",
+        "./raftpb"
+      ],
+      "cwd": "new/source",
+      "env": {
+        "GOMAXPROCS": "2",
+        "GOCACHE": "{root}/out/go-cache",
+        "GOTMPDIR": "{root}/out/tmp",
+        "TMPDIR": "{root}/out/tmp",
+        "GOPROXY": "off",
+        "GOSUMDB": "off",
+        "GOFLAGS": "-mod=readonly",
+        "GOTOOLCHAIN": "local",
+        "CGO_ENABLED": "0"
+      },
+      "timeout_seconds": 95,
+      "expected_exit": 0
+    }
+  },
+  "source-package-tests": {
+    "log": "out/adaptation/source-package-tests.log",
+    "exit_code": 0,
+    "tool_wall_seconds": 0.312168371,
+    "manifest_command": {
+      "name": "source-package-tests",
+      "command": [
+        "timeout",
+        "90s",
+        "/usr/local/go/bin/go",
+        "test",
+        "-count=1",
+        "./confchange",
+        "./quorum",
+        "./tracker",
+        "./raftpb"
+      ],
+      "cwd": "new/source",
+      "env": {
+        "GOMAXPROCS": "2",
+        "GOCACHE": "{root}/out/go-cache",
+        "GOTMPDIR": "{root}/out/tmp",
+        "TMPDIR": "{root}/out/tmp",
+        "GOPROXY": "off",
+        "GOSUMDB": "off",
+        "GOFLAGS": "-mod=readonly",
+        "GOTOOLCHAIN": "local",
+        "CGO_ENABLED": "0"
+      },
+      "timeout_seconds": 95,
+      "expected_exit": 0
+    }
+  }
+}

@@ -1,0 +1,161 @@
+{
+  "scope": "Three developmental version transitions; no reliability/completeness proof. First judgment scoring is separate from candidate verification.",
+  "transitions": {
+    "V01": {
+      "status": "first_decision_frozen",
+      "assessment": "All four preregistered core rubric rows addressed; concrete predicate validity still requires execution. No observed omission yet requiring independent rewrite.",
+      "core_obligations": [
+        {
+          "id": "advance_append",
+          "expected": "modify",
+          "decision": "modify",
+          "properties": [
+            "AckPreservation",
+            "AutoLeaveSerialization",
+            "AutoLeaveProgress"
+          ],
+          "score": "detected",
+          "note": "Precisely requires retained prefix and one eligible leave entry, rejects arbitrary append or repeated outstanding leave."
+        },
+        {
+          "id": "joint_quorum",
+          "expected": "adapt",
+          "decision": "modify",
+          "properties": [
+            "QuorumAccounting",
+            "ConfigurationTransitionSafety"
+          ],
+          "score": "detected",
+          "note": "Both majorities; internal id=0 leave is not constructor bootstrap exemption."
+        },
+        {
+          "id": "campaign_v2",
+          "expected": "preserve intent and adapt coverage",
+          "decision": "modify observer/representation",
+          "properties": [
+            "CampaignDecisionEligibility"
+          ],
+          "score": "detected",
+          "note": "Explicitly refuses copying implementation legacy-only scan into correctness requirement."
+        },
+        {
+          "id": "unchanged_safety",
+          "expected": "keep",
+          "decision": "keep",
+          "properties": [
+            "ElectionSafety",
+            "LogMatching",
+            "LeaderCompleteness",
+            "CommittedHistory",
+            "AppliedAgreement",
+            "VoteRecovery"
+          ],
+          "score": "correct_retention",
+          "note": "Implementation changes do not weaken safety."
+        }
+      ],
+      "broad_output": {
+        "old_properties": 35,
+        "keep": 21,
+        "modify": 14,
+        "remove": 0,
+        "additions": 15,
+        "unresolved": 1
+      },
+      "unvalidated_extensions": "Additional obligations outside the existing observation/model scope are proposals, not scored successes or accepted edits."
+    },
+    "V02": {
+      "status": "first_decision_frozen",
+      "assessment": "All four preassessment core rows addressed. No observed core omission requiring blind rewrite; formula/witness correctness separately tested.",
+      "core_obligations": [
+        {
+          "id": "learner_vote_campaign",
+          "expected": "change vote rule, retain no learner campaign",
+          "decision": "modify VoteDecisionEligibility and LearnerEligibility grant conjunct",
+          "score": "detected"
+        },
+        {
+          "id": "ready_ownership",
+          "expected": "change RawNode ownership timing",
+          "decision": "modify ReadyOwnership",
+          "score": "detected"
+        },
+        {
+          "id": "post_ready_output",
+          "expected": "add preservation or establish prior coverage",
+          "decision": "add AdvancePreservesPendingOutput; explicitly explains old AckPreservation insufficient",
+          "score": "detected"
+        },
+        {
+          "id": "joint_recovery",
+          "expected": "keep intended full recovery requirement",
+          "decision": "keep JointSnapshotRecovery, ConfigurationOrigin and related properties",
+          "score": "correct_retention"
+        }
+      ],
+      "additional_candidate_checks": [
+        "Joint self quorum false positive in old CampaignContract",
+        "Lost-read observer uses application rather than actual post-state",
+        "Positive cursor and actual quota-return evidence for auto leave"
+      ],
+      "unchanged_controls": [
+        "ElectionSafety",
+        "LogMatching",
+        "LeaderCompleteness",
+        "CommittedHistory",
+        "AppliedAgreement",
+        "VoteRecovery",
+        "QuorumAccounting"
+      ],
+      "limitation": "Broad source-level representation and concurrency proposals outside the existing formal state are not automatically adopted or scored as validated successes."
+    },
+    "V03": {
+      "status": "first_decision_frozen",
+      "assessment": "All four core areas noticed. Three have concrete edit proposals; auto-leave effect has a candidate but broader progress remains unresolved rather than supplied as a new predicate. This is an explicit abstention/insufficient candidate, not an observed confident no-change error. Try independent update-local generation to resolve this gap.",
+      "core_obligations": [
+        {
+          "id": "autoleave_effect_and_progress",
+          "expected": "revise per-Advance effect without erasing automatic progress obligation",
+          "decision": "modify AutoLeaveAdvance to crossing predicate; U4/U9 flag progress but no concrete progress candidate",
+          "score": "partial_unresolved",
+          "note": "Recognizes early-Advance lost-trigger case. Does not provide leadership-change progress property; do not claim it denied the issue or already covered it."
+        },
+        {
+          "id": "proposal_phase",
+          "expected": "adapt phase-sensitive admission/content contract",
+          "decision": "modify ProposalConfigurationDecisions with independent actual LeaveJoint classification",
+          "score": "detected"
+        },
+        {
+          "id": "zero_payload_quota",
+          "expected": "change zero-payload admission, keep positive-payload quota",
+          "decision": "modify OutcomeSoundness and auto-leave assertions",
+          "score": "detected"
+        },
+        {
+          "id": "transfer_demotion",
+          "expected": "add callback side-effect coverage or show existing equivalent",
+          "decision": "add TransferCancellationOnConfigurationChange, keep request-time TransferDecisionEligibility",
+          "score": "detected"
+        }
+      ],
+      "unchanged_controls": [
+        "ElectionSafety",
+        "LogMatching",
+        "LeaderCompleteness",
+        "CommittedHistory",
+        "AppliedAgreement",
+        "VoteRecovery",
+        "LearnerEligibility",
+        "QuorumAccounting",
+        "JointSnapshotRecovery"
+      ],
+      "additional_repairs": [
+        "Campaign self-quorum",
+        "actual snapshot dispatch vs stale term",
+        "internal automatic leave is not bootstrap"
+      ]
+    }
+  },
+  "updated_at": "2026-09-22T20:04:30.642250+00:00"
+}

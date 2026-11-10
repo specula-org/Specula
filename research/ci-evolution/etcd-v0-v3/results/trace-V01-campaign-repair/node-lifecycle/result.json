@@ -1,0 +1,38 @@
+{
+  "trace": "/home/ubuntu/specula-etcd-ci-init-20260912.FNeLj3NS/ci-clean/runs/20260913-175006-a818/etcd-raft/.specula-output/traces/node-lifecycle.ndjson",
+  "trace_sha256": "356ed771056dcaa71e0600d8d5dff344121a0947e21f24b112be2440eaa120a8",
+  "events": 101,
+  "fresh_code_execution": false,
+  "mode": "historical trace regression with existing correspondence cfg; ConfigurationOrigin excluded as in baseline",
+  "exit_code": 0,
+  "seconds": 4.590141551569104,
+  "counts": [
+    217,
+    101,
+    0
+  ],
+  "success": true,
+  "command": [
+    "timeout",
+    "300s",
+    "java",
+    "-XX:+UseParallelGC",
+    "-Xmx3G",
+    "-cp",
+    "/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/dist/tla2tools.jar:/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/lib/CommunityModules.jar",
+    "tlc2.TLC",
+    "-workers",
+    "1",
+    "-metadir",
+    "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/results/trace-V01-campaign-repair/node-lifecycle/states",
+    "-config",
+    "TraceCorrespondence.cfg",
+    "Trace.tla"
+  ],
+  "inputs": {
+    "TraceCorrespondence.cfg": "4e899facc61437e1abf5a2d6c3654dc428f20f298c818e4e9ffcc584e0d6ec21",
+    "base.tla": "0864a78d767cd3d0d43c6f897a1135472032822967e44a2043fc4fa44cbc6262",
+    "Trace.tla": "d788d6d0f49f68dca05628a46e2111b197f42bed8b4556595e2dcd7335984242"
+  },
+  "errors": []
+}

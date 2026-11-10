@@ -1,0 +1,249 @@
+{
+  "states": 193,
+  "edges": 192,
+  "loops": [],
+  "events": [
+    {
+      "state": 14,
+      "event": {
+        "action": "Advance",
+        "node": 0
+      },
+      "changes": [
+        {
+          "node": 1,
+          "fields": [
+            "applied"
+          ]
+        }
+      ]
+    },
+    {
+      "state": 27,
+      "event": {
+        "action": "Advance",
+        "node": 0
+      },
+      "changes": [
+        {
+          "node": 2,
+          "fields": [
+            "applied"
+          ]
+        }
+      ]
+    },
+    {
+      "state": 40,
+      "event": {
+        "action": "Advance",
+        "node": 0
+      },
+      "changes": [
+        {
+          "node": 3,
+          "fields": [
+            "applied"
+          ]
+        }
+      ]
+    },
+    {
+      "state": 41,
+      "event": {
+        "action": "Campaign",
+        "node": 0
+      },
+      "changes": [
+        {
+          "node": 1,
+          "fields": [
+            "role",
+            "term"
+          ]
+        }
+      ]
+    },
+    {
+      "state": 52,
+      "event": {
+        "action": "Receive",
+        "node": 0
+      },
+      "changes": [
+        {
+          "node": 2,
+          "fields": [
+            "term"
+          ]
+        }
+      ]
+    },
+    {
+      "state": 62,
+      "event": {
+        "action": "Receive",
+        "node": 0
+      },
+      "changes": [
+        {
+          "node": 3,
+          "fields": [
+            "term"
+          ]
+        }
+      ]
+    },
+    {
+      "state": 72,
+      "event": {
+        "action": "Receive",
+        "node": 0
+      },
+      "changes": [
+        {
+          "node": 1,
+          "fields": [
+            "role",
+            "pendingConf"
+          ]
+        }
+      ]
+    },
+    {
+      "state": 104,
+      "event": {
+        "action": "Receive",
+        "node": 0
+      },
+      "changes": [
+        {
+          "node": 1,
+          "fields": [
+            "commit"
+          ]
+        }
+      ]
+    },
+    {
+      "state": 115,
+      "event": {
+        "action": "Advance",
+        "node": 0
+      },
+      "changes": [
+        {
+          "node": 1,
+          "fields": [
+            "applied"
+          ]
+        }
+      ]
+    },
+    {
+      "state": 126,
+      "event": {
+        "action": "Receive",
+        "node": 0
+      },
+      "changes": [
+        {
+          "node": 2,
+          "fields": [
+            "commit"
+          ]
+        }
+      ]
+    },
+    {
+      "state": 137,
+      "event": {
+        "action": "Advance",
+        "node": 0
+      },
+      "changes": [
+        {
+          "node": 2,
+          "fields": [
+            "applied"
+          ]
+        }
+      ]
+    },
+    {
+      "state": 138,
+      "event": {
+        "action": "Receive",
+        "node": 0
+      },
+      "changes": [
+        {
+          "node": 3,
+          "fields": [
+            "commit"
+          ]
+        }
+      ]
+    },
+    {
+      "state": 149,
+      "event": {
+        "action": "Advance",
+        "node": 0
+      },
+      "changes": [
+        {
+          "node": 3,
+          "fields": [
+            "applied"
+          ]
+        }
+      ]
+    },
+    {
+      "state": 153,
+      "event": {
+        "action": "Propose",
+        "node": 0
+      },
+      "changes": [
+        {
+          "node": 1,
+          "fields": [
+            "pendingConf"
+          ]
+        }
+      ]
+    },
+    {
+      "state": 175,
+      "event": {
+        "action": "Receive",
+        "node": 1
+      },
+      "changes": [
+        {
+          "node": 1,
+          "fields": [
+            "commit"
+          ]
+        }
+      ]
+    },
+    {
+      "state": 193,
+      "event": {
+        "action": "ApplyEntry",
+        "node": 1
+      },
+      "changes": [
+        {
+          "node": 1,
+          "fields": [
+            "config"
+          ]
+        }
+      ]
+    }
+  ]
+}

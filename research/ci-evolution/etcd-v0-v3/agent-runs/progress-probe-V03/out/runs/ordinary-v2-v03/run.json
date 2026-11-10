@@ -1,0 +1,31 @@
+{
+  "name": "ordinary-v2-v03",
+  "version": "V03",
+  "module": "MC",
+  "config": "ordinary-v2.cfg",
+  "seconds_limit": 45,
+  "elapsed_seconds": 45.35666346549988,
+  "exit_code": 124,
+  "command": [
+    "timeout",
+    "--signal=TERM",
+    "--kill-after=5s",
+    "45s",
+    "java",
+    "-Xmx6g",
+    "-Dtlc2.TLC.progressInterval=10",
+    "-cp",
+    "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+    "tlc2.TLC",
+    "-workers",
+    "1",
+    "-nowarning",
+    "-dumpTrace",
+    "json",
+    "counterexample.json",
+    "-config",
+    "ordinary-v2.cfg",
+    "MC"
+  ],
+  "trace": "/workspace/out/joint-autoleave-prefix-inputs.ndjson"
+}

@@ -1,0 +1,52 @@
+[
+  {
+    "version": "V02",
+    "command": [
+      "timeout",
+      "90s",
+      "go",
+      "test",
+      ".",
+      "-run",
+      "^(TestRawNodeProposeAndConfChange|TestUncommittedEntryLimit)$",
+      "-count=1",
+      "-v"
+    ],
+    "elapsed_seconds": 1.1009056568145752,
+    "exit_code": 0
+  },
+  {
+    "version": "V03",
+    "label": "V03",
+    "command": [
+      "timeout",
+      "90s",
+      "go",
+      "test",
+      ".",
+      "-run",
+      "^(TestRawNodeProposeAndConfChange|TestUncommittedEntryLimit)$",
+      "-count=1",
+      "-v"
+    ],
+    "elapsed_seconds": 0.289259672164917,
+    "exit_code": 0
+  },
+  {
+    "version": "V03",
+    "label": "V03-interaction",
+    "command": [
+      "timeout",
+      "90s",
+      "go",
+      "test",
+      ".",
+      "-run",
+      "^TestInteraction/confchange_v2_add_double_auto$",
+      "-count=1",
+      "-v"
+    ],
+    "elapsed_seconds": 0.27503252029418945,
+    "exit_code": 0
+  }
+]

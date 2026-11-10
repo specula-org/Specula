@@ -1,0 +1,7 @@
+Traceback (most recent call last):
+  File "/workspace/out/negative-controls/disabled-adapter/run.py", line 7, in <module>
+    work=P(a.work);work.mkdir(parents=True,exist_ok=False);cs=json.loads(P(a.input).read_text());all_results=[];commands=[]
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1313, in mkdir
+    os.mkdir(self, mode)
+FileExistsError: [Errno 17] File exists: '/workspace/out/negative-controls/reused'

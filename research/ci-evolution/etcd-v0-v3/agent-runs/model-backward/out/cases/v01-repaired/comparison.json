@@ -1,0 +1,99 @@
+{
+  "protocol": "action-validation/v1",
+  "route": "code-to-model",
+  "spec": "v01/spec",
+  "counts": {
+    "match": 6
+  },
+  "total": 6,
+  "commands": [
+    {
+      "engine": "implementation",
+      "command": [
+        "python3",
+        "out/framework/adapters/go/run.py",
+        "--input",
+        "/workspace/out/cases/backward-targeted.json",
+        "--output",
+        "/workspace/out/cases/v01-repaired/implementation.jsonl",
+        "--work",
+        "/workspace/out/cases/v01-repaired/implementation",
+        "--source",
+        "v01/source"
+      ],
+      "duration_seconds": 0.3645248981192708,
+      "exit_code": 0
+    },
+    {
+      "engine": "model",
+      "command": [
+        "python3",
+        "out/framework/adapters/tla/run.py",
+        "--input",
+        "/workspace/out/cases/backward-targeted.json",
+        "--output",
+        "/workspace/out/cases/v01-repaired/model.jsonl",
+        "--spec",
+        "/workspace/v01/spec",
+        "--work",
+        "/workspace/out/cases/v01-repaired/model"
+      ],
+      "duration_seconds": 5.527167501859367,
+      "exit_code": 0
+    }
+  ],
+  "results": [
+    {
+      "id": "v03-apply-remove-readd-learner-Leader",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-apply-remove-readd-learner-Follower",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-callback-v2-leave-remove-self",
+      "action": "callback_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-advance-after-drop-node-14",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-advance-after-drop-node-17",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-config-broadcast-panic-before-transfer",
+      "action": "apply",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    }
+  ],
+  "extra_results": {
+    "implementation": [],
+    "model": []
+  }
+}

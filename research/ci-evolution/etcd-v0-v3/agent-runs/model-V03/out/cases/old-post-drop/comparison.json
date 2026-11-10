@@ -1,0 +1,96 @@
+{
+  "protocol": "action-validation/v1",
+  "route": "code-to-model",
+  "spec": "old/spec",
+  "counts": {
+    "behavioral_mismatch": 2,
+    "match": 2
+  },
+  "total": 4,
+  "commands": [
+    {
+      "engine": "implementation",
+      "command": [
+        "python3",
+        "out/framework/adapters/go/run.py",
+        "--input",
+        "/workspace/out/cases/v03-post-drop-inputs.json",
+        "--output",
+        "/workspace/out/cases/old-post-drop/implementation.jsonl",
+        "--work",
+        "/workspace/out/cases/old-post-drop/implementation",
+        "--source",
+        "old/source"
+      ],
+      "duration_seconds": 0.3145502442494035,
+      "exit_code": 0
+    },
+    {
+      "engine": "model",
+      "command": [
+        "python3",
+        "out/framework/adapters/tla/run.py",
+        "--input",
+        "/workspace/out/cases/v03-post-drop-inputs.json",
+        "--output",
+        "/workspace/out/cases/old-post-drop/model.jsonl",
+        "--spec",
+        "/workspace/old/spec",
+        "--work",
+        "/workspace/out/cases/old-post-drop/model"
+      ],
+      "duration_seconds": 5.526534692384303,
+      "exit_code": 0
+    }
+  ],
+  "results": [
+    {
+      "id": "v03-advance-after-drop-raw-14",
+      "action": "advance_raw",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.pending",
+          "left": 2,
+          "right": 3
+        }
+      ]
+    },
+    {
+      "id": "v03-advance-after-drop-raw-17",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-advance-after-drop-node-14",
+      "action": "advance_node",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.pending",
+          "left": 2,
+          "right": 3
+        }
+      ]
+    },
+    {
+      "id": "v03-advance-after-drop-node-17",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    }
+  ],
+  "extra_results": {
+    "implementation": [],
+    "model": []
+  }
+}

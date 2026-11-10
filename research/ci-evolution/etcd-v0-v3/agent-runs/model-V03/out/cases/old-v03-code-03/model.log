@@ -1,0 +1,53 @@
+TLC2 Version 2.20 of Day Month 20?? (rev: ${git.shortRevision})
+Running breadth-first search Model-Checking with fp 92 and seed -1371868568087956952 with 1 worker on 96 cores with 1963MB heap and 64MB offheap memory [pid: 4517] (Linux 6.8.0-1044-azure amd64, Ubuntu 21.0.11 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /workspace/out/cases/old-v03-code-03/model/raw/LocalActions.tla
+Parsing file /workspace/out/cases/old-v03-code-03/model/raw/base.tla
+Parsing file /workspace/out/tmp/tlc-1334185022852238079/Json.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Json.tla)
+Parsing file /workspace/out/tmp/tlc-1334185022852238079/_TLCTrace.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/_TLCTrace.tla)
+Parsing file /workspace/out/tmp/tlc-1334185022852238079/Naturals.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Naturals.tla)
+Parsing file /workspace/out/tmp/tlc-1334185022852238079/Integers.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Integers.tla)
+Parsing file /workspace/out/tmp/tlc-1334185022852238079/Sequences.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Sequences.tla)
+Parsing file /workspace/out/tmp/tlc-1334185022852238079/FiniteSets.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/FiniteSets.tla)
+Parsing file /workspace/out/tmp/tlc-1334185022852238079/Bags.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Bags.tla)
+Parsing file /workspace/out/tmp/tlc-1334185022852238079/TLC.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/TLC.tla)
+Parsing file /workspace/out/cases/old-v03-code-03/model/raw/ModelDomains.tla
+Parsing file /workspace/out/tmp/tlc-1334185022852238079/TLCExt.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/TLCExt.tla)
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module Bags
+Semantic processing of module base
+Semantic processing of module Json
+Semantic processing of module TLCExt
+Semantic processing of module _TLCTrace
+Semantic processing of module ModelDomains
+Semantic processing of module LocalActions
+Semantic errors:
+
+*** Errors: 2
+
+line 130, col 44 to line 130, col 59 of module LocalActions
+
+Level error in applying operator Core:
+The level of argument 1 exceeds the maximum level allowed by the operator.
+
+
+line 133, col 29 to line 133, col 47 of module LocalActions
+
+Level error in applying operator BootState:
+The level of argument 1 exceeds the maximum level allowed by the operator.
+
+
+
+Linting of module base
+Linting of module Json
+Linting of module TLCExt
+Linting of module _TLCTrace
+Linting of module ModelDomains
+Linting of module LocalActions
+Starting... (2026-09-22 18:43:56)
+Error: Parsing or semantic analysis failed.
+Finished in 00s at (2026-09-22 18:43:56)
+

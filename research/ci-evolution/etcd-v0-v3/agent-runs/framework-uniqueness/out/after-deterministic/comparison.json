@@ -1,0 +1,57 @@
+{
+  "protocol": "action-validation/v1",
+  "route": "code-to-model",
+  "spec": "new/spec",
+  "counts": {
+    "match": 1
+  },
+  "total": 1,
+  "commands": [
+    {
+      "engine": "implementation",
+      "command": [
+        "python3",
+        "out/framework/adapters/go/run.py",
+        "--input",
+        "/workspace/cases.json",
+        "--output",
+        "/workspace/out/after-deterministic/implementation.jsonl",
+        "--work",
+        "/workspace/out/after-deterministic/implementation"
+      ],
+      "duration_seconds": 0.3146792585030198,
+      "exit_code": 0
+    },
+    {
+      "engine": "model",
+      "command": [
+        "python3",
+        "out/framework/adapters/tla/run.py",
+        "--input",
+        "/workspace/cases.json",
+        "--output",
+        "/workspace/out/after-deterministic/model.jsonl",
+        "--spec",
+        "/workspace/new/spec",
+        "--work",
+        "/workspace/out/after-deterministic/model"
+      ],
+      "duration_seconds": 2.8207013150677085,
+      "exit_code": 0
+    }
+  ],
+  "results": [
+    {
+      "id": "joint-self-quorum-False",
+      "action": "hup",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    }
+  ],
+  "extra_results": {
+    "implementation": [],
+    "model": []
+  }
+}

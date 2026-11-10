@@ -1,0 +1,947 @@
+{
+  "protocol": "action-validation/v1",
+  "route": "code-to-model",
+  "spec": "out/repaired-spec",
+  "counts": {
+    "behavioral_mismatch": 6
+  },
+  "total": 6,
+  "commands": [
+    {
+      "engine": "implementation",
+      "command": [
+        "python3",
+        "out/framework/adapters/go/run.py",
+        "--input",
+        "/workspace/out/cases/invalid-inputs.json",
+        "--output",
+        "/workspace/out/cases/v02-replay-20260922T183435Z-f6c07e08/invalid-inputs/implementation.jsonl",
+        "--work",
+        "/workspace/out/cases/v02-replay-20260922T183435Z-f6c07e08/invalid-inputs/implementation"
+      ],
+      "duration_seconds": 0.31470668967813253,
+      "exit_code": 0
+    },
+    {
+      "engine": "model",
+      "command": [
+        "python3",
+        "out/framework/adapters/tla/run.py",
+        "--input",
+        "/workspace/out/cases/invalid-inputs.json",
+        "--output",
+        "/workspace/out/cases/v02-replay-20260922T183435Z-f6c07e08/invalid-inputs/model.jsonl",
+        "--spec",
+        "/workspace/out/repaired-spec",
+        "--work",
+        "/workspace/out/cases/v02-replay-20260922T183435Z-f6c07e08/invalid-inputs/model"
+      ],
+      "duration_seconds": 1.0667383652180433,
+      "exit_code": 0
+    }
+  ],
+  "results": [
+    {
+      "id": "invalid-restore-overlap",
+      "action": "restore",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.return",
+          "left": null,
+          "right": {
+            "restored": true
+          }
+        },
+        {
+          "path": "$.state.config.voters",
+          "left": [
+            2
+          ],
+          "right": [
+            1,
+            2
+          ]
+        },
+        {
+          "path": "$.state.prs[0].match",
+          "left": 0,
+          "right": 3
+        },
+        {
+          "path": "$.status",
+          "left": "panic",
+          "right": "ok"
+        }
+      ]
+    },
+    {
+      "id": "invalid-restore-staged-without-joint",
+      "action": "restore",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.return",
+          "left": null,
+          "right": {
+            "restored": true
+          }
+        },
+        {
+          "path": "$.state.config.learners",
+          "left": [
+            3
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.config.learnersNext",
+          "left": [],
+          "right": [
+            3
+          ]
+        },
+        {
+          "path": "$.state.prs",
+          "left": [
+            {
+              "active": true,
+              "id": 1,
+              "inflight": [],
+              "learner": false,
+              "match": 0,
+              "mode": "Probe",
+              "next": 4,
+              "pending": 0,
+              "probe": false
+            },
+            {
+              "active": true,
+              "id": 2,
+              "inflight": [],
+              "learner": false,
+              "match": 0,
+              "mode": "Probe",
+              "next": 4,
+              "pending": 0,
+              "probe": false
+            },
+            {
+              "active": true,
+              "id": 3,
+              "inflight": [],
+              "learner": true,
+              "match": 0,
+              "mode": "Probe",
+              "next": 4,
+              "pending": 0,
+              "probe": false
+            }
+          ],
+          "right": [
+            {
+              "active": true,
+              "id": 1,
+              "inflight": [],
+              "learner": false,
+              "match": 3,
+              "mode": "Probe",
+              "next": 4,
+              "pending": 0,
+              "probe": false
+            },
+            {
+              "active": true,
+              "id": 2,
+              "inflight": [],
+              "learner": false,
+              "match": 0,
+              "mode": "Probe",
+              "next": 4,
+              "pending": 0,
+              "probe": false
+            }
+          ]
+        },
+        {
+          "path": "$.status",
+          "left": "panic",
+          "right": "ok"
+        }
+      ]
+    },
+    {
+      "id": "invalid-restore-empty-incoming",
+      "action": "restore",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.return",
+          "left": null,
+          "right": {
+            "restored": true
+          }
+        },
+        {
+          "path": "$.state.config.learners",
+          "left": [],
+          "right": [
+            1
+          ]
+        },
+        {
+          "path": "$.state.config.outgoing",
+          "left": [],
+          "right": [
+            1,
+            2
+          ]
+        },
+        {
+          "path": "$.state.isLearner",
+          "left": false,
+          "right": true
+        },
+        {
+          "path": "$.state.prs",
+          "left": [],
+          "right": [
+            {
+              "active": true,
+              "id": 1,
+              "inflight": [],
+              "learner": true,
+              "match": 3,
+              "mode": "Probe",
+              "next": 4,
+              "pending": 0,
+              "probe": false
+            },
+            {
+              "active": true,
+              "id": 2,
+              "inflight": [],
+              "learner": false,
+              "match": 0,
+              "mode": "Probe",
+              "next": 4,
+              "pending": 0,
+              "probe": false
+            }
+          ]
+        },
+        {
+          "path": "$.status",
+          "left": "panic",
+          "right": "ok"
+        }
+      ]
+    },
+    {
+      "id": "invalid-restart-overlap",
+      "action": "restart",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.applied",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.commit",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.config.learners",
+          "left": [],
+          "right": [
+            1
+          ]
+        },
+        {
+          "path": "$.state.config.voters",
+          "left": [
+            1,
+            2,
+            3
+          ],
+          "right": [
+            1,
+            2
+          ]
+        },
+        {
+          "path": "$.state.first",
+          "left": 1,
+          "right": 4
+        },
+        {
+          "path": "$.state.isLearner",
+          "left": false,
+          "right": true
+        },
+        {
+          "path": "$.state.last",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.log",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            }
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.prevHS.commit",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.prevHS.term",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.prs",
+          "left": [
+            {
+              "active": false,
+              "id": 1,
+              "inflight": [],
+              "learner": false,
+              "match": 2,
+              "mode": "Probe",
+              "next": 3,
+              "pending": 0,
+              "probe": false
+            },
+            {
+              "active": false,
+              "id": 2,
+              "inflight": [],
+              "learner": false,
+              "match": 0,
+              "mode": "Probe",
+              "next": 3,
+              "pending": 0,
+              "probe": false
+            },
+            {
+              "active": false,
+              "id": 3,
+              "inflight": [],
+              "learner": false,
+              "match": 0,
+              "mode": "Probe",
+              "next": 3,
+              "pending": 0,
+              "probe": false
+            }
+          ],
+          "right": [
+            {
+              "active": false,
+              "id": 1,
+              "inflight": [],
+              "learner": true,
+              "match": 3,
+              "mode": "Probe",
+              "next": 4,
+              "pending": 0,
+              "probe": false
+            },
+            {
+              "active": false,
+              "id": 2,
+              "inflight": [],
+              "learner": false,
+              "match": 0,
+              "mode": "Probe",
+              "next": 4,
+              "pending": 0,
+              "probe": false
+            }
+          ]
+        },
+        {
+          "path": "$.state.storage.cut",
+          "left": 0,
+          "right": 3
+        },
+        {
+          "path": "$.state.storage.hs.commit",
+          "left": 0,
+          "right": 3
+        },
+        {
+          "path": "$.state.storage.hs.term",
+          "left": 0,
+          "right": 3
+        },
+        {
+          "path": "$.state.storage.log",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            }
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.storage.snapshot.config.learners",
+          "left": [],
+          "right": [
+            1
+          ]
+        },
+        {
+          "path": "$.state.storage.snapshot.config.voters",
+          "left": [],
+          "right": [
+            1,
+            2
+          ]
+        },
+        {
+          "path": "$.state.storage.snapshot.index",
+          "left": 0,
+          "right": 3
+        },
+        {
+          "path": "$.state.storage.snapshot.term",
+          "left": 0,
+          "right": 3
+        },
+        {
+          "path": "$.state.term",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.uoff",
+          "left": 3,
+          "right": 4
+        },
+        {
+          "path": "$.status",
+          "left": "panic",
+          "right": "ok"
+        }
+      ]
+    },
+    {
+      "id": "invalid-restart-staged-without-joint",
+      "action": "restart",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.applied",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.commit",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.config.learnersNext",
+          "left": [],
+          "right": [
+            3
+          ]
+        },
+        {
+          "path": "$.state.config.voters",
+          "left": [
+            1,
+            2,
+            3
+          ],
+          "right": [
+            1,
+            2
+          ]
+        },
+        {
+          "path": "$.state.first",
+          "left": 1,
+          "right": 4
+        },
+        {
+          "path": "$.state.last",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.log",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            }
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.prevHS.commit",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.prevHS.term",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.prs",
+          "left": [
+            {
+              "active": false,
+              "id": 1,
+              "inflight": [],
+              "learner": false,
+              "match": 2,
+              "mode": "Probe",
+              "next": 3,
+              "pending": 0,
+              "probe": false
+            },
+            {
+              "active": false,
+              "id": 2,
+              "inflight": [],
+              "learner": false,
+              "match": 0,
+              "mode": "Probe",
+              "next": 3,
+              "pending": 0,
+              "probe": false
+            },
+            {
+              "active": false,
+              "id": 3,
+              "inflight": [],
+              "learner": false,
+              "match": 0,
+              "mode": "Probe",
+              "next": 3,
+              "pending": 0,
+              "probe": false
+            }
+          ],
+          "right": [
+            {
+              "active": false,
+              "id": 1,
+              "inflight": [],
+              "learner": false,
+              "match": 3,
+              "mode": "Probe",
+              "next": 4,
+              "pending": 0,
+              "probe": false
+            },
+            {
+              "active": false,
+              "id": 2,
+              "inflight": [],
+              "learner": false,
+              "match": 0,
+              "mode": "Probe",
+              "next": 4,
+              "pending": 0,
+              "probe": false
+            }
+          ]
+        },
+        {
+          "path": "$.state.storage.cut",
+          "left": 0,
+          "right": 3
+        },
+        {
+          "path": "$.state.storage.hs.commit",
+          "left": 0,
+          "right": 3
+        },
+        {
+          "path": "$.state.storage.hs.term",
+          "left": 0,
+          "right": 3
+        },
+        {
+          "path": "$.state.storage.log",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            }
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.storage.snapshot.config.learnersNext",
+          "left": [],
+          "right": [
+            3
+          ]
+        },
+        {
+          "path": "$.state.storage.snapshot.config.voters",
+          "left": [],
+          "right": [
+            1,
+            2
+          ]
+        },
+        {
+          "path": "$.state.storage.snapshot.index",
+          "left": 0,
+          "right": 3
+        },
+        {
+          "path": "$.state.storage.snapshot.term",
+          "left": 0,
+          "right": 3
+        },
+        {
+          "path": "$.state.term",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.uoff",
+          "left": 3,
+          "right": 4
+        },
+        {
+          "path": "$.status",
+          "left": "panic",
+          "right": "ok"
+        }
+      ]
+    },
+    {
+      "id": "invalid-restart-empty-incoming",
+      "action": "restart",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.applied",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.commit",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.config.learners",
+          "left": [],
+          "right": [
+            1
+          ]
+        },
+        {
+          "path": "$.state.config.outgoing",
+          "left": [],
+          "right": [
+            1,
+            2
+          ]
+        },
+        {
+          "path": "$.state.config.voters",
+          "left": [
+            1,
+            2,
+            3
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.first",
+          "left": 1,
+          "right": 4
+        },
+        {
+          "path": "$.state.isLearner",
+          "left": false,
+          "right": true
+        },
+        {
+          "path": "$.state.last",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.log",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            }
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.prevHS.commit",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.prevHS.term",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.prs",
+          "left": [
+            {
+              "active": false,
+              "id": 1,
+              "inflight": [],
+              "learner": false,
+              "match": 2,
+              "mode": "Probe",
+              "next": 3,
+              "pending": 0,
+              "probe": false
+            },
+            {
+              "active": false,
+              "id": 2,
+              "inflight": [],
+              "learner": false,
+              "match": 0,
+              "mode": "Probe",
+              "next": 3,
+              "pending": 0,
+              "probe": false
+            },
+            {
+              "active": false,
+              "id": 3,
+              "inflight": [],
+              "learner": false,
+              "match": 0,
+              "mode": "Probe",
+              "next": 3,
+              "pending": 0,
+              "probe": false
+            }
+          ],
+          "right": [
+            {
+              "active": false,
+              "id": 1,
+              "inflight": [],
+              "learner": true,
+              "match": 3,
+              "mode": "Probe",
+              "next": 4,
+              "pending": 0,
+              "probe": false
+            },
+            {
+              "active": false,
+              "id": 2,
+              "inflight": [],
+              "learner": false,
+              "match": 0,
+              "mode": "Probe",
+              "next": 4,
+              "pending": 0,
+              "probe": false
+            }
+          ]
+        },
+        {
+          "path": "$.state.storage.cut",
+          "left": 0,
+          "right": 3
+        },
+        {
+          "path": "$.state.storage.hs.commit",
+          "left": 0,
+          "right": 3
+        },
+        {
+          "path": "$.state.storage.hs.term",
+          "left": 0,
+          "right": 3
+        },
+        {
+          "path": "$.state.storage.log",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 8,
+              "index": 1,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 0
+            },
+            {
+              "changes": [],
+              "encoded": 9,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 1
+            }
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.storage.snapshot.config.learners",
+          "left": [],
+          "right": [
+            1
+          ]
+        },
+        {
+          "path": "$.state.storage.snapshot.config.outgoing",
+          "left": [],
+          "right": [
+            1,
+            2
+          ]
+        },
+        {
+          "path": "$.state.storage.snapshot.index",
+          "left": 0,
+          "right": 3
+        },
+        {
+          "path": "$.state.storage.snapshot.term",
+          "left": 0,
+          "right": 3
+        },
+        {
+          "path": "$.state.term",
+          "left": 2,
+          "right": 3
+        },
+        {
+          "path": "$.state.uoff",
+          "left": 3,
+          "right": 4
+        },
+        {
+          "path": "$.status",
+          "left": "panic",
+          "right": "ok"
+        }
+      ]
+    }
+  ],
+  "extra_results": {
+    "implementation": [],
+    "model": []
+  }
+}

@@ -1,0 +1,85 @@
+{
+  "protocol": "action-validation/v1",
+  "route": "code-to-model",
+  "spec": "new/spec",
+  "counts": {
+    "adapter_error": 4
+  },
+  "total": 4,
+  "commands": [
+    {
+      "engine": "implementation",
+      "command": [
+        "python3",
+        "out/framework/adapters/go/run.py",
+        "--input",
+        "/workspace/cases.json",
+        "--output",
+        "/workspace/out/replay/implementation.jsonl",
+        "--work",
+        "/workspace/out/replay/implementation"
+      ],
+      "duration_seconds": 0.06399486679583788,
+      "exit_code": 1
+    },
+    {
+      "engine": "model",
+      "command": [
+        "python3",
+        "out/framework/adapters/tla/run.py",
+        "--input",
+        "/workspace/cases.json",
+        "--output",
+        "/workspace/out/replay/model.jsonl",
+        "--spec",
+        "/workspace/new/spec",
+        "--work",
+        "/workspace/out/replay/model"
+      ],
+      "duration_seconds": 2.8204797133803368,
+      "exit_code": 0
+    }
+  ],
+  "results": [
+    {
+      "id": "joint-self-quorum-False",
+      "action": "hup",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "pending-v2-retained-obligation-False",
+      "action": "hup",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "joint-self-quorum-True",
+      "action": "hup",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    },
+    {
+      "id": "pending-v2-retained-obligation-True",
+      "action": "hup",
+      "verdict": "adapter_error",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [],
+      "reason": "missing result or adapter-reported error"
+    }
+  ],
+  "extra_results": {
+    "implementation": [],
+    "model": []
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "run_id": "v00-registered-20260913-174822",
+  "findings": [
+    {
+      "id": "CR-1",
+      "status": "REPRODUCED",
+      "evidence": "confirmed-bugs.md"
+    },
+    {
+      "id": "CR-2",
+      "status": "REPRODUCED",
+      "evidence": "confirmed-bugs.md"
+    },
+    {
+      "id": "CR-3",
+      "status": "REPRODUCED",
+      "evidence": "confirmed-bugs.md"
+    },
+    {
+      "id": "CR-4",
+      "status": "DROPPED",
+      "evidence": "confirmed-bugs.md"
+    },
+    {
+      "id": "CR-5",
+      "status": "REPRODUCED",
+      "evidence": "confirmed-bugs.md"
+    },
+    {
+      "id": "CR-6",
+      "status": "REPRODUCED",
+      "evidence": "confirmed-bugs.md"
+    }
+  ]
+}

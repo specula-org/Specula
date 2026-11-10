@@ -1,0 +1,505 @@
+{
+  "protocol": "action-validation/v1",
+  "route": "code-to-model",
+  "spec": "out/repaired-spec",
+  "counts": {
+    "behavioral_mismatch": 4
+  },
+  "total": 4,
+  "commands": [
+    {
+      "engine": "implementation",
+      "command": [
+        "python3",
+        "out/framework/adapters/go/run.py",
+        "--input",
+        "/workspace/out/cases/v03-post-drop-inputs.json",
+        "--output",
+        "/workspace/out/cases/repaired-post-drop-initial/implementation.jsonl",
+        "--work",
+        "/workspace/out/cases/repaired-post-drop-initial/implementation"
+      ],
+      "duration_seconds": 0.36466781608760357,
+      "exit_code": 0
+    },
+    {
+      "engine": "model",
+      "command": [
+        "python3",
+        "out/framework/adapters/tla/run.py",
+        "--input",
+        "/workspace/out/cases/v03-post-drop-inputs.json",
+        "--output",
+        "/workspace/out/cases/repaired-post-drop-initial/model.jsonl",
+        "--spec",
+        "/workspace/out/repaired-spec",
+        "--work",
+        "/workspace/out/cases/repaired-post-drop-initial/model"
+      ],
+      "duration_seconds": 5.727647404186428,
+      "exit_code": 0
+    }
+  ],
+  "results": [
+    {
+      "id": "v03-advance-after-drop-raw-14",
+      "action": "advance_raw",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.return",
+          "left": {
+            "batchAfter": {
+              "committed": [
+                {
+                  "changes": [],
+                  "encoded": 22,
+                  "index": 2,
+                  "kind": "Normal",
+                  "target": 0,
+                  "term": 2,
+                  "transition": "Legacy",
+                  "weight": 14
+                }
+              ],
+              "cursor": 2,
+              "entries": [
+                {
+                  "changes": [],
+                  "encoded": 22,
+                  "index": 2,
+                  "kind": "Normal",
+                  "target": 0,
+                  "term": 2,
+                  "transition": "Legacy",
+                  "weight": 14
+                }
+              ],
+              "hs": {
+                "commit": 0,
+                "term": 0,
+                "vote": 0
+              },
+              "messages": [],
+              "mustSync": true,
+              "reads": [],
+              "snapshot": {
+                "config": {
+                  "autoLeave": false,
+                  "learners": [],
+                  "learnersNext": [],
+                  "outgoing": [],
+                  "voters": []
+                },
+                "index": 0,
+                "term": 0
+              },
+              "ss": null
+            }
+          },
+          "right": null
+        },
+        {
+          "path": "$.state.pending",
+          "left": 3,
+          "right": 2
+        },
+        {
+          "path": "$.state.unstable",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 6,
+              "index": 3,
+              "kind": "V2",
+              "target": 0,
+              "term": 2,
+              "transition": "Auto",
+              "weight": 0
+            }
+          ],
+          "right": [
+            {
+              "changes": [],
+              "encoded": 22,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 14
+            },
+            {
+              "changes": [],
+              "encoded": 6,
+              "index": 3,
+              "kind": "V2",
+              "target": 0,
+              "term": 2,
+              "transition": "Auto",
+              "weight": 0
+            }
+          ]
+        },
+        {
+          "path": "$.state.uoff",
+          "left": 3,
+          "right": 2
+        },
+        {
+          "path": "$.status",
+          "left": "ok",
+          "right": "panic"
+        }
+      ]
+    },
+    {
+      "id": "v03-advance-after-drop-raw-17",
+      "action": "advance_raw",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.return",
+          "left": {
+            "batchAfter": {
+              "committed": [
+                {
+                  "changes": [],
+                  "encoded": 25,
+                  "index": 2,
+                  "kind": "Normal",
+                  "target": 0,
+                  "term": 2,
+                  "transition": "Legacy",
+                  "weight": 17
+                }
+              ],
+              "cursor": 2,
+              "entries": [
+                {
+                  "changes": [],
+                  "encoded": 25,
+                  "index": 2,
+                  "kind": "Normal",
+                  "target": 0,
+                  "term": 2,
+                  "transition": "Legacy",
+                  "weight": 17
+                }
+              ],
+              "hs": {
+                "commit": 0,
+                "term": 0,
+                "vote": 0
+              },
+              "messages": [],
+              "mustSync": true,
+              "reads": [],
+              "snapshot": {
+                "config": {
+                  "autoLeave": false,
+                  "learners": [],
+                  "learnersNext": [],
+                  "outgoing": [],
+                  "voters": []
+                },
+                "index": 0,
+                "term": 0
+              },
+              "ss": null
+            }
+          },
+          "right": null
+        },
+        {
+          "path": "$.state.pending",
+          "left": 3,
+          "right": 2
+        },
+        {
+          "path": "$.state.unstable",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 6,
+              "index": 3,
+              "kind": "V2",
+              "target": 0,
+              "term": 2,
+              "transition": "Auto",
+              "weight": 0
+            }
+          ],
+          "right": [
+            {
+              "changes": [],
+              "encoded": 25,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 17
+            },
+            {
+              "changes": [],
+              "encoded": 6,
+              "index": 3,
+              "kind": "V2",
+              "target": 0,
+              "term": 2,
+              "transition": "Auto",
+              "weight": 0
+            }
+          ]
+        },
+        {
+          "path": "$.state.uoff",
+          "left": 3,
+          "right": 2
+        },
+        {
+          "path": "$.status",
+          "left": "ok",
+          "right": "panic"
+        }
+      ]
+    },
+    {
+      "id": "v03-advance-after-drop-node-14",
+      "action": "advance_node",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.return",
+          "left": {
+            "batchAfter": {
+              "committed": [
+                {
+                  "changes": [],
+                  "encoded": 22,
+                  "index": 2,
+                  "kind": "Normal",
+                  "target": 0,
+                  "term": 2,
+                  "transition": "Legacy",
+                  "weight": 14
+                }
+              ],
+              "cursor": 2,
+              "entries": [
+                {
+                  "changes": [],
+                  "encoded": 22,
+                  "index": 2,
+                  "kind": "Normal",
+                  "target": 0,
+                  "term": 2,
+                  "transition": "Legacy",
+                  "weight": 14
+                }
+              ],
+              "hs": {
+                "commit": 0,
+                "term": 0,
+                "vote": 0
+              },
+              "messages": [],
+              "mustSync": true,
+              "reads": [],
+              "snapshot": {
+                "config": {
+                  "autoLeave": false,
+                  "learners": [],
+                  "learnersNext": [],
+                  "outgoing": [],
+                  "voters": []
+                },
+                "index": 0,
+                "term": 0
+              },
+              "ss": null
+            }
+          },
+          "right": null
+        },
+        {
+          "path": "$.state.pending",
+          "left": 3,
+          "right": 2
+        },
+        {
+          "path": "$.state.unstable",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 6,
+              "index": 3,
+              "kind": "V2",
+              "target": 0,
+              "term": 2,
+              "transition": "Auto",
+              "weight": 0
+            }
+          ],
+          "right": [
+            {
+              "changes": [],
+              "encoded": 22,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 14
+            },
+            {
+              "changes": [],
+              "encoded": 6,
+              "index": 3,
+              "kind": "V2",
+              "target": 0,
+              "term": 2,
+              "transition": "Auto",
+              "weight": 0
+            }
+          ]
+        },
+        {
+          "path": "$.state.uoff",
+          "left": 3,
+          "right": 2
+        },
+        {
+          "path": "$.status",
+          "left": "ok",
+          "right": "panic"
+        }
+      ]
+    },
+    {
+      "id": "v03-advance-after-drop-node-17",
+      "action": "advance_node",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.return",
+          "left": {
+            "batchAfter": {
+              "committed": [
+                {
+                  "changes": [],
+                  "encoded": 25,
+                  "index": 2,
+                  "kind": "Normal",
+                  "target": 0,
+                  "term": 2,
+                  "transition": "Legacy",
+                  "weight": 17
+                }
+              ],
+              "cursor": 2,
+              "entries": [
+                {
+                  "changes": [],
+                  "encoded": 25,
+                  "index": 2,
+                  "kind": "Normal",
+                  "target": 0,
+                  "term": 2,
+                  "transition": "Legacy",
+                  "weight": 17
+                }
+              ],
+              "hs": {
+                "commit": 0,
+                "term": 0,
+                "vote": 0
+              },
+              "messages": [],
+              "mustSync": true,
+              "reads": [],
+              "snapshot": {
+                "config": {
+                  "autoLeave": false,
+                  "learners": [],
+                  "learnersNext": [],
+                  "outgoing": [],
+                  "voters": []
+                },
+                "index": 0,
+                "term": 0
+              },
+              "ss": null
+            }
+          },
+          "right": null
+        },
+        {
+          "path": "$.state.pending",
+          "left": 3,
+          "right": 2
+        },
+        {
+          "path": "$.state.unstable",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 6,
+              "index": 3,
+              "kind": "V2",
+              "target": 0,
+              "term": 2,
+              "transition": "Auto",
+              "weight": 0
+            }
+          ],
+          "right": [
+            {
+              "changes": [],
+              "encoded": 25,
+              "index": 2,
+              "kind": "Normal",
+              "target": 0,
+              "term": 2,
+              "transition": "Legacy",
+              "weight": 17
+            },
+            {
+              "changes": [],
+              "encoded": 6,
+              "index": 3,
+              "kind": "V2",
+              "target": 0,
+              "term": 2,
+              "transition": "Auto",
+              "weight": 0
+            }
+          ]
+        },
+        {
+          "path": "$.state.uoff",
+          "left": 3,
+          "right": 2
+        },
+        {
+          "path": "$.status",
+          "left": "ok",
+          "right": "panic"
+        }
+      ]
+    }
+  ],
+  "extra_results": {
+    "implementation": [],
+    "model": []
+  }
+}

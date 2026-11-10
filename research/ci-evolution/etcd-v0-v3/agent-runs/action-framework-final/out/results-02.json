@@ -1,0 +1,50 @@
+[
+  {
+    "version": "V01",
+    "route": "code-to-model",
+    "output": "out/V01-code-to-model-02",
+    "exit_code": 0,
+    "seconds": 12.042169745080173,
+    "total": 479,
+    "counts": {
+      "match": 479
+    },
+    "base_sha256": "56bcc42634e80d9a089967d7b98e14502c4bc5b06ecc2aa5fa9b5ac148389bda"
+  },
+  {
+    "version": "V01",
+    "route": "model-to-code",
+    "output": "out/V01-model-to-code-02",
+    "exit_code": 0,
+    "seconds": 6.879085690714419,
+    "total": 174,
+    "counts": {
+      "match": 174
+    },
+    "base_sha256": "56bcc42634e80d9a089967d7b98e14502c4bc5b06ecc2aa5fa9b5ac148389bda"
+  },
+  {
+    "version": "V02",
+    "route": "code-to-model",
+    "output": "out/V02-code-to-model-02",
+    "exit_code": 0,
+    "seconds": 12.192122518084943,
+    "total": 479,
+    "counts": {
+      "match": 479
+    },
+    "base_sha256": "45105c68d53c632951511dec7817e8fd698c3be43cd05a6f3d4fec5d438f1c30"
+  },
+  {
+    "version": "V02",
+    "route": "model-to-code",
+    "output": "out/V02-model-to-code-02",
+    "exit_code": 0,
+    "seconds": 7.129330430179834,
+    "total": 174,
+    "counts": {
+      "match": 174
+    },
+    "base_sha256": "45105c68d53c632951511dec7817e8fd698c3be43cd05a6f3d4fec5d438f1c30"
+  }
+]

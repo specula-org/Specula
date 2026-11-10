@@ -1,0 +1,272 @@
+TLC2 Version 2.20 of Day Month 20?? (rev: ${git.shortRevision})
+Running breadth-first search Model-Checking with fp 49 and seed 8531343902450832584 with 1 worker on 96 cores with 4096MB heap and 64MB offheap memory [pid: 1362] (Linux 6.8.0-1044-azure amd64, Ubuntu 21.0.11 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /workspace/out/runs/diagnostic-normal-v03b/C03Progress.tla
+Parsing file /workspace/out/runs/diagnostic-normal-v03b/Trace.tla
+Parsing file /tmp/tlc-18357090869690714006/_JsonTrace.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/_JsonTrace.tla)
+Parsing file /tmp/tlc-18357090869690714006/_TLCTrace.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/_TLCTrace.tla)
+Parsing file /workspace/out/runs/diagnostic-normal-v03b/base.tla
+Parsing file /tmp/tlc-18357090869690714006/Json.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Json.tla)
+Parsing file /tmp/tlc-18357090869690714006/IOUtils.tla (jar:file:/tools/CommunityModules.jar!/IOUtils.tla)
+Parsing file /tmp/tlc-18357090869690714006/Naturals.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Naturals.tla)
+Parsing file /tmp/tlc-18357090869690714006/Integers.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Integers.tla)
+Parsing file /tmp/tlc-18357090869690714006/Sequences.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Sequences.tla)
+Parsing file /tmp/tlc-18357090869690714006/FiniteSets.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/FiniteSets.tla)
+Parsing file /tmp/tlc-18357090869690714006/Bags.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Bags.tla)
+Parsing file /tmp/tlc-18357090869690714006/TLC.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/TLC.tla)
+Parsing file /tmp/tlc-18357090869690714006/TLCExt.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/TLCExt.tla)
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module Bags
+Semantic processing of module base
+Semantic processing of module Json
+Semantic processing of module IOUtils
+Semantic processing of module Trace
+Semantic processing of module TLCExt
+Semantic processing of module _JsonTrace
+Semantic processing of module _TLCTrace
+Semantic processing of module C03Progress
+Linting of module base
+Linting of module Json
+Linting of module IOUtils
+Linting of module Trace
+Linting of module TLCExt
+Linting of module _JsonTrace
+Linting of module _TLCTrace
+Linting of module C03Progress
+Starting... (2026-09-22 20:28:56)
+Implied-temporal checking--satisfiability problem has 8 branches.
+Computing initial states...
+Finished computing initial states: 1 distinct state generated at 2026-09-22 20:29:28.
+Error: Successor state is not completely specified by action Pump of the next-state relation. The following variables are not defined: earlyUsed, l, slot, transferUsed.
+
+Error: The behavior up to this point is:
+[trimmed for the repository: 521228 lines of counterexample state dumps removed; state headers kept. Condensed trace: events.json/summary.json next to this log; rerun with the command in run.json/receipt.json to regenerate the full dump.]
+State 1: <Initial predicate>
+State 2: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 3: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 4: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 5: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 6: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 7: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 8: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 9: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 10: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 11: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 12: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 13: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 14: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 15: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 16: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 17: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 18: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 19: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 20: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 21: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 22: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 23: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 24: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 25: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 26: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 27: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 28: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 29: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 30: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 31: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 32: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 33: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 34: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 35: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 36: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 37: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 38: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 39: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 40: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 41: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 42: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 43: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 44: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 45: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 46: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 47: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 48: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 49: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 50: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 51: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 52: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 53: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 54: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 55: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 56: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 57: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 58: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 59: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 60: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 61: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 62: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 63: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 64: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 65: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 66: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 67: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 68: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 69: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 70: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 71: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 72: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 73: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 74: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 75: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 76: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 77: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 78: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 79: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 80: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 81: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 82: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 83: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 84: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 85: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 86: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 87: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 88: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 89: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 90: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 91: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 92: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 93: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 94: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 95: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 96: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 97: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 98: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 99: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 100: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 101: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 102: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 103: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 104: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 105: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 106: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 107: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 108: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 109: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 110: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 111: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 112: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 113: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 114: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 115: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 116: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 117: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 118: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 119: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 120: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 121: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 122: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 123: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 124: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 125: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 126: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 127: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 128: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 129: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 130: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 131: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 132: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 133: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 134: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 135: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 136: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 137: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 138: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 139: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 140: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 141: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 142: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 143: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 144: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 145: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 146: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 147: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 148: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 149: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 150: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 151: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 152: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 153: <Replay line 41, col 11 to line 43, col 48 of module C03Progress>
+State 154: <Pump line 76, col 9 to line 82, col 69 of module C03Progress>
+Error: The error occurred when TLC was evaluating the nested
+expressions at the following positions:
+0. Line 93, column 82 to line 93, column 85 in C03Progress
+1. Line 76, column 9 to line 82, column 69 in C03Progress
+2. Line 76, column 9 to line 76, column 22 in C03Progress
+3. Line 76, column 12 to line 76, column 22 in C03Progress
+4. Line 77, column 8 to line 82, column 69 in C03Progress
+5. Line 78, column 8 to line 82, column 69 in C03Progress
+6. Line 79, column 10 to line 79, column 76 in C03Progress
+7. Line 79, column 13 to line 79, column 76 in C03Progress
+8. Line 79, column 13 to line 79, column 36 in C03Progress
+9. Line 79, column 13 to line 79, column 24 in C03Progress
+10. Line 62, column 5 to line 75, column 80 in C03Progress
+11. Line 62, column 23 to line 62, column 71 in C03Progress
+12. Line 62, column 26 to line 62, column 71 in C03Progress
+13. Line 62, column 26 to line 62, column 59 in C03Progress
+14. Line 992, column 23 to line 993, column 79 in base
+15. Line 992, column 23 to line 993, column 62 in base
+16. Line 992, column 23 to line 993, column 39 in base
+17. Line 992, column 23 to line 992, column 81 in base
+18. Line 992, column 23 to line 992, column 59 in base
+19. Line 992, column 45 to line 992, column 59 in base
+20. Line 62, column 64 to line 62, column 71 in C03Progress
+21. Line 1479, column 13 to line 1479, column 77 in base
+22. Line 1479, column 13 to line 1479, column 28 in base
+23. Line 995, column 5 to line 1017, column 39 in base
+24. Line 995, column 8 to line 995, column 34 in base
+25. Line 995, column 8 to line 995, column 14 in base
+26. Line 858, column 12 to line 858, column 44 in base
+27. Line 858, column 12 to line 858, column 24 in base
+28. Line 858, column 29 to line 858, column 44 in base
+29. Line 995, column 19 to line 995, column 34 in base
+30. Line 996, column 8 to line 1016, column 93 in base
+31. Line 997, column 8 to line 1016, column 93 in base
+32. Line 997, column 12 to line 997, column 46 in base
+33. Line 997, column 12 to line 997, column 29 in base
+34. Line 992, column 23 to line 993, column 79 in base
+35. Line 992, column 23 to line 993, column 62 in base
+36. Line 992, column 23 to line 993, column 39 in base
+37. Line 992, column 23 to line 992, column 81 in base
+38. Line 992, column 23 to line 992, column 59 in base
+39. Line 992, column 45 to line 992, column 59 in base
+40. Line 998, column 11 to line 998, column 38 in base
+41. Line 1004, column 11 to line 1008, column 27 in base
+42. Line 1009, column 11 to line 1009, column 66 in base
+43. Line 1010, column 11 to line 1016, column 93 in base
+44. Line 1017, column 8 to line 1017, column 39 in base
+45. Line 1017, column 18 to line 1017, column 39 in base
+46. Line 1017, column 20 to line 1017, column 23 in base
+47. Line 1017, column 34 to line 1017, column 37 in base
+48. Line 1017, column 25 to line 1017, column 32 in base
+49. Line 1479, column 33 to line 1479, column 77 in base
+50. Line 79, column 29 to line 79, column 36 in C03Progress
+51. Line 33, column 5 to line 37, column 39 in C03Progress
+52. Line 33, column 8 to line 34, column 67 in C03Progress
+53. Line 35, column 8 to line 35, column 66 in C03Progress
+54. Line 36, column 8 to line 36, column 62 in C03Progress
+55. Line 36, column 8 to line 36, column 25 in C03Progress
+56. Line 37, column 8 to line 37, column 39 in C03Progress
+57. Line 37, column 8 to line 37, column 27 in C03Progress
+58. Line 79, column 41 to line 79, column 76 in C03Progress
+59. Line 93, column 76 to line 93, column 80 in C03Progress
+60. Line 5, column 10 to line 5, column 97 in C03Progress
+61. Line 5, column 12 to line 5, column 20 in C03Progress
+62. Line 58, column 14 to line 58, column 23 in Trace
+63. Line 58, column 21 to line 58, column 21 in Trace
+
+
+397 states generated, 155 distinct states found, 0 states left on queue.
+The depth of the complete state graph search is 153.
+Finished in 33s at (2026-09-22 20:29:30)
+Trace exploration spec path: ./C03Progress_TTrace_1790108936.tla

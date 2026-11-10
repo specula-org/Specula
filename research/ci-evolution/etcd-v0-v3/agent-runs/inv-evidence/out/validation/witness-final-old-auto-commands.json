@@ -1,0 +1,42 @@
+[
+  {
+    "version": "V01",
+    "command": [
+      "java",
+      "-XX:+UseParallelGC",
+      "-Xmx2G",
+      "-cp",
+      "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+      "tlc2.TLC",
+      "-workers",
+      "1",
+      "-config",
+      "Witnesses.cfg",
+      "Witnesses"
+    ],
+    "cwd": "out/revised-spec/V01",
+    "seconds": 24.375435709021986,
+    "exit_code": 0,
+    "timeout_seconds": 180
+  },
+  {
+    "version": "V02",
+    "command": [
+      "java",
+      "-XX:+UseParallelGC",
+      "-Xmx2G",
+      "-cp",
+      "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+      "tlc2.TLC",
+      "-workers",
+      "1",
+      "-config",
+      "Witnesses.cfg",
+      "Witnesses"
+    ],
+    "cwd": "out/revised-spec/V02",
+    "seconds": 63.41284756921232,
+    "exit_code": 0,
+    "timeout_seconds": 180
+  }
+]

@@ -1,0 +1,162 @@
+{
+  "finding": "Bug A: campaign eligibility over committed but unapplied V2 configuration entries",
+  "dataset": "etcd-raft-ci-sequence-20260912 label A",
+  "environment": {
+    "go": "/usr/local/go/bin/go",
+    "GOTOOLCHAIN": "local",
+    "GOCACHE": "/workspace/out/gocache",
+    "GOTMPDIR": "/workspace/out/gotmp",
+    "GOPROXY": "off",
+    "workspace": "/workspace"
+  },
+  "harness": {
+    "runner": "/workspace/out/repro/test_bugA_runner.sh",
+    "v2_test": "/workspace/out/repro/test_bugA_v2_pending_campaign_test.go",
+    "legacy_test": "/workspace/out/repro/test_bugA_legacy_control_test.go",
+    "strategy": "public RawNode APIs only: NewRawNode/Bootstrap or legacy NewRawNode(peers), Ready, MemoryStorage persistence, Advance, Step, ApplyConfChange, ProposeConfChange, Campaign"
+  },
+  "versions": {
+    "V00": {
+      "revision": "d58d5d159ae1a1f644a10003f2d8b3b807cd0b3a",
+      "provided_source_manifest_sha256": "dcbf70789ca3d252a8c409d3a66db4370c9d06fa4d8fae58cc662be15289e402",
+      "computed_source_files_manifest_sha256": "31daee5b8ba4f0bc5d9c30c39324f446d8655f33dd1893561552bdb645ad5cd3",
+      "go_mod_sha256": "72839d61ccb5954cfd27f97ed221b2a4b7eb0b242d582c3e5627417b3f09973f",
+      "go_sum_sha256": "66ca5bee4305208b5977c536b3d3cdcddc77bd0958acf7a81132c1311ad27500",
+      "v2_positive": {
+        "outcome": "not_applicable",
+        "reason": "V00 predates ConfChangeV2/EntryConfChangeV2 and RawNode.Bootstrap; no public V2 API exists in this snapshot."
+      },
+      "legacy_control": {
+        "outcome": "pass_blocked_campaign",
+        "repetitions": [
+          {
+            "rep": 1,
+            "command": "timeout 5m env GOTOOLCHAIN=local GOCACHE=/workspace/out/gocache GOTMPDIR=/workspace/out/gotmp GOPROXY=off /workspace/out/repro/test_bugA_runner.sh V00 legacy rep1",
+            "exit_code": 0,
+            "log": "/workspace/out/logs/V00_legacy_rep1.log"
+          },
+          {
+            "rep": 2,
+            "command": "timeout 5m env GOTOOLCHAIN=local GOCACHE=/workspace/out/gocache GOTMPDIR=/workspace/out/gotmp GOPROXY=off /workspace/out/repro/test_bugA_runner.sh V00 legacy rep2",
+            "exit_code": 0,
+            "log": "/workspace/out/logs/V00_legacy_rep2.log"
+          },
+          {
+            "rep": 3,
+            "command": "timeout 5m env GOTOOLCHAIN=local GOCACHE=/workspace/out/gocache GOTMPDIR=/workspace/out/gotmp GOPROXY=off /workspace/out/repro/test_bugA_runner.sh V00 legacy rep3",
+            "exit_code": 0,
+            "log": "/workspace/out/logs/V00_legacy_rep3.log"
+          }
+        ]
+      }
+    },
+    "V01": {
+      "revision": "46580dcf61734b12ae757dbabdf31c2b862acd68",
+      "provided_source_manifest_sha256": "248e15de15a6169448b2ed7d2372d09185fdafa9950c2d78f48e20249814299b",
+      "computed_source_files_manifest_sha256": "7fae43ce1210ede4f076983eb2f432b8a2e772b7e91dfe05d83bc505edf8a93e",
+      "go_mod_sha256": "72839d61ccb5954cfd27f97ed221b2a4b7eb0b242d582c3e5627417b3f09973f",
+      "go_sum_sha256": "66ca5bee4305208b5977c536b3d3cdcddc77bd0958acf7a81132c1311ad27500",
+      "v2_positive": {
+        "outcome": "reproduced",
+        "repetitions": [
+          {
+            "rep": 1,
+            "command": "timeout 5m env GOTOOLCHAIN=local GOCACHE=/workspace/out/gocache GOTMPDIR=/workspace/out/gotmp GOPROXY=off /workspace/out/repro/test_bugA_runner.sh V01 v2 rep1",
+            "exit_code": 0,
+            "log": "/workspace/out/logs/V01_v2_rep1.log"
+          },
+          {
+            "rep": 2,
+            "command": "timeout 5m env GOTOOLCHAIN=local GOCACHE=/workspace/out/gocache GOTMPDIR=/workspace/out/gotmp GOPROXY=off /workspace/out/repro/test_bugA_runner.sh V01 v2 rep2",
+            "exit_code": 0,
+            "log": "/workspace/out/logs/V01_v2_rep2.log"
+          },
+          {
+            "rep": 3,
+            "command": "timeout 5m env GOTOOLCHAIN=local GOCACHE=/workspace/out/gocache GOTMPDIR=/workspace/out/gotmp GOPROXY=off /workspace/out/repro/test_bugA_runner.sh V01 v2 rep3",
+            "exit_code": 0,
+            "log": "/workspace/out/logs/V01_v2_rep3.log"
+          }
+        ],
+        "representative_evidence": {
+          "branch": "node2={id:2 state:StateFollower term:2 vote:1 commit:5 applied:4 lead:1} hasReady=true activeReady=false pendingEntry=EntryConfChangeV2@5",
+          "campaign": "node2={id:2 state:StateCandidate term:3 vote:2 commit:5 applied:4 lead:0} emitted MsgVote to 1 and 3 at term 3 index 5 logTerm 2",
+          "consequence": "leaderBefore={id:1 state:StateLeader term:2 ...} leaderAfterVote={id:1 state:StateFollower term:3 vote:2 ...}; node2 later became StateLeader at term 3"
+        }
+      },
+      "legacy_control": {
+        "outcome": "pass_blocked_campaign",
+        "covered_by_v2_test_repetitions": true
+      }
+    },
+    "V02": {
+      "revision": "3ea6503e58b03833d7d32a4ffcd3a76db9ea2520",
+      "provided_source_manifest_sha256": "34c16881bdb83f60ad453497165f276c8801f99420856ee4f565e6bb1c37b8ef",
+      "computed_source_files_manifest_sha256": "f4d6a90ae4573de9815ee2ee9e93610c90a5b90c44d50531c3c6ebb0d5b60a07",
+      "go_mod_sha256": "72839d61ccb5954cfd27f97ed221b2a4b7eb0b242d582c3e5627417b3f09973f",
+      "go_sum_sha256": "66ca5bee4305208b5977c536b3d3cdcddc77bd0958acf7a81132c1311ad27500",
+      "v2_positive": {
+        "outcome": "reproduced",
+        "repetitions": [
+          {
+            "rep": 1,
+            "command": "timeout 5m env GOTOOLCHAIN=local GOCACHE=/workspace/out/gocache GOTMPDIR=/workspace/out/gotmp GOPROXY=off /workspace/out/repro/test_bugA_runner.sh V02 v2 rep1",
+            "exit_code": 0,
+            "log": "/workspace/out/logs/V02_v2_rep1.log"
+          },
+          {
+            "rep": 2,
+            "command": "timeout 5m env GOTOOLCHAIN=local GOCACHE=/workspace/out/gocache GOTMPDIR=/workspace/out/gotmp GOPROXY=off /workspace/out/repro/test_bugA_runner.sh V02 v2 rep2",
+            "exit_code": 0,
+            "log": "/workspace/out/logs/V02_v2_rep2.log"
+          },
+          {
+            "rep": 3,
+            "command": "timeout 5m env GOTOOLCHAIN=local GOCACHE=/workspace/out/gocache GOTMPDIR=/workspace/out/gotmp GOPROXY=off /workspace/out/repro/test_bugA_runner.sh V02 v2 rep3",
+            "exit_code": 0,
+            "log": "/workspace/out/logs/V02_v2_rep3.log"
+          }
+        ]
+      },
+      "legacy_control": {
+        "outcome": "pass_blocked_campaign",
+        "covered_by_v2_test_repetitions": true
+      }
+    },
+    "V03": {
+      "revision": "bd3c759d61f003970d62095f04f3df5d977c8c78",
+      "provided_source_manifest_sha256": "4ef44147f529dee0ca30f33455620ef8da5d97e83ce5626b0f23ef85b220c5d4",
+      "computed_source_files_manifest_sha256": "05cc63359497678fa406c244d5f022b70a34730fbc64f3d8daf1abeab646859d",
+      "go_mod_sha256": "72839d61ccb5954cfd27f97ed221b2a4b7eb0b242d582c3e5627417b3f09973f",
+      "go_sum_sha256": "66ca5bee4305208b5977c536b3d3cdcddc77bd0958acf7a81132c1311ad27500",
+      "v2_positive": {
+        "outcome": "reproduced",
+        "repetitions": [
+          {
+            "rep": 1,
+            "command": "timeout 5m env GOTOOLCHAIN=local GOCACHE=/workspace/out/gocache GOTMPDIR=/workspace/out/gotmp GOPROXY=off /workspace/out/repro/test_bugA_runner.sh V03 v2 rep1",
+            "exit_code": 0,
+            "log": "/workspace/out/logs/V03_v2_rep1.log"
+          },
+          {
+            "rep": 2,
+            "command": "timeout 5m env GOTOOLCHAIN=local GOCACHE=/workspace/out/gocache GOTMPDIR=/workspace/out/gotmp GOPROXY=off /workspace/out/repro/test_bugA_runner.sh V03 v2 rep2",
+            "exit_code": 0,
+            "log": "/workspace/out/logs/V03_v2_rep2.log"
+          },
+          {
+            "rep": 3,
+            "command": "timeout 5m env GOTOOLCHAIN=local GOCACHE=/workspace/out/gocache GOTMPDIR=/workspace/out/gotmp GOPROXY=off /workspace/out/repro/test_bugA_runner.sh V03 v2 rep3",
+            "exit_code": 0,
+            "log": "/workspace/out/logs/V03_v2_rep3.log"
+          }
+        ]
+      },
+      "legacy_control": {
+        "outcome": "pass_blocked_campaign",
+        "covered_by_v2_test_repetitions": true
+      }
+    }
+  },
+  "verdict": "REPRODUCED on V01, V02, and V03; V00 has no V2 API and legacy control blocks campaign."
+}

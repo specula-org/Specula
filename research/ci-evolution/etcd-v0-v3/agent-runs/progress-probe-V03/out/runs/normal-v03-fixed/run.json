@@ -1,0 +1,31 @@
+{
+  "name": "normal-v03-fixed",
+  "version": "V03",
+  "module": "C03Progress",
+  "config": "normal.cfg",
+  "seconds_limit": 120,
+  "elapsed_seconds": 6.221178770065308,
+  "exit_code": 75,
+  "command": [
+    "timeout",
+    "--signal=TERM",
+    "--kill-after=5s",
+    "120s",
+    "java",
+    "-Xmx4g",
+    "-Dtlc2.TLC.progressInterval=10",
+    "-cp",
+    "/tools/tla2tools.jar:/tools/CommunityModules.jar",
+    "tlc2.TLC",
+    "-workers",
+    "1",
+    "-nowarning",
+    "-dumpTrace",
+    "json",
+    "counterexample.json",
+    "-config",
+    "normal.cfg",
+    "C03Progress"
+  ],
+  "trace": "/workspace/out/joint-autoleave-prefix-inputs.ndjson"
+}

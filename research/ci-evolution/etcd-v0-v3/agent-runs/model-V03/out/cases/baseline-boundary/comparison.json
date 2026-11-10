@@ -1,0 +1,474 @@
+{
+  "protocol": "action-validation/v1",
+  "route": "code-to-model",
+  "spec": "new/spec",
+  "counts": {
+    "behavioral_mismatch": 8,
+    "match": 2
+  },
+  "total": 10,
+  "commands": [
+    {
+      "engine": "implementation",
+      "command": [
+        "python3",
+        "out/framework/adapters/go/run.py",
+        "--input",
+        "/workspace/out/cases/v03-boundary-inputs.json",
+        "--output",
+        "/workspace/out/cases/baseline-boundary/implementation.jsonl",
+        "--work",
+        "/workspace/out/cases/baseline-boundary/implementation"
+      ],
+      "duration_seconds": 1.2167400186881423,
+      "exit_code": 0
+    },
+    {
+      "engine": "model",
+      "command": [
+        "python3",
+        "out/framework/adapters/tla/run.py",
+        "--input",
+        "/workspace/out/cases/v03-boundary-inputs.json",
+        "--output",
+        "/workspace/out/cases/baseline-boundary/model.jsonl",
+        "--spec",
+        "/workspace/new/spec",
+        "--work",
+        "/workspace/out/cases/baseline-boundary/model"
+      ],
+      "duration_seconds": 5.5270997155457735,
+      "exit_code": 0
+    }
+  ],
+  "results": [
+    {
+      "id": "v03-snapshot-advance-raw-cross",
+      "action": "advance_raw",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.last",
+          "left": 4,
+          "right": 3
+        },
+        {
+          "path": "$.state.log",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 6,
+              "index": 4,
+              "kind": "V2",
+              "target": 0,
+              "term": 2,
+              "transition": "Auto",
+              "weight": 0
+            }
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.pending",
+          "left": 4,
+          "right": 3
+        },
+        {
+          "path": "$.state.prs[0].match",
+          "left": 4,
+          "right": 3
+        },
+        {
+          "path": "$.state.prs[0].next",
+          "left": 5,
+          "right": 4
+        },
+        {
+          "path": "$.state.unstable",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 6,
+              "index": 4,
+              "kind": "V2",
+              "target": 0,
+              "term": 2,
+              "transition": "Auto",
+              "weight": 0
+            }
+          ],
+          "right": []
+        }
+      ]
+    },
+    {
+      "id": "v03-snapshot-advance-raw-no-cross",
+      "action": "advance_raw",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.pending",
+          "left": 0,
+          "right": 3
+        }
+      ]
+    },
+    {
+      "id": "v03-snapshot-advance-raw-follower",
+      "action": "advance_raw",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-snapshot-advance-node-cross",
+      "action": "advance_node",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.last",
+          "left": 4,
+          "right": 3
+        },
+        {
+          "path": "$.state.log",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 6,
+              "index": 4,
+              "kind": "V2",
+              "target": 0,
+              "term": 2,
+              "transition": "Auto",
+              "weight": 0
+            }
+          ],
+          "right": []
+        },
+        {
+          "path": "$.state.pending",
+          "left": 4,
+          "right": 3
+        },
+        {
+          "path": "$.state.prs[0].match",
+          "left": 4,
+          "right": 3
+        },
+        {
+          "path": "$.state.prs[0].next",
+          "left": 5,
+          "right": 4
+        },
+        {
+          "path": "$.state.unstable",
+          "left": [
+            {
+              "changes": [],
+              "encoded": 6,
+              "index": 4,
+              "kind": "V2",
+              "target": 0,
+              "term": 2,
+              "transition": "Auto",
+              "weight": 0
+            }
+          ],
+          "right": []
+        }
+      ]
+    },
+    {
+      "id": "v03-snapshot-advance-node-no-cross",
+      "action": "advance_node",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.pending",
+          "left": 0,
+          "right": 3
+        }
+      ]
+    },
+    {
+      "id": "v03-snapshot-advance-node-follower",
+      "action": "advance_node",
+      "verdict": "match",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": []
+    },
+    {
+      "id": "v03-empty-log-Leader-apply",
+      "action": "apply",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.prs[3].next",
+          "left": 0,
+          "right": 1
+        }
+      ]
+    },
+    {
+      "id": "v03-empty-log-Leader-apply_then_step",
+      "action": "apply_then_step",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.messages",
+          "left": [
+            {
+              "commit": 0,
+              "context": 0,
+              "entries": [
+                {
+                  "changes": [],
+                  "encoded": 6,
+                  "index": 1,
+                  "kind": "Normal",
+                  "target": 0,
+                  "term": 2,
+                  "transition": "Legacy",
+                  "weight": 0
+                }
+              ],
+              "forced": false,
+              "fromId": 1,
+              "hint": 0,
+              "index": 0,
+              "logTerm": 0,
+              "reject": false,
+              "snapshot": {
+                "config": {
+                  "autoLeave": false,
+                  "learners": [],
+                  "learnersNext": [],
+                  "outgoing": [],
+                  "voters": []
+                },
+                "index": 0,
+                "term": 0
+              },
+              "term": 2,
+              "to": 2,
+              "type": "MsgApp"
+            },
+            {
+              "commit": 0,
+              "context": 0,
+              "entries": [
+                {
+                  "changes": [],
+                  "encoded": 6,
+                  "index": 1,
+                  "kind": "Normal",
+                  "target": 0,
+                  "term": 2,
+                  "transition": "Legacy",
+                  "weight": 0
+                }
+              ],
+              "forced": false,
+              "fromId": 1,
+              "hint": 0,
+              "index": 0,
+              "logTerm": 0,
+              "reject": false,
+              "snapshot": {
+                "config": {
+                  "autoLeave": false,
+                  "learners": [],
+                  "learnersNext": [],
+                  "outgoing": [],
+                  "voters": []
+                },
+                "index": 0,
+                "term": 0
+              },
+              "term": 2,
+              "to": 3,
+              "type": "MsgApp"
+            }
+          ],
+          "right": [
+            {
+              "commit": 0,
+              "context": 0,
+              "entries": [
+                {
+                  "changes": [],
+                  "encoded": 6,
+                  "index": 1,
+                  "kind": "Normal",
+                  "target": 0,
+                  "term": 2,
+                  "transition": "Legacy",
+                  "weight": 0
+                }
+              ],
+              "forced": false,
+              "fromId": 1,
+              "hint": 0,
+              "index": 0,
+              "logTerm": 0,
+              "reject": false,
+              "snapshot": {
+                "config": {
+                  "autoLeave": false,
+                  "learners": [],
+                  "learnersNext": [],
+                  "outgoing": [],
+                  "voters": []
+                },
+                "index": 0,
+                "term": 0
+              },
+              "term": 2,
+              "to": 2,
+              "type": "MsgApp"
+            },
+            {
+              "commit": 0,
+              "context": 0,
+              "entries": [
+                {
+                  "changes": [],
+                  "encoded": 6,
+                  "index": 1,
+                  "kind": "Normal",
+                  "target": 0,
+                  "term": 2,
+                  "transition": "Legacy",
+                  "weight": 0
+                }
+              ],
+              "forced": false,
+              "fromId": 1,
+              "hint": 0,
+              "index": 0,
+              "logTerm": 0,
+              "reject": false,
+              "snapshot": {
+                "config": {
+                  "autoLeave": false,
+                  "learners": [],
+                  "learnersNext": [],
+                  "outgoing": [],
+                  "voters": []
+                },
+                "index": 0,
+                "term": 0
+              },
+              "term": 2,
+              "to": 3,
+              "type": "MsgApp"
+            },
+            {
+              "commit": 0,
+              "context": 0,
+              "entries": [
+                {
+                  "changes": [],
+                  "encoded": 6,
+                  "index": 1,
+                  "kind": "Normal",
+                  "target": 0,
+                  "term": 2,
+                  "transition": "Legacy",
+                  "weight": 0
+                }
+              ],
+              "forced": false,
+              "fromId": 1,
+              "hint": 0,
+              "index": 0,
+              "logTerm": 0,
+              "reject": false,
+              "snapshot": {
+                "config": {
+                  "autoLeave": false,
+                  "learners": [],
+                  "learnersNext": [],
+                  "outgoing": [],
+                  "voters": []
+                },
+                "index": 0,
+                "term": 0
+              },
+              "term": 2,
+              "to": 4,
+              "type": "MsgApp"
+            }
+          ]
+        },
+        {
+          "path": "$.state.prs[3].next",
+          "left": 0,
+          "right": 1
+        },
+        {
+          "path": "$.state.prs[3].probe",
+          "left": false,
+          "right": true
+        },
+        {
+          "path": "$.status",
+          "left": "panic",
+          "right": "ok"
+        }
+      ]
+    },
+    {
+      "id": "v03-empty-log-Follower-apply",
+      "action": "apply",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.prs[3].next",
+          "left": 0,
+          "right": 1
+        }
+      ]
+    },
+    {
+      "id": "v03-empty-log-Follower-apply_then_step",
+      "action": "apply_then_step",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.prs[3].next",
+          "left": 0,
+          "right": 1
+        },
+        {
+          "path": "$.status",
+          "left": "dropped",
+          "right": "ok"
+        }
+      ]
+    }
+  ],
+  "extra_results": {
+    "implementation": [],
+    "model": []
+  }
+}

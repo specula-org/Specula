@@ -1,0 +1,39 @@
+{
+  "trace": "/home/ubuntu/specula-etcd-ci-init-20260912.FNeLj3NS/ci-clean/runs/20260913-175006-a818/etcd-raft/.specula-output/traces/raw-elections-reads-recovery.ndjson",
+  "trace_sha256": "06ebb842d8725fd7c4f08c8534d718d2403181ca878e5ea330bf9da463be3a6d",
+  "events": 762,
+  "fresh_code_execution": false,
+  "version": "V01",
+  "mode": "historical trace regression with the original version-specific correspondence cfg; see that cfg for known-property exclusions",
+  "exit_code": 0,
+  "seconds": 81.0100067993626,
+  "counts": [
+    2368,
+    762,
+    0
+  ],
+  "success": true,
+  "command": [
+    "timeout",
+    "300s",
+    "java",
+    "-XX:+UseParallelGC",
+    "-Xmx3G",
+    "-cp",
+    "/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/dist/tla2tools.jar:/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/lib/CommunityModules.jar",
+    "tlc2.TLC",
+    "-workers",
+    "1",
+    "-metadir",
+    "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/results/trace-V01-final-backward-repairs/raw-elections-reads-recovery/states",
+    "-config",
+    "TraceCorrespondence.cfg",
+    "Trace.tla"
+  ],
+  "inputs": {
+    "TraceCorrespondence.cfg": "4e899facc61437e1abf5a2d6c3654dc428f20f298c818e4e9ffcc584e0d6ec21",
+    "base.tla": "56bcc42634e80d9a089967d7b98e14502c4bc5b06ecc2aa5fa9b5ac148389bda",
+    "Trace.tla": "d788d6d0f49f68dca05628a46e2111b197f42bed8b4556595e2dcd7335984242"
+  },
+  "errors": []
+}

@@ -1,0 +1,209 @@
+{
+  "property": "CampaignDecisionEligibility",
+  "states": 209,
+  "last_transition": [
+    {
+      "l": 209,
+      "probeDone": false,
+      "probeNode": 0,
+      "node": {
+        "timeout": 7,
+        "term": 2,
+        "commit": 5,
+        "config": {
+          "voters": [
+            1,
+            2,
+            3
+          ],
+          "outgoing": [],
+          "learners": [],
+          "learnersNext": [],
+          "autoLeave": false
+        },
+        "role": "Follower",
+        "applied": 4,
+        "elapsed": 0,
+        "pendingConf": 0,
+        "preVote": false
+      },
+      "readyActive": false,
+      "quality": {
+        "campaigns": [],
+        "votes": [],
+        "transfers": [],
+        "effects": [],
+        "proposals": []
+      }
+    },
+    {
+      "l": 209,
+      "probeDone": true,
+      "probeNode": 2,
+      "node": {
+        "timeout": 7,
+        "term": 3,
+        "commit": 5,
+        "config": {
+          "voters": [
+            1,
+            2,
+            3
+          ],
+          "outgoing": [],
+          "learners": [],
+          "learnersNext": [],
+          "autoLeave": false
+        },
+        "role": "Candidate",
+        "applied": 4,
+        "elapsed": 0,
+        "pendingConf": 0,
+        "preVote": false
+      },
+      "readyActive": false,
+      "quality": {
+        "campaigns": [
+          {
+            "timeout": 7,
+            "node": 2,
+            "term": 2,
+            "commit": 5,
+            "voters": [
+              1,
+              2,
+              3
+            ],
+            "hist": [
+              {
+                "target": 1,
+                "id": 0,
+                "kind": "AddVoter",
+                "weight": 6,
+                "encoded": 14,
+                "changes": [
+                  {
+                    "target": 1,
+                    "kind": "AddVoter"
+                  }
+                ],
+                "transition": "Legacy",
+                "index": 1,
+                "term": 1
+              },
+              {
+                "target": 2,
+                "id": 0,
+                "kind": "AddVoter",
+                "weight": 6,
+                "encoded": 14,
+                "changes": [
+                  {
+                    "target": 2,
+                    "kind": "AddVoter"
+                  }
+                ],
+                "transition": "Legacy",
+                "index": 2,
+                "term": 1
+              },
+              {
+                "target": 3,
+                "id": 0,
+                "kind": "AddVoter",
+                "weight": 6,
+                "encoded": 14,
+                "changes": [
+                  {
+                    "target": 3,
+                    "kind": "AddVoter"
+                  }
+                ],
+                "transition": "Legacy",
+                "index": 3,
+                "term": 1
+              },
+              {
+                "target": 0,
+                "id": 0,
+                "kind": "Normal",
+                "weight": 0,
+                "encoded": 6,
+                "changes": [],
+                "transition": "Legacy",
+                "index": 4,
+                "term": 2
+              },
+              {
+                "target": 0,
+                "id": 1,
+                "kind": "V2",
+                "weight": 24,
+                "encoded": 32,
+                "changes": [
+                  {
+                    "target": 3,
+                    "kind": "Remove"
+                  },
+                  {
+                    "target": 4,
+                    "kind": "AddVoter"
+                  }
+                ],
+                "transition": "Auto",
+                "index": 5,
+                "term": 2
+              }
+            ],
+            "config": {
+              "voters": [
+                1,
+                2,
+                3
+              ],
+              "outgoing": [],
+              "learners": [],
+              "learnersNext": [],
+              "autoLeave": false
+            },
+            "role": "Follower",
+            "fatal": "",
+            "applied": 4,
+            "elapsed": 0,
+            "pre": false,
+            "first": 1,
+            "afterTerm": 3,
+            "trigger": "Hup",
+            "voteRequests": [
+              {
+                "index": 5,
+                "term": 3,
+                "to": 1,
+                "type": "MsgVote",
+                "from": 2,
+                "logTerm": 2,
+                "forced": false,
+                "count": 1
+              },
+              {
+                "index": 5,
+                "term": 3,
+                "to": 3,
+                "type": "MsgVote",
+                "from": 2,
+                "logTerm": 2,
+                "forced": false,
+                "count": 1
+              }
+            ],
+            "afterRole": "Candidate"
+          }
+        ],
+        "votes": [],
+        "transfers": [],
+        "effects": [],
+        "proposals": []
+      }
+    }
+  ]
+}

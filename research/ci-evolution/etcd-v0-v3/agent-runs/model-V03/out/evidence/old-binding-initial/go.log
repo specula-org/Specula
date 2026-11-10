@@ -1,0 +1,13 @@
+# go.etcd.io/etcd/raft [go.etcd.io/etcd/raft.test]
+./action_validation_test.go:112:22: unknown field Nodes in struct literal of type raftpb.ConfState
+./action_validation_test.go:112:39: unknown field NodesJoint in struct literal of type raftpb.ConfState
+./action_validation_test.go:115:65: c.Nodes undefined (type raftpb.ConfState has no field or method Nodes)
+./action_validation_test.go:115:81: c.NodesJoint undefined (type raftpb.ConfState has no field or method NodesJoint)
+./action_validation_test.go:446:8: not enough arguments in call to newNode
+	have ()
+	want (*RawNode)
+./action_validation_test.go:448:13: too many arguments in call to nd.run
+	have (*RawNode)
+	want ()
+FAIL	go.etcd.io/etcd/raft [build failed]
+FAIL

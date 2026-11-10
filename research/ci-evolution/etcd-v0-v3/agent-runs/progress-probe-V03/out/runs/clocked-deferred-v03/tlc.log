@@ -1,0 +1,606 @@
+TLC2 Version 2.20 of Day Month 20?? (rev: ${git.shortRevision})
+Running breadth-first search Model-Checking with fp 27 and seed -3422349026168728569 with 1 worker on 96 cores with 4096MB heap and 64MB offheap memory [pid: 6711] (Linux 6.8.0-1044-azure amd64, Ubuntu 21.0.11 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /workspace/out/runs/clocked-deferred-v03/C03Clocked.tla
+Parsing file /workspace/out/runs/clocked-deferred-v03/C03Progress.tla
+Parsing file /tmp/tlc-8281309009839750313/_JsonTrace.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/_JsonTrace.tla)
+Parsing file /tmp/tlc-8281309009839750313/_TLCTrace.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/_TLCTrace.tla)
+Parsing file /workspace/out/runs/clocked-deferred-v03/Trace.tla
+Parsing file /workspace/out/runs/clocked-deferred-v03/base.tla
+Parsing file /tmp/tlc-8281309009839750313/Json.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Json.tla)
+Parsing file /tmp/tlc-8281309009839750313/IOUtils.tla (jar:file:/tools/CommunityModules.jar!/IOUtils.tla)
+Parsing file /tmp/tlc-8281309009839750313/Naturals.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Naturals.tla)
+Parsing file /tmp/tlc-8281309009839750313/Integers.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Integers.tla)
+Parsing file /tmp/tlc-8281309009839750313/Sequences.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Sequences.tla)
+Parsing file /tmp/tlc-8281309009839750313/FiniteSets.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/FiniteSets.tla)
+Parsing file /tmp/tlc-8281309009839750313/Bags.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/Bags.tla)
+Parsing file /tmp/tlc-8281309009839750313/TLC.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/TLC.tla)
+Parsing file /tmp/tlc-8281309009839750313/TLCExt.tla (jar:file:/tools/tla2tools.jar!/tla2sany/StandardModules/TLCExt.tla)
+Semantic processing of module Naturals
+Semantic processing of module Integers
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module Bags
+Semantic processing of module base
+Semantic processing of module Json
+Semantic processing of module IOUtils
+Semantic processing of module Trace
+Semantic processing of module C03Progress
+Semantic processing of module TLCExt
+Semantic processing of module _JsonTrace
+Semantic processing of module _TLCTrace
+Semantic processing of module C03Clocked
+Linting of module base
+Linting of module Json
+Linting of module IOUtils
+Linting of module Trace
+Linting of module C03Progress
+Linting of module TLCExt
+Linting of module _JsonTrace
+Linting of module _TLCTrace
+Linting of module C03Clocked
+Starting... (2026-09-22 20:41:44)
+Implied-temporal checking--satisfiability problem has 8 branches.
+Computing initial states...
+Finished computing initial states: 1 distinct state generated at 2026-09-22 20:41:45.
+Checking 8 branches of temporal properties for the current state space with 1560 total distinct states at (2026-09-22 20:41:48)
+Finished checking temporal properties in 00s at 2026-09-22 20:41:48
+Progress(192) at 2026-09-22 20:41:48: 489 states generated (2,934 s/min), 195 distinct states found (1,170 ds/min), 1 states left on queue.
+Checking 8 branches of temporal properties for the current state space with 3256 total distinct states at (2026-09-22 20:41:58)
+Finished checking temporal properties in 00s at 2026-09-22 20:41:58
+Progress(262) at 2026-09-22 20:41:58: 1,190 states generated (4,206 s/min), 407 distinct states found (1,272 ds/min), 2 states left on queue.
+Checking 8 branches of temporal properties for the current state space with 4792 total distinct states at (2026-09-22 20:42:08)
+Finished checking temporal properties in 00s at 2026-09-22 20:42:08
+Progress(325) at 2026-09-22 20:42:08: 1,778 states generated (3,528 s/min), 599 distinct states found (1,152 ds/min), 2 states left on queue.
+Checking 8 branches of temporal properties for the current state space with 6040 total distinct states at (2026-09-22 20:42:18)
+Finished checking temporal properties in 00s at 2026-09-22 20:42:18
+Progress(377) at 2026-09-22 20:42:18: 2,428 states generated (3,900 s/min), 755 distinct states found (936 ds/min), 2 states left on queue.
+Checking 8 branches of temporal properties for the current state space with 7512 total distinct states at (2026-09-22 20:42:28)
+Finished checking temporal properties in 00s at 2026-09-22 20:42:28
+Progress(438) at 2026-09-22 20:42:28: 3,013 states generated (3,510 s/min), 939 distinct states found (1,104 ds/min), 2 states left on queue.
+Checking 8 branches of temporal properties for the current state space with 9112 total distinct states at (2026-09-22 20:42:38)
+Finished checking temporal properties in 00s at 2026-09-22 20:42:38
+Progress(505) at 2026-09-22 20:42:38: 3,803 states generated (4,740 s/min), 1,139 distinct states found (1,200 ds/min), 2 states left on queue.
+Progress(589) at 2026-09-22 20:42:48: 4,634 states generated, 1,331 distinct states found, 0 states left on queue.
+Checking 8 branches of temporal properties for the complete state space with 10648 total distinct states at (2026-09-22 20:42:48)
+Error: Temporal properties were violated.
+
+Error: The following behavior constitutes a counter-example:
+
+[trimmed for the repository: 4787694 lines of counterexample state dumps removed; state headers kept. Condensed trace: events.json/summary.json next to this log; rerun with the command in run.json/receipt.json to regenerate the full dump.]
+State 1: <Initial predicate>
+State 2: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 3: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 4: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 5: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 6: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 7: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 8: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 9: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 10: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 11: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 12: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 13: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 14: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 15: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 16: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 17: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 18: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 19: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 20: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 21: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 22: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 23: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 24: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 25: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 26: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 27: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 28: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 29: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 30: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 31: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 32: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 33: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 34: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 35: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 36: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 37: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 38: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 39: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 40: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 41: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 42: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 43: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 44: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 45: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 46: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 47: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 48: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 49: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 50: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 51: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 52: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 53: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 54: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 55: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 56: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 57: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 58: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 59: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 60: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 61: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 62: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 63: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 64: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 65: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 66: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 67: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 68: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 69: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 70: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 71: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 72: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 73: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 74: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 75: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 76: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 77: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 78: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 79: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 80: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 81: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 82: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 83: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 84: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 85: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 86: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 87: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 88: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 89: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 90: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 91: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 92: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 93: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 94: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 95: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 96: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 97: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 98: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 99: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 100: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 101: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 102: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 103: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 104: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 105: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 106: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 107: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 108: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 109: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 110: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 111: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 112: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 113: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 114: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 115: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 116: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 117: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 118: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 119: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 120: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 121: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 122: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 123: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 124: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 125: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 126: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 127: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 128: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 129: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 130: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 131: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 132: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 133: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 134: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 135: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 136: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 137: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 138: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 139: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 140: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 141: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 142: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 143: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 144: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 145: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 146: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 147: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 148: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 149: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 150: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 151: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 152: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 153: <ClockReplay line 6, col 16 to line 6, col 46 of module C03Clocked>
+State 154: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 155: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 156: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 157: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 158: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 159: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 160: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 161: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 162: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 163: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 164: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 165: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 166: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 167: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 168: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 169: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 170: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 171: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 172: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 173: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 174: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 175: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 176: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 177: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 178: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 179: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 180: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 181: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 182: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 183: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 184: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 185: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 186: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 187: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 188: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 189: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 190: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 191: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 192: <ClockEarly line 19, col 15 to line 19, col 44 of module C03Clocked>
+State 193: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 194: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 195: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 196: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 197: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 198: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 199: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 200: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 201: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 202: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 203: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 204: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 205: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 206: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 207: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 208: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 209: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 210: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 211: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 212: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 213: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 214: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 215: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 216: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 217: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 218: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 219: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 220: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 221: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 222: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 223: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 224: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 225: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 226: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 227: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 228: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 229: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 230: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 231: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 232: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 233: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 234: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 235: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 236: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 237: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 238: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 239: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 240: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 241: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 242: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 243: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 244: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 245: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 246: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 247: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 248: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 249: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 250: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 251: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 252: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 253: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 254: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 255: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 256: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 257: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 258: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 259: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 260: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 261: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 262: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 263: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 264: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 265: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 266: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 267: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 268: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 269: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 270: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 271: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 272: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 273: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 274: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 275: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 276: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 277: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 278: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 279: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 280: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 281: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 282: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 283: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 284: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 285: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 286: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 287: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 288: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 289: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 290: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 291: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 292: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 293: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 294: <FollowerTick line 12, col 5 to line 17, col 50 of module C03Clocked>
+State 295: <FollowerTick line 12, col 5 to line 17, col 50 of module C03Clocked>
+State 296: <FollowerTick line 12, col 5 to line 17, col 50 of module C03Clocked>
+State 297: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 298: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 299: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 300: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 301: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 302: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 303: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 304: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 305: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 306: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 307: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 308: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 309: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 310: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 311: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 312: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 313: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 314: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 315: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 316: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 317: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 318: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 319: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 320: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 321: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 322: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 323: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 324: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 325: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 326: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 327: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 328: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 329: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 330: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 331: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 332: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 333: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 334: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 335: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 336: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 337: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 338: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 339: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 340: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 341: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 342: <FollowerTick line 12, col 5 to line 17, col 50 of module C03Clocked>
+State 343: <FollowerTick line 12, col 5 to line 17, col 50 of module C03Clocked>
+State 344: <FollowerTick line 12, col 5 to line 17, col 50 of module C03Clocked>
+State 345: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 346: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 347: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 348: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 349: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 350: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 351: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 352: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 353: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 354: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 355: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 356: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 357: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 358: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 359: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 360: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 361: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 362: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 363: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 364: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 365: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 366: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 367: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 368: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 369: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 370: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 371: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 372: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 373: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 374: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 375: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 376: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 377: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 378: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 379: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 380: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 381: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 382: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 383: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 384: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 385: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 386: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 387: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 388: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 389: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 390: <FollowerTick line 12, col 5 to line 17, col 50 of module C03Clocked>
+State 391: <FollowerTick line 12, col 5 to line 17, col 50 of module C03Clocked>
+State 392: <FollowerTick line 12, col 5 to line 17, col 50 of module C03Clocked>
+State 393: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 394: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 395: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 396: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 397: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 398: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 399: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 400: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 401: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 402: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 403: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 404: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 405: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 406: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 407: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 408: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 409: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 410: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 411: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 412: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 413: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 414: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 415: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 416: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 417: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 418: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 419: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 420: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 421: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 422: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 423: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 424: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 425: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 426: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 427: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 428: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 429: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 430: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 431: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 432: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 433: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 434: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 435: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 436: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 437: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 438: <FollowerTick line 12, col 5 to line 17, col 50 of module C03Clocked>
+State 439: <FollowerTick line 12, col 5 to line 17, col 50 of module C03Clocked>
+State 440: <FollowerTick line 12, col 5 to line 17, col 50 of module C03Clocked>
+State 441: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 442: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 443: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 444: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 445: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 446: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 447: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 448: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 449: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 450: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 451: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 452: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 453: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 454: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 455: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 456: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 457: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 458: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 459: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 460: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 461: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 462: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 463: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 464: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 465: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 466: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 467: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 468: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 469: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 470: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 471: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 472: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 473: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 474: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 475: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 476: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 477: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 478: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 479: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 480: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 481: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 482: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 483: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 484: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 485: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 486: <FollowerTick line 12, col 5 to line 17, col 50 of module C03Clocked>
+State 487: <FollowerTick line 12, col 5 to line 17, col 50 of module C03Clocked>
+State 488: <FollowerTick line 12, col 5 to line 17, col 50 of module C03Clocked>
+State 489: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 490: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 491: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 492: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 493: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 494: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 495: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 496: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 497: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 498: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 499: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 500: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 501: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 502: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 503: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 504: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 505: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 506: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 507: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 508: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 509: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 510: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 511: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 512: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 513: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 514: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 515: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 516: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 517: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 518: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 519: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 520: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 521: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 522: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 523: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 524: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 525: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 526: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 527: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+State 528: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+Back to state 337: <ClockPump line 8, col 5 to line 10, col 78 of module C03Clocked>
+
+"CounterExample written: counterexample.json"
+Finished checking temporal properties in 07s at 2026-09-22 20:42:56
+4634 states generated, 1331 distinct states found, 0 states left on queue.
+The depth of the complete state graph search is 589.
+Finished in 01min 11s at (2026-09-22 20:42:56)
+Trace exploration spec path: ./C03Clocked_TTrace_1790109704.tla

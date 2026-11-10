@@ -1,0 +1,63 @@
+{
+  "protocol": "action-validation/v1",
+  "route": "code-to-model",
+  "spec": "out/repaired-spec",
+  "counts": {
+    "behavioral_mismatch": 1
+  },
+  "total": 1,
+  "commands": [
+    {
+      "engine": "implementation",
+      "command": [
+        "python3",
+        "out/framework/adapters/go/run.py",
+        "--input",
+        "/workspace/out/cases/v03-panic-order-inputs.json",
+        "--output",
+        "/workspace/out/cases/repaired-panic-order-initial/implementation.jsonl",
+        "--work",
+        "/workspace/out/cases/repaired-panic-order-initial/implementation"
+      ],
+      "duration_seconds": 0.3146547982469201,
+      "exit_code": 0
+    },
+    {
+      "engine": "model",
+      "command": [
+        "python3",
+        "out/framework/adapters/tla/run.py",
+        "--input",
+        "/workspace/out/cases/v03-panic-order-inputs.json",
+        "--output",
+        "/workspace/out/cases/repaired-panic-order-initial/model.jsonl",
+        "--spec",
+        "/workspace/out/repaired-spec",
+        "--work",
+        "/workspace/out/cases/repaired-panic-order-initial/model"
+      ],
+      "duration_seconds": 2.820845822803676,
+      "exit_code": 0
+    }
+  ],
+  "results": [
+    {
+      "id": "v03-config-broadcast-panic-before-transfer",
+      "action": "apply",
+      "verdict": "behavioral_mismatch",
+      "pre_differences": [],
+      "input_differences": [],
+      "differences": [
+        {
+          "path": "$.state.transfer",
+          "left": 4,
+          "right": 0
+        }
+      ]
+    }
+  ],
+  "extra_results": {
+    "implementation": [],
+    "model": []
+  }
+}

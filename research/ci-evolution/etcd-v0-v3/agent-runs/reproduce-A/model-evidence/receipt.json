@@ -1,0 +1,57 @@
+{
+  "source_spec": "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/experiments/campaign-prefix/V01",
+  "input_sha256": {
+    "CampaignProbe.cfg": "830eee8536b21511b4b261fcc27024bd213f3a312ad44f87cff00ae817fff388",
+    "base.tla": "7f6140e9e1cc0a9d5ec59d3a7630964de1bf88b8631b72eb870d0c9ea597ff3d",
+    "CampaignProbe.tla": "649e3b3aa43837f7450bc7c77c6ce9b4cdc05a9051449ab1c48070c11a0307c7",
+    "provenance.json": "23ed84b2d97bd2a347b61ee88bd2db42fcb5b0b7d85827254c660757bedfb1ee",
+    "Trace.tla": "d788d6d0f49f68dca05628a46e2111b197f42bed8b4556595e2dcd7335984242",
+    "trace.ndjson": "4ba1bd3fafc14de159b26d973e4c9fd85bc19276d5d9efe5a2ed2ceb80af93ee"
+  },
+  "command": [
+    "timeout",
+    "-s",
+    "INT",
+    "-k",
+    "15s",
+    "180s",
+    "java",
+    "-XX:ActiveProcessorCount=4",
+    "-Dtlc2.TLC.progressInterval=10",
+    "-XX:+UseParallelGC",
+    "-Xmx4G",
+    "-cp",
+    "/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/dist/tla2tools.jar:/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/lib/CommunityModules.jar",
+    "tlc2.TLC",
+    "-workers",
+    "1",
+    "-metadir",
+    "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/results/exploration/V01-campaign-prefix-probe/states",
+    "-dumpTrace",
+    "json",
+    "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/results/exploration/V01-campaign-prefix-probe/counterexample.json",
+    "-config",
+    "CampaignProbe.cfg",
+    "CampaignProbe"
+  ],
+  "cwd": "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/results/exploration/V01-campaign-prefix-probe/spec",
+  "status": "finished",
+  "budget_seconds": 180,
+  "started_at": "2026-09-22T20:28:10.486327+00:00",
+  "pid": 1637499,
+  "seconds": 39.7436718987301,
+  "exit_code": 12,
+  "errors": [
+    "Error: Invariant CampaignDecisionEligibility is violated.",
+    "Error: The behavior up to this point is:"
+  ],
+  "state_counts": [
+    1193,
+    871,
+    6
+  ],
+  "last_progress": null,
+  "completed_no_error": false,
+  "exhausted_budget": false,
+  "counterexample_exists": true
+}

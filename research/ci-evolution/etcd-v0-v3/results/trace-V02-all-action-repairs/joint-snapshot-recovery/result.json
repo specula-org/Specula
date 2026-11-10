@@ -1,0 +1,39 @@
+{
+  "trace": "/home/ubuntu/specula-etcd-ci-init-20260912.FNeLj3NS/ci-clean/runs/20260915-173143-1152/etcd-raft/.specula-output/traces/joint-snapshot-recovery.ndjson",
+  "trace_sha256": "41cdd65f78936f111e7a83ffcc4c2ee4f65406923e5bd6b02484113e4713de86",
+  "events": 399,
+  "fresh_code_execution": false,
+  "version": "V02",
+  "mode": "historical trace regression with the original version-specific correspondence cfg; see that cfg for known-property exclusions",
+  "exit_code": 0,
+  "seconds": 38.718292341567576,
+  "counts": [
+    1093,
+    399,
+    0
+  ],
+  "success": true,
+  "command": [
+    "timeout",
+    "300s",
+    "java",
+    "-XX:+UseParallelGC",
+    "-Xmx3G",
+    "-cp",
+    "/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/dist/tla2tools.jar:/home/ubuntu/Specula/tools/tlaplus/tlatools/org.lamport.tlatools/lib/CommunityModules.jar",
+    "tlc2.TLC",
+    "-workers",
+    "1",
+    "-metadir",
+    "/home/ubuntu/specula-ci-evolution-v00-v03-20260922-bl1gthhx/results/trace-V02-all-action-repairs/joint-snapshot-recovery/states",
+    "-config",
+    "TraceCorrespondence.cfg",
+    "Trace.tla"
+  ],
+  "inputs": {
+    "TraceCorrespondence.cfg": "68f7a1d8a50c1b39e05935386239333530788ff2d5e445b31441a7ca370acd38",
+    "base.tla": "01e6da5ec743dba28bf8314c3e762786999b02121648a57f4fec1150de680ee2",
+    "Trace.tla": "d788d6d0f49f68dca05628a46e2111b197f42bed8b4556595e2dcd7335984242"
+  },
+  "errors": []
+}
