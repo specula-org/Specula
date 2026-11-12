@@ -82,6 +82,7 @@ def _validate_binding(
     cwd: str,
     model: str,
     effort: str,
+    codex_profile: str = "",
 ) -> str:
     expected = {
         "version": SCHEMA_VERSION,
@@ -93,6 +94,12 @@ def _validate_binding(
     for key, value in expected.items():
         if payload.get(key) != value:
             raise ResumeStateError(f"resume state {path} has {key}={payload.get(key)!r}; expected {value!r}")
+    # Recorded only when set; a missing key means the base Codex config.
+    recorded_profile = payload.get("codex_profile", "")
+    if recorded_profile != _text(codex_profile):
+        raise ResumeStateError(
+            f"resume state {path} has codex_profile={recorded_profile!r}; expected {_text(codex_profile)!r}"
+        )
     return _validate_session_id(payload.get("session_id"))
 
 
@@ -103,6 +110,7 @@ def read_session_id(
     cwd: str,
     model: str = "",
     effort: str = "",
+    codex_profile: str = "",
 ) -> str | None:
     """Return the bound native session ID, or ``None`` for a fresh turn."""
     if path is None or not str(path):
@@ -118,6 +126,7 @@ def read_session_id(
         cwd=cwd,
         model=model,
         effort=effort,
+        codex_profile=codex_profile,
     )
 
 
@@ -129,6 +138,7 @@ def capture_session_id(
     cwd: str,
     model: str = "",
     effort: str = "",
+    codex_profile: str = "",
 ) -> None:
     """Atomically bind ``path`` to one exact native session.
 
@@ -151,6 +161,7 @@ def capture_session_id(
             cwd=cwd,
             model=model,
             effort=effort,
+            codex_profile=codex_profile,
         )
         if bound != session_id:
             raise ResumeStateError(f"resume state {state_path} changed session ID from {bound!r} to {session_id!r}")
@@ -167,6 +178,8 @@ def capture_session_id(
         "model": _text(model),
         "effort": _text(effort),
     }
+    if _text(codex_profile):
+        payload["codex_profile"] = _text(codex_profile)
     try:
         state_path.parent.mkdir(parents=True, exist_ok=True)
         fd, raw_temporary = tempfile.mkstemp(prefix=f".{state_path.name}.", suffix=".tmp", dir=state_path.parent)
@@ -203,10 +216,11 @@ def capture_session_id(
 
 
 def _main(argv: list[str]) -> int:
-    if len(argv) != 6 or argv[0] != "read":
-        print("usage: resume.py read PATH ADAPTER CWD MODEL EFFORT", file=sys.stderr)
+    if len(argv) not in {6, 7} or argv[0] != "read":
+        print("usage: resume.py read PATH ADAPTER CWD MODEL EFFORT [CODEX_PROFILE]", file=sys.stderr)
         return 2
-    _, path, adapter, cwd, model, effort = argv
+    _, path, adapter, cwd, model, effort = argv[:6]
+    codex_profile = argv[6] if len(argv) == 7 else ""
     try:
         session_id = read_session_id(
             path,
@@ -214,6 +228,7 @@ def _main(argv: list[str]) -> int:
             cwd=cwd,
             model=model,
             effort=effort,
+            codex_profile=codex_profile,
         )
     except ResumeStateError as exc:
         print(f"adapter resume state failed: {exc}", file=sys.stderr)

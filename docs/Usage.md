@@ -313,6 +313,33 @@ With `--incremental`, `default_profile` selects the main Agent and `phases.confi
 
 `--agent-config` cannot be combined with `--agent`, `--model`, or `--effort`; configured agents use their existing CLI authentication.
 
+### Codex profiles
+
+A `codex` profile can also set `codex_profile` to run its phases under a Codex config profile, for example to send confirmation to a model served by another OpenAI-compatible provider. Specula passes it as `codex exec -p NAME`, which layers `$CODEX_HOME/NAME.config.toml` (default `~/.codex/NAME.config.toml`) over your base Codex config:
+
+```json
+"reproduction": {
+  "agent": "codex",
+  "model": "provider-model",
+  "codex_profile": "provider"
+}
+```
+
+```toml
+# ~/.codex/provider.config.toml
+model = "provider-model"
+model_provider = "provider"
+model_context_window = 200000  # the model's real context size
+
+[model_providers.provider]
+name = "Provider"
+base_url = "https://api.provider.example/v1"
+env_key = "PROVIDER_API_KEY"
+wire_api = "responses"
+```
+
+Individual phase commands accept the same setting as `--agent=codex --codex-profile=NAME`. The provider must support the OpenAI Responses API, and the variable named by `env_key` must be set when Specula runs. Codex has no built-in metadata for third-party models and warns that it uses fallback metadata; set `model_context_window` to the model's real context size so long sessions compact at the right point. Specula stops before launching if the profile file does not exist, because Codex would otherwise silently use the base config. A resumed conversation must use the same `codex_profile`. Specula's between-turn context compaction is skipped for Codex sessions that use a profile, and usage reports show token counts but may not show cost for non-OpenAI models.
+
 ### Models tested by the Specula team
 
 We have tested the following agent and model combinations. These observations summarize our own runs and are not guarantees for every target or configuration.

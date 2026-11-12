@@ -19,6 +19,9 @@
 #   --effort LEVEL         Reasoning effort (e.g. minimal|low|medium|high|ultra);
 #                          passed as -c model_reasoning_effort. Env: CODEX_EFFORT.
 #                          Empty -> codex config.toml default.
+#   --codex-profile NAME   Codex config profile; passed as -p. The file
+#                          $CODEX_HOME/NAME.config.toml must exist (Codex itself
+#                          silently ignores a missing one). No env fallback.
 #   --resume-state PATH    Persist the exact Codex session ID and resume it when
 #                          the state already contains one. Never selects --last.
 #   --system-prompt-file F Pass F's text as Codex developer_instructions (skipped
@@ -35,6 +38,8 @@ BACKGROUND=false
 CLAUDE_ALIAS=""
 RESUME_STATE=""
 RESUME_STATE_SET=false
+CODEX_PROFILE=""
+CODEX_PROFILE_SET=false
 system_prompt_file=""
 system_prompt_file_set=false
 # Read adapter-specific environment defaults before parsing so an explicit
@@ -58,6 +63,7 @@ for arg in "$@"; do
     --claude-alias=*) CLAUDE_ALIAS="${arg#*=}" ;;
     --effort=*)      EFFORT="${arg#*=}" ;;
     --model=*)       MODEL="${arg#*=}" ;;
+    --codex-profile=*) CODEX_PROFILE="${arg#*=}"; CODEX_PROFILE_SET=true ;;
     --resume-state=*) RESUME_STATE="${arg#*=}"; RESUME_STATE_SET=true ;;
     --system-prompt-file=*) system_prompt_file="${arg#*=}"; system_prompt_file_set=true ;;
     --help|-h)
@@ -116,6 +122,20 @@ if [[ -n "$system_prompt_file" && ! -f "$system_prompt_file" ]]; then
   exit 1
 fi
 
+if [[ "$CODEX_PROFILE_SET" == true ]]; then
+  if [[ -z "$CODEX_PROFILE" || "$CODEX_PROFILE" == */* || "$CODEX_PROFILE" == "." || "$CODEX_PROFILE" == ".." ]]; then
+    echo "codex adapter: --codex-profile requires a profile name" >&2
+    exit 1
+  fi
+  # Codex falls back to the base config when the profile file is missing, which
+  # would silently run the wrong model/provider.
+  codex_profile_file="${CODEX_HOME:-$HOME/.codex}/$CODEX_PROFILE.config.toml"
+  if [[ ! -f "$codex_profile_file" ]]; then
+    echo "codex adapter: Codex profile file not found: $codex_profile_file" >&2
+    exit 1
+  fi
+fi
+
 # ── Resolve prompt ──
 
 if [[ -n "$PROMPT_FILE" ]]; then
@@ -132,8 +152,10 @@ RESUME_CWD="$(pwd -P)"
 RESUME_SESSION_ID=""
 
 read_resume_session_id() {
+  local -a profile_arg=()
+  [[ -n "$CODEX_PROFILE" ]] && profile_arg=("$CODEX_PROFILE")
   python3 -I "$SPECULA_SRC/specula/adapters/utils/resume.py" read \
-    "$RESUME_STATE" codex "$RESUME_CWD" "$MODEL" "$EFFORT"
+    "$RESUME_STATE" codex "$RESUME_CWD" "$MODEL" "$EFFORT" ${profile_arg[@]+"${profile_arg[@]}"}
 }
 
 if [[ -n "$RESUME_STATE" ]]; then
@@ -470,6 +492,7 @@ run_codex() {
   # Model / reasoning effort (additive — empty leaves codex config.toml default).
   [[ -n "$MODEL" ]] && cmd+=(-m "$MODEL")
   [[ -n "$EFFORT" ]] && cmd+=(-c "model_reasoning_effort=$EFFORT")
+  [[ -n "$CODEX_PROFILE" ]] && cmd+=(-p "$CODEX_PROFILE")
   # Codex has no system-prompt file flag; its documented `developer_instructions`
   # config string is injected into the session as developer instructions and
   # survives compaction. It is an exec-level override, so it also applies to
@@ -509,6 +532,7 @@ sys.stdout.write(json.dumps(text, ensure_ascii=False).replace("\x7f", "\\u007f")
   local stream_rc
   if [[ -n "$RESUME_STATE" ]]; then
     stream_args+=("$RESUME_STATE" "$RESUME_CWD" "$MODEL" "$EFFORT")
+    [[ -n "$CODEX_PROFILE" ]] && stream_args+=("--codex-profile=$CODEX_PROFILE")
   elif [[ -n "$session_id_file" ]]; then
     stream_args+=("$session_id_file")
   fi

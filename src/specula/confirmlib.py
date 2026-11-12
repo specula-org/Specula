@@ -629,6 +629,8 @@ class ConfirmConfig:
     # sealed Scenario results (confirm_first.py).
     scenarios_only: bool = False
     after_scenarios: bool = False
+    # Codex config profile (`codex exec -p NAME`); None = the base Codex config.
+    codex_profile: str | None = None
     # Runtime-only cursors survive this config's automatic rc75 retries. They
     # are deliberately absent from candidate/verdict fingerprints and disk.
     _policy_states: dict[tuple[str, ...], tuple[str, PolicyRetryState]] = field(
@@ -936,6 +938,7 @@ def run_turn(
         max_turns=cfg.max_turns,
         model=cfg.model,
         effort=cfg.effort,
+        codex_profile=cfg.codex_profile,
         policy_retries=cfg.policy_retries,
         transient_resumes=cfg.transient_resumes,
         policy_state=policy_state,
@@ -2119,7 +2122,10 @@ def _tuning_identity(cfg: ConfirmConfig) -> dict[str, dict[str, str | None]]:
             "source": effort_env if effort_value is not None else "adapter-default",
             "value": effort_value,
         }
-    return {"model": model, "effort": effort}
+    identity = {"model": model, "effort": effort}
+    if cfg.codex_profile is not None:
+        identity["codex_profile"] = {"source": "specula", "value": cfg.codex_profile}
+    return identity
 
 
 def _skill_identity() -> dict[str, str]:
@@ -3817,6 +3823,7 @@ def _run_consolidate_agent(
             max_turns=cfg.max_turns,
             model=cfg.model,
             effort=cfg.effort,
+            codex_profile=cfg.codex_profile,
             policy_retries=cfg.policy_retries,
             transient_resumes=cfg.transient_resumes,
             policy_state=policy_state,

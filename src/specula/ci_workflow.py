@@ -81,7 +81,8 @@ Options:
   --model=NAME           Default model for the workflow and confirmation
   --effort=LEVEL         Default reasoning effort
   --agent-config=PATH    Use default_profile for the update conversation; phases.confirm
-                         optionally selects the confirmation agent/model/effort.
+                         optionally selects the confirmation agent/model/effort
+                         (and codex_profile for a codex agent).
                          Cannot combine with --agent, --model, or --effort.
   --max-parallel=N      Concurrent confirmation tasks (default: 4)
   --confirm-debate      Enable the one-shot confirmation debate (default: off)

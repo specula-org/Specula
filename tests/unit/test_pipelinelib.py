@@ -1834,6 +1834,59 @@ class TestAgentRouting(TmpCwd):
             },
         )
 
+    def write_codex_profile_config(self, name: str, codex_profile: str) -> Path:
+        config = write_agent_config(self.tmp / name, {"confirm": "glm"})
+        payload = json.loads(config.read_text())
+        payload["profiles"]["glm"] = {
+            "agent": "codex",
+            "model": "glm-5.3",
+            "effort": "high",
+            "codex_profile": codex_profile,
+        }
+        config.write_text(json.dumps(payload))
+        return config
+
+    def test_codex_profile_routes_only_its_phase_and_survives_resume(self) -> None:
+        config = self.write_codex_profile_config("agents.json", "glm")
+        original = pl.Pipeline()
+        self.assertIsNone(original.parse_args([f"--agent-config={config}", "t"]))
+        self.assertIn("--codex-profile=glm", original._phase_args(["t"], phase="confirm"))
+        for phase in ("analyze", "validate", "classify"):
+            with self.subTest(phase=phase):
+                args = original._phase_args(["t"], phase=phase)
+                self.assertFalse(any(arg.startswith("--codex-profile") for arg in args))
+
+        original.run_id = "run"
+        original.run_dir = self.tmp / "run"
+        original.run_dir.mkdir()
+        original._write_run_meta()
+        meta = json.loads((original.run_dir / "run.json").read_text())
+        self.assertNotIn("codex_profile", meta)
+        self.assertEqual(
+            meta["agent_routes"]["confirm"],
+            {"agent": "codex", "model": "glm-5.3", "effort": "high", "codex_profile": "glm"},
+        )
+        self.assertNotIn("codex_profile", meta["agent_routes"]["analyze"])
+        saved = meta["resume_configuration"]
+        self.assertEqual(saved["routes"]["confirm"]["codex_profile"], "glm")
+        self.assertNotIn("codex_profile", saved["routes"]["analyze"])
+
+        restored = pl.Pipeline()
+        self.assertIsNone(restored.parse_args(["--run-id=run"]))
+        restored._restore_resume_configuration(saved)
+        self.assertIn("--codex-profile=glm", restored._phase_args(["t"], phase="confirm"))
+
+        changed = pl.Pipeline()
+        changed_config = self.write_codex_profile_config("changed.json", "other")
+        self.assertIsNone(changed.parse_args(["--run-id=run", f"--agent-config={changed_config}"]))
+        with self.assertRaisesRegex(resumelib.ResumeError, "--agent-config differs"):
+            changed._restore_resume_configuration(saved)
+
+    def test_stored_codex_profile_route_is_validated(self) -> None:
+        for value in ({"agent": "codex", "codex_profile": 1}, {"agent": "claude-code", "codex_profile": "glm"}):
+            with self.subTest(value=value), self.assertRaisesRegex(resumelib.ResumeError, "codex_profile"):
+                pl.Pipeline._selection_from_document(value, "stored route confirm")
+
 
 class TestPhaseParallelArgs(TmpCwd):
     def capture_main(self, p: pl.Pipeline) -> dict[str, list[str]]:

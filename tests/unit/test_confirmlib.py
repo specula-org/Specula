@@ -767,6 +767,16 @@ class TestConfirmConfigCompatibility(ConfirmCase):
         self.assertEqual(run.call_args.kwargs["policy_retries"], 100)
         self.assertEqual(run.call_args.kwargs["gate_work_dir"], finding.fdir)
         self.assertEqual(run.call_args.kwargs["cwd"], "/repo-worktree")
+        self.assertIsNone(run.call_args.kwargs["codex_profile"])
+
+    def test_turn_threads_codex_profile(self) -> None:
+        ws = Workspace(["T"])
+        cfg = C.ConfirmConfig("T", ws, Path("/x/codex.sh"), worktree=False, model="glm-5.3", codex_profile="glm")
+        finding = C.Finding({"id": "MC-1"}, ws.work_dir("T") / "confirmation" / "MC-1")
+        with mock.patch.object(C, "run_agent_blocking", return_value=(0, "VERDICT: FALSE POSITIVE")) as run:
+            C.run_turn(cfg, finding, "A", 1, "prompt", cwd="/repo-worktree")
+        self.assertEqual(run.call_args.kwargs["model"], "glm-5.3")
+        self.assertEqual(run.call_args.kwargs["codex_profile"], "glm")
 
     def test_repair_flags_require_parallel_mode_round_and_durable_token(self) -> None:
         phase = PhaseLib.BugConfirmationPhase()
@@ -3613,7 +3623,13 @@ class TestCacheContracts(ConfirmCase):
         with mock.patch.object(C, "_skill_identity", return_value={"guide": "v1"}):
             C._write_candidate_cache(cfg, candidates)
             C._save_verdict(C.Outcome(finding, "FALSE POSITIVE", True, 0, EVIDENCE), cfg)
-            for field, value in (("model", "gpt-5.5"), ("model", ""), ("effort", "high"), ("effort", "")):
+            for field, value in (
+                ("model", "gpt-5.5"),
+                ("model", ""),
+                ("effort", "high"),
+                ("effort", ""),
+                ("codex_profile", "glm"),
+            ):
                 with self.subTest(field=field, value=value):
                     setattr(cfg, field, value)
                     self.assertFalse(C._candidate_cache_valid(cfg, candidates, None))
@@ -3621,6 +3637,12 @@ class TestCacheContracts(ConfirmCase):
                     setattr(cfg, field, None)
                     self.assertTrue(C._candidate_cache_valid(cfg, candidates, None))
                     self.assertIsNotNone(C._load_verdict(finding, cfg))
+
+    def test_tuning_identity_records_codex_profile_only_when_selected(self) -> None:
+        cfg = C.ConfirmConfig(name="T", ws=Workspace(["T"]), adapter=Path("/x/codex.sh"), worktree=False)
+        self.assertNotIn("codex_profile", C._tuning_identity(cfg))
+        cfg.codex_profile = "glm"
+        self.assertEqual(C._tuning_identity(cfg)["codex_profile"], {"source": "specula", "value": "glm"})
 
     def test_tuning_identity_records_opencode_and_pi_environment_sources(self) -> None:
         cases = (
