@@ -15,6 +15,7 @@ import tarfile
 import tempfile
 import urllib.request
 import zipfile
+from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 
 SKILL = Path(__file__).resolve().parents[1]
@@ -28,12 +29,10 @@ JAVA_HASHES = {
     ("windows", "x64"): "d35f31e712f0fcf6ac5a093edc90204fbff22f720ba3950bd09d331d5e621636",
     ("windows", "aarch64"): "e82cc17e0bf89a25b0b0ed106d072f2ea420587d0a6870534b71b1dce3ae28c3",
 }
+# Upstream rebuilds this release asset in place, so it cannot be pinned. It is
+# downloaded once and the cached copy is reused; delete the cached jar to update TLC.
+TLA2TOOLS = ("tla2tools-1.8.0.jar", "https://github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar")
 JARS = (
-    (
-        "tla2tools-1.8.0.jar",
-        "https://github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar",
-        "32d64fbbc464559fc7192341b27b885fa4eb6b92d1648d2b49fb9cdcb7aacf81",
-    ),
     (
         "CommunityModules-202505152026.jar",
         "https://github.com/tlaplus/CommunityModules/releases/download/202505152026/CommunityModules-deps.jar",
@@ -58,9 +57,8 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def download(url: str, destination: Path, expected_hash: str) -> Path:
-    if destination.is_file() and sha256(destination) == expected_hash:
-        return destination
+def fetch(url: str, destination: Path, accept: Callable[[Path], bool], rejection: str) -> Path:
+    """Download url and install it at destination only if accept() approves it."""
     destination.parent.mkdir(parents=True, exist_ok=True)
     print(f"Preparing {destination.name}...", file=sys.stderr, flush=True)
     request = urllib.request.Request(url, headers={"User-Agent": "Specula-Lite"})
@@ -74,12 +72,40 @@ def download(url: str, destination: Path, expected_hash: str) -> Path:
             temporary.unlink(missing_ok=True)
             raise
     try:
-        if sha256(temporary) != expected_hash:
-            raise RuntimeError(f"Checksum mismatch for {destination.name}; download was not installed")
+        if not accept(temporary):
+            raise RuntimeError(rejection)
         temporary.replace(destination)
     finally:
         temporary.unlink(missing_ok=True)
     return destination
+
+
+def download(url: str, destination: Path, expected_hash: str) -> Path:
+    if destination.is_file() and sha256(destination) == expected_hash:
+        return destination
+    return fetch(
+        url,
+        destination,
+        lambda path: sha256(path) == expected_hash,
+        f"Checksum mismatch for {destination.name}; download was not installed",
+    )
+
+
+def is_tla2tools(path: Path) -> bool:
+    try:
+        with zipfile.ZipFile(path) as jar:
+            jar.getinfo("tlc2/TLC.class")
+    except (OSError, KeyError, zipfile.BadZipFile):
+        return False
+    return True
+
+
+def ensure_tla2tools() -> Path:
+    name, url = TLA2TOOLS
+    destination = cache_dir() / name
+    if is_tla2tools(destination):
+        return destination
+    return fetch(url, destination, is_tla2tools, f"{name} download is not a TLA+ tools jar; it was not installed")
 
 
 def archive_path(root: Path, name: str) -> Path:
@@ -203,7 +229,8 @@ def ensure_java() -> str:
 def prepare() -> dict[str, object]:
     shared = ensure_shared()
     java = ensure_java()
-    jars = [str(download(url, cache_dir() / name, checksum)) for name, url, checksum in JARS]
+    jars = [str(ensure_tla2tools())]
+    jars += [str(download(url, cache_dir() / name, checksum)) for name, url, checksum in JARS]
     return {"java": java, "jars": jars, "shared": str(shared), "guides": str(shared / "skills")}
 
 

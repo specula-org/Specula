@@ -4,7 +4,7 @@ These helpers use Python 3.10+ and its standard library. Run them by their absol
 
 ## Preparation
 
-`python3 scripts/prepare.py` prints JSON containing `java`, `jars`, `guides`, and `shared`. It reuses a working Java 21+ from `JAVA_HOME` or `PATH`, or prepares a pinned Temurin JRE in the user cache. TLA+ and CommunityModules JARs are pinned and checksum-verified. Downloads need network access only on first use. The downloaded JRE supports Linux (glibc), macOS, and Windows on x64/arm64; an existing compatible Java also works on other platforms.
+`python3 scripts/prepare.py` prints JSON containing `java`, `jars`, `guides`, and `shared`. It reuses a working Java 21+ from `JAVA_HOME` or `PATH`, or prepares a pinned Temurin JRE in the user cache. The CommunityModules JAR is pinned and checksum-verified. The TLA+ tools JAR is downloaded once and then reused; delete the cached `tla2tools-1.8.0.jar` to update TLC. Downloads need network access only on first use. The downloaded JRE supports Linux (glibc), macOS, and Windows on x64/arm64; an existing compatible Java also works on other platforms.
 
 `SPECULA_LITE_CACHE` overrides the cache directory. `SPECULA_LITE_JAVA` selects an existing Java executable. Neither helper edits shell profiles, agent settings, or the system Java installation. Preparation never starts a model check.
 
