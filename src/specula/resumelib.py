@@ -235,8 +235,9 @@ def _binding(
     prompt_file: Path,
     log_file: Path,
     finding_id: str | None,
+    codex_profile: str | None = None,
 ) -> dict[str, Any]:
-    return {
+    binding = {
         "phase": phase,
         "target": target,
         "kind": kind,
@@ -250,6 +251,10 @@ def _binding(
         "prompt_file": str(prompt_file.absolute()),
         "log_file": str(log_file.absolute()),
     }
+    # Absent unless selected, so existing records keep their exact shape.
+    if codex_profile is not None:
+        binding["codex_profile"] = codex_profile
+    return binding
 
 
 def enabled() -> bool:
@@ -291,7 +296,7 @@ def _validate_entry(entry: dict[str, Any], path: Path, label: str) -> None:
     for field in ("phase", "target", "kind", "adapter", "claude_alias", "resume_state", "prompt_file", "log_file"):
         if not isinstance(entry.get(field), str) or not entry[field]:
             raise ResumeError(f"invalid {label} {field} in {path}")
-    for field in ("model", "effort", "cwd", "finding_id"):
+    for field in ("model", "effort", "cwd", "finding_id", "codex_profile"):
         if entry.get(field) is not None and not isinstance(entry[field], str):
             raise ResumeError(f"invalid {label} {field} in {path}")
     if not isinstance(entry.get("owner"), str) or not entry["owner"]:
@@ -424,6 +429,7 @@ def prepare_turn(
     prompt_file: Path,
     log_file: Path,
     finding_id: str | None = None,
+    codex_profile: str | None = None,
 ) -> ResumeClaim:
     """Register a fresh turn or claim its exact unfinished predecessor."""
     if not enabled():
@@ -445,13 +451,15 @@ def prepare_turn(
         prompt_file=prompt_file,
         log_file=log_file,
         finding_id=finding_id,
+        codex_profile=codex_profile,
     )
     with _lock:
         if path.exists() or path.is_symlink():
             entry = _read_object(path, "active conversation")
             if entry.get("version") != SCHEMA_VERSION or entry.get("logical") != list(logical):
                 raise ResumeError(f"active conversation identity mismatch in {path}")
-            for field, value in expected.items():
+            # codex_profile is optional in the binding, so compare it both ways.
+            for field, value in {**expected, "codex_profile": codex_profile}.items():
                 if entry.get(field) != value:
                     raise ResumeError(
                         f"cannot resume {target} {phase}: recorded {field}={entry.get(field)!r}, "

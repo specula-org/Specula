@@ -45,7 +45,13 @@ if __package__ in (None, ""):
 from specula import ci_init, ci_verdict, confirm_first, delegation, notes, output_contract, resumelib, rules
 from specula import quota as _quota
 from specula.adapters.utils.run_lock import inherited_run_lock_fds
-from specula.agent_config import AgentConfigError, AgentRouting, AgentSelection, load_agent_routing
+from specula.agent_config import (
+    AgentConfigError,
+    AgentRouting,
+    AgentSelection,
+    codex_profile_name_error,
+    load_agent_routing,
+)
 from specula.output_index import (
     INDEX_FILENAME,
     PIPELINE_LOG_ENV,
@@ -1034,11 +1040,15 @@ class Pipeline:
             agent=selection.agent,
             model=selection.model if selection.model is not None else resolved_model,
             effort=selection.effort if selection.effort is not None else resolved_effort,
+            codex_profile=selection.codex_profile,
         )
 
     @staticmethod
     def _selection_document(selection: AgentSelection) -> dict[str, str | None]:
-        return {"agent": selection.agent, "model": selection.model, "effort": selection.effort}
+        document = {"agent": selection.agent, "model": selection.model, "effort": selection.effort}
+        if selection.codex_profile is not None:
+            document["codex_profile"] = selection.codex_profile
+        return document
 
     @staticmethod
     def _selection_from_document(value: object, label: str) -> AgentSelection:
@@ -1053,7 +1063,12 @@ class Pipeline:
             raise resumelib.ResumeError(f"invalid {label} model")
         if effort is not None and not isinstance(effort, str):
             raise resumelib.ResumeError(f"invalid {label} effort")
-        return AgentSelection(agent=agent, model=model, effort=effort)
+        codex_profile = value.get("codex_profile")
+        if codex_profile is not None and (
+            not isinstance(codex_profile, str) or agent != "codex" or codex_profile_name_error(codex_profile)
+        ):
+            raise resumelib.ResumeError(f"invalid {label} codex_profile")
+        return AgentSelection(agent=agent, model=model, effort=effort, codex_profile=codex_profile)
 
     def _resumable_routes(self) -> dict[str, AgentSelection] | None:
         if self.agent_routing is None and self._restored_routes is None:
@@ -1921,6 +1936,11 @@ class Pipeline:
             "agent": default_selection.agent,
             "model": model,
             "effort": effort,
+            **(
+                {"codex_profile": default_selection.codex_profile}
+                if default_selection.codex_profile is not None
+                else {}
+            ),
             "policy_retries": self.policy_retries,
             "transient_resumes": self.transient_resumes,
             "claude_alias": self.claude_alias,
@@ -1946,6 +1966,8 @@ class Pipeline:
                     "model": route_model,
                     "effort": route_effort,
                 }
+                if selection.codex_profile is not None:
+                    routes[route_name]["codex_profile"] = selection.codex_profile
             meta["agent_config"] = str(self.agent_config_path)
             meta["agent_config_sha256"] = self.agent_routing.source_sha256
             meta["agent_routes"] = routes
@@ -3344,6 +3366,8 @@ class Pipeline:
             args.append(f"--model={selection.model}")
         if selection.effort is not None:
             args.append(f"--effort={selection.effort}")
+        if selection.codex_profile is not None:
+            args.append(f"--codex-profile={selection.codex_profile}")
         return args
 
     def _max_parallel_summary(self) -> str:

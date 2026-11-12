@@ -780,6 +780,20 @@ class TestArgErrors(PhaseCase):
         self.assertEqual(rc, 1)
         self.assertIn("Unknown option", out)
 
+    def test_codex_profile_requires_codex_agent(self) -> None:
+        rc, out = self.run_phase("code_analysis", ["--codex-profile=glm", self.artifact_flag(), NAME])
+        self.assertEqual(rc, 1)
+        self.assertIn("--codex-profile requires --agent=codex", out)
+        rc, out = self.run_phase("review", ["analysis", "--codex-profile=glm", NAME])
+        self.assertEqual(rc, 1)
+        self.assertIn("--codex-profile requires --agent=codex", out)
+
+    def test_codex_profile_appears_in_codex_dry_run_command(self) -> None:
+        spec = BY_KEY["code_analysis"]
+        rc, out = self.dry_run(spec, extra=["--agent=codex", "--codex-profile=glm"])
+        self.assertEqual(rc, 0, out)
+        self.assertIn("--codex-profile=glm", out)
+
     def test_bad_max_parallel(self) -> None:
         rc, out = self.run_phase("code_analysis", ["--max-parallel=abc", self.artifact_flag(), NAME])
         self.assertEqual(rc, 1)
@@ -5129,6 +5143,36 @@ class TestModelEffortForwarding(unittest.TestCase):
             phaselib._model_effort_argv(claude, "", ""),
             ["--model=", "--effort="],
         )
+        self.assertEqual(
+            phaselib._model_effort_argv(codex, "glm-5.3", None, "glm"),
+            ["--model=glm-5.3", "--codex-profile=glm"],
+        )
+
+    def test_codex_profile_option_validation(self) -> None:
+        self.assertIsNone(phaselib._codex_profile_option_error("claude-code", None))
+        self.assertIsNone(phaselib._codex_profile_option_error("codex", "glm"))
+        for agent, value, message in (
+            ("claude-code", "glm", "requires --agent=codex"),
+            ("codex", "", "non-empty"),
+            ("codex", "a/b", "not a path"),
+        ):
+            with self.subTest(agent=agent, value=value):
+                error = phaselib._codex_profile_option_error(agent, value)
+                assert error is not None
+                self.assertIn(message, error)
+
+    def test_codex_profile_reaches_blocking_command_and_checkpoint(self) -> None:
+        captured: list[dict[str, Any]] = []
+
+        def fake_prepare(*_: Any, **kwargs: Any) -> resumelib.ResumeClaim:
+            captured.append(kwargs)
+            return resumelib.ResumeClaim(attempt=1, manual=False, resumable=False)
+
+        with mock.patch("specula.phaselib.resumelib.prepare_turn", fake_prepare):
+            cmd = self._blocking_cmd(model="glm-5.3", codex_profile="glm", resume_logical=("finding", "F1"))
+        self.assertIn("--codex-profile=glm", cmd)
+        self.assertEqual(captured[0]["codex_profile"], "glm")
+        self.assertFalse(any(arg.startswith("--codex-profile") for arg in self._blocking_cmd(model="gpt-5.5")))
 
     def _blocking_cmd(
         self,
@@ -5136,6 +5180,8 @@ class TestModelEffortForwarding(unittest.TestCase):
         adapter_name: str = "codex",
         model: str | None = None,
         effort: str | None = None,
+        codex_profile: str | None = None,
+        resume_logical: tuple[str, ...] | None = None,
     ) -> list[str]:
         captured: list[list[str]] = []
 
@@ -5158,6 +5204,8 @@ class TestModelEffortForwarding(unittest.TestCase):
                 claude_alias="claude",
                 model=model,
                 effort=effort,
+                codex_profile=codex_profile,
+                resume_logical=resume_logical,
             )
         return captured[0]
 

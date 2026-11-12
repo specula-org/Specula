@@ -31,8 +31,9 @@ def method_digest() -> str:
 def check_key(pipeline: CIPipeline, guidance: str) -> str | None:
     selection = pipeline._agent_selection()
     model, effort = pipeline._resolved_run_tuning(selection)
-    # Unspecified native model defaults can change outside Specula's control.
-    if not model:
+    # Unspecified native model defaults can change outside Specula's control,
+    # and so can a Codex profile file's provider/model.
+    if not model or selection.codex_profile is not None:
         return None
     document = {
         "method": method_digest(),

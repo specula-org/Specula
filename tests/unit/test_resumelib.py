@@ -50,6 +50,7 @@ def _prepare(
     logical: tuple[str, ...] = ("phase", "validation", "target"),
     phase: str = "validation",
     model: str | None = "model-a",
+    codex_profile: str | None = None,
 ) -> resumelib.ResumeClaim:
     return resumelib.prepare_turn(
         logical,
@@ -64,6 +65,7 @@ def _prepare(
         resume_state=files.resume_state,
         prompt_file=files.prompt_file,
         log_file=files.log_file,
+        codex_profile=codex_profile,
     )
 
 
@@ -247,6 +249,41 @@ def test_manual_resume_fails_closed_for_binding_mismatch(
         _prepare(files, model="model-b")
 
     assert resumelib.active_entries()[0]["owner"] == "invocation-1"
+
+
+@pytest.mark.parametrize(("recorded", "current"), [(None, "glm"), ("glm", None), ("glm", "other")])
+def test_manual_resume_fails_closed_for_codex_profile_change(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    recorded: str | None,
+    current: str | None,
+) -> None:
+    _enable_resume(tmp_path, monkeypatch)
+    files = _turn_files(tmp_path)
+    _prepare(files, codex_profile=recorded)
+    entry = resumelib.active_entries()[0]
+    assert entry.get("codex_profile") == recorded
+    assert ("codex_profile" in entry) is (recorded is not None)
+    files.resume_state.write_text('{"session_id": "session-1"}\n')
+    _start_manual_resume(monkeypatch)
+
+    with pytest.raises(resumelib.ResumeError, match=r"recorded codex_profile=.*--fresh-context"):
+        _prepare(files, codex_profile=current)
+
+    assert resumelib.active_entries()[0]["owner"] == "invocation-1"
+
+
+def test_manual_resume_keeps_matching_codex_profile(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _enable_resume(tmp_path, monkeypatch)
+    files = _turn_files(tmp_path)
+    _prepare(files, codex_profile="glm")
+    files.resume_state.write_text('{"session_id": "session-1"}\n')
+    _start_manual_resume(monkeypatch)
+
+    claim = _prepare(files, codex_profile="glm")
+
+    assert claim.manual
+    assert resumelib.active_entries()[0]["codex_profile"] == "glm"
 
 
 @pytest.mark.parametrize("mutation", ["update", "complete", "mark_completed"])

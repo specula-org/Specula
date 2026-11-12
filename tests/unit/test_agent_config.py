@@ -115,6 +115,32 @@ class AgentConfigTest(unittest.TestCase):
             with self.subTest(message=message):
                 self.assert_invalid(payload, message)
 
+    def test_codex_profile_routes_a_phase(self) -> None:
+        payload = _valid_config()
+        payload["profiles"] = {
+            **payload["profiles"],  # type: ignore[dict-item]
+            "glm": {"agent": "codex", "model": "glm-5.3", "codex_profile": "glm"},
+        }
+        payload["phases"] = {"confirm": "glm"}
+
+        routing = load_agent_routing(self._write(payload))
+
+        self.assertEqual(routing.resolve("confirm"), AgentSelection("codex", "glm-5.3", None, "glm"))
+        self.assertIsNone(routing.resolve("analyze").codex_profile)
+
+    def test_rejects_invalid_codex_profiles(self) -> None:
+        cases: tuple[tuple[object, str], ...] = (
+            ({"agent": "claude-code", "codex_profile": "glm"}, "codex_profile.*requires agent 'codex'"),
+            ({"agent": "codex", "codex_profile": ""}, "codex_profile.*non-empty string"),
+            ({"agent": "codex", "codex_profile": 1}, "codex_profile.*string"),
+            ({"agent": "codex", "codex_profile": None}, "codex_profile.*string"),
+            ({"agent": "codex", "codex_profile": "../glm"}, "codex_profile.*not a path"),
+            ({"agent": "codex", "codex_profile": ".."}, "codex_profile.*not a path"),
+        )
+        for profile, message in cases:
+            with self.subTest(message=message, profile=profile):
+                self.assert_invalid({**_valid_config(), "profiles": {"claude": profile}}, message)
+
     def test_rejects_invalid_phase_routes(self) -> None:
         cases: tuple[tuple[object, str], ...] = (
             ({**_valid_config(), "phases": []}, "phases.*JSON object"),

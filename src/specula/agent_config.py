@@ -27,7 +27,7 @@ SINGLE_SESSION_ONLY_PHASES = frozenset({"main"})
 # Phased routes whose work one single-session main session performs.
 MAIN_SESSION_PHASES = ("analyze", "specgen", "harness", "validate", "repair")
 _TOP_LEVEL_FIELDS = frozenset({"version", "default_profile", "profiles", "phases"})
-_PROFILE_FIELDS = frozenset({"agent", "model", "effort"})
+_PROFILE_FIELDS = frozenset({"agent", "model", "effort", "codex_profile"})
 
 
 class AgentConfigError(Exception):
@@ -39,6 +39,8 @@ class AgentSelection:
     agent: str
     model: str | None = None
     effort: str | None = None
+    # Codex `--profile` name: layers $CODEX_HOME/<name>.config.toml (codex only).
+    codex_profile: str | None = None
 
 
 @dataclass(frozen=True)
@@ -102,6 +104,15 @@ def _reject_unknown_fields(
         raise AgentConfigError(f"{location} contains unknown field '{unknown[0]}'")
 
 
+def codex_profile_name_error(name: str) -> str | None:
+    """Why ``name`` cannot select ``$CODEX_HOME/<name>.config.toml``, or None."""
+    if not name:
+        return "must be a non-empty string"
+    if "/" in name or "\x00" in name or name in {".", ".."}:
+        return "must be a profile name, not a path"
+    return None
+
+
 def _optional_string(profile: Mapping[str, object], field: str, profile_name: str) -> str | None:
     if field not in profile:
         return None
@@ -147,10 +158,18 @@ def load_agent_routing(path: Path) -> AgentRouting:
         agent = profile.get("agent")
         if not isinstance(agent, str) or not agent:
             raise AgentConfigError(f"profile '{name}' field 'agent' must be a non-empty string")
+        codex_profile = _optional_string(profile, "codex_profile", name)
+        if codex_profile is not None:
+            if agent != "codex":
+                raise AgentConfigError(f"profile '{name}' field 'codex_profile' requires agent 'codex'")
+            codex_profile_error = codex_profile_name_error(codex_profile)
+            if codex_profile_error is not None:
+                raise AgentConfigError(f"profile '{name}' field 'codex_profile' {codex_profile_error}")
         profiles[name] = AgentSelection(
             agent=agent,
             model=_optional_string(profile, "model", name),
             effort=_optional_string(profile, "effort", name),
+            codex_profile=codex_profile,
         )
 
     if default_profile not in profiles:

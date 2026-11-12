@@ -4078,6 +4078,92 @@ class CodexAdapter(AdapterCase):
         self.assertIn("invalid or incompatible resume state", r["stderr"])
         self.assertEqual(r["argv"], [])
 
+    def codex_home_with_profile(self, base: Path, name: str = "glm") -> Path:
+        codex_home = base / "codex-home"
+        codex_home.mkdir()
+        (codex_home / f"{name}.config.toml").write_text('model = "glm-5.3"\n')
+        return codex_home
+
+    def test_codex_profile_forwarded_as_profile_flag(self) -> None:
+        base = self.sandbox()
+        codex_home = self.codex_home_with_profile(base)
+        r = self.invoke(
+            self.base_flags(base) + ["--model=glm-5.3", "--codex-profile=glm"],
+            env_extra={"CODEX_HOME": str(codex_home)},
+        )
+        self.assertEqual(r["returncode"], 0, r["stderr"])
+        self.assertEqual(
+            r["argv"],
+            [
+                "exec",
+                "--dangerously-bypass-approvals-and-sandbox",
+                "--output-last-message",
+                str(base / "out.last-message.txt"),
+                "-c",
+                "tool_output_token_limit=10000",
+                "-m",
+                "glm-5.3",
+                "-p",
+                "glm",
+                "--json",
+                "-",
+            ],
+        )
+
+    def test_codex_profile_requires_existing_profile_file(self) -> None:
+        base = self.sandbox()
+        codex_home = self.codex_home_with_profile(base, "other")
+        for value, message in (
+            ("glm", "Codex profile file not found"),
+            ("", "--codex-profile requires a profile name"),
+            ("../glm", "--codex-profile requires a profile name"),
+        ):
+            with self.subTest(value=value):
+                r = self.invoke(
+                    self.base_flags(base) + [f"--codex-profile={value}"],
+                    env_extra={"CODEX_HOME": str(codex_home)},
+                )
+                self.assertEqual(r["returncode"], 1)
+                self.assertIn(message, r["stderr"])
+                self.assertEqual(r["argv"], [])
+
+    def test_codex_profile_binds_resume_state(self) -> None:
+        base = self.sandbox()
+        codex_home = self.codex_home_with_profile(base)
+        state = base / "resume.json"
+        session_id = "019f0000-0000-7000-8000-000000000020"
+        fixture = "\n".join(
+            [
+                json.dumps({"type": "thread.started", "thread_id": session_id}),
+                json.dumps({"type": "turn.completed", "usage": {}}),
+            ]
+        )
+        flags = [*self.base_flags(base), "--codex-profile=glm", f"--resume-state={state}"]
+        env = {"TMPDIR": str(base), "CODEX_HOME": str(codex_home)}
+        r = self.run_adapter(
+            self.CMD, flags, fake_name="codex", fixture_text=fixture, env_extra=env, record_extra=True, run_dir=base
+        )
+        self.assertEqual(r["returncode"], 0, r["stderr"])
+        self.assertEqual(json.loads(state.read_text())["codex_profile"], "glm")
+
+        # The same profile resumes the exact session; dropping it is incompatible.
+        r = self.run_adapter(
+            self.CMD, flags, fake_name="codex", fixture_text=fixture, env_extra=env, record_extra=True, run_dir=base
+        )
+        self.assertEqual(r["returncode"], 0, r["stderr"])
+        self.assertEqual(r["argv"][-6:], ["-p", "glm", "resume", session_id, "--json", "-"])
+        r = self.run_adapter(
+            self.CMD,
+            [*self.base_flags(base), f"--resume-state={state}"],
+            fake_name="codex",
+            fixture_text="unused",
+            env_extra=env,
+            record_extra=True,
+            run_dir=base,
+        )
+        self.assertEqual(r["returncode"], 1)
+        self.assertIn("invalid or incompatible resume state", r["stderr"])
+
     def test_stream_session_change_is_fail_closed_before_native_rate_limit(self) -> None:
         base = self.sandbox()
         state = base / "resume.json"

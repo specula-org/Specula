@@ -313,6 +313,8 @@ With `--incremental`, `default_profile` selects the main Agent and `phases.confi
 
 `--agent-config` cannot be combined with `--agent`, `--model`, or `--effort`; configured agents use their existing CLI authentication.
 
+To run a `codex` profile on a model from another provider, see [Use other model providers with Codex](codex-model-providers.md).
+
 ### Models tested by the Specula team
 
 We have tested the following agent and model combinations. These observations summarize our own runs and are not guarantees for every target or configuration.
