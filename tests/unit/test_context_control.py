@@ -263,6 +263,18 @@ def mock_process(monkeypatch: pytest.MonkeyPatch, handler: Any) -> tuple[list[li
 
 
 @pytest.mark.asyncio
+async def test_codex_profile_session_is_not_compacted_under_the_base_config(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    commands, _ = mock_process(monkeypatch, lambda m: [])
+    state = {"session_id": "original", "cwd": str(tmp_path), "model": "glm-5.3", "codex_profile": "glm"}
+    with pytest.raises(RuntimeError, match="does not support Codex profiles"):
+        await native.codex(state, tmp_path / "log")
+    assert commands == []
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("finished", [True, False])
 async def test_codex_requires_actual_compaction_completion(
     monkeypatch: pytest.MonkeyPatch,

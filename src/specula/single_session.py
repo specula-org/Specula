@@ -458,6 +458,7 @@ Options:
   --claude-alias=NAME Claude CLI profile (default: claude)
   --model=NAME        Model forwarded to the selected adapter
   --effort=LEVEL      Reasoning effort forwarded to the selected adapter
+  --codex-profile=NAME  Codex config profile ($CODEX_HOME/NAME.config.toml; codex only)
   --artifact=PATH     Source code path
 
 """

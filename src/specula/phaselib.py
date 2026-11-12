@@ -42,6 +42,7 @@ import specula.progress as progress
 from specula import quota, resumelib, tlc_tasks
 from specula.adapters.utils.policy import POLICY_BLOCKED_RC
 from specula.adapters.utils.transient import AUTH_REFRESH_FAILURE_RC, TRANSIENT_FAILURE_RC
+from specula.agent_config import codex_profile_name_error
 from specula.context_control import CONFIRMATION_YIELD_RC, CONTEXT_CONTROL_PHASES
 from specula.notes import notes_section
 from specula.output_index import BYOM_REPORT_FILENAME, PIPELINE_LOG_ENV, is_safe_target_name, write_target_index
@@ -635,6 +636,7 @@ class Phase:
     # reset to the adapter/CLI default, non-empty = explicit override.
     _model: str | None = None
     _effort: str | None = None
+    _codex_profile: str | None = None  # Codex --profile name; codex adapter only
     _policy_retries = DEFAULT_POLICY_RETRIES
     _transient_resumes = DEFAULT_TRANSIENT_RESUMES
     _rate_limit_agent = "claude-code"
@@ -857,6 +859,7 @@ class Phase:
         claude_alias = os.environ.get("CLAUDE_ALIAS") or "claude"
         model: str | None = None
         effort: str | None = None
+        codex_profile: str | None = None
         artifact = ""
         artifact_provided = False
         targets: list[str] = []
@@ -906,6 +909,8 @@ class Phase:
                 model = arg[len("--model=") :]
             elif arg.startswith("--effort="):
                 effort = arg[len("--effort=") :]
+            elif arg.startswith("--codex-profile="):
+                codex_profile = arg[len("--codex-profile=") :]
             elif arg.startswith("--artifact="):
                 if not self.accepts_artifact:
                     print(self.artifact_rejection_message or f"Unknown option: {arg}")
@@ -930,7 +935,7 @@ class Phase:
                 return 1
             artifact = normalized_artifact
 
-        option_error = self.validate_options(extra)
+        option_error = self.validate_options(extra) or _codex_profile_option_error(agent, codex_profile)
         if option_error is not None:
             print(option_error)
             return 1
@@ -948,6 +953,7 @@ class Phase:
         # `--effort=` can still reset the underlying CLI to its own default.
         self._model = model if model is not None else (os.environ.get("SPECULA_MODEL") or None)
         self._effort = effort if effort is not None else (os.environ.get("SPECULA_EFFORT") or None)
+        self._codex_profile = codex_profile
         self._policy_retries = policy_retries
         self._transient_resumes = transient_resumes
 
@@ -1537,6 +1543,7 @@ class Phase:
                 adapter=adapter,
                 model=checkpoint_model,
                 effort=checkpoint_effort,
+                codex_profile=self._codex_profile,
                 claude_alias=claude_alias,
                 cwd=launch_cwd,
                 resume_state=resume_state,
@@ -1582,7 +1589,7 @@ class Phase:
         files["prompt"].write_text(prompt)
         print(f"[{_ts()}] Launching agent: {name}")
         if dry_run:
-            tuning = _model_effort_argv(adapter, self._model, self._effort)
+            tuning = _model_effort_argv(adapter, self._model, self._effort, self._codex_profile)
             tuning_text = (" " + " ".join(tuning)) if tuning else ""
             print(
                 f"  [DRY RUN] {adapter} {self.dry_prompt_flag}=<prompt> "
@@ -1657,7 +1664,7 @@ class Phase:
                 f"--prompt-file={files['prompt']}",
                 f"--max-turns={max_turns}",
                 f"--claude-alias={claude_alias}",
-                *_model_effort_argv(adapter, self._model, self._effort),
+                *_model_effort_argv(adapter, self._model, self._effort, self._codex_profile),
                 f"--log={files['log']}",
                 f"--resume-state={resume_state}",
                 *system_prompt_args,
@@ -1706,7 +1713,12 @@ class Phase:
         return launched
 
 
-def _model_effort_argv(adapter: Path, model: str | None, effort: str | None) -> list[str]:
+def _model_effort_argv(
+    adapter: Path,
+    model: str | None,
+    effort: str | None,
+    codex_profile: str | None = None,
+) -> list[str]:
     """Build adapter tuning flags without collapsing "unset" and "empty".
 
     Claude phase launches deliberately default to ``max`` so an ambient
@@ -1714,7 +1726,8 @@ def _model_effort_argv(adapter: Path, model: str | None, effort: str | None) -> 
     Codex and Copilot receive no effort flag when unspecified and therefore use
     their own environment/config defaults.  An explicit empty value is always
     forwarded so the adapter can clear its environment fallback and return to
-    the underlying CLI's configured default.
+    the underlying CLI's configured default.  A Codex profile is forwarded only
+    when one was selected.
     """
     argv: list[str] = []
     if model is not None:
@@ -1723,7 +1736,21 @@ def _model_effort_argv(adapter: Path, model: str | None, effort: str | None) -> 
         argv.append(f"--effort={effort}")
     elif adapter.stem == "claude-code":
         argv.append("--effort=max")
+    if codex_profile is not None:
+        argv.append(f"--codex-profile={codex_profile}")
     return argv
+
+
+def _codex_profile_option_error(agent: str, codex_profile: str | None) -> str | None:
+    """Reject a Codex profile that the selected adapter cannot honor."""
+    if codex_profile is None:
+        return None
+    if agent != "codex":
+        return f"--codex-profile requires --agent=codex (got --agent={agent})"
+    name_error = codex_profile_name_error(codex_profile)
+    if name_error is not None:
+        return f"--codex-profile {name_error}"
+    return None
 
 
 def _checkpoint_tuning(adapter: Path, model: str | None, effort: str | None) -> tuple[str | None, str | None]:
@@ -1760,6 +1787,7 @@ def run_agent_blocking(
     stop_gate: bool = False,
     model: str | None = None,
     effort: str | None = None,
+    codex_profile: str | None = None,
     policy_retries: int = DEFAULT_POLICY_RETRIES,
     transient_resumes: int = DEFAULT_TRANSIENT_RESUMES,
     policy_state: PolicyRetryState | None = None,
@@ -1859,7 +1887,7 @@ def run_agent_blocking(
         f"--prompt-file={prompt_file}",
         f"--max-turns={max_turns}",
         f"--claude-alias={claude_alias}",
-        *_model_effort_argv(adapter, model, effort),
+        *_model_effort_argv(adapter, model, effort, codex_profile),
         f"--log={log_file}",
         f"--resume-state={resume_state}",
         *_system_prompt_argv(prompt_file),
@@ -1876,6 +1904,7 @@ def run_agent_blocking(
             adapter=adapter,
             model=checkpoint_model,
             effort=checkpoint_effort,
+            codex_profile=codex_profile,
             claude_alias=claude_alias,
             cwd=run_cwd,
             resume_state=resume_state,
@@ -2035,6 +2064,7 @@ Options:
   --claude-alias=NAME Claude CLI profile (default: claude)
   --model=NAME        Model forwarded to the selected adapter
   --effort=LEVEL      Reasoning effort forwarded to the selected adapter
+  --codex-profile=NAME  Codex config profile ($CODEX_HOME/NAME.config.toml; codex only)
   --artifact=PATH     Source code path (default: $PWD for single target,
                       $PWD/<name>/artifact/<repo>/ for batch)
 
@@ -2156,6 +2186,7 @@ Options:
   --claude-alias=NAME Claude CLI profile (default: claude)
   --model=NAME        Model forwarded to the selected adapter
   --effort=LEVEL      Reasoning effort forwarded to the selected adapter
+  --codex-profile=NAME  Codex config profile ($CODEX_HOME/NAME.config.toml; codex only)
   --artifact=PATH     Explicit path to the artifact repo (bypasses auto-detection)
 
 Prerequisites:
@@ -2312,6 +2343,7 @@ Options:
   --claude-alias=NAME Claude CLI profile (default: claude)
   --model=NAME        Model forwarded to the selected adapter
   --effort=LEVEL      Reasoning effort forwarded to the selected adapter
+  --codex-profile=NAME  Codex config profile ($CODEX_HOME/NAME.config.toml; codex only)
   --artifact=PATH     Explicit path to artifact repo (overrides auto-detection)
 
 Prerequisites:
@@ -2465,6 +2497,7 @@ Options:
   --claude-alias=NAME Claude CLI profile (default: claude)
   --model=NAME        Model forwarded to the selected adapter
   --effort=LEVEL      Reasoning effort forwarded to the selected adapter
+  --codex-profile=NAME  Codex config profile ($CODEX_HOME/NAME.config.toml; codex only)
 
 Prerequisites:
   - Confirmed bug report at <name>/confirmed-bugs.md (from Phase 4a)
@@ -2721,6 +2754,7 @@ Options:
   --claude-alias=NAME Claude CLI profile (default: claude)
   --model=NAME        Model forwarded to the selected adapter
   --effort=LEVEL      Reasoning effort forwarded to the selected adapter
+  --codex-profile=NAME  Codex config profile ($CODEX_HOME/NAME.config.toml; codex only)
   --artifact=PATH     Explicit path to the artifact repo (overrides auto-detection)
 
 Prerequisites:
@@ -2886,6 +2920,7 @@ Options:
   --claude-alias=NAME Claude CLI profile (default: claude)
   --model=NAME        Model forwarded to the selected adapter
   --effort=LEVEL      Reasoning effort forwarded to the selected adapter
+  --codex-profile=NAME  Codex config profile ($CODEX_HOME/NAME.config.toml; codex only)
   --artifact=PATH     Explicit path to the artifact repo (overrides auto-detection)
 
 Prerequisites:
@@ -3016,6 +3051,7 @@ Prerequisites:
                 claude_alias=claude_alias,
                 model=self._model,
                 effort=self._effort,
+                codex_profile=self._codex_profile,
                 policy_retries=self._policy_retries,
                 transient_resumes=self._transient_resumes,
                 repair_round=repair_round,
@@ -3168,6 +3204,7 @@ Prerequisites:
                 repo_dir=ws.find_repo_dir(name),
                 model=self._model,
                 effort=self._effort,
+                codex_profile=self._codex_profile,
                 prompt_extra=self._read_prompt_extra(ws, name),
             )
             try:
@@ -3311,6 +3348,7 @@ Options (after <phase>):
   --claude-alias=NAME Claude CLI profile (default: claude)
   --model=NAME        Model forwarded to the selected adapter
   --effort=LEVEL      Reasoning effort forwarded to the selected adapter
+  --codex-profile=NAME  Codex config profile ($CODEX_HOME/NAME.config.toml; codex only)
   --policy-retries=N  Policy-block continuation retries (default: 20; 0 disables)
   --transient-resumes=N  Transient provider/transport session resumes (default: 20; 0 disables)
 
@@ -3335,6 +3373,7 @@ Output:
         claude_alias = os.environ.get("CLAUDE_ALIAS") or "claude"
         model: str | None = None
         effort: str | None = None
+        codex_profile: str | None = None
         policy_retries = DEFAULT_POLICY_RETRIES
         transient_resumes = DEFAULT_TRANSIENT_RESUMES
         targets: list[str] = []
@@ -3347,6 +3386,8 @@ Output:
                 model = arg[len("--model=") :]
             elif arg.startswith("--effort="):
                 effort = arg[len("--effort=") :]
+            elif arg.startswith("--codex-profile="):
+                codex_profile = arg[len("--codex-profile=") :]
             elif arg.startswith("--policy-retries="):
                 raw = arg[len("--policy-retries=") :]
                 try:
@@ -3367,8 +3408,13 @@ Output:
             else:
                 targets.append(arg)
 
+        profile_error = _codex_profile_option_error(agent, codex_profile)
+        if profile_error is not None:
+            print(profile_error)
+            return 1
         self._model = model if model is not None else (os.environ.get("SPECULA_MODEL") or None)
         self._effort = effort if effort is not None else (os.environ.get("SPECULA_EFFORT") or None)
+        self._codex_profile = codex_profile
         self._policy_retries = policy_retries
         self._transient_resumes = transient_resumes
 
@@ -3605,6 +3651,7 @@ Output:
             adapter=adapter,
             model=checkpoint_model,
             effort=checkpoint_effort,
+            codex_profile=self._codex_profile,
             claude_alias=claude_alias,
             cwd=launch_cwd,
             resume_state=resume_state,
@@ -3695,7 +3742,7 @@ Output:
                     f"--prompt={prompt.rstrip(chr(10))}",
                     "--max-turns=30",
                     f"--claude-alias={claude_alias}",
-                    *_model_effort_argv(adapter, self._model, self._effort),
+                    *_model_effort_argv(adapter, self._model, self._effort, self._codex_profile),
                     f"--log={log_file}",
                     f"--resume-state={resume_state}",
                     *system_prompt_args,

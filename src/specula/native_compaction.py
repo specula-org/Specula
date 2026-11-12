@@ -93,6 +93,10 @@ class Lines:
 
 
 async def codex(state: dict[str, Any], log: Path) -> dict[str, Any]:
+    if state.get("codex_profile"):
+        # `codex app-server` takes no --profile; the base config could select a
+        # different provider than the one that owns this session.
+        raise RuntimeError("Native compaction does not support Codex profiles")
     argv = ["codex", "app-server"]
     if state.get("effort"):
         argv += ["-c", "model_reasoning_effort=" + json.dumps(state["effort"])]

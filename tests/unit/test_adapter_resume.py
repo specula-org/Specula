@@ -149,6 +149,22 @@ class TestResumeState(unittest.TestCase):
                 with self.subTest(binding=binding), self.assertRaises(ResumeStateError):
                     read_session_id(state, **binding)
 
+    def test_codex_profile_is_bound_only_when_selected(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            plain = root / "plain.resume.json"
+            profiled = root / "profiled.resume.json"
+            common = {"adapter": "codex", "cwd": str(root), "model": "glm-5.3", "effort": ""}
+            capture_session_id(plain, session_id="thread-1", **common)
+            capture_session_id(profiled, session_id="thread-2", codex_profile="glm", **common)
+
+            self.assertNotIn("codex_profile", json.loads(plain.read_text()))
+            self.assertEqual(json.loads(profiled.read_text())["codex_profile"], "glm")
+            self.assertEqual(read_session_id(profiled, codex_profile="glm", **common), "thread-2")
+            for state, profile in ((plain, "glm"), (profiled, ""), (profiled, "other")):
+                with self.subTest(state=state.name, profile=profile), self.assertRaises(ResumeStateError):
+                    read_session_id(state, codex_profile=profile, **common)
+
     def test_different_session_id_fails_without_replacing_original(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)

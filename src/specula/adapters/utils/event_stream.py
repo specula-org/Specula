@@ -980,11 +980,17 @@ def stream_events(
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) not in {3, 4, 7, 8} or argv[0] not in _ADAPTER_NAMES:
+    # An optional trailing ``--codex-profile=NAME`` binds the resume state to
+    # that Codex config profile; it is never positional.
+    codex_profile = ""
+    if argv and argv[-1].startswith("--codex-profile="):
+        codex_profile = argv[-1].removeprefix("--codex-profile=")
+        argv = argv[:-1]
+    if len(argv) not in {3, 4, 7, 8} or argv[0] not in _ADAPTER_NAMES or (codex_profile and len(argv) < 7):
         print(
             "usage: python -m specula.adapters.utils.event_stream "
             "{claude|codex|copilot|opencode|pi} ACTIVITY_JSONL LOG_FILE "
-            "[SESSION_ID_FILE] [RESUME_STATE CWD MODEL EFFORT]",
+            "[SESSION_ID_FILE] [RESUME_STATE CWD MODEL EFFORT [--codex-profile=NAME]]",
             file=sys.stderr,
         )
         return 2
@@ -1002,6 +1008,7 @@ def main(argv: list[str]) -> int:
                 cwd=argv[offset + 1],
                 model=argv[offset + 2],
                 effort=argv[offset + 3],
+                codex_profile=codex_profile,
             )
 
         session_capture = explicit_capture
