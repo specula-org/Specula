@@ -24,7 +24,7 @@ If your bug hunting depends on deadlock detection, configure a BFS run, not simu
 
 Symptom: a liveness counterexample that ends in `Stuttering`, usually right after its premise becomes true.
 
-Such a counterexample only shows that the model is allowed to stop; it says nothing about the implementation. Add fairness to the `Spec` used for liveness checking, for the actions the implementation guarantees will eventually run: `WF_vars(A)` when `A` stays enabled until it is taken, `SF_vars(A)` when `A` is enabled repeatedly but not continuously. Each fairness assumption is a claim about the implementation, so cite the code that justifies it; fairness on an action the implementation does not guarantee hides real progress failures. With justified fairness in place, a remaining counterexample either loops (`Back to state N`) or stutters in a state where no fair action is enabled. Run liveness checks in BFS mode.
+Such a counterexample only shows that the model is allowed to stop; it says nothing about the implementation. Check liveness against a spec with fairness for the steps the implementation guarantees will eventually run (`WF_vars(A)` when `A` stays enabled until it is taken, `SF_vars(A)` when `A` is enabled repeatedly but not continuously); see `spec_generation/references/liveness-pattern.md`. Each fairness assumption is a claim about the implementation, so cite the code that justifies it; fairness on an action the implementation does not guarantee hides real progress failures. With justified fairness in place, a remaining counterexample either loops (`Back to state N`) or stutters in a state where no fair action is enabled. Run liveness checks in BFS mode.
 
 ## `SYMMETRY` makes liveness results unreliable
 

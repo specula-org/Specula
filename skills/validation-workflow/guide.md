@@ -149,6 +149,7 @@ Maintain a single `spec/changelog.md`. One line per fix, grouped by round.
 ## Round N - Model Checking
 - [fix-inv] InvariantName: brief description of invariant change (Case A)
 - [fix-spec] ActionName: brief description of spec change (Case B)
+- [fix-fairness] LiveSpec: fairness added or strengthened, with the `file:line` guaranteeing the action runs (Case B)
 - [bug] ActionName: brief description of real bug found (Case C)
 
 ## Result

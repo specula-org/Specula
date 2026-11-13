@@ -15,21 +15,27 @@ Do not check properties that only hold with favorable timing or randomization, s
 
 ## Add fairness: `LiveSpec`
 
-Without fairness, liveness properties fail by stuttering. Add fairness in `MC.tla` for the actions the implementation guarantees will eventually run, and cite the code that guarantees it:
+Without fairness, liveness properties fail by stuttering. Decide the fairness when you write `LiveSpec`, before any liveness run, from what the implementation's scheduling guarantees.
+
+The default is weak fairness per process or thread on all of its non-fault steps: a running node or thread keeps taking steps while it has one to take. Most implementations guarantee this through an event loop, a worker thread, or the OS scheduler; cite that code.
 
 ```tla
-Fairness ==
-    \* worker.c:120 - the worker loop runs while the queue is non-empty
-    /\ \A t \in Thread : WF_mc_vars(MCWorkerStep(t))
-    \* node.go:88 - a running node handles every delivered message
-    /\ \A s \in Server : WF_mc_vars(MCHandleMessage(s))
+\* node.go:210 - a running node's event loop handles every queued message
+\* and every fired timer
+NodeStep(s) ==
+    \/ MCHandleMessage(s)
+    \/ MCHandleTimeout(s)
+    \/ ...                       \* every non-fault action of s
+
+Fairness == \A s \in Server : WF_mc_vars(NodeStep(s))
 
 LiveSpec == MCSpec /\ Fairness
 ```
 
-- `WF` when the action stays enabled until it is taken; `SF` when it is enabled repeatedly but can be disabled in between (for example, acquiring a lock that other threads keep taking, when the implementation guarantees the waiter is not starved).
-- Quantify over whoever the guarantee is for. `WF_mc_vars(\E s \in Server : A(s))` only guarantees that some server takes `A`; `\A s \in Server : WF_mc_vars(A(s))` guarantees it for each server.
-- Never put fairness on fault actions. Fairness without a code citation hides real progress failures.
+- Quantify over processes or threads. `WF_mc_vars(\E s \in Server : NodeStep(s))` only guarantees that some server takes a step; `\A s \in Server : WF_mc_vars(NodeStep(s))` guarantees it for each server.
+- Fairness on a single action, and any `SF`, are stronger claims. Use them only when the code guarantees that specific action (for example, a dedicated timer that always fires, or a lock that hands off in FIFO order so a waiter is not starved), cite it, and keep them few.
+- Never put fairness on fault actions.
+- Fairness is a claim about the implementation that trace validation cannot check. Never add or strengthen fairness to make a property hold. After a liveness counterexample, change fairness only with a code citation showing that the implementation guarantees the action runs, and log the change as `[fix-fairness]` in `changelog.md`.
 
 ## Bounds: faults stop, progress does not
 
