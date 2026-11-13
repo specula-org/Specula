@@ -6,7 +6,7 @@ Model the requested system behavior and contracts, using the Modeling Brief and 
 
 **Input**: `modeling-brief.md`, its linked modeling documents, target-specific scope guidance when provided, and source code access
 
-**Output** (with dependencies kept consistent):
+**Output** (written to files):
 
 | Phase | Output | Description |
 |-------|--------|-------------|
@@ -18,7 +18,7 @@ Model the requested system behavior and contracts, using the Modeling Brief and 
 
 This `brief-coverage.md` self-audit is part of spec generation. It is separate from the pipeline's harness-generation phase, which is also sometimes called Phase 2.5.
 
-Organize work around artifact dependencies. Use subagents for independent source analysis, module construction, or review when available and useful; agree on shared state and interfaces before parallel edits, and integrate the results into one consistent suite. Persist design decisions, source mappings, and unfinished work so generation can continue across context windows or multiple passes. There is no fixed spec size or number of modules; keep the entry-point files above and add supporting modules when they improve clarity and maintenance.
+Subagents may be used for independent source analysis, module construction, or review; integrate their results into one consistent suite. Each phase writes output to files; if context is compressed mid-session, re-read your own output files to recover. There is no fixed spec size or number of modules; keep the entry-point files above and add supporting modules when useful.
 
 ---
 
@@ -65,7 +65,7 @@ Counter-bound fault-injection actions (timeout, crash, message loss, etc.). Do N
 
 **Generate two types of config**:
 - **`MC.cfg`** — standard safety + structural invariants. Used during spec validation (convergence). Extension invariants (scenario-specific) should be listed but **commented out**.
-- **`MC_hunt_<scenario>.cfg`** — configurations targeting Scenarios and relevant cross-component interactions. Bound unrelated actions only when the target behavior remains reachable. Include the target properties and other useful safety or structural checks. Used during bug hunting after spec converges.
+- **`MC_hunt_<scenario>.cfg`** — configurations targeting Scenarios and relevant cross-component interactions. Bound unrelated actions only when the target behavior remains reachable. Enable the target properties together with the other safety and structural invariants; do not narrow a hunt cfg to the target invariant alone. Used during bug hunting after spec converges.
 
 **Read `references/mc-spec-pattern.md`** for the full template and hunting config pattern.
 
@@ -75,7 +75,7 @@ Counter-bound fault-injection actions (timeout, crash, message loss, etc.). Do N
 
 **Goal**: Catch the easy-to-miss failure mode — invariants *defined* but never *enabled* in any hunt cfg, scenarios with no targeting hunt cfg, or findings no hunt cfg can reach.
 
-Review the requested scope, the modeling handoff including linked documents, and source-grounded gaps discovered during generation. Map baseline behavior and component interactions as well as brief §2 / §5 / §6.1 to the resulting artifacts. Close gaps or explain unresolved coverage explicitly; omission from the brief does not remove a user-requested behavior from scope. Fault-category vocabularies remain optional aids, not a mandatory taxonomy. Fill the audit by reading actual spec and cfg files, not from memory of what you intended.
+This is a self-check, not a grading rubric. Glance over the requested scope and brief §2 / §5 / §6.1 while finalizing Phase 2, identify any obvious gaps, and either close them or note honestly why something is out of scope. The audit is scope-driven, not taxonomy-driven; omission from the brief does not remove a user-requested behavior from scope. Fill the audit by reading actual spec and cfg files, not from memory of what you intended.
 
 When target-specific guidance is provided, preserve its intent while translating the Modeling Brief into the spec. Make it clear in `brief-coverage.md` how the user's priorities are represented or why another verification route is more appropriate, using whatever form and level of detail fit the target. Do not distort implementation evidence or modeling decisions merely to echo the guidance.
 
@@ -114,7 +114,7 @@ For each spec action, specify: spec action name, code location (`file:line`), tr
 
 ## Critical Rules
 
-1. **Every extension has a source-grounded purpose.** Trace it to the requested scope, a system contract, or a Scenario. Record newly discovered in-scope behavior in the handoff and coverage audit.
+1. **Every extension has a source-grounded purpose.** Trace it to the requested scope, a system contract, or a Scenario.
 2. **Model the implementation, not the paper.** Deviations from the reference algorithm are where bugs live.
 3. **Follow the code's control flow faithfully.** Do not simplify, reorder, or merge logic that the code keeps separate.
 4. **Annotate every logic block with source lines.** Every condition, branch, and state update must cite `file:line`. Not optional.

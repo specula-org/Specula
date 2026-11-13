@@ -61,9 +61,9 @@ Two sub-sections:
 For each item, state:
 - **What**: the behavior or mechanism to model
 - **Why**: connect it to the requested scope, a system contract, or Scenario evidence
-- **How**: explain the state, transitions, interfaces, and abstraction decisions needed to represent it
+- **How**: modeling approach (extension variable, split action, etc.)
 
-For a scope spanning multiple components, explain their execution contexts and ownership, identity relationships, state transitions and atomicity boundaries, interface outcomes, and supported configuration differences. Connect normal execution with error, cancellation, cleanup, and recovery paths. For abstracted internals, state the retained effects, assumptions, source evidence, and unresolved questions. Use tables, diagrams, or linked companion documents when helpful; the brief must index any companion material required for spec generation.
+For a scope spanning multiple components, say how they interact, including error, cancellation, cleanup, and recovery paths. Linked companion documents are fine for large scopes.
 
 #### 3.2 Do Not Model (with rationale)
 
@@ -115,9 +115,9 @@ Findings that TLA+ model checking should be able to confirm or refute. These dir
 
 Record an already-fixed defect in § 7 Reference Pointers or as an explicitly labeled regression target. Its guards and associated behavior can still belong in the current model. Do not remove a fix to manufacture a new finding. See `bug-archaeology.md` § 1.4.
 
-**Evidence-based triage.** For each candidate, identify the reachable behavior in question, possible observable consequence, and remaining uncertainty. Resolve exclusions with source or historical evidence rather than predicting the eventual confirmation verdict. Priorities and estimated cost can guide investigation order within the user's budget; they do not establish that a candidate is false or remove an in-scope contract from modeling.
+**Evidence-based triage.** Exclude a candidate only on source or historical evidence, not on a predicted confirmation verdict or estimated cost.
 
-Keep candidates routed to testing or code review visible in § 6.2 / § 6.3. An uncertain classification is a question for further analysis, not a reason to omit the candidate.
+Keep candidates routed to testing or code review in § 6.2 / § 6.3; an uncertain classification is not a reason to omit a candidate.
 
 #### 6.2 Test-Verifiable
 
@@ -149,7 +149,7 @@ Links to detailed evidence for the spec author to consult:
 
 ## Principles
 
-1. **Scale detail with scope.** There is no fixed line, word, or Scenario count. Preserve the behavioral detail needed for modeling; organize large handoffs into linked sections or companion documents rather than compressing away necessary information. The analysis report retains the investigation evidence.
+1. **Actionable, sized to the scope.** There is no fixed line or Scenario count. Include what the spec author needs; investigation details stay in the full analysis report.
 
 2. **Actionable over descriptive**. Every section should directly inform a spec design decision.
 

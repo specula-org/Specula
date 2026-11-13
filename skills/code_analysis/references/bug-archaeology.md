@@ -38,7 +38,7 @@ Record historical defects as reference context or explicitly labeled regression 
 
 **Separate historical evidence from new findings.** Historical fixes can explain current guards, state transitions, and properties in the baseline model and its extensions. Preserve that behavior when it is part of the requested scope. Do not list re-creating an already-fixed defect as a new § 6.1 Model-Checkable Finding or remove its fix from the model to obtain a violation. A current interaction or generalization needs its own source-grounded question and a clear distinction from the historical result.
 
-**Use evidence for finding triage.** Do not discard unresolved candidates based on predicted confirmation outcomes or assumed verification cost. Record the open mechanism question, evidence still needed, and the appropriate verification route; keep baseline coverage independent of candidate novelty.
+**Use evidence for finding triage.** Do not discard unresolved candidates based on predicted confirmation outcomes or assumed verification cost; route each to the appropriate verification method.
 
 ---
 
@@ -78,7 +78,7 @@ Check open PRs — they often contain bug fixes waiting for review or discussion
 
 ### 2.4 Parallelization
 
-Use multiple Task subagents to verify independent discussions in parallel when available. Size assignments to their complexity and record which discussions were actually read.
+Use multiple Task subagents to verify issues in parallel.
 
 ---
 

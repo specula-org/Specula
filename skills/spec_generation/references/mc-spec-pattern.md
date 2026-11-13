@@ -63,7 +63,7 @@ ClientRequest <- MCClientRequest
 
 ## Tuning Constants
 
-Choose finite bounds that admit the behavior being investigated. The values below are examples from small protocol models, not limits on model size or supported interactions. Increase bounds when lifecycle length, topology, or reachability requires it, and record the checked configurations. State space grows exponentially.
+Choose finite bounds that admit the behavior being investigated. The values below are examples from small protocol models, not limits. Increase bounds when lifecycle length, topology, or reachability requires it. State space grows exponentially.
 
 | Constant | Recommended | Notes |
 |----------|-------------|-------|
@@ -84,7 +84,7 @@ Generate one `MC_hunt_<scenario>.cfg` per Scenario from the modeling brief. Thes
 **Pattern** — differ from `MC.cfg` in two ways:
 
 1. **Focused bounds**: reduce unrelated action limits when justified, preserving the mechanism and its enabling interactions
-2. **Targeted invariants**: enable the Scenario properties and useful safety, structural, and interaction properties; document any checks omitted from a particular campaign
+2. **Invariants**: enable the Scenario properties together with the other safety, structural, and interaction invariants. Do not narrow a hunt cfg to the target invariant alone — the other properties catch bugs the Scenario did not anticipate. If an already-analyzed violation keeps stopping the run before the target behavior is explored, continue exploring: rerun with `-C` (TLC `-continue`), disable that one property, or filter the known counterexample (e.g., with a state constraint) in a follow-up run, and note what was turned off
 
 **MC.cfg invariant organization**: group invariants by category with comments, and **comment out** extension (scenario) invariants.
 

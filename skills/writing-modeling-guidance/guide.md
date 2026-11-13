@@ -24,7 +24,7 @@ If none apply, explain that guidance is optional and Specula can determine the m
 1. **State WHAT to verify, not HOW to model it.** Specification generation decides modeling abstractions.
 2. **Phrase hypotheses as questions.** Ask whether an event can cause an outcome instead of declaring a formal invariant.
 3. **Use real `file:line` locations or symbols when the user supplies them or asks for help locating relevant code.** Source anchors are optional and must not replace user intent.
-4. **Scale detail with scope.** Include all requested priorities, interactions, and assumptions. Use linked sections or companion documents when helpful; there is no line or question-count limit.
+4. **Keep it focused.** Include every genuine priority; there is no line or question-count limit.
 5. **Do not repeat what source analysis can discover.** Prioritize user intent, incidents, risks, and exclusions.
 6. **Do not invent or silently complete user intent.** Ask a focused question when a missing priority, expected behavior, or assumption would materially change what gets verified. Resolving a user-selected question to code locations is useful; adding a new priority or contract is not.
 7. **Treat expected behavior as a contract to test.** Do not assume it is implemented correctly or encode it into a model guard or assumption so that violations become unreachable.

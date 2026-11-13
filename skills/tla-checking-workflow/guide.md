@@ -57,7 +57,7 @@ Apply fixes directly without waiting for user confirmation. If the prompt explic
 
 ### Runtime Parameters
 
-These parameters apply to **all** model checking runs — convergence and bug hunting alike. The run duration is the primary constraint; do not constrain state space size. Record the parameters with each result.
+These parameters apply to **all** model checking runs — convergence and bug hunting alike. The run duration is the primary constraint; do not constrain state space size.
 
 | Parameter | Rule | Notes |
 |-----------|------|-------|

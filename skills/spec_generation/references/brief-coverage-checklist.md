@@ -2,11 +2,11 @@
 
 ## What this is
 
-A self-audit aid for the spec generation phase. Check whether the spec preserves the requested scope and modeling handoff, including baseline behavior, component interactions, and properties enabled in MC configs.
+A **gentle self-audit reminder** for the spec generation phase. Its only purpose is to help you notice if the spec you produced silently dropped something the requested scope or the modeling brief asked for — most commonly at the MC config level, where coverage tends to fall through the cracks.
 
-The tables below are optional ways to prepare the required `brief-coverage.md` output. The workflow:
+This is **not** a grading rubric or a mandatory ritual. It is a hand-rail you can reach for when finishing up the spec. The rough workflow:
 
-1. Review the scope guidance, baseline modeling recommendations, linked modeling documents, and brief §2 / §5 / §6.1; map them to the spec and checking configs.
+1. Before locking in the final hunt cfgs, glance over the requested scope and brief §2 / §5 / §6.1 and sketch where each entry shows up in the spec (mentally or in scratch is fine).
 2. Notice any obvious gaps — invariants defined but not enabled in any cfg, Scenarios with no hunt cfg, §6.1 findings nothing targets.
 3. Either close the gap, or note honestly why it's intentionally out of scope.
 
@@ -20,13 +20,13 @@ That's not lack of effort; it's just losing track of the last assembly step. Gla
 
 ## What the brief gives you
 
-Use the requested scope, the modeling brief and its linked documents, and relevant implementation evidence. If the brief omitted a requested behavior or source reading reveals an in-scope interaction, account for it in the handoff and audit. Fault-category vocabularies can help identify questions, but are not a required slate for every system.
+The requested scope and the modeling brief are the sources for what to cover. Do **not** consult fault-category vocabularies (in `code_analysis/references/`) when filling the audit — those exist as shorthand during brief writing, not as a required slate during spec generation. If neither raised it, you do not have to cover it.
 
-Useful mappings:
+Worth glancing at:
 
 | Brief section | What it gives you | Where it should show up |
 |---|---|---|
-| Scope guidance and §1 / §3 baseline behavior | components, contracts, configuration, and lifecycle interactions | corresponding state/actions and source mappings, with abstractions and unresolved coverage explained |
+| Requested scope | in-scope components and their interactions, including baseline behavior with no Scenario | corresponding state and actions in the spec |
 | §2 Scenarios | named Scenarios with mechanism + suggested invariants/actions | usually one `MC_hunt_<scenario>.cfg` per Scenario, or an explicit merger |
 | §5 Proposed Invariants | named invariants with type + targets | each Safety invariant defined, wired, and enabled in ≥1 hunt cfg |
 | §6.1 Model-Checkable Findings | concrete mechanism questions with expected violated invariant | each finding has a hunt cfg whose fault setup makes the trigger reachable |
@@ -35,7 +35,7 @@ Liveness invariants and §6.2 / §6.3 findings are out of scope for this audit u
 
 ## What to glance at
 
-The following tables can support `spec/brief-coverage.md`; include the baseline and scope mapping above as well. Missing entries identify work to complete or a coverage limitation to explain.
+Three loose tables — these are useful as scratch, and you can promote them to `spec/brief-coverage.md` if you want a durable artifact. The audit document is supposed to be boring; "—" rows mean go fix the spec, not fill in apologetic prose.
 
 **Scenarios (brief §2)** — for each named Scenario, which hunt cfg covers it? Mergers are fine if explicit.
 
@@ -45,8 +45,8 @@ The following tables can support `spec/brief-coverage.md`; include the baseline 
 
 ## What this checklist does NOT require
 
-- It does **not** require covering every fault-category vocabulary entry. The requested scope and implementation determine relevance.
-- It does **not** impose a minimum or maximum number of invariants, hunt cfgs, or findings. Determine sufficiency from the requested behavior, contracts, and unresolved questions.
+- It does **not** require covering any fault-category vocabulary. The requested scope and the brief are the source.
+- It does **not** require a minimum number of invariants, hunt cfgs, or findings. If the brief proposed three, three is the right answer.
 - It does **not** require one hunt cfg per Scenario if mergers are honest and written down.
 - It does **not** care about action granularity, instrumentation mapping, or trace spec — those have their own discussions elsewhere.
 

@@ -112,9 +112,8 @@ All artifacts are relative to `.specula-output/`:
 
 For each hunting config, alternate between BFS and simulation to maximize coverage:
 
-1. **BFS first** (30 min) — record completed depth, state count, and remaining queue.
-2. **Assess reachability** — compare explored behavior with the lifecycle and interleavings under investigation. A fixed depth threshold does not establish coverage across models of different granularity.
-3. **Follow up with simulation when BFS is too shallow** — run a **simulation run** (30 min) on the same config with enough depth to reach the target interactions, then record whether they were exercised. Add campaigns when needed.
+1. **BFS first** (30 min) — check the depth reached in TLC output.
+2. **If BFS did not reach the target interactions** — follow up with a **simulation run** (30 min) on the same config, with enough depth to reach them. A fixed depth threshold does not establish coverage across models of different granularity.
 
 **Do NOT shrink config bounds to make BFS go deeper.** Counter bounds (timeout limits, crash limits, etc.) directly control which bug-triggering executions are reachable. Reducing them to fit BFS eliminates the very interleavings where bugs hide. When BFS is too shallow, use simulation for depth — not tighter bounds.
 
@@ -122,8 +121,8 @@ For each hunting config, alternate between BFS and simulation to maximize covera
 
 1. Collect any `[bug]` entries already recorded in `changelog.md` during Phase 2 (Case C found during convergence) — these will be included in the final report
 2. For each `MC_hunt_*.cfg`:
-   - **Run 1 (BFS)**: Launch TLC model checking (30 min). Record depth, state count, remaining queue, and reachability evidence from output.
-   - If violation found → **Case C** (real bug). Analyze counterexample: describe execution path, cross-reference with implementation code, identify root cause and affected code locations.
+   - **Run 1 (BFS)**: Launch TLC model checking (30 min). Record depth and state count from output.
+   - If violation found → **Case C** (real bug). Analyze counterexample: describe execution path, cross-reference with implementation code, identify root cause and affected code locations. Then keep exploring the same config: rerun with `-C` (TLC `-continue`), or disable that property or filter the known counterexample, keeping the other properties enabled.
    - If BFS does not reach the required interactions → **Run 2 (Simulation)**: Launch TLC simulation (30 min, `-S -n 999999999`) on the same config with an appropriate depth for deeper exploration.
    - Save all TLC output to `spec/output/`
 3. Produce `spec/bug-report.md` with all findings — **read `references/bug-report-format.md`** for the template

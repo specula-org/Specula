@@ -116,7 +116,7 @@ Run `MC.cfg` (0 faults) to verify structural invariants hold. Fix fidelity issue
 ### 3C: Bug Hunting
 
 Run `MC_hunt_*.cfg` with fault injection. BFS + Simulation strategy:
-1. BFS first (30 min); record completed depth and remaining work
+1. BFS first (30 min)
 2. If the required interactions remain out of reach, follow up with simulation (30 min) at an appropriate depth
 3. Violation = **Case C** (real bug) — analyze counterexample, cross-reference with code
 

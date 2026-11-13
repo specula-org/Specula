@@ -185,7 +185,7 @@ Write test code that exercises the protocol code paths to generate trace events.
 **Requirements**:
 - Tests must use the system's real test framework (Go `testing`, Rust `#[test]`, Java JUnit, etc.)
 - Tests must run the actual protocol code (not mocked or simulated)
-- Build enough test scenarios to cover the requested normal behavior, fault paths, component interactions, and Modeling Brief questions. Scenario count depends on the scope; identify remaining coverage gaps explicitly.
+- Build enough test scenarios to cover the requested normal behavior, fault paths, component interactions, and Modeling Brief questions. There is no fixed scenario count.
 - Each scenario writes to a separate trace file: `traces/<scenario>.ndjson`
 
 ---
@@ -248,7 +248,7 @@ Contents:
 - How to move a capture point (before → after or vice versa)
 - How to rebuild and re-run after changes
 
-Include the architecture, configuration, event ownership, and source mappings needed to diagnose validation failures and maintain the harness. Link detailed component notes when useful.
+Keep it practical — the Phase 3 agent needs to make adjustments, not understand the entire harness architecture.
 
 ---
 

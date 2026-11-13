@@ -76,7 +76,7 @@ When the brief justifies adversary actions, the encoding is target-specific. A f
 - **Authentication axiom**: Byzantine identities sign as themselves; honest signatures are unforgeable. Do **not** model cryptographic primitive breaks unless the case study is specifically about key compromise.
 - **Receiver-side validation is the bug surface**. Whatever Byzantine action you write, route it through whatever verification predicate the protocol actually runs (`ValidValue`, `ValidateQC`, `VerifyTC`, `ValidEvidence`, etc.). The wrapper exists so TLC can ask "is this predicate strong enough?"; if you bypass the predicate, the run answers nothing about the implementation.
 - **Counters are TLC search budgets, not adversary semantics**. If you bound Byzantine actions, the bounds belong in `MC.tla`, not in `base.tla` — a real adversary is not "limited to 3 equivocations". Each fault-injection action takes its own counter, checked AND incremented on the same transition.
-- **Some categories require base-spec changes** rather than just a wrapper. Selective dissemination needs a directed message bag (`m.to ⊆ Server`); evidence lifecycle needs a per-node evidence pool; amnesia needs per-validator history (`PriorLocks`, `LastVote`, etc.) the rest of the spec wouldn't otherwise track. Include those dependencies for in-scope behavior and record any unresolved modeling work.
+- **Some categories require base-spec changes** rather than just a wrapper. Selective dissemination needs a directed message bag (`m.to ⊆ Server`); evidence lifecycle needs a per-node evidence pool; amnesia needs per-validator history (`PriorLocks`, `LastVote`, etc.) the rest of the spec wouldn't otherwise track. Include those dependencies when the behavior is in scope.
 
 Give each modeled behavior a source-grounded purpose in the requested scope, threat model, or an unresolved question. Historical fixes can justify retaining current defenses and their interactions; a suspected new defect is not required.
 
@@ -90,7 +90,7 @@ Preserve current guards and fixes in the reference model. An adversary that mere
 
 BFT adversary actions usually layer on top of the distributed fault vocabulary, not replace it. Byzantine bugs frequently *cross categories* — pure Byzantine actions in isolation often reproduce textbook results, while the practically interesting bugs come from Byzantine behavior composed with timing / partition / crash / config-change.
 
-Include compositions supported by the requested scope and threat model, including interactions without a known bug hypothesis. Document the combined components and assumptions in the brief; use measured checking difficulties to guide later reductions.
+Include compositions supported by the requested scope and threat model, including interactions without a known bug hypothesis, and note in the brief which components are combined.
 
 ---
 
@@ -100,7 +100,7 @@ Include compositions supported by the requested scope and threat model, includin
 - **Do not** copy wrapper names, counter shapes, or schematic templates from other case studies — their design decisions reflect those targets' specific code and threat models.
 - **Do not** add protocol-specific Byzantine behaviors as new top-level categories. Twins, surround-votes, lunatic / amnesia attacks, etc., are instances of the existing vocabulary; name them in the brief if the protocol names them, but don't expand the vocabulary list.
 - **Do not** model cryptographic primitive breaks by default. If the case study is specifically about key compromise, document the exception in the brief.
-- **Do not** stub a required base-spec dependency with a `TRUE` / `SUBSET Server` placeholder — that silently weakens or strengthens the attack and produces unreliable counterexamples. Implement the dependency faithfully or report the associated behavior as an unresolved coverage gap.
+- **Do not** stub a required base-spec dependency with a `TRUE` / `SUBSET Server` placeholder — that silently weakens or strengthens the attack and produces unreliable counterexamples. Implement the dependency faithfully instead.
 
 ---
 

@@ -52,9 +52,9 @@ After classifying:
 ### Depth Requirements
 
 - **Git commits**: Analyze all bug-fix commits touching core files. Report the total count.
-- **GitHub issues**: Read the full discussion thread (including all comments) for every issue you plan to reference. Select relevant discussions across the requested components and mechanisms; a fixed issue count does not establish sufficient coverage. Report: total issues collected, total deeply read, total confirmed, total excluded with reasons, and unresolved review work.
+- **GitHub issues**: Read the full discussion thread (including all comments) for every issue you plan to reference. Read as many as the requested scope requires; there is no fixed count. Report: total issues collected, total deeply read, total confirmed, total excluded as false positive.
 - **Open PRs**: Review all open PRs with bug-fix intent — they often contain fixes waiting for review and reveal known-but-unfixed problems.
-- **Parallelization**: Use multiple Task subagents for independent issue verification when available. Size assignments by the discussion depth and component relationships, keeping a shared record of reviewed and pending evidence.
+- **Parallelization**: Use **multiple Task subagents in parallel** for issue verification. Do NOT read issues sequentially — this wastes time.
 
 **Read `references/bug-archaeology.md`** for detailed methodology.
 
@@ -72,7 +72,7 @@ Deep Analysis is the most time-consuming phase. **Use parallel Task subagents ag
 - Each subagent reads its assigned core files completely and applies the relevant analysis patterns
 - After all subagents return, cross-reference findings in the main context
 
-Choose parallelism according to the scope, dependencies, host capabilities, and available resources. The coordinating agent remains responsible for cross-component contracts and unresolved coverage.
+Choose the number of parallel subagents by the size of the scope; there is no fixed number.
 
 ### Verification
 
@@ -84,7 +84,7 @@ Every finding MUST be verified: re-read exact code lines, check for compensating
 
 ## Phase 4: Modeling Brief
 
-**Goal**: Produce an actionable handoff for the requested modeling scope — describe the baseline behavior and component interactions, organize findings into Scenarios, propose spec extensions, explain exclusions, and classify findings by verification method. Priorities determine investigation order; they do not cap the number of Scenarios or replace the requested scope with a shortlist.
+**Goal**: Produce an actionable handoff for the requested modeling scope — describe the baseline behavior and component interactions, organize findings into Scenarios, propose spec extensions, explain exclusions, and classify findings by verification method. Priorities set the order, not a cap on the number of Scenarios.
 
 When target-specific guidance is provided, treat its priorities and scope as required investigative intent. Make their handling visible in the Modeling Brief through the relevant Scenarios, findings, exclusions, or unresolved questions, without imposing a separate format. Guidance determines what must be investigated, not what the evidence must conclude, and it remains a coverage floor rather than a ceiling on code-driven exploration. Respect explicit boundaries, while reading adjacent code when needed to establish in-scope behavior.
 
