@@ -71,7 +71,7 @@ All artifacts are relative to `.specula-output/`:
 
 **Config**: Use **`MC.cfg` only** — standard safety + structural invariants. Do NOT use hunting configs (`MC_hunt_*.cfg`) in this phase; those are for bug hunting after convergence.
 
-**Run duration**: Choose an explicit campaign budget appropriate to the model and user constraints. See `../tla-checking-workflow/guide.md` Phase 1 "Runtime Parameters" for duration, worker, memory, and simulation depth settings.
+**Run duration**: 30 minutes per run. See `../tla-checking-workflow/guide.md` Phase 1 "Runtime Parameters" for worker, memory, and simulation depth settings.
 
 **Delegate to sub-skill**: Follow the methodology in `../tla-checking-workflow/guide.md`.
 
@@ -112,9 +112,9 @@ All artifacts are relative to `.specula-output/`:
 
 For each hunting config, alternate between BFS and simulation to maximize coverage:
 
-1. **BFS first** — run within the selected exploration budget and record completed depth, state count, and remaining queue.
+1. **BFS first** (30 min) — record completed depth, state count, and remaining queue.
 2. **Assess reachability** — compare explored behavior with the lifecycle and interleavings under investigation. A fixed depth threshold does not establish coverage across models of different granularity.
-3. **Follow up with simulation when BFS is too shallow** — choose enough simulation depth to reach the target interactions, then record whether they were exercised. Extend or add campaigns when needed within the available budget.
+3. **Follow up with simulation when BFS is too shallow** — run a **simulation run** (30 min) on the same config with enough depth to reach the target interactions, then record whether they were exercised. Add campaigns when needed.
 
 **Do NOT shrink config bounds to make BFS go deeper.** Counter bounds (timeout limits, crash limits, etc.) directly control which bug-triggering executions are reachable. Reducing them to fit BFS eliminates the very interleavings where bugs hide. When BFS is too shallow, use simulation for depth — not tighter bounds.
 
@@ -122,9 +122,9 @@ For each hunting config, alternate between BFS and simulation to maximize covera
 
 1. Collect any `[bug]` entries already recorded in `changelog.md` during Phase 2 (Case C found during convergence) — these will be included in the final report
 2. For each `MC_hunt_*.cfg`:
-   - **Run 1 (BFS)**: Launch TLC with the selected budget. Record depth, state count, remaining queue, and reachability evidence from output.
+   - **Run 1 (BFS)**: Launch TLC model checking (30 min). Record depth, state count, remaining queue, and reachability evidence from output.
    - If violation found → **Case C** (real bug). Analyze counterexample: describe execution path, cross-reference with implementation code, identify root cause and affected code locations.
-   - If BFS does not reach the required interactions → **Run 2 (Simulation)**: Launch TLC simulation on the same config with an appropriate depth and budget for deeper exploration.
+   - If BFS does not reach the required interactions → **Run 2 (Simulation)**: Launch TLC simulation (30 min, `-S -n 999999999`) on the same config with an appropriate depth for deeper exploration.
    - Save all TLC output to `spec/output/`
 3. Produce `spec/bug-report.md` with all findings — **read `references/bug-report-format.md`** for the template
 4. Produce `spec/findings.json` — a structured mirror of the same findings — **read `references/findings-json-format.md`** for the schema. Every `## Bug N` in the report gets exactly one entry; emit `"findings": []` (present, not missing) when no bugs are found.

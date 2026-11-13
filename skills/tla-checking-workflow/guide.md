@@ -57,17 +57,17 @@ Apply fixes directly without waiting for user confirmation. If the prompt explic
 
 ### Runtime Parameters
 
-Choose campaign parameters for the required behavior and available resources, respecting explicit user budgets. Record them with each result. The examples below are starting points, not limits on spec size, exploration depth, or total investigation time.
+These parameters apply to **all** model checking runs — convergence and bug hunting alike. The run duration is the primary constraint; do not constrain state space size. Record the parameters with each result.
 
 | Parameter | Rule | Notes |
 |-----------|------|-------|
-| **Timeout** | Choose a per-run exploration budget (e.g., `-t 30`) | Extend or split campaigns when the target needs more exploration and the overall budget permits. A timeout is not an exhaustive pass. |
+| **Timeout** | **30 minutes** per run (`-t 30`) | The single hard constraint. If TLC hasn't found a violation in 30 min, the run ends. A timeout is not an exhaustive pass. |
 | **Workers** | Prefer `-w auto` for one TLC; use an explicit count when running several TLCs concurrently | `auto` uses every CPU visible to that JVM. It does not coordinate with other TLC processes. |
 | **Heap memory** | Choose together with off-heap (e.g., `-m 50G`) | The wrapper accounts for the declared heap and off-heap as one request. |
 | **Off-heap memory** | Give `OffHeapDiskFPSet` the larger share when useful (e.g., `-M 200G`) | The sum of `-m + -M` must fit the remaining Specula-run budget. |
 | **Simulation depth** | Enough transitions to reach and exercise the target interactions | Values such as `-p 50` or `-p 100` suit some small protocols; longer lifecycles may require substantially greater depth. |
-| **Simulation traces** | Choose a finite campaign or use the exploration timeout | Record both the selected bounds and the actual number explored. |
-| **State space size** | Preserve target behavior and its enabling interleavings | Manage search cost through explicit configurations and campaign budgets; report what each reduction excludes. |
+| **Simulation traces** | As many as possible (`-n 999999999`) | Let the timeout be the stopping condition, not trace count. |
+| **State space size** | **Do not constrain.** | Let TLC explore as much as possible within the 30-min window. |
 
 **Common run script options**:
 | Flag | Purpose | Example |
