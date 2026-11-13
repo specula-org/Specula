@@ -69,6 +69,8 @@ These parameters apply to **all** model checking runs — convergence and bug hu
 | **Simulation traces** | As many as possible (`-n 999999999`) | Let the timeout be the stopping condition, not trace count. |
 | **State space size** | **Do not constrain.** | Let TLC explore as much as possible within the 30-min window. |
 
+**Liveness cfgs** (`MC_hunt_<scenario>_live.cfg`) run in BFS mode only; simulation does not report most liveness violations. Keep deadlock checking off (the `run_model_check.sh` default, so do not pass `-D`; plain TLC needs `-deadlock`), so that states where the bounded model stops are checked as stuttering instead of ending the run. If BFS does not finish within the timeout, TLC has not completed the liveness check: treat "no violation" as inconclusive for that bound, not as a pass.
+
 **Common run script options**:
 | Flag | Purpose | Example |
 |------|---------|---------|
@@ -228,6 +230,16 @@ If the counterexample's preconditions look implausible in the real system (e.g.,
 4. Record in `spec/bug-report.md` with full details (counterexample summary, root cause, affected code)
 
 **Case C is the most valuable outcome** — prioritize its discovery.
+
+### Liveness Counterexamples
+
+A counterexample from a `_live` cfg is a lasso: a prefix followed by a part that repeats forever. `get_tlc_summary` reports `violation_type: temporal_property` without a name (the violated property is the cfg's single `PROPERTY`) and a `lasso`: `stuttering` means the behavior stays in state `loop_start` forever; `back_to_state` means states `loop_start` to the last state repeat forever.
+
+Inspect the repeating part: which actions are enabled there, and which of them have fairness in `LiveSpec`. Then classify:
+
+- **Case B** — the behavior stops or loops only because of the model: an action the implementation would take is enabled but has no fairness; it is disabled because its counter ran out; or the loop needs a fault to fire forever. Fix fairness or bounds as described in `spec_generation/references/liveness-pattern.md`. If a fair action looks enabled throughout the repeating part yet is never taken, check that the fairness is stated on the action `MCNext` actually takes (the MC wrapper, not the base action) and that the cfg has no `SYMMETRY` or `VIEW`.
+- **Case A** — the implementation does not promise this progress under these faults (for example, it documents that recovery needs an operator). Revise or remove the property and cite the evidence.
+- **Case C** — every fairness assumption cites code, the repeating part only uses behaviors the implementation allows, and the implementation promises the progress. Describe the prefix that reaches the repeating part, what repeats, which progress never happens, and why the fair actions do not lead to it.
 
 ### Advanced Analysis with Trace Replay
 
