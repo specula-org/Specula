@@ -32,7 +32,7 @@ For **Category B** systems:
 
 - **Bound** the injected bug mechanism: stale snapshot capture, skipped re-check, premature reclaim, wrong wakeup, weakened ordering bridge, buggy fallback path
 - **Do not bound away** the normal reactive steps that make the bug reachable: publish, confirm, help-transfer, reclaim scan, wakeup completion
-- Prefer **2-3 threads**, very small capacities / buffer sizes / key sets, and tiny bounds on unrelated actions so the target interleaving remains reachable
+- Start small (e.g., 2-3 threads, small capacities / buffer sizes / key sets) and expand when the target interaction needs more actors or lifecycle stages; bound unrelated actions only where the target interleaving remains reachable
 
 ## Fault Category Wrappers — Guidance, Not Templates
 

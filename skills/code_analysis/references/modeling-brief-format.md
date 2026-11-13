@@ -69,7 +69,9 @@ For a scope spanning multiple components, say how they interact, including error
 
 For each excluded item, state:
 - **What**: the behavior or mechanism NOT to model
-- **Why**: why TLA+ is not the right tool (e.g., copy-paste error, metrics issue, pure performance concern)
+- **Why**: why TLA+ is not the right tool (e.g., copy-paste error, metrics issue, pure performance concern), or why it lies outside the requested scope
+
+Do not exclude in-scope behavior because no bug is suspected in it or because a related bug is already known or fixed.
 
 ### 4. Proposed Extensions
 
