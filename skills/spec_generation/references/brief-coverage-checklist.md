@@ -28,10 +28,10 @@ Worth glancing at:
 |---|---|---|
 | Requested scope | in-scope components and their interactions, including baseline behavior with no Scenario | corresponding state and actions in the spec |
 | §2 Scenarios | named Scenarios with mechanism + suggested invariants/actions | usually one `MC_hunt_<scenario>.cfg` per Scenario, or an explicit merger |
-| §5 Proposed Invariants | named invariants with type + targets | each Safety invariant defined, wired, and enabled in ≥1 hunt cfg |
+| §5 Proposed Invariants | named invariants with type + targets | each Safety invariant defined, wired, and enabled in ≥1 hunt cfg; each Liveness property defined and checked by its own `MC_hunt_<scenario>_live.cfg` |
 | §6.1 Model-Checkable Findings | concrete mechanism questions with expected violated invariant | each finding has a hunt cfg whose fault setup makes the trigger reachable |
 
-Liveness invariants and §6.2 / §6.3 findings are out of scope for this audit unless the brief says otherwise.
+§6.2 / §6.3 findings are out of scope for this audit unless the brief says otherwise.
 
 ## What to glance at
 
@@ -39,7 +39,7 @@ Three loose tables — these are useful as scratch, and you can promote them to 
 
 **Scenarios (brief §2)** — for each named Scenario, which hunt cfg covers it? Mergers are fine if explicit.
 
-**Invariants (brief §5)** — for each Safety invariant: defined where, wired in MC.tla, enabled in which hunt cfg(s)? **The "enabled in cfg" column is the one that breaks most often** — fill it by reading the actual cfg files, not from memory of what you intended to write.
+**Invariants (brief §5)** — for each Safety invariant: defined where, wired in MC.tla, enabled in which hunt cfg(s)? **The "enabled in cfg" column is the one that breaks most often** — fill it by reading the actual cfg files, not from memory of what you intended to write. For each Liveness property: defined where, which `_live` cfg checks it, and which fairness assumptions that cfg's spec adds (see `liveness-pattern.md`).
 
 **Findings (brief §6.1)** — for each finding: trigger mechanism, expected violated invariant, hunt cfg targeting it. A finding with no targeting cfg won't be hunted — if you genuinely can't reach the trigger, say so plainly.
 

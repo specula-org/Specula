@@ -97,6 +97,8 @@ Include both:
 - Standard algorithm invariants (ElectionSafety, LogMatching, etc.)
 - Implementation-specific invariants derived from the analysis
 
+Safety invariants are the main target. Propose a Liveness property only when a Scenario is about a progress risk the code or its history shows: a request or waiter that can wait forever, a round or election that stops advancing, livelock, starvation, a lost wakeup. Pick a property that should follow from the system's own actions eventually running, not from timing luck (a plain model allows split votes forever, so "eventually a leader is elected" fails in a plain Raft model). In the Description, name the actions the implementation guarantees will eventually run, with `file:line`, and the faults that must eventually stop for the property to hold.
+
 ### 6. Findings Pending Verification
 
 Findings from Code Analysis that need further work, split by verification method:

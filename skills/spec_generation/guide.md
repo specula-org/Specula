@@ -125,7 +125,7 @@ For each spec action, specify: spec action name, code location (`file:line`), tr
 8. **Silent actions must be tightly constrained.** Unconstrained silent actions cause state space explosion.
 9. **MC spec bounds fault-injection, not normal operations.**
 10. **For Category B, split operations at real semantic boundaries.** If code has separate read/confirm, reserve/publish, retire/reclaim, or signal/complete windows, do not collapse them into one action just because the public API looks atomic.
-11. **`brief-coverage.md` is a mandatory phase output.** Every Safety invariant in brief §5 must end up enabled in ≥1 hunt cfg, every brief §2 scenario must have a targeting hunt cfg (or an explicit, written-out merger), every §6.1 finding must have a hunt cfg whose fault setup makes it reachable. Use the checklist as a self-check before writing the final audit doc — see Phase 2.5 and `references/brief-coverage-checklist.md`.
+11. **`brief-coverage.md` is a mandatory phase output.** Every Safety invariant in brief §5 must end up enabled in ≥1 hunt cfg, every Liveness property in its own `_live` cfg, every brief §2 scenario must have a targeting hunt cfg (or an explicit, written-out merger), every §6.1 finding must have a hunt cfg whose fault setup makes it reachable. Use the checklist as a self-check before writing the final audit doc — see Phase 2.5 and `references/brief-coverage-checklist.md`.
 
 ---
 
