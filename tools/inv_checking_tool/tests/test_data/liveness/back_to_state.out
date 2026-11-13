@@ -1,0 +1,29 @@
+Starting... (2026-11-13 10:46:33)
+Implied-temporal checking--satisfiability problem has 1 branches.
+Computing initial states...
+Finished computing initial states: 1 distinct state generated at 2026-11-13 10:46:33.
+Progress(3) at 2026-11-13 10:46:33: 4 states generated, 3 distinct states found, 0 states left on queue.
+Checking temporal properties for the complete state space with 3 total distinct states at (2026-11-13 10:46:33)
+Error: Temporal properties were violated.
+
+Error: The following behavior constitutes a counter-example:
+
+State 1: <Initial predicate>
+/\ done = FALSE
+/\ x = 0
+
+State 2: <Step line 6, col 9 to line 6, col 42 of module Lasso>
+/\ done = FALSE
+/\ x = 1
+
+State 3: <Step line 6, col 9 to line 6, col 42 of module Lasso>
+/\ done = FALSE
+/\ x = 2
+
+Back to state 1: <Step line 6, col 9 to line 6, col 42 of module Lasso>
+
+"CounterExample written: back_to_state.json"
+Finished checking temporal properties in 00s at 2026-11-13 10:46:33
+4 states generated, 3 distinct states found, 0 states left on queue.
+The depth of the complete state graph search is 3.
+Finished in 00s at (2026-11-13 10:46:33)

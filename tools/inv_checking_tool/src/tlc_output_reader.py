@@ -33,13 +33,18 @@ from typing import Any
 from .trace_reader import TraceReader
 from .utils.path_parser import PathAccessError, format_value, get_value_at_path
 from .utils.preprocessing import (
-    ERROR_BEHAVIOR_MARKER,
+    ERROR_BEHAVIOR_MARKERS,
     convert_to_trace_format,
     extract_counterexample_path,
+    extract_lasso_info,
     extract_statistics,
     extract_violation_info,
+    has_error_trace,
     strip_ansi_codes,
 )
+
+# TLC's JSON trace marks a stuttering step with an action from this pseudo-module.
+_BUILTIN_ACTION_MODULE = "--TLA+ BUILTINS--"
 
 
 @dataclass
@@ -56,11 +61,12 @@ class StateInfo:
 class TraceSummary:
     """Summary information about the TLC trace."""
 
-    violation_type: str | None  # "invariant" or "property"
-    violation_name: str | None  # Name of the violated invariant/property
+    violation_type: str | None  # "invariant", "action_property", "temporal_property", or "deadlock"
+    violation_name: str | None  # Violated name; None when TLC does not report one
     trace_length: int  # Number of states in the trace
     actions: list[str]  # List of action names
     statistics: dict[str, Any] = field(default_factory=dict)  # TLC statistics
+    lasso: dict[str, Any] | None = None  # Loop of a liveness counterexample (kind, loop_start, action)
 
 
 class TLCOutputReader:
@@ -121,12 +127,12 @@ class TLCOutputReader:
 
         violation_type, violation_name = extract_violation_info(content)
         self._metadata = {"statistics": extract_statistics(content)}
-        if violation_name:
+        if violation_type:
             self._metadata["violation_type"] = violation_type
             self._metadata["violation_name"] = violation_name
 
         counterexample_path = extract_counterexample_path(content)
-        has_error_trace = ERROR_BEHAVIOR_MARKER in content
+        text_trace = has_error_trace(content)
 
         # Determine effective mode
         if self.mode == "json":
@@ -136,7 +142,7 @@ class TLCOutputReader:
         else:  # auto
             if counterexample_path:
                 effective_mode = "json"
-            elif has_error_trace:
+            elif text_trace:
                 effective_mode = "text"
             else:
                 raise ValueError(
@@ -171,13 +177,19 @@ class TLCOutputReader:
             trace = trace["counterexample"]
 
         self._states, self._action_details = self._parse_trace(trace, save_action_name)
+        lasso = self._json_lasso(trace)
+        if lasso:
+            self._metadata["lasso"] = lasso
 
     def _load_text(self, content: str, save_action_name: bool) -> None:
         """Load trace by parsing raw TLC text output using TraceReader."""
-        if ERROR_BEHAVIOR_MARKER not in content:
-            raise ValueError(
-                f"Text mode requires an error trace in TLC output. Expected '{ERROR_BEHAVIOR_MARKER}' marker."
-            )
+        if not has_error_trace(content):
+            expected = " or ".join(f"'{marker}'" for marker in ERROR_BEHAVIOR_MARKERS)
+            raise ValueError(f"Text mode requires an error trace in TLC output. Expected {expected} marker.")
+
+        lasso = extract_lasso_info(content)
+        if lasso:
+            self._metadata["lasso"] = lasso
 
         trace_content = convert_to_trace_format(content)
 
@@ -204,14 +216,10 @@ class TLCOutputReader:
     ) -> tuple[list[dict[str, Any]], list[str | None]]:
         action_by_state = {}
         detail_by_state = {}
-        for entry in trace.get("action", []):
-            if not isinstance(entry, list) or len(entry) < 3:
+        for from_id, action, state_id in self._json_steps(trace):
+            if self._is_loop_step(from_id, state_id):
+                # The step that closes a liveness lasso does not lead to a new state.
                 continue
-            action = entry[1]
-            to_state = entry[2]
-            if not isinstance(action, dict) or not isinstance(to_state, list) or not to_state:
-                continue
-            state_id = to_state[0]
             name = action.get("name")
             if name:
                 action_by_state[state_id] = name
@@ -233,6 +241,35 @@ class TLCOutputReader:
             raise ValueError("No states found in trace JSON.")
 
         return states, details
+
+    @staticmethod
+    def _json_steps(trace: dict[str, Any]):
+        """Yield (from_id, action, to_id) for each well-formed step of a JSON trace."""
+        for entry in trace.get("action", []):
+            if not isinstance(entry, list) or len(entry) < 3:
+                continue
+            from_state, action, to_state = entry[0], entry[1], entry[2]
+            if not isinstance(action, dict) or not isinstance(to_state, list) or not to_state:
+                continue
+            from_id = from_state[0] if isinstance(from_state, list) and from_state else None
+            yield from_id, action, to_state[0]
+
+    @staticmethod
+    def _is_loop_step(from_id: Any, to_id: Any) -> bool:
+        """Return whether a step goes back to an earlier or the same state."""
+        return isinstance(from_id, int) and isinstance(to_id, int) and to_id <= from_id
+
+    @classmethod
+    def _json_lasso(cls, trace: dict[str, Any]) -> dict[str, Any] | None:
+        """Describe the loop that closes a liveness counterexample in a JSON trace."""
+        for from_id, action, to_id in cls._json_steps(trace):
+            if not cls._is_loop_step(from_id, to_id):
+                continue
+            location = action.get("location") or {}
+            if to_id == from_id and location.get("module") == _BUILTIN_ACTION_MODULE:
+                return {"kind": "stuttering", "loop_start": to_id, "action": None}
+            return {"kind": "back_to_state", "loop_start": to_id, "action": cls._format_action_detail(action)}
+        return None
 
     @staticmethod
     def _format_action_detail(action: dict[str, Any]) -> str | None:
@@ -344,11 +381,12 @@ class TLCOutputReader:
 
         Returns:
             TraceSummary object containing:
-            - violation_type: Type of violation ("invariant" or "property")
-            - violation_name: Name of the violated invariant/property
+            - violation_type: "invariant", "action_property", "temporal_property", or "deadlock"
+            - violation_name: Violated name; None when TLC does not report one
             - trace_length: Number of states
             - actions: List of action names in order
             - statistics: TLC statistics (states generated, etc.)
+            - lasso: For a liveness counterexample, how the behavior loops
         """
         actions = []
         for state in self._states:
@@ -361,6 +399,7 @@ class TLCOutputReader:
             trace_length=len(self._states),
             actions=actions,
             statistics=self._metadata.get("statistics", {}),
+            lasso=self._metadata.get("lasso"),
         )
 
     def get_state(
@@ -742,9 +781,14 @@ class TLCOutputReader:
             "",
         ]
 
-        if summary.violation_name:
+        if summary.violation_type:
             lines.append(f"Violation Type: {summary.violation_type}")
-            lines.append(f"Violated: {summary.violation_name}")
+            if summary.violation_name:
+                lines.append(f"Violated: {summary.violation_name}")
+            elif summary.violation_type == "temporal_property":
+                lines.append("Violated: not named by TLC; one of the cfg's PROPERTIES")
+            if summary.lasso:
+                lines.append(f"Loop: {self._describe_lasso(summary.lasso, summary.trace_length)}")
             lines.append("")
 
         lines.append(f"Trace Length: {summary.trace_length} states")
@@ -777,6 +821,15 @@ class TLCOutputReader:
         lines.append("=" * 60)
 
         return "\n".join(lines)
+
+    @staticmethod
+    def _describe_lasso(lasso: dict[str, Any], trace_length: int) -> str:
+        """Describe how a liveness counterexample continues after its last printed state."""
+        start = lasso["loop_start"]
+        if lasso["kind"] == "stuttering":
+            return f"stays in state {start} forever (stuttering: no further step is taken)"
+        via = f" via {lasso['action']}" if lasso.get("action") else ""
+        return f"returns to state {start}{via}; states {start}-{trace_length} repeat forever"
 
     def __repr__(self) -> str:
         """Return string representation."""

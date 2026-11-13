@@ -1,0 +1,30 @@
+@!@!@STARTMSG 2116:1 @!@!@
+Temporal properties were violated.
+
+@!@!@ENDMSG 2116 @!@!@
+@!@!@STARTMSG 2264:1 @!@!@
+The following behavior constitutes a counter-example:
+
+@!@!@ENDMSG 2264 @!@!@
+@!@!@STARTMSG 2217:4 @!@!@
+1: <Initial predicate>
+/\ done = FALSE
+/\ x = 0
+
+@!@!@ENDMSG 2217 @!@!@
+@!@!@STARTMSG 2217:4 @!@!@
+2: <Step line 6, col 9 to line 6, col 42 of module Lasso>
+/\ done = FALSE
+/\ x = 1
+
+@!@!@ENDMSG 2217 @!@!@
+@!@!@STARTMSG 2217:4 @!@!@
+3: <Step line 6, col 9 to line 6, col 42 of module Lasso>
+/\ done = FALSE
+/\ x = 2
+
+@!@!@ENDMSG 2217 @!@!@
+@!@!@STARTMSG 2122:4 @!@!@
+1: Back to state: <Step line 6, col 9 to line 6, col 42 of module Lasso>
+
+@!@!@ENDMSG 2122 @!@!@
