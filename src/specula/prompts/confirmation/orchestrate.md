@@ -6,7 +6,7 @@ methodology is the single-bug skill (`guide.md`) applied to each candidate.
 
 ## Inputs
 - MC findings (with counterexamples): {{bug_report}}
-- Code-review findings: {{brief}}
+- Code-review findings: {{brief}} (the Modeling Brief and any companion documents)
 - Source code: {{repo}}
 - Spec directory: {{spec_dir}}
 

@@ -4,7 +4,7 @@ Model the requested system behavior and contracts, using the Modeling Brief and 
 
 ## Input / Output
 
-**Input**: `modeling-brief.md`, its linked modeling documents, target-specific scope guidance when provided, and source code access
+**Input**: `modeling-brief.md`, its companion `modeling-brief-*.md` documents, target-specific scope guidance when provided, and source code access
 
 **Output** (written to files):
 
@@ -46,7 +46,7 @@ For **Category B** systems, do **not** force a message-passing template onto the
 
 **Goal**: Write the TLA+ specification for the requested scope, including baseline behavior, component interactions, and Scenario-driven extensions.
 
-1. **Read the modeling handoff and scope guidance** — follow linked modeling documents; identify baseline contracts, component interactions, and each Scenario's mechanism, suggested variables/actions, and priority
+1. **Read the modeling handoff and scope guidance** — read its companion `modeling-brief-*.md` documents too; identify baseline contracts, component interactions, and each Scenario's mechanism, suggested variables/actions, and priority
 2. **Read source code as needed** — start with the cited functions, then follow callers, callees, shared state, configuration, and failure paths needed to establish in-scope behavior. Brief references are starting points, not a file allowlist
 3. **Design variables** — standard protocol variables (Category A) or concurrency variables (Category B: thread-local snapshots, reclamation state, handoff flags, cached views) + state needed for the requested behavior, contracts, and Scenarios
 4. **Write actions** — name after implementation functions, follow code's control flow faithfully, annotate every logic block with `file:line`

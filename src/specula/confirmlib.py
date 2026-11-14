@@ -43,6 +43,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
+from specula import brief as modeling_brief
 from specula import confirm_first, persistent_findings, quota, resumelib
 from specula.notes import worker_notes_identity, worker_notes_section
 from specula.phaselib import (
@@ -3694,10 +3695,8 @@ def _expected_mc_ids(spec_dir: Path) -> tuple[dict[str, dict[str, Any]] | None, 
     return findings_by_id, errs
 
 
-def _expected_brief_scenarios(brief: Path) -> set[str] | None:
-    if not brief.is_file():
-        return set()
-    text = brief.read_text(errors="replace")
+def _expected_brief_scenarios(work: Path) -> set[str] | None:
+    text = "\n".join(path.read_text(errors="replace") for path in modeling_brief.documents(work))
     return {f"Scenario {number}" for number in re.findall(r"(?im)^#{2,4}\s+Scenario\s+(\d+)\s*:", text)}
 
 
@@ -3707,6 +3706,7 @@ def _candidate_fingerprint(cfg: ConfirmConfig) -> str:
     prompts = Path(__file__).resolve().parent / "prompts" / "confirmation"
     sources: list[tuple[str, Path]] = [
         ("brief", wd / "modeling-brief.md"),
+        *((f"brief:{path.name}", path) for path in modeling_brief.companions(wd)),
         ("schema", SKILLS / "validation-workflow" / "references" / "findings-json-format.md"),
     ]
     if not cfg.scenarios_only:
@@ -3755,7 +3755,7 @@ def _candidate_cache_valid(
         wd = cfg.ws.work_dir(cfg.name)
         has_sources = any(
             path.is_file()
-            for path in (out.parent / "findings.json", out.parent / "bug-report.md", wd / "modeling-brief.md")
+            for path in (out.parent / "findings.json", out.parent / "bug-report.md", *modeling_brief.documents(wd))
         )
         return not has_sources and not (out.parent / "confirmation-generation.json").is_file()
     try:
@@ -3858,15 +3858,14 @@ def consolidate(cfg: ConfirmConfig) -> None:
     # A Scenario-only pass runs before any model exists. It ignores model
     # outputs even when a reused work directory still holds them.
     expected_mc_ids, source_errs = (None, []) if cfg.scenarios_only else _expected_mc_ids(spec_dir)
-    brief = wd / "modeling-brief.md"
     external_candidates = (
         out.is_file()
         and not (spec_dir / "findings.json").is_file()
         and not (spec_dir / "bug-report.md").is_file()
-        and not brief.is_file()
+        and not modeling_brief.documents(wd)
         and not (spec_dir / "confirmation-generation.json").is_file()
     )
-    expected_scenarios = None if external_candidates else _expected_brief_scenarios(brief)
+    expected_scenarios = None if external_candidates else _expected_brief_scenarios(wd)
     resume_logical = ("confirm", cfg.name, "consolidate")
     if source_errs:
         raise ConsolidateFailed(f"invalid model-checking input for {cfg.name}: {source_errs[0]}")
@@ -3890,7 +3889,7 @@ def consolidate(cfg: ConfirmConfig) -> None:
             "confirmation/consolidate",
             name=cfg.name,
             mc_src=mc_src,
-            brief=str(brief),
+            brief=modeling_brief.listing(wd),
             out=str(out),
             validation_workflow_skill=prompt_skill_ids("validation-workflow"),
         )

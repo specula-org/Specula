@@ -63,7 +63,7 @@ For each item, state:
 - **Why**: connect it to the requested scope, a system contract, or Scenario evidence
 - **How**: modeling approach (extension variable, split action, etc.)
 
-For a scope spanning multiple components, say how they interact, including error, cancellation, cleanup, and recovery paths. Linked companion documents are fine for large scopes.
+For a scope spanning multiple components, say how they interact, including error, cancellation, cleanup, and recovery paths. For a large scope, split the brief into companion documents named `modeling-brief-<topic>.md` beside `modeling-brief.md` and link them from it; Scenarios and findings may live in any of them, and later phases read the whole set.
 
 #### 3.2 Do Not Model (with rationale)
 

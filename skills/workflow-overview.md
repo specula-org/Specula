@@ -47,7 +47,7 @@ See `harness-generation` skill's `guide.md` Step 0 for classification details.
    Also classify the target as Category A or B and identify the semantic boundaries that matter (crash windows vs linearization / reclamation windows).
 2. **Bug Archaeology** — Mine git history and issue tracker for historical bugs. Group into **Scenarios** by shared mechanism.
 3. **Deep Analysis** — Systematic code reading guided by Scenarios. Look for: code path inconsistencies, non-atomic persistence with crash windows, missing guards, deviations from the reference algorithm.
-4. **Modeling Brief** — Describe the requested baseline behavior, contracts, interfaces, abstractions, and findings in enough detail for spec generation. Link companion documents for large scopes. For each Scenario: mechanism, evidence, modeling approach, invariants.
+4. **Modeling Brief** — Describe the requested baseline behavior, contracts, interfaces, abstractions, and findings in enough detail for spec generation. For large scopes, add linked companion documents named `modeling-brief-<topic>.md` beside the brief. For each Scenario: mechanism, evidence, modeling approach, invariants.
 
 ### Key Principle
 
@@ -117,7 +117,7 @@ Run `MC.cfg` (0 faults) to verify structural invariants hold. Fix fidelity issue
 
 Run `MC_hunt_*.cfg` with fault injection. BFS + Simulation strategy:
 1. BFS first (30 min)
-2. If the required interactions remain out of reach, follow up with simulation (30 min) at an appropriate depth
+2. If BFS did not exhaust the state space, follow up with simulation (30 min) at a depth that reaches the target interactions
 3. Violation = **Case C** (real bug) — analyze counterexample, cross-reference with code
 
 ### Output

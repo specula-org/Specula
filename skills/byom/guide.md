@@ -14,7 +14,7 @@ Continue the normal Specula workflow from user-provided verification artifacts. 
 
 1. Inventory supplied models, invariants, configs, trace-validation wrappers, instrumentation mappings, harnesses, traces, and replay instructions.
 2. Read the installed **code-analysis** skill and use only its relevant Scenario-discovery guidance for a focused pass. Analyze only behaviors and interactions related to the supplied model. Do not repeat the full Phase 1 analysis or silently expand the model's scope.
-3. Write `modeling-brief.md` with enough behavioral and interface detail for the supplied scope and the focused Scenario supplement. Link companion documents as needed. Record out-of-model Scenarios as coverage gaps rather than changing the supplied model during this phase.
+3. Write `modeling-brief.md` with enough behavioral and interface detail for the supplied scope and the focused Scenario supplement. Add linked companion documents named `modeling-brief-<topic>.md` beside the brief as needed. Record out-of-model Scenarios as coverage gaps rather than changing the supplied model during this phase.
 4. Copy usable specification artifacts into `spec/`. Read and follow the installed **spec-generation** skill only for missing Phase 2 responsibilities, including any required MC/Trace wrappers, configs, coverage audit, or instrumentation mapping. Preserve supplied implementations when they already satisfy those responsibilities.
 5. Finish with the ordinary Phase 2 output contract so the standard harness phase can consume the workspace.
 

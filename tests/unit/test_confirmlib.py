@@ -3980,7 +3980,7 @@ class TestValidationContracts(ConfirmCase):
     def test_expected_brief_scenarios_reads_scenario_headings(self) -> None:
         brief = Path(self.tmp) / "modeling-brief.md"
         brief.write_text("## Scenario 1: Current\n### Scenario 3: Current\n")
-        self.assertEqual(C._expected_brief_scenarios(brief), {"Scenario 1", "Scenario 3"})
+        self.assertEqual(C._expected_brief_scenarios(brief.parent), {"Scenario 1", "Scenario 3"})
 
     def test_mc_immutability_no_longer_enforced(self) -> None:
         # Relaxed: a changed source field / a missing counterexample no longer fails.

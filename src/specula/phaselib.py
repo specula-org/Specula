@@ -39,6 +39,7 @@ if __package__ in (None, ""):
     # this module so process-local launcher state is shared rather than copied.
     sys.modules["specula.phaselib"] = sys.modules[__name__]
 import specula.progress as progress
+from specula import brief as modeling_brief
 from specula import quota, resumelib, tlc_tasks
 from specula.adapters.utils.policy import POLICY_BLOCKED_RC
 from specula.adapters.utils.transient import AUTH_REFRESH_FAILURE_RC, TRANSIENT_FAILURE_RC
@@ -3294,7 +3295,7 @@ Prerequisites:
             "confirmation/orchestrate",
             name=name,
             bug_report=str(spec_dir / "bug-report.md"),
-            brief=str(wd / "modeling-brief.md"),
+            brief=modeling_brief.listing(wd),
             repo=repo_dir,
             spec_dir=str(spec_dir),
             repro_dir=str(wd / "repro"),
