@@ -42,7 +42,7 @@ LiveSpec == MCSpec /\ Fairness
 - Keep the counters on fault actions (crash, message loss, injected errors). Once they run out, faults stop, and the property asks whether the system makes progress after that.
 - Bound the workload (client requests, operations per thread) as usual.
 - Do not let actions the property depends on run out. If progress needs a timer, retry, or heartbeat that the MC spec bounds, remove its bound in the liveness model when the state space stays finite without it. Otherwise make the property conditional, for example `Pending(r) ~> (Done(r) \/ retries = MaxRetry)`, and note in the bug report that behaviors which use up the bound are not checked.
-- Keep the remaining bounds small enough for BFS to finish within the run's time budget. Shrink constants unrelated to the property first.
+- Make the liveness model much smaller than the safety model. TLC explores far fewer states per minute when it checks a liveness property, and BFS has to finish within the run's time budget. Use the fewest processes, threads, and values the mechanism needs, keeping enough for any quorum or threshold it depends on; this is often one process fewer than in the safety cfgs. Shrink constants unrelated to the property first.
 
 ## The `_live` cfg
 
@@ -63,3 +63,8 @@ PROPERTY RequestServed
 - Operator overrides (`<-`) work as in the other cfgs. Other invariants are optional; the safety cfgs already check them.
 
 Run `_live` cfgs with BFS and with deadlock checking off; `tla-checking-workflow/guide.md` covers running them and reading their counterexamples.
+
+## Check the result
+
+- **Violation**: classify it with the "Liveness Counterexamples" section of `tla-checking-workflow/guide.md`. Before calling it Case C, raise by one the bound closest to where the behavior gets stuck (rounds, retries, workload) and rerun. A real progress failure stays; one caused by the bound disappears or moves to the new bound.
+- **No violation**: this counts only if BFS finished and the property's premise is reachable. To check the premise, define an invariant saying it never holds and run the same cfg with that `INVARIANT` instead of the `PROPERTY`; TLC must report the invariant violated. If the premise is never true, the property holds vacuously and the run says nothing.

@@ -121,7 +121,7 @@ For each hunting config, alternate between BFS and simulation to maximize covera
 
 Safety hunting comes first. Run the `MC_hunt_<scenario>_live.cfg` configs after the safety configs, and keep all liveness runs together to no more than about 30% of the bug-hunting time and compute. This is a guideline, not a gate: a liveness run cut off by its budget is recorded as inconclusive, not as a blocker.
 
-Liveness configs run BFS only, without the simulation follow-up, because simulation does not report most liveness violations. BFS has to finish before a liveness run can show that the property holds, so shrink constants unrelated to the property rather than the faults the property is about. Read violations with the "Liveness Counterexamples" section of `tla-checking-workflow`.
+Liveness configs run BFS only, without the simulation follow-up, because simulation does not report most liveness violations. BFS has to finish before a liveness run can show that the property holds, so shrink constants unrelated to the property rather than the faults the property is about. A run without violation also needs a reachable premise (see "Check the result" in `spec_generation/references/liveness-pattern.md`). Read violations with the "Liveness Counterexamples" section of `tla-checking-workflow`.
 
 ### Steps
 
