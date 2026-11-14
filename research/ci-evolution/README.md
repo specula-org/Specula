@@ -8,6 +8,7 @@ Prototypes for #188 §3. This branch is not merged into main.
   - 3.1 Action validation: `agent-runs/action-framework-final/`
   - 3.2 Invariant evolution: `agent-runs/inv-evidence/`, `agent-runs/inv-*/TASK.md`
   - 3.3 Update-focused model checking: `experiments/campaign-prefix/`, `agent-runs/progress-probe-V03/`
+    - Same-budget comparison of the bug B probe with ordinary model checking: `prefix-ablation/`
 - `blind-incremental-bugs/`: blind study of historical bug-introducing updates (§2.2): protocol, neutral cohort, runner tools.
 
 Scripts still use the original absolute paths.
