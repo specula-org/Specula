@@ -27,12 +27,13 @@ class SummaryHandler(BaseHandler):
 
         Returns:
             Summary information including:
-            - violation_type: "invariant" or "property"
-            - violation_name: Name of violated invariant/property
+            - violation_type: "invariant", "action_property", "temporal_property", or "deadlock"
+            - violation_name: Violated name; None when TLC does not report one
             - trace_length: Number of states in the trace
             - actions: List of action names in order
             - action_frequency: Count of each action type
             - statistics: TLC execution statistics
+            - lasso: For a liveness counterexample, how the behavior loops
         """
         # Validate required arguments
         file_path = arguments.get("file_path")
@@ -55,6 +56,7 @@ class SummaryHandler(BaseHandler):
                 "actions": summary.actions,
                 "action_frequency": action_freq,
                 "statistics": summary.statistics,
+                "lasso": summary.lasso,
                 "variables": reader.get_all_variables(),
             }
 

@@ -63,9 +63,10 @@ For **Category B** systems, do **not** force a message-passing template onto the
 
 Counter-bound fault-injection actions (timeout, crash, message loss, etc.). Do NOT bound deterministic/reactive actions. Add symmetry reduction, message buffer constraints, structural invariants, and temporal properties.
 
-**Generate two types of config**:
+**Generate these configs**:
 - **`MC.cfg`** — standard safety + structural invariants. Used during spec validation (convergence). Extension invariants (scenario-specific) should be listed but **commented out**.
 - **`MC_hunt_<scenario>.cfg`** — configurations targeting Scenarios and relevant cross-component interactions. Bound unrelated actions only when the target behavior remains reachable. Enable the target properties together with the other safety and structural invariants; do not narrow a hunt cfg to the target invariant alone. Used during bug hunting after spec converges.
+- **`MC_hunt_<scenario>_live.cfg`** — one per Liveness property in brief §5, checked against a `LiveSpec` with justified fairness. **Read `references/liveness-pattern.md`** before writing one.
 
 **Read `references/mc-spec-pattern.md`** for the full template and hunting config pattern.
 
@@ -124,7 +125,7 @@ For each spec action, specify: spec action name, code location (`file:line`), tr
 8. **Silent actions must be tightly constrained.** Unconstrained silent actions cause state space explosion.
 9. **MC spec bounds fault-injection, not normal operations.**
 10. **For Category B, split operations at real semantic boundaries.** If code has separate read/confirm, reserve/publish, retire/reclaim, or signal/complete windows, do not collapse them into one action just because the public API looks atomic.
-11. **`brief-coverage.md` is a mandatory phase output.** Every Safety invariant in brief §5 must end up enabled in ≥1 hunt cfg, every brief §2 scenario must have a targeting hunt cfg (or an explicit, written-out merger), every §6.1 finding must have a hunt cfg whose fault setup makes it reachable. Use the checklist as a self-check before writing the final audit doc — see Phase 2.5 and `references/brief-coverage-checklist.md`.
+11. **`brief-coverage.md` is a mandatory phase output.** Every Safety invariant in brief §5 must end up enabled in ≥1 hunt cfg, every Liveness property in its own `_live` cfg, every brief §2 scenario must have a targeting hunt cfg (or an explicit, written-out merger), every §6.1 finding must have a hunt cfg whose fault setup makes it reachable. Use the checklist as a self-check before writing the final audit doc — see Phase 2.5 and `references/brief-coverage-checklist.md`.
 
 ---
 
@@ -132,6 +133,7 @@ For each spec action, specify: spec action name, code location (`file:line`), tr
 
 - **`references/base-spec-methodology.md`** — Variable design, action design, annotation style, invariants, helpers
 - **`references/mc-spec-pattern.md`** — MC spec template with counter-bounded actions
+- **`references/liveness-pattern.md`** — Fairness, bounds, and cfg shape for Liveness properties
 - **`references/brief-coverage-checklist.md`** — Self-audit mapping brief §2/§5/§6.1 → spec/MC artifacts (Phase 2.5)
 - **`references/trace-spec-pattern.md`** — Trace spec template with event matching and silent actions
 - **`references/instrumentation-spec-format.md`** — Format for the action-to-code mapping document

@@ -437,4 +437,55 @@ DecisionPermanence ==
                     decision'[s][h] = decision[s][h]
     ]_mc_vars
 
+\* ============================================================================
+\* LIVENESS (checked by MC_hunt_ve_live.cfg)
+\* ============================================================================
+
+\* Weak fairness per server on all of its non-fault steps.
+\* state.go receiveRoutine: a single goroutine per node handles every queued
+\* peer message, internal message, and fired timeout, so a running node keeps
+\* taking steps while one is enabled. Faults (crash, message loss, invalid VE
+\* injection) and operator restart (Recover) get no fairness.
+NodeStep(i) ==
+    \/ MCEnterNewRound(i)
+    \/ MCEnterPropose(i)
+    \/ MCEnterPrevote(i)
+    \/ MCEnterPrevoteWait(i)
+    \/ MCEnterPrecommitNoPolka(i)
+    \/ MCEnterPrecommitNilPolka(i)
+    \/ MCEnterPrecommitRelockPolka(i)
+    \/ MCEnterPrecommitNewLockPolka(i)
+    \/ MCEnterPrecommitUnknownPolka(i)
+    \/ MCEnterPrecommitWait(i)
+    \/ MCEnterCommit(i)
+    \/ MCFinalizeCommit(i)
+    \/ MCHandleTimeoutPropose(i)
+    \/ MCHandleTimeoutPrevote(i)
+    \/ MCHandleTimeoutPrecommit(i)
+    \/ MCRoundSkipPrevote(i)
+    \/ MCRoundSkipPrecommit(i)
+    \/ \E j \in Server : MCDetectEquivocation(i, j)
+    \/ \E m \in DOMAIN messages :
+        /\ m.dest = i
+        /\ \/ MCReceiveProposal(i, m)
+           \/ MCReceivePrevote(i, m)
+           \/ MCReceivePrecommit(i, m)
+
+Fairness == \A i \in Server : WF_mc_vars(NodeStep(i))
+
+LiveSpec == MCSpec /\ Fairness
+
+\* One server starts with an invalid vote extension; no faults after that.
+LiveSpecVE == MCSpecVE /\ Fairness
+
+\* Scenario 1 (bug #5204) as a liveness property: once a server decides
+\* height 1, every running server eventually decides height 1 too.
+DecisionSpreadsLive ==
+    \A s, t \in Server :
+        (decision[s][1] /= Nil /\ ~crashed[t]) ~> (decision[t][1] /= Nil)
+
+\* Premise check for a passing DecisionSpreadsLive run: use as INVARIANT
+\* (no PROPERTY); TLC must report it violated, i.e. some server can decide.
+NoDecisionInv == \A s \in Server : decision[s][1] = Nil
+
 ====
