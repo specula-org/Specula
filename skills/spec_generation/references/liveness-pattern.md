@@ -68,3 +68,7 @@ Run `_live` cfgs with BFS and with deadlock checking off; `tla-checking-workflow
 
 - **Violation**: classify it with the "Liveness Counterexamples" section of `tla-checking-workflow/guide.md`. Before calling it Case C, raise by one the bound closest to where the behavior gets stuck (rounds, retries, workload) and rerun. A real progress failure stays; one caused by the bound disappears or moves to the new bound.
 - **No violation**: this counts only if BFS finished and the property's premise is reachable. To check the premise, define an invariant saying it never holds and run the same cfg with that `INVARIANT` instead of the `PROPERTY`; TLC must report the invariant violated. If the premise is never true, the property holds vacuously and the run says nothing.
+
+## Example
+
+`../examples/cometbft/` checks Scenario 1 (CometBFT #5204) this way. `MC.tla` defines `Fairness`, `LiveSpecVE`, `DecisionSpreadsLive`, and the premise check `NoDecisionInv`; `MC_hunt_ve_live.cfg` checks the property with 2 servers, one of which starts with an invalid vote extension. TLC reports a violation: that server counts its own precommit and decides, while the other server drops it, never has +2/3 precommits of any kind, and so never schedules the precommit timeout. None of its actions is enabled and no bound is used up, and the violation stays with `MaxRound = 1`, so it is Case C. Without the invalid vote extension (`LiveSpec`, `MaxInvalidVELimit = 0`), BFS finishes without a violation and `NoDecisionInv` is violated, so that pass is not vacuous.

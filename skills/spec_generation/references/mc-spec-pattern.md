@@ -94,6 +94,7 @@ Generate one `MC_hunt_<scenario>.cfg` per Scenario from the modeling brief. Thes
 - Standard MC.cfg: `../examples/braft/MC.cfg` (standard + structural invariants, bug-detection commented out)
 - Hunting cfg (tight bounds): `../examples/braft/MC.cfg` (crash-recovery Scenario, minimal bounds)
 - Hunting cfg (targeted invariant): `../examples/cometbft/MC.cfg` (VE liveness, zeroed irrelevant limits)
+- Liveness cfg: `../examples/cometbft/MC_hunt_ve_live.cfg` (`LiveSpecVE`, one `PROPERTY`, 2 servers)
 
 ### Category B Hunting Pattern
 
