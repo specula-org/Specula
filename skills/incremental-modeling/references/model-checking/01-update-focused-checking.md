@@ -26,7 +26,7 @@ For `MODEL_CHANGE_REQUIRED`, run in this order:
 
 These are independent TLC campaigns. They restrict or widen the enabled Action set; they do not impose a single execution order. Scenario-specific monitors may observe a producer/affected/consumer path, but must not redefine reference behavior.
 
-The main skills' 30-minute limit is per run, not for this entire stage. Work through the applicable Scenarios and use their prescribed simulation follow-up when BFS is shallow; do not stop after one or two broad BFS runs while Scenario checks remain. Respect any user-specified overall budget and explicitly report campaigns that could not be run; a single campaign's time limit does not cancel the rest.
+The main skills' 30-minute limit is per run, not for this entire stage. Work through the applicable Scenarios and follow up with simulation whenever BFS does not exhaust the state space. Do not stop after one or two broad BFS runs while Scenario checks remain. Respect any user-specified overall budget and explicitly report campaigns that could not be run; a single campaign's time limit does not cancel the rest.
 
 Check witness paths against the source assumptions they depend on. A reachability canary establishes a model path; a passing property establishes what was checked in that model. Neither alone validates the abstraction. Revisit generation when source evidence contradicts a reused guard, state meaning, or property interpretation, including defects inherited from the prior suite.
 

@@ -16,7 +16,7 @@ Template and methodology for writing trace validation specs.
 
 The trace spec drives TLC through a recorded execution trace from the real implementation, verifying that the base spec can reproduce every observed state transition.
 
-**The trace spec validates ALL base spec logic.** Do not skip or weaken action logic unless the skipped logic has zero value for bug detection. Every action wrapper should call the full base spec action and validate the complete post-state. Skipping checks defeats the purpose of trace validation — finding where the spec and implementation disagree.
+**The trace spec validates ALL base spec logic.** Do not skip or weaken action logic based on its predicted bug-finding value. Every action wrapper should call the full base spec action and validate the complete post-state. Skipping checks defeats the purpose of trace validation — finding where the spec and implementation disagree.
 
 ## Structure
 

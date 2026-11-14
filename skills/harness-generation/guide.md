@@ -185,7 +185,7 @@ Write test code that exercises the protocol code paths to generate trace events.
 **Requirements**:
 - Tests must use the system's real test framework (Go `testing`, Rust `#[test]`, Java JUnit, etc.)
 - Tests must run the actual protocol code (not mocked or simulated)
-- Aim for 2-4 test scenarios covering: normal operation, fault injection (crash, network partition), edge cases from the Modeling Brief's Scenarios
+- Build enough test scenarios to cover the requested normal behavior, fault paths, component interactions, and Modeling Brief questions. There is no fixed scenario count.
 - Each scenario writes to a separate trace file: `traces/<scenario>.ndjson`
 
 ---
@@ -248,7 +248,7 @@ Contents:
 - How to move a capture point (before → after or vice versa)
 - How to rebuild and re-run after changes
 
-Keep it short and practical — the Phase 3 agent needs to make small adjustments, not understand the entire harness architecture.
+Keep it practical — the Phase 3 agent needs to make adjustments, not understand the entire harness architecture.
 
 ---
 
@@ -261,7 +261,7 @@ Keep it short and practical — the Phase 3 agent needs to make small adjustment
 5. **One trace file per scenario.** Don't mix scenarios into a single file.
 6. **run.sh must work end-to-end.** Anyone should be able to reproduce traces with a single command.
 7. **Never use `ScheduleWakeup` / `CronCreate` to wait for builds, tests, or trace generation.** This pipeline runs `claude --print` — any cross-turn timer is silently dropped at `end_turn`, leaving harness work half-done with exit 0. Block within the turn (`Bash` with `wait` / `timeout`). See `../tla-checking-workflow/guide.md` Phase 2 "Batch Mode Constraints."
-8. **Always wrap test/build commands in `timeout N`.** `cargo test`, `make`, language test harnesses — concurrent code in the system-under-test can deadlock. Without an outer `timeout`, a hung test silently consumes the entire phase. Pick N as 5–10× expected runtime, cap at 30 min, treat a fired timeout as a deadlock finding (don't auto-retry). **For any backgrounded long-running job, use `scripts/infra/wait_for_pid.sh --pid-file ... --timeout ...`** — it blocks on the PID and is immune to SIGTERM-without-marker. **For Bash-tool `run_in_background: true` tasks (no PID file), `end_turn` and wait for the task-notification — do not poll the output file or pgrep the process.**
+8. **Wrap potentially hanging test/build commands in `timeout N`.** Choose N from expected runtime and available resources, allowing for large builds and long tests. Investigate unexpected timeouts before retrying; a timeout alone does not establish a deadlock. **For backgrounded long-running jobs, use `scripts/infra/wait_for_pid.sh --pid-file ... --timeout ...`** or the host's process/session wait mechanism, and retain the actual exit status. Do not finish the task with unobserved work still running.
 
 ---
 

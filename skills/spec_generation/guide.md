@@ -1,24 +1,24 @@
 # TLA+ Spec Generation
 
-Scenario-driven modeling: each spec extension exists because a Scenario in the Modeling Brief identified a concrete mechanism that needs verification. The spec logic within each action MUST faithfully follow the implementation's control flow, with every logic block annotated to its source code location.
+Model the requested system behavior and contracts, using the Modeling Brief and its Scenarios to guide verification. Baseline behavior and component interactions do not require a prior bug hypothesis. The spec logic within each action MUST faithfully follow the implementation's control flow, with every logic block annotated to its source code location.
 
 ## Input / Output
 
-**Input**: `modeling-brief.md` + source code access
+**Input**: `modeling-brief.md`, its companion `modeling-brief-*.md` documents, target-specific scope guidance when provided, and source code access
 
-**Output** (written to files sequentially):
+**Output** (written to files):
 
 | Phase | Output | Description |
 |-------|--------|-------------|
 | 1 | `base.tla` + `base.cfg` | Base spec with all extensions |
 | 2 | `MC.tla` + `MC.cfg` + `MC_hunt_*.cfg` | Model checking spec + hunting configs per Scenario |
-| 2.5 | `brief-coverage.md` | **Mandatory** self-audit mapping brief §2/§5/§6.1 → spec/MC artifacts (see Phase 2.5 below) |
+| 2.5 | `brief-coverage.md` | **Mandatory** self-audit mapping scope, baseline behavior, Scenarios, and properties to spec/MC artifacts (see Phase 2.5 below) |
 | 3 | `Trace.tla` + `Trace.cfg` | Trace validation spec |
 | 4 | `instrumentation-spec.md` | Action-to-code mapping for harness generation |
 
 This `brief-coverage.md` self-audit is part of spec generation. It is separate from the pipeline's harness-generation phase, which is also sometimes called Phase 2.5.
 
-**Single agent, sequential phases.** Each phase writes output to files. If context is compressed mid-session, re-read your own output files to recover.
+Subagents may be used for independent source analysis, module construction, or review; integrate their results into one consistent suite. Each phase writes output to files; if context is compressed mid-session, re-read your own output files to recover. There is no fixed spec size or number of modules; keep the entry-point files above and add supporting modules when useful.
 
 ---
 
@@ -44,11 +44,11 @@ For **Category B** systems, do **not** force a message-passing template onto the
 
 ## Phase 1: Base Spec
 
-**Goal**: Write the core TLA+ specification with Scenario-driven extensions.
+**Goal**: Write the TLA+ specification for the requested scope, including baseline behavior, component interactions, and Scenario-driven extensions.
 
-1. **Read the Modeling Brief** — note each Scenario's mechanism, suggested variables/actions, priority
-2. **Read source code (targeted)** — only the functions referenced in the brief, not the entire codebase
-3. **Design variables** — standard protocol variables (Category A) or concurrency variables (Category B: thread-local snapshots, reclamation state, handoff flags, cached views) + extension variables motivated by Scenarios
+1. **Read the modeling handoff and scope guidance** — read its companion `modeling-brief-*.md` documents too; identify baseline contracts, component interactions, and each Scenario's mechanism, suggested variables/actions, and priority
+2. **Read source code as needed** — start with the cited functions, then follow callers, callees, shared state, configuration, and failure paths needed to establish in-scope behavior. Brief references are starting points, not a file allowlist
+3. **Design variables** — standard protocol variables (Category A) or concurrency variables (Category B: thread-local snapshots, reclamation state, handoff flags, cached views) + state needed for the requested behavior, contracts, and Scenarios
 4. **Write actions** — name after implementation functions, follow code's control flow faithfully, annotate every logic block with `file:line`
 5. **Write invariants** — standard safety properties + extension invariants targeting Scenarios + structural invariants
 6. **Write Init and Next**
@@ -65,7 +65,7 @@ Counter-bound fault-injection actions (timeout, crash, message loss, etc.). Do N
 
 **Generate two types of config**:
 - **`MC.cfg`** — standard safety + structural invariants. Used during spec validation (convergence). Extension invariants (scenario-specific) should be listed but **commented out**.
-- **`MC_hunt_<scenario>.cfg`** — one per Scenario from the modeling brief. Tight bounds (reduce irrelevant actions to 0-1), only the target invariant + core safety invariants. Used during bug hunting after spec converges.
+- **`MC_hunt_<scenario>.cfg`** — configurations targeting Scenarios and relevant cross-component interactions. Bound unrelated actions only when the target behavior remains reachable. Enable the target properties together with the other safety and structural invariants; do not narrow a hunt cfg to the target invariant alone. Used during bug hunting after spec converges.
 
 **Read `references/mc-spec-pattern.md`** for the full template and hunting config pattern.
 
@@ -75,7 +75,7 @@ Counter-bound fault-injection actions (timeout, crash, message loss, etc.). Do N
 
 **Goal**: Catch the easy-to-miss failure mode — invariants *defined* but never *enabled* in any hunt cfg, scenarios with no targeting hunt cfg, or findings no hunt cfg can reach.
 
-This is a self-check, not a grading rubric. Glance over brief §2 / §5 / §6.1 while finalizing Phase 2, identify any obvious gaps, and either close them or note honestly why something is out of scope. The audit is **brief-driven, not taxonomy-driven** — if the brief did not raise it, you do not have to cover it. Fill the audit by reading actual cfg files, not from memory of what you intended.
+This is a self-check, not a grading rubric. Glance over the requested scope and brief §2 / §5 / §6.1 while finalizing Phase 2, identify any obvious gaps, and either close them or note honestly why something is out of scope. The audit is scope-driven, not taxonomy-driven; omission from the brief does not remove a user-requested behavior from scope. Fill the audit by reading actual spec and cfg files, not from memory of what you intended.
 
 When target-specific guidance is provided, preserve its intent while translating the Modeling Brief into the spec. Make it clear in `brief-coverage.md` how the user's priorities are represented or why another verification route is more appropriate, using whatever form and level of detail fit the target. Do not distort implementation evidence or modeling decisions merely to echo the guidance.
 
@@ -114,7 +114,7 @@ For each spec action, specify: spec action name, code location (`file:line`), tr
 
 ## Critical Rules
 
-1. **Every extension traces to a Scenario.** No Scenario reference → don't add the extension.
+1. **Every extension has a source-grounded purpose.** Trace it to the requested scope, a system contract, or a Scenario.
 2. **Model the implementation, not the paper.** Deviations from the reference algorithm are where bugs live.
 3. **Follow the code's control flow faithfully.** Do not simplify, reorder, or merge logic that the code keeps separate.
 4. **Annotate every logic block with source lines.** Every condition, branch, and state update must cite `file:line`. Not optional.

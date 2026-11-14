@@ -39,6 +39,7 @@ if __package__ in (None, ""):
     # this module so process-local launcher state is shared rather than copied.
     sys.modules["specula.phaselib"] = sys.modules[__name__]
 import specula.progress as progress
+from specula import brief as modeling_brief
 from specula import quota, resumelib, tlc_tasks
 from specula.adapters.utils.policy import POLICY_BLOCKED_RC
 from specula.adapters.utils.transient import AUTH_REFRESH_FAILURE_RC, TRANSIENT_FAILURE_RC
@@ -2130,7 +2131,7 @@ You are analyzing the following system:
 
 Use the installed Specula skill {prompt_skill_ids("code-analysis")}. Read it in full and follow it exactly — it is the single source of methodology (its 4 phases, references, rules, Scenario modeling-brief format, and Category A/B handling).
 
-Do everything the skill specifies. Do not add, relax, or override any step here.
+Do everything the skill specifies. Do not add, relax, or override any step here. Scale the work to the requested scope; the skill sets no fixed counts or document-size targets.
 
 ## Output
 
@@ -2264,7 +2265,7 @@ You are generating a TLA+ specification for: **{name}**
 
 Use the installed Specula skill {prompt_skill_ids("spec-generation")}. Read it in full and follow it exactly — it is the single source of methodology (its phases, references, rules, Category A/B handling, and the mandatory brief-coverage self-audit).
 
-Do everything the skill specifies. Do not add, relax, or override any step here.
+Do everything the skill specifies. Do not add, relax, or override any step here. Scale the work to the requested scope; the skill sets no fixed counts or document-size targets.
 
 ## Output
 
@@ -2276,7 +2277,7 @@ Expected files:
 - `{spec_dir}/base.cfg` — Base config
 - `{spec_dir}/MC.tla` — Model checking specification
 - `{spec_dir}/MC.cfg` — Model checking config
-- `{spec_dir}/brief-coverage.md` — Coverage audit mapping brief §2/§5/§6.1 to hunt cfgs and invariants
+- `{spec_dir}/brief-coverage.md` — Coverage audit mapping the requested scope and brief §2/§5/§6.1 to hunt cfgs and invariants
 - `{spec_dir}/Trace.tla` — Trace validation specification
 - `{spec_dir}/Trace.cfg` — Trace validation config
 - `{spec_dir}/instrumentation-spec.md` — Instrumentation mapping
@@ -2428,7 +2429,7 @@ You are generating a trace harness for **{name}** — instrumenting the real sou
 
 Use the installed Specula skill {prompt_skill_ids("harness-generation")}. Read it in full and follow it exactly — it is the single source of methodology (instrument real code, trace format, run.sh, end-to-end validation).
 
-Do everything the skill specifies. Do not add, relax, or override any step here.
+Do everything the skill specifies. Do not add, relax, or override any step here. Scale the work to the requested scope; the skill sets no fixed counts or document-size targets.
 
 ## Output
 
@@ -3294,7 +3295,7 @@ Prerequisites:
             "confirmation/orchestrate",
             name=name,
             bug_report=str(spec_dir / "bug-report.md"),
-            brief=str(wd / "modeling-brief.md"),
+            brief=modeling_brief.listing(wd),
             repo=repo_dir,
             spec_dir=str(spec_dir),
             repro_dir=str(wd / "repro"),
@@ -3798,11 +3799,11 @@ Review the code analysis outputs for quality and completeness.
 
 Score each item 1-5 (1=missing, 3=adequate, 5=excellent):
 
-1. **Coverage Statistics**: Are they reported? How many issues were deeply read (target: 30+)?
-2. **Scenarios**: Are they well-defined with mechanisms, not just lists? (target: 4-7 scenarios)
+1. **Coverage Statistics**: Are they reported? Is coverage sufficient for the requested scope?
+2. **Scenarios**: Are mechanisms and interactions well-defined and supported by evidence? Judge coverage against the scope, without a fixed Scenario count.
 3. **Evidence Quality**: Does each bug cite file:line, issue numbers, and commit references?
 4. **Model-Checkable Findings**: Are findings classified? How many are model-checkable?
-5. **Modeling Brief Completeness**: Variables, actions, invariants, extensions all specified?
+5. **Modeling Brief Completeness**: Variables, actions, invariants, extensions all specified for the requested scope?
 6. **False Positive Control**: Were excluded issues documented with reasons?
 7. **Source Code Annotations**: Are file:line references present throughout?
 
@@ -3850,12 +3851,13 @@ Review the generated TLA+ specs for correctness and completeness.
 - Trace Config: {spec_dir}/Trace.cfg
 - Instrumentation: {spec_dir}/instrumentation-spec.md
 - Modeling Brief (reference): {wd}/modeling-brief.md
+- Coverage Audit: {spec_dir}/brief-coverage.md
 
 ## Review Checklist
 
 Score each item 1-5:
 
-1. **Scenario Coverage**: Does each Scenario in the brief have corresponding spec extensions?
+1. **Scope and Scenario Coverage**: Does the spec cover the requested scope and each Scenario in the brief, including behavior without a bug hypothesis?
 2. **Action Design**: Are actions named after impl functions? Are code paths split where they diverge?
 3. **Source Annotations**: Does every logic block cite file:line?
 4. **Invariant Coverage**: Are standard + extension invariants present for each Scenario?
@@ -3875,7 +3877,7 @@ Format:
 ## Scores
 | Criterion | Score | Notes |
 |-----------|-------|-------|
-| Scenario Coverage | X/5 | ... |
+| Scope and Scenario Coverage | X/5 | ... |
 | Action Design | X/5 | ... |
 | Source Annotations | X/5 | ... |
 | Invariant Coverage | X/5 | ... |

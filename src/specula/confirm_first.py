@@ -19,6 +19,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from specula import brief as modeling_brief
+
 MODES = ("only", "continue")
 DIRECTORY = "confirm-first"
 STATE = f"{DIRECTORY}/state.json"
@@ -77,8 +79,13 @@ def _regular(path: Path) -> bool:
 
 
 def _brief_digest(work: Path) -> str:
-    brief = work / "modeling-brief.md"
-    return _sha(brief) if _regular(brief) else ""
+    brief = work / modeling_brief.BRIEF
+    digest = _sha(brief) if _regular(brief) else ""
+    companions = [path for path in modeling_brief.companions(work) if _regular(path)]
+    if not companions:
+        return digest
+    lines = [digest, *(f"{path.name} {_sha(path)}" for path in companions)]
+    return hashlib.sha256("\n".join(lines).encode()).hexdigest()
 
 
 def _read_findings(path: Path) -> list[dict[str, Any]]:

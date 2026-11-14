@@ -9,8 +9,10 @@ that is the confirmation step's job. You ONLY organize and remove duplicates.
   These are already concrete bugs (one Scenario can produce several — e.g.
   `MC_hunt_scenario2` → Bug 1 AND Bug 2). Keep that granularity. id `MC-<n>`,
   `source: "model-checking"`.
-- **Code-review Scenarios**: `{{brief}}` (may not exist — then emit only MC
-  candidates). Each `Scenario N` is a mechanism hypothesis, NOT a concrete bug.
+- **Code-review Scenarios**: {{brief}} — the Modeling Brief and any companion
+  documents it is split into; read all of them (the brief may not exist — then
+  emit only MC candidates). Each `Scenario N` is a mechanism hypothesis, NOT a
+  concrete bug.
 
 ## The one job: dedup, do not filter
 For EACH code-review Scenario, decide whether it is ALREADY represented by one or

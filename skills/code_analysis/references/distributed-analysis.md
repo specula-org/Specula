@@ -172,7 +172,7 @@ Server stops; in-memory state is lost; persisted state is retained. On restart, 
 
 ### 5.2-5.6 — Other Common Failure Modes
 
-These are situational. Use them only if your target's actual code, deployment, and the open question warrant them. Each entry is a label; the implementation should come from your case, not from imitating other case studies.
+These are situational. Use them when the target's code and deployment expose the mechanism and it is relevant to the requested scope or an open question. Each entry is a label; derive its behavior from the target implementation.
 
 - **5.2 Message loss / partition / reorder** — asynchronous-messaging hazards: drops, isolation, out-of-order delivery across retries or multiple connections.
 - **5.3 Timeout / timer firing** — election, lease, heartbeat, or scheduler-delay timers fire non-deterministically. Often the trigger for split-brain when composed with partition.
@@ -184,8 +184,8 @@ If your target's most realistic fault isn't named above — disk silent corrupti
 
 ### Composition
 
-Most non-trivial distributed bugs need 2-3 of these mechanisms composed (crash + non-atomic persist; partition + timeout; config change during transition). Composition explodes state space and clouds blame attribution, so compose only when the open question requires it, and only after each individual mechanism is faithful in isolation.
+Distributed mechanisms can interact through shared state and lifetimes (crash + non-atomic persist; partition + timeout; config change during transition). Include compositions supported by the requested scope and implementation, even when no specific bug is suspected, after each individual mechanism is faithful in isolation.
 
 ### Caveat: no answer-key adversaries
 
-The same anti-pattern that bites concurrent specs bites distributed specs too — adversaries whose only effect is to reproduce an already-fixed bug. If you can characterise a wrapper's effect as "equivalent to `git revert <commit>`" for some past commit, drop it. Closed PRs are evidence of mechanism bug-proneness (§ 2 of the modeling brief); they are not a target list for the spec to re-enumerate. See `modeling-brief-format.md` § 6.1 and `bug-archaeology.md` § 1.4.
+Preserve current guards and fixes in the reference model. A wrapper that removes an existing fix explores a modified implementation; it cannot establish a new defect in the current code. Keep historical regression experiments explicitly separate, while retaining current defenses and their interactions in scope. See `modeling-brief-format.md` § 6.1 and `bug-archaeology.md` § 1.4.

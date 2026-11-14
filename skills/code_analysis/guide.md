@@ -1,6 +1,6 @@
 # Code Analysis for Formal Verification
 
-Investigate a system implementation to find bugs. Some bugs can be confirmed directly (copy-paste errors, data races). The most critical bugs — protocol safety violations — need TLA+ model checking to verify. The **Modeling Brief** captures findings and plans how to verify them.
+Investigate a system implementation to establish the requested modeling scope and find bugs. Some bugs can be confirmed directly (copy-paste errors, data races). Protocol safety questions may need TLA+ model checking to resolve. The **Modeling Brief** describes the system behavior to model, its contracts and abstractions, and findings that need verification.
 
 When a candidate defect appears, follow [Persistent Findings](../bug-confirmation/references/persistent-findings.md) for a lightweight history match before deeper analysis or reproduction.
 
@@ -52,9 +52,9 @@ After classifying:
 ### Depth Requirements
 
 - **Git commits**: Analyze all bug-fix commits touching core files. Report the total count.
-- **GitHub issues**: Read the full discussion thread (including all comments) for every issue you plan to reference. Aim to deeply read **30+ issues** for a medium-sized project. Report: total issues collected, total deeply read, total confirmed, total excluded as false positive.
+- **GitHub issues**: Read the full discussion thread (including all comments) for every issue you plan to reference. Read as many as the requested scope requires; there is no fixed count. Report: total issues collected, total deeply read, total confirmed, total excluded as false positive.
 - **Open PRs**: Review all open PRs with bug-fix intent — they often contain fixes waiting for review and reveal known-but-unfixed problems.
-- **Parallelization**: Use **multiple Task subagents in parallel** for issue verification (batch 5-10 issues per subagent). Do NOT read issues sequentially — this wastes time.
+- **Parallelization**: Use **multiple Task subagents in parallel** for issue verification. Do NOT read issues sequentially — this wastes time.
 
 **Read `references/bug-archaeology.md`** for detailed methodology.
 
@@ -68,11 +68,11 @@ After classifying:
 
 Deep Analysis is the most time-consuming phase. **Use parallel Task subagents aggressively**:
 
-- Launch one subagent per major source file (e.g., state machine, replicator, persistence, snapshot)
-- Each subagent reads its file completely and applies all analysis patterns
+- Divide work by coherent components, mechanisms, or source files, including the callers and consumers needed to understand them
+- Each subagent reads its assigned core files completely and applies the relevant analysis patterns
 - After all subagents return, cross-reference findings in the main context
 
-For a codebase with 6+ core files, aim for **4-6 parallel subagents** in the deep analysis phase.
+Choose the number of parallel subagents by the size of the scope; there is no fixed number.
 
 ### Verification
 
@@ -84,12 +84,14 @@ Every finding MUST be verified: re-read exact code lines, check for compensating
 
 ## Phase 4: Modeling Brief
 
-**Goal**: Synthesize findings into an actionable document for Spec Generation — select top Scenarios, propose spec extensions, state what NOT to model and why, classify remaining findings by verification method.
+**Goal**: Produce an actionable handoff for the requested modeling scope — describe the baseline behavior and component interactions, organize findings into Scenarios, propose spec extensions, explain exclusions, and classify findings by verification method. Priorities set the order, not a cap on the number of Scenarios.
 
 When target-specific guidance is provided, treat its priorities and scope as required investigative intent. Make their handling visible in the Modeling Brief through the relevant Scenarios, findings, exclusions, or unresolved questions, without imposing a separate format. Guidance determines what must be investigated, not what the evidence must conclude, and it remains a coverage floor rather than a ceiling on code-driven exploration. Respect explicit boundaries, while reading adjacent code when needed to establish in-scope behavior.
 
 **Read `references/modeling-brief-format.md`** for the format specification.
 **See `examples/hashicorp-raft-modeling-brief.md`** for a complete example.
+
+Examples record the scope and choices of earlier investigations; their length, Scenario counts, and exclusions do not constrain a new target.
 
 ---
 
@@ -101,7 +103,7 @@ When target-specific guidance is provided, treat its priorities and scope as req
 4. **Exclude false positives explicitly.** Explain WHY each exclusion was made.
 5. **Use parallel subagents aggressively.** Launch multiple Task subagents for concurrent issue verification, concurrent file analysis, and concurrent commit review. This is essential for both depth AND coverage.
 6. **Evidence-based claims only.** Show code, git commits, issue discussions, or code path inconsistencies.
-7. **Scenarios over flat lists.** Group by mechanism. 5 actionable scenarios > 17 flat findings.
+7. **Group findings by mechanism.** Use as many Scenarios as the evidence and scope require. Document baseline behavior and cross-component contracts even when no candidate defect has been identified.
 8. **Thoroughness is non-negotiable.** Do not skip issues, truncate commit analysis, or sample instead of scanning. The analysis report should document coverage statistics (total commits analyzed, issues deeply read, false positives excluded).
 9. **Classify Category A vs B explicitly.** Carry that decision into the Modeling Brief. Later phases should not have to rediscover it.
 

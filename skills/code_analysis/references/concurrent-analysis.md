@@ -176,7 +176,7 @@ This is base-spec design, not an MC wrapper. If you find yourself adding `MCPree
 
 ### 5.2-5.8 — Other Common Failure Modes
 
-These are situational. Use them only if your target's actual code exposes the mechanism, and only model what the open question demands. Each entry is a label; the implementation should come from your case, not from imitating other case studies.
+These are situational. Use them when the target's actual code exposes the mechanism and it is relevant to the requested scope or an open question. Each entry is a label; derive its behavior from the target implementation.
 
 - **5.2 Cancellation / future drop / close** — cancellation reaches the same cleanup path as normal completion (async runtimes, futures, channels, detachable tasks).
 - **5.3 Allocator failure / OOM** — allocation sites return failure; the error path doesn't leak partially-published state, hold locks, or inflate counters.
@@ -190,8 +190,8 @@ If your target's most realistic failure mode isn't named above (JIT barrier reor
 
 ### Caveat for 5.5 (memory ordering): no answer-key adversaries
 
-There is one anti-pattern we've watched repeatedly produce zero-value findings: adversaries whose only effect is to reproduce an already-fixed bug. If you can characterise the adversary's effect on the spec as "equivalent to `git revert <commit>`" for some past commit — drop it. The MC run produces no information the closed PR didn't already record, no matter what the wrapper is named or which cfg houses it. Closed PRs are evidence of mechanism bug-proneness (§ 2 of the modeling brief); they are not a target list for the spec to re-enumerate. See `modeling-brief-format.md` § 6.1 (output-value litmus) and `bug-archaeology.md` § 1.4 (value-driven containment).
+Preserve current fences, guards, and fixes in the reference model. Removing a fix or weakening an ordering label models a different implementation; it cannot establish a new defect in the current code. Keep historical regression or mutation experiments explicitly separate, while retaining current defenses and their interactions in scope. See `modeling-brief-format.md` § 6.1 and `bug-archaeology.md` § 1.4.
 
 ### Composition
 
-Some failure modes compose: cancellation + allocator failure exercises whether the cancel path leaks under OOM; ABA + memory ordering exercises detection under weakened visibility. Compose only when the open question requires it — composition explodes state space and clouds attribution.
+Some failure modes compose: cancellation + allocator failure exercises whether the cancel path leaks under OOM; ABA + memory ordering exercises detection under weakened visibility. Include interactions supported by the requested scope and implementation even without a specific bug hypothesis.
