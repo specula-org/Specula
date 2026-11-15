@@ -132,6 +132,7 @@ class RunModelCheckTests(unittest.TestCase):
             text=True,
             timeout=10,
             check=False,
+            pass_fds=(int(env["SPECULA_TLC_TOOL_LIFELINE_FD"]),) if "SPECULA_TLC_TOOL_LIFELINE_FD" in env else (),
         )
 
     def test_explicit_worker_budget_rejects_before_java_starts(self) -> None:
