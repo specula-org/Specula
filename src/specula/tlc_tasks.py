@@ -307,32 +307,43 @@ def worker(path: Path) -> None:
         "result_path": str(path / "result.json"),
     }
     process = None
+    lifeline_write = None
     try:
+        lifeline_read, lifeline_write = os.pipe()
         child_env = os.environ.copy()
         child_env["SPECULA_TLC_TOOL_WORKER_LOCK"] = str(path / "worker.lock")
         child_env["SPECULA_TLC_TOOL_STOP_FILE"] = str(path / "stop.json")
+        child_env["SPECULA_TLC_TOOL_LIFELINE_FD"] = str(lifeline_read)
         with (path / "launcher.log").open("w") as log:
-            process = subprocess.Popen(
-                [
-                    str(ROOT / "scripts/tlc/run_model_check.sh"),
-                    "-s",
-                    request["spec_file"],
-                    "-c",
-                    request["config_file"],
-                    *request["options"],
-                    "-o",
-                    str(path / "tlc.log"),
-                ],
-                cwd=request["work_dir"],
-                stdin=subprocess.DEVNULL,
-                stdout=log,
-                stderr=subprocess.STDOUT,
-                start_new_session=True,
-                env=child_env,
-            )
+            try:
+                process = subprocess.Popen(
+                    [
+                        str(ROOT / "scripts/tlc/run_model_check.sh"),
+                        "-s",
+                        request["spec_file"],
+                        "-c",
+                        request["config_file"],
+                        *request["options"],
+                        "-o",
+                        str(path / "tlc.log"),
+                    ],
+                    cwd=request["work_dir"],
+                    stdin=subprocess.DEVNULL,
+                    stdout=log,
+                    stderr=subprocess.STDOUT,
+                    start_new_session=True,
+                    env=child_env,
+                    # Only the read end reaches children. Worker exit must
+                    # deliver EOF even if its wrapper and Java survive.
+                    pass_fds=(lifeline_read,),
+                )
+            finally:
+                os.close(lifeline_read)
             while process.poll() is None:
                 if stopped or (path / "stop.json").exists() or (parent_lock and not _lock_is_held(Path(parent_lock))):
                     stopped = True
+                    os.close(lifeline_write)
+                    lifeline_write = None
                     _stop_child(process)
                     break
                 time.sleep(0.2)
@@ -346,6 +357,8 @@ def worker(path: Path) -> None:
         result["error"] = str(exc)
     finally:
         try:
+            if lifeline_write is not None:
+                os.close(lifeline_write)
             if process is not None and process.poll() is None:
                 _stop_child(process)
             result["finished_at"] = time.time()

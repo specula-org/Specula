@@ -922,6 +922,14 @@ def run_owner(
     owner_lock: OwnerLock | None = None
     admitted = False
     try:
+        lifeline = os.environ.pop("SPECULA_TLC_TOOL_LIFELINE_FD", "")
+        if lifeline:
+            # Java does not need the wrapper's read end. The worker alone
+            # retains the write end, which is never inherited by children.
+            descriptor = int(lifeline)
+            if descriptor < 3:
+                raise ResourceError("invalid managed TLC lifeline descriptor")
+            os.close(descriptor)
         if not command:
             raise ResourceError("TLC owner command is empty")
         parent_identity = _process_identity(parent_pid)
@@ -1078,14 +1086,14 @@ def _bind_managed_process(pid: int, identity_file: Path) -> Iterator[_ManagedPro
     pidfd = None
     try:
         if _process_identity(pid) != identity:
-            raise ResourceError("managed TLC owner exited before supervisor startup")
+            raise ResourceError("managed TLC owner exited before cleanup binding")
         if hasattr(os, "pidfd_open") and hasattr(signal, "pidfd_send_signal"):
             with contextlib.suppress(OSError):
                 pidfd = os.pidfd_open(pid)
         # Compare against the identity published by the owner itself, not an
         # identity first sampled after its PID could already have been reused.
         if _process_identity(pid) != identity:
-            raise ResourceError("managed TLC owner changed during supervisor startup")
+            raise ResourceError("managed TLC owner changed during cleanup binding")
         yield _ManagedProcess(pid, identity, pidfd)
     finally:
         if pidfd is not None:
@@ -1104,54 +1112,6 @@ def _terminate_managed_process(process: _ManagedProcess, grace_seconds: float = 
             time.sleep(OWNER_POLL_SECONDS)
     if process.running():
         raise ResourceError("managed TLC owner did not exit after termination")
-
-
-def supervise_managed_owner(
-    owner_pid: int, identity_file: Path, status_file: Path, wrapper_pid: int, stop_file: Path
-) -> int:
-    """Keep cancellation serviceable even after a managed worker is SIGKILLed."""
-    interrupted = False
-
-    def interrupt(_signum: int, _frame: Any) -> None:
-        nonlocal interrupted
-        interrupted = True
-
-    previous = {sig: signal.signal(sig, interrupt) for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)}
-    try:
-        with _bind_managed_process(owner_pid, identity_file) as process:
-            wrapper_identity = _process_identity(wrapper_pid) if os.getppid() == wrapper_pid else None
-            try:
-                reason = _managed_cancellation()
-                if stop_file.exists():
-                    reason = "wrapper cleanup"
-                if wrapper_identity is None:
-                    reason = "wrapper lost"
-                if reason is None and not interrupted:
-                    _atomic_text(status_file, "ready\n")
-                while process.running():
-                    reason = reason or _managed_cancellation()
-                    if stop_file.exists():
-                        reason = "wrapper cleanup"
-                    if interrupted:
-                        reason = "supervisor interrupted"
-                    if wrapper_identity is None or not _ManagedProcess(wrapper_pid, wrapper_identity, None).running():
-                        reason = "wrapper lost"
-                    if reason is not None:
-                        _atomic_text(status_file, f"stopping: {reason}\n")
-                        _terminate_managed_process(process)
-                        _atomic_text(status_file, f"stopped: {reason}\n")
-                        return 3
-                    time.sleep(OWNER_POLL_SECONDS)
-                _atomic_text(status_file, "owner-exited\n")
-                return 0
-            except BaseException:
-                # Losing the cancellation channel or readiness publication
-                # must not silently leave an unprotected Java process alive.
-                _terminate_managed_process(process)
-                raise
-    finally:
-        for sig, handler in previous.items():
-            signal.signal(sig, handler)
 
 
 def enforce_timeout(owner_pid: int, seconds: int, status_file: Path) -> bool:
@@ -1235,14 +1195,9 @@ def _build_parser() -> argparse.ArgumentParser:
     watchdog_parser.add_argument("--pid", required=True, type=int)
     watchdog_parser.add_argument("--seconds", required=True, type=int)
     watchdog_parser.add_argument("--status-file", required=True, type=Path)
-    for command in ("supervise", "stop-managed"):
-        managed_parser = commands.add_parser(command)
-        managed_parser.add_argument("--pid", required=True, type=int)
-        managed_parser.add_argument("--identity-file", required=True, type=Path)
-        if command == "supervise":
-            managed_parser.add_argument("--status-file", required=True, type=Path)
-            managed_parser.add_argument("--wrapper-pid", required=True, type=int)
-            managed_parser.add_argument("--stop-file", required=True, type=Path)
+    managed_parser = commands.add_parser("stop-managed")
+    managed_parser.add_argument("--pid", required=True, type=int)
+    managed_parser.add_argument("--identity-file", required=True, type=Path)
     return parser
 
 
@@ -1255,10 +1210,6 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "watchdog":
             timed_out = enforce_timeout(args.pid, args.seconds, args.status_file)
             return 124 if timed_out else 0
-        if args.command == "supervise":
-            return supervise_managed_owner(
-                args.pid, args.identity_file, args.status_file, args.wrapper_pid, args.stop_file
-            )
         if args.command == "stop-managed":
             with _bind_managed_process(args.pid, args.identity_file) as process:
                 _terminate_managed_process(process)
