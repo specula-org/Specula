@@ -19,7 +19,7 @@ See `../examples/cometbft-bug-report.md` for a complete real-world example.
 
 - **Scenario**: <scenario name/number>
 - **Severity**: Critical / High / Medium
-- **Invariant violated**: <name>
+- **Invariant violated**: <name> (for a liveness config, the cfg's `PROPERTY`)
 - **Config**: <cfg file>
 - **Counterexample**: <N states, output file in spec/output/>
 

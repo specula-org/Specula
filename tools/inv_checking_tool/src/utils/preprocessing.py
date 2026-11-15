@@ -13,14 +13,29 @@ import re
 # Pattern to match ANSI escape codes
 ANSI_ESCAPE_PATTERN = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
-# Marker for identifying TLC error trace sections
+# Markers that introduce a TLC error trace. Invariant, action-property, and deadlock
+# violations print the first; liveness (temporal property) violations print the second.
 ERROR_BEHAVIOR_MARKER = "The behavior up to this point is:"
+LIVENESS_BEHAVIOR_MARKER = "The following behavior constitutes a counter-example:"
+ERROR_BEHAVIOR_MARKERS = (ERROR_BEHAVIOR_MARKER, LIVENESS_BEHAVIOR_MARKER)
 
-# TLC output can have different formats for invariant violation:
-# - "Error: Invariant X is violated" (TLC raw output)
-# - "Invariant X is violated." (TLC tool mode output)
-INVARIANT_VIOLATION_PATTERN = re.compile(r"(?:Error:\s*)?Invariant\s+(\S+)\s+is violated")
-PROPERTY_VIOLATION_PATTERN = re.compile(r"(?:Error:\s*)?Temporal property\s+(.+?)\s+is violated")
+# TLC prints violations with an "Error: " prefix in raw output and without it in tool mode.
+# Each entry is (violation_type, pattern); group 1, when present, is the violated name.
+# TLC does not say which temporal property failed when a liveness check fails.
+VIOLATION_PATTERNS = (
+    ("invariant", re.compile(r"(?:Error:\s*)?Invariant\s+(\S+)\s+is violated")),
+    ("action_property", re.compile(r"(?:Error:\s*)?Action property\s+(\S+)\s+is violated")),
+    ("temporal_property", re.compile(r"^(?:Error:\s*)?Property\s+(\S+)\s+is violated by the initial state", re.M)),
+    ("temporal_property", re.compile(r"^(?:Error:\s*)?Temporal properties were violated\.", re.M)),
+    ("deadlock", re.compile(r"^(?:Error:\s*)?Deadlock reached\.", re.M)),
+)
+
+# A liveness counterexample is a lasso: the printed states followed by a loop. TLC closes it
+# with "Back to state N[: <action>]" ("N: Back to state[: <action>]" in tool mode), or with
+# "State N: Stuttering" ("N: Stuttering" in tool mode) when the behavior stays in the last
+# printed state forever.
+BACK_TO_STATE_PATTERN = re.compile(r"^(?:Back to state (\d+)|(\d+): Back to state)(?::\s*(.*?))?\s*$", re.M)
+STUTTERING_PATTERN = re.compile(r"^(?:State )?(\d+):\s*Stuttering\s*$", re.M)
 
 
 def strip_ansi_codes(text: str) -> str:
@@ -36,26 +51,60 @@ def strip_ansi_codes(text: str) -> str:
 
 
 def extract_violation_info(content: str) -> tuple[str | None, str | None]:
-    """Extract the violated invariant/property name from TLC output.
+    """Extract the kind of violation and the violated name from TLC output.
 
     Args:
         content: The TLC output content.
 
     Returns:
-        A tuple of (violation_type, violation_name).
-        violation_type is either "invariant" or "property".
+        A tuple of (violation_type, violation_name). violation_type is one of
+        "invariant", "action_property", "temporal_property", or "deadlock".
+        violation_name is None when TLC does not report a name, which is the
+        case for deadlocks and for liveness violations found after the initial state.
     """
-    # Try invariant violation
-    match = INVARIANT_VIOLATION_PATTERN.search(content)
-    if match:
-        return ("invariant", match.group(1))
-
-    # Try temporal property violation
-    match = PROPERTY_VIOLATION_PATTERN.search(content)
-    if match:
-        return ("property", match.group(1))
+    for violation_type, pattern in VIOLATION_PATTERNS:
+        match = pattern.search(content)
+        if match:
+            name = match.group(1) if pattern.groups else None
+            return (violation_type, name)
 
     return (None, None)
+
+
+def has_error_trace(content: str) -> bool:
+    """Return whether the TLC output contains a printed error trace."""
+    return any(marker in content for marker in ERROR_BEHAVIOR_MARKERS)
+
+
+def extract_lasso_info(content: str) -> dict | None:
+    """Describe the loop that closes a liveness counterexample in TLC text output.
+
+    Returns:
+        None when the output has no liveness counterexample. Otherwise a dict with:
+        - kind: "back_to_state" (the behavior returns to an earlier state and repeats
+          from there) or "stuttering" (the behavior takes no further step).
+        - loop_start: 1-indexed state where the repeating suffix begins; for
+          stuttering, the last printed state.
+        - action: the step that closes the loop, or None for stuttering.
+    """
+    start = content.find(LIVENESS_BEHAVIOR_MARKER)
+    if start < 0:
+        return None
+    trace = content[start:]
+
+    match = STUTTERING_PATTERN.search(trace)
+    if match:
+        return {"kind": "stuttering", "loop_start": int(match.group(1)) - 1, "action": None}
+
+    match = BACK_TO_STATE_PATTERN.search(trace)
+    if match:
+        return {
+            "kind": "back_to_state",
+            "loop_start": int(match.group(1) or match.group(2)),
+            "action": match.group(3) or None,
+        }
+
+    return None
 
 
 def extract_statistics(content: str) -> dict:
@@ -140,9 +189,13 @@ def preprocess_tlc_output(file_path: str) -> tuple[str, dict]:
 
     # Get violation info
     violation_type, violation_name = extract_violation_info(content)
-    if violation_name:
+    if violation_type:
         metadata["violation_type"] = violation_type
         metadata["violation_name"] = violation_name
+
+    lasso = extract_lasso_info(content)
+    if lasso:
+        metadata["lasso"] = lasso
 
     # Get statistics
     metadata["statistics"] = extract_statistics(content)

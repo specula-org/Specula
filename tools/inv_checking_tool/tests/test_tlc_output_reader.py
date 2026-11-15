@@ -121,12 +121,38 @@ class TestPreprocessing:
         assert vtype == "invariant"
         assert vname == "QuorumLogInv"
 
-    def test_extract_property_violation(self):
-        """Test extracting temporal property violation info."""
-        content = "Error: Temporal property Liveness is violated."
-        vtype, vname = extract_violation_info(content)
-        assert vtype == "property"
-        assert vname == "Liveness"
+    def test_extract_liveness_violation(self):
+        """TLC does not name the temporal property that failed a liveness check."""
+        content = "Error: Temporal properties were violated.\n"
+        assert extract_violation_info(content) == ("temporal_property", None)
+
+    def test_extract_liveness_violation_tool_mode(self):
+        """Tool mode prints the same message without the Error prefix."""
+        content = "@!@!@STARTMSG 2116:1 @!@!@\nTemporal properties were violated.\n"
+        assert extract_violation_info(content) == ("temporal_property", None)
+
+    def test_extract_property_violated_by_initial_state(self):
+        """A temporal property that fails in the initial state is named."""
+        content = "Error: Property EventuallyDone is violated by the initial state:\n/\\ x = 0\n"
+        assert extract_violation_info(content) == ("temporal_property", "EventuallyDone")
+
+    def test_extract_action_property_violation(self):
+        """Test extracting a [][A]_v property violation."""
+        content = "Error: Action property NeverDecrease is violated.\n"
+        assert extract_violation_info(content) == ("action_property", "NeverDecrease")
+
+    def test_extract_deadlock(self):
+        """Test extracting a deadlock."""
+        content = "Error: Deadlock reached.\nError: The behavior up to this point is:\n"
+        assert extract_violation_info(content) == ("deadlock", None)
+
+    def test_fairness_warning_is_not_a_violation(self):
+        """TLC's no-fairness warning mentions temporal properties but is not a violation."""
+        content = (
+            "Warning: Temporal properties (PROPERTY or PROPERTIES) are being verified "
+            "without a fairness constraint conjoined to the behavior specification Spec.\n"
+        )
+        assert extract_violation_info(content) == (None, None)
 
     def test_extract_no_violation(self):
         """Test when there's no violation."""
@@ -427,6 +453,85 @@ The number of states generated: 100
             finally:
                 os.unlink(f.name)
                 os.unlink(trace_file.name)
+
+
+LIVENESS_DATA_DIR = TEST_DATA_DIR / "liveness"
+STEP_ACTION = "<Step line 6, col 9 to line 6, col 42 of module Lasso>"
+
+
+class TestLivenessCounterexamples:
+    """Liveness counterexamples produced by TLC 2.20 from test_data/liveness/Lasso.tla."""
+
+    @pytest.mark.parametrize("mode", ["json", "text"])
+    def test_back_to_state(self, mode):
+        reader = TLCOutputReader(str(LIVENESS_DATA_DIR / "back_to_state.out"), mode=mode)
+        summary = reader.get_summary()
+        assert summary.violation_type == "temporal_property"
+        assert summary.violation_name is None
+        assert summary.trace_length == 3
+        assert summary.lasso == {"kind": "back_to_state", "loop_start": 1, "action": STEP_ACTION}
+        assert [reader.get_variable(i, "x") for i in (1, 2, 3)] == [0, 1, 2]
+
+    def test_back_to_state_does_not_relabel_the_loop_target(self):
+        """The step closing the loop leads back to state 1; it is not state 1's action."""
+        reader = TLCOutputReader(str(LIVENESS_DATA_DIR / "back_to_state.out"), mode="json")
+        assert reader.get_summary().actions == ["Unknown", "Step", "Step"]
+        assert reader.get_state(1).action_detail is None
+
+    @pytest.mark.parametrize("mode", ["json", "text"])
+    def test_stuttering(self, mode):
+        reader = TLCOutputReader(str(LIVENESS_DATA_DIR / "stuttering.out"), mode=mode)
+        summary = reader.get_summary()
+        assert summary.violation_type == "temporal_property"
+        assert summary.trace_length == 1
+        assert summary.lasso == {"kind": "stuttering", "loop_start": 1, "action": None}
+        assert reader.get_state(1).variables == {"done": False, "x": 0}
+
+    def test_stuttering_json_step_is_not_an_action(self):
+        reader = TLCOutputReader(str(LIVENESS_DATA_DIR / "stuttering.out"), mode="json")
+        assert reader.get_summary().actions == ["Unknown"]
+
+    def test_tool_mode_back_to_state(self):
+        """Without a JSON dump, auto mode parses the tool-mode text trace."""
+        reader = TLCOutputReader(str(LIVENESS_DATA_DIR / "back_to_state_tool.out"))
+        summary = reader.get_summary()
+        assert summary.violation_type == "temporal_property"
+        assert summary.trace_length == 3
+        assert summary.lasso == {"kind": "back_to_state", "loop_start": 1, "action": STEP_ACTION}
+
+    def test_tool_mode_stuttering(self):
+        reader = TLCOutputReader(str(LIVENESS_DATA_DIR / "stuttering_tool.out"))
+        summary = reader.get_summary()
+        assert summary.trace_length == 1
+        assert summary.lasso == {"kind": "stuttering", "loop_start": 1, "action": None}
+
+    def test_stuttering_after_several_states(self, tmp_path):
+        """The stuttering line ends the trace; it is not parsed as another state."""
+        content = (
+            "Error: Temporal properties were violated.\n\n"
+            "Error: The following behavior constitutes a counter-example:\n\n"
+            "State 1: <Initial predicate>\n/\\ done = FALSE\n/\\ x = 0\n\n"
+            f"State 2: {STEP_ACTION}\n/\\ done = FALSE\n/\\ x = 1\n\n"
+            "State 3: Stuttering\n"
+            "Finished checking temporal properties in 00s at 2026-11-13 10:46:35\n"
+            "4 states generated, 3 distinct states found, 0 states left on queue.\n"
+        )
+        path = tmp_path / "MC.out"
+        path.write_text("Starting... (2026-11-13 10:46:34)\n" + content)
+        reader = TLCOutputReader(str(path))
+        assert reader.trace_length == 2
+        assert reader.get_state(-1).variables == {"done": False, "x": 1}
+        assert reader.get_summary().lasso == {"kind": "stuttering", "loop_start": 2, "action": None}
+
+    def test_format_summary_describes_loop(self):
+        reader = TLCOutputReader(str(LIVENESS_DATA_DIR / "back_to_state.out"))
+        text = reader.format_summary()
+        assert "Violation Type: temporal_property" in text
+        assert f"Loop: returns to state 1 via {STEP_ACTION}; states 1-3 repeat forever" in text
+
+    def test_invariant_trace_has_no_lasso(self):
+        reader = TLCOutputReader(str(SAMPLE_OUTPUT_FILE))
+        assert reader.get_summary().lasso is None
 
 
 def run_tests():

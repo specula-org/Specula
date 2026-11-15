@@ -50,8 +50,10 @@ about what it knows avoids a P3 agent inventing code-review entries it never saw
   filesystem-safe (`[A-Za-z0-9._-]`) and unique.
 - **source** — always `"model-checking"` for entries this skill emits.
 - **invariant / config / counterexample** — required for model-checking
-  findings; the `counterexample` path is relative to `.specula-output/` and must
-  point at a real file saved under `spec/output/`.
+  findings. For a liveness config, `invariant` is the cfg's `PROPERTY` name,
+  since TLC does not name the violated temporal property. The
+  `counterexample` path is relative to `.specula-output/` and must point at a
+  real file saved under `spec/output/`.
 - **affected_code** — list of `file:line` strings, same references cited in the
   bug-report Affected Code section. May be empty if hunting produced no code
   mapping yet, but prefer at least one anchor.

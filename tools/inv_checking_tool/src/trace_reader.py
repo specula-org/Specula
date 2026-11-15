@@ -3,6 +3,7 @@
 # usage: python3 trace_reader.py -h
 
 import os
+import re
 import sys
 from collections import OrderedDict, defaultdict
 
@@ -185,21 +186,27 @@ class TraceReader:
         f = open(file) if not hasattr(file, "read") else file
 
         n_state = 0
-        start_msg = "The behavior up to this point is:"
+        # Safety violations and liveness violations introduce the trace differently.
+        start_msgs = ("The behavior up to this point is:", "The following behavior constitutes a counter-example:")
         end_msg = ["Progress", "The number of states generated", "Worker: rmi"]
+        # A liveness trace ends with the line that closes its loop; that line is not a state.
+        lasso_end = re.compile(r"^(?:Back to state \d+|\d+: Back to state|(?:State )?\d+:\s*Stuttering)")
         for line in f:
             if "TLC Server" in line:
                 continue
             if line[0] != "@":
-                start_msg = "Error: " + start_msg
+                start_msgs = tuple("Error: " + msg for msg in start_msgs)
             break
         for line in f:
-            if line.startswith(start_msg):
+            if line.startswith(start_msgs):
                 yield "-" * 16 + " MODULE MC_trace " + "-" * 16 + "\n"
                 break
         for line in f:
             if line[0] in "/ ":
                 yield line
+            elif lasso_end.match(line):
+                yield "=" * 49 + "\n"
+                break
             elif line.startswith("State") or line[0].isdigit():
                 yield r"\*" + line[line.find(":") + 1 :]
                 n_state = n_state + 1

@@ -1,0 +1,21 @@
+Starting... (2026-11-13 10:46:34)
+Warning: Temporal properties (PROPERTY or PROPERTIES) are being verified without a fairness constraint conjoined to the behavior specification SpecNoFair defined at line 8, col 1 to line 8, col 35 of module Lasso. This may lead to trivial counterexamples in which the system exhibits infinite stuttering immediately after the initial state. To avoid this, it is recommended to conjoin a suitable fairness constraint to SpecNoFair (compare Chapter 8, page 87ff of Specifying Systems at https://lamport.azurewebsites.net/tla/book.html).
+Implied-temporal checking--satisfiability problem has 1 branches.
+Computing initial states...
+Finished computing initial states: 1 distinct state generated at 2026-11-13 10:46:35.
+Progress(3) at 2026-11-13 10:46:35: 4 states generated, 3 distinct states found, 0 states left on queue.
+Checking temporal properties for the complete state space with 3 total distinct states at (2026-11-13 10:46:35)
+Error: Temporal properties were violated.
+
+Error: The following behavior constitutes a counter-example:
+
+State 1: <Initial predicate>
+/\ done = FALSE
+/\ x = 0
+
+State 2: Stuttering
+"CounterExample written: stuttering.json"
+Finished checking temporal properties in 00s at 2026-11-13 10:46:35
+4 states generated, 3 distinct states found, 0 states left on queue.
+The depth of the complete state graph search is 3.
+Finished in 00s at (2026-11-13 10:46:35)

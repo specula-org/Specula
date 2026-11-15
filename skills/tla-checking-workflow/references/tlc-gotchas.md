@@ -14,17 +14,37 @@ Common case: trace validation specs use `-deadlock` because trace exhaustion is 
 
 ## Simulation mode does not check deadlocks
 
-`-simulate` (random-walk mode) cannot detect deadlocks. If you need to check for deadlock states, use BFS (omit `-simulate`). Simulation is only valid for invariant violations and temporal properties along the sampled path.
+`-simulate` (random-walk mode) cannot detect deadlocks. If you need to check for deadlock states, use BFS (omit `-simulate`). Simulation is only valid for invariant violations and action properties along the sampled path; it misses most liveness violations (see below).
 
 If your bug hunting depends on deadlock detection, configure a BFS run, not simulation.
 
-## `~>` (leads-to) trivially passes without fairness
+## Liveness without fairness fails trivially by stuttering
 
-A temporal property like `A ~> B` requires fairness annotations on the actions that should make it eventually hold. Without `WF_vars(Action)` or `SF_vars(Action)`, TLC can stutter forever in a state where `A` is true but `B` never becomes true, and the property formally holds because of the stuttering loophole.
+`Spec == Init /\ [][Next]_vars` allows behaviors that stop taking steps forever. A liveness property such as `A ~> B` or `<>P` is therefore violated as soon as TLC reaches a state where the property is still waiting for something to happen (for `A ~> B`, a state where `A` holds but `B` does not): the behavior can simply stutter there. TLC warns that temporal properties are being verified without a fairness constraint, and the counterexample ends with `State N: Stuttering`.
 
-Symptom: TLC reports the temporal property holds, but you suspect it shouldn't.
+Symptom: a liveness counterexample that ends in `Stuttering`, usually right after its premise becomes true.
 
-Fix: add the appropriate fairness constraint to the spec (typically in the `Spec` definition: `Spec == Init /\ [][Next]_vars /\ WF_vars(Action1) /\ ...`). Also requires BFS, not simulation.
+Such a counterexample only shows that the model is allowed to stop; it says nothing about the implementation. Check liveness against a spec with fairness for the steps the implementation guarantees will eventually run (`WF_vars(A)` when `A` stays enabled until it is taken, `SF_vars(A)` when `A` is enabled repeatedly but not continuously); see `spec_generation/references/liveness-pattern.md`. Each fairness assumption is a claim about the implementation, so cite the code that justifies it; fairness on an action the implementation does not guarantee hides real progress failures. With justified fairness in place, a remaining counterexample either loops (`Back to state N`) or stutters in a state where no fair action is enabled. Run liveness checks in BFS mode.
+
+## `SYMMETRY` makes liveness results unreliable
+
+TLC warns "Declaring symmetry during liveness checking is dangerous. It might cause TLC to miss violations of the stated liveness properties." It can also go the other way: with symmetry, TLC can print a counterexample that does not violate the property at all, while the same cfg without `SYMMETRY` passes. Check liveness properties with a cfg that has no `SYMMETRY`; keep symmetry for invariant-only cfgs.
+
+## Simulation mode misses most liveness violations
+
+`-simulate` reports a liveness violation only when a random trace happens to revisit a state and close a loop. It does not report counterexamples that end in stuttering. Check liveness properties with BFS.
+
+## `CONSTRAINT` removes behaviors from liveness checking
+
+States that fail a `CONSTRAINT` are not explored further. A progress failure that only happens in such states is not reported: the run ends with "No error has been found" and no warning. Bound liveness models with counters in action guards instead.
+
+## `VIEW` can fabricate liveness loops
+
+A `VIEW` merges states that differ only in the variables it leaves out. For safety that is usually harmless, but liveness checking runs on the merged graph. If the view drops fault counters, a bounded fault looks unbounded: TLC can report a loop in which the fault fires forever, although the counter stops it after a few steps. If the view drops a variable the property depends on, TLC can report a violation that does not exist. Check liveness properties with a cfg that has no `VIEW`.
+
+## Bounded progress actions make liveness fail
+
+MC specs often bound every action with a counter (`MaxTimeoutLimit`, `HeartbeatLimit`, `RequestLimit`). Once the counter of an action that is needed for progress runs out, that action is disabled forever; fairness cannot help, and the liveness property fails with a counterexample that ends in `Stuttering`. This says nothing about the implementation. In a liveness model, bound fault actions only, or state the property so that it only requires progress while the bound has not been reached.
 
 ## `SYMMETRY` in cfg must reference a named operator
 
@@ -107,7 +127,9 @@ Rule of thumb on a dedicated machine: `-m` = 25-30% of system RAM, `-M` = 50-60%
 
 | Symptom | First thing to check |
 |---|---|
-| TLC reports success but you expected a violation | `~>` property without fairness, or `Trace.cfg` without `PROPERTIES TraceMatched` |
+| TLC reports success but you expected a violation | `Trace.cfg` without `PROPERTIES TraceMatched`; for liveness, `SYMMETRY`, `CONSTRAINT`, or `-simulate` |
+| Liveness counterexample ends in `Stuttering` | No fairness for the action that should make progress, or its counter bound ran out |
+| Liveness counterexample does not violate the property, or loops through a bounded fault | `SYMMETRY` or `VIEW` in the cfg |
 | TLC hangs / depth grows without bound | Unconstrained silent action |
 | TLC errors with arity mismatch on `<-` | cfg action substitution; switch to `SPECIFICATION MCSpec` |
 | TLC parses but no symmetry reduction observed | `SYMMETRY` references inline expression instead of named operator |

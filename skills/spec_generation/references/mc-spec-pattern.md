@@ -86,12 +86,15 @@ Generate one `MC_hunt_<scenario>.cfg` per Scenario from the modeling brief. Thes
 1. **Focused bounds**: reduce unrelated action limits when justified, preserving the mechanism and its enabling interactions
 2. **Invariants**: enable the Scenario properties together with the other safety, structural, and interaction invariants. Do not narrow a hunt cfg to the target invariant alone — the other properties catch bugs the Scenario did not anticipate. If an already-analyzed violation keeps stopping the run before the target behavior is explored, continue exploring: rerun with `-C` (TLC `-continue`), disable that one property, or filter the known counterexample (e.g., with a state constraint) in a follow-up run, and note what was turned off
 
+**Liveness properties** from brief §5 get their own `MC_hunt_<scenario>_live.cfg`, one property per cfg, without `SYMMETRY`, `VIEW`, or `CONSTRAINT`. See `liveness-pattern.md`.
+
 **MC.cfg invariant organization**: group invariants by category with comments, and **comment out** extension (scenario) invariants.
 
 **Examples**:
 - Standard MC.cfg: `../examples/braft/MC.cfg` (standard + structural invariants, bug-detection commented out)
 - Hunting cfg (tight bounds): `../examples/braft/MC.cfg` (crash-recovery Scenario, minimal bounds)
 - Hunting cfg (targeted invariant): `../examples/cometbft/MC.cfg` (VE liveness, zeroed irrelevant limits)
+- Liveness cfg: `../examples/cometbft/MC_hunt_ve_live.cfg` (`LiveSpecVE`, one `PROPERTY`, 2 servers)
 
 ### Category B Hunting Pattern
 

@@ -199,6 +199,7 @@ def handle_summary(reader: TLCOutputReader, args) -> None:
                 "trace_length": summary.trace_length,
                 "actions": summary.actions,
                 "statistics": summary.statistics,
+                "lasso": summary.lasso,
             },
             args.compact,
         )

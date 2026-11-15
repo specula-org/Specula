@@ -198,9 +198,10 @@ EmptyVoteMap == [j \in Server |-> Nil]
 \* --------------------------------------------------------------------------
 EnterNewRound(i, r) ==
     \* Guard: not crashed, correct height, advancing round
+    \* state.go enterNewRound returns early when round < cs.Round or
+    \* (cs.Round == round && cs.Step != RoundStepNewHeight)
     /\ ~crashed[i]
-    /\ r >= round[i]
-    /\ step[i] \in {StepNewHeight, StepNewRound, StepCommit}
+    /\ \/ r = round[i] /\ step[i] = StepNewHeight
        \/ r > round[i]
     \* State transitions (state.go:1114)
     /\ round' = [round EXCEPT ![i] = r]

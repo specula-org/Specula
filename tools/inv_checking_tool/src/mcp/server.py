@@ -53,14 +53,19 @@ class TLCOutputReaderMCPServer:
                     name="get_tlc_summary",
                     description=(
                         "Get a summary of TLC model checking results. "
-                        "Use this FIRST to understand what invariant was violated and "
+                        "Use this FIRST to understand what was violated and "
                         "get an overview of the error trace.\n\n"
                         "Returns:\n"
-                        "- violation_name: The invariant/property that was violated\n"
+                        "- violation_type: invariant, action_property, temporal_property, or deadlock\n"
+                        "- violation_name: The violated name (null when TLC does not report one, "
+                        "e.g. for liveness violations)\n"
                         "- trace_length: Number of states in the error trace\n"
                         "- actions: Sequence of actions leading to the violation\n"
                         "- action_frequency: Count of each action type\n"
                         "- statistics: TLC execution statistics\n"
+                        "- lasso: For a liveness counterexample, how the behavior loops: "
+                        "kind (back_to_state or stuttering), loop_start (1-indexed state), "
+                        "and the closing action\n"
                         "- variables: List of all state variables"
                     ),
                     inputSchema={
