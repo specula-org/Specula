@@ -16,6 +16,7 @@ import json
 import os
 import platform
 import re
+import select
 import signal
 import stat
 import subprocess
@@ -915,11 +916,20 @@ def run_owner(
     stop_file: Path,
     parent_pid: int,
     command: list[str],
+    identity_file: Path | None = None,
 ) -> int:
     """Reserve, wait for the wrapper handoff, then exec TLC with a live lock."""
     owner_lock: OwnerLock | None = None
     admitted = False
     try:
+        lifeline = os.environ.pop("SPECULA_TLC_TOOL_LIFELINE_FD", "")
+        if lifeline:
+            # Java does not need the wrapper's read end. The worker alone
+            # retains the write end, which is never inherited by children.
+            descriptor = int(lifeline)
+            if descriptor < 3:
+                raise ResourceError("invalid managed TLC lifeline descriptor")
+            os.close(descriptor)
         if not command:
             raise ResourceError("TLC owner command is empty")
         parent_identity = _process_identity(parent_pid)
@@ -927,7 +937,11 @@ def run_owner(
             raise ResourceError(f"cannot start TLC for non-running wrapper process {parent_pid}")
 
         def wrapper_active() -> bool:
-            return not stop_file.exists() and _process_alive(parent_pid, parent_identity)
+            return (
+                not stop_file.exists()
+                and _process_alive(parent_pid, parent_identity)
+                and _managed_cancellation() is None
+            )
 
         if not wrapper_active():
             raise ResourceError("TLC owner was cancelled before admission")
@@ -948,16 +962,21 @@ def run_owner(
             _publish_owner_status(status_file, report_file, "rejected", result.report)
             return 2
         admitted = True
+        if identity_file is not None:
+            identity = _process_identity(os.getpid())
+            if identity is None:
+                raise ResourceError("cannot identify the TLC resource owner")
+            _atomic_json(identity_file, {"pid": os.getpid(), "identity": identity})
         _publish_owner_status(status_file, report_file, "admitted", result.report)
 
         deadline = time.monotonic() + OWNER_START_TIMEOUT_SECONDS
         while time.monotonic() < deadline:
+            if not wrapper_active():
+                raise ResourceError("TLC owner was cancelled before Java started")
             if start_file.exists():
                 descriptor = _validate_owner_lock(owner_lock, owner_lock.state)
                 os.set_inheritable(descriptor, True)
                 os.execvpe(command[0], command, os.environ.copy())
-            if not wrapper_active():
-                raise ResourceError("TLC owner was cancelled before Java started")
             time.sleep(OWNER_POLL_SECONDS)
         raise ResourceError("TLC owner timed out waiting for the wrapper start signal")
     except (ResourceError, ValueError, OSError) as exc:
@@ -976,6 +995,123 @@ def run_owner(
                     print(f"Warning: could not release TLC resource reservation: {exc}", file=sys.stderr)
             else:
                 owner_lock.discard()
+
+
+def _lifetime_lock_held(path: Path) -> bool:
+    """Observe a lifetime lock without extending its owner's lifetime."""
+    try:
+        descriptor = os.open(path, os.O_RDWR | getattr(os, "O_NOFOLLOW", 0))
+    except FileNotFoundError:
+        return False
+    try:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return True
+        return False
+    finally:
+        os.close(descriptor)
+
+
+def _managed_cancellation() -> str | None:
+    worker = os.environ.get("SPECULA_TLC_TOOL_WORKER_LOCK", "")
+    stop = os.environ.get("SPECULA_TLC_TOOL_STOP_FILE", "")
+    if not worker and not stop:
+        return None
+    if not worker or not stop:
+        raise ResourceError("managed TLC requires both a worker lock and a stop file")
+    if Path(stop).exists():
+        return "stop requested"
+    if not _lifetime_lock_held(Path(worker)):
+        return "worker lost"
+    parent = os.environ.get("SPECULA_TLC_TOOL_PARENT_LOCK", "")
+    if parent and not _lifetime_lock_held(Path(parent)):
+        return "launcher lost"
+    return None
+
+
+@dataclass
+class _ManagedProcess:
+    pid: int
+    identity: str
+    pidfd: int | None
+
+    def running(self) -> bool:
+        if self.pidfd is not None:
+            return not select.select([self.pidfd], [], [], 0)[0]
+        identity = _process_identity(self.pid)
+        if identity is None:
+            try:
+                os.kill(self.pid, 0)
+            except ProcessLookupError:
+                return False
+            raise ResourceError("cannot inspect the managed TLC process identity")
+        if identity != self.identity:
+            return False
+        # A dead child can remain a zombie until the wrapper reaps it.
+        proc = Path(f"/proc/{self.pid}/stat")
+        if proc.is_file():
+            try:
+                return proc.read_text().rpartition(")")[2].split()[0] != "Z"
+            except FileNotFoundError:
+                return False
+            except (OSError, IndexError) as exc:
+                raise ResourceError("cannot inspect the managed TLC process state") from exc
+        result = subprocess.run(["ps", "-o", "stat=", "-p", str(self.pid)], capture_output=True, text=True, check=False)
+        return result.returncode == 0 and bool(result.stdout.strip()) and not result.stdout.lstrip().startswith("Z")
+
+    def send(self, signum: int) -> None:
+        try:
+            if self.pidfd is not None:
+                signal.pidfd_send_signal(self.pidfd, signum)
+            elif self.running() and _process_identity(self.pid) == self.identity:
+                # Platforms without pidfd retain the identity-checked POSIX
+                # fallback. Never signal a known replacement or unknown PID.
+                os.kill(self.pid, signum)
+        except ProcessLookupError:
+            pass
+
+
+@contextlib.contextmanager
+def _bind_managed_process(pid: int, identity_file: Path) -> Iterator[_ManagedProcess]:
+    value = json.loads(identity_file.read_text())
+    if (
+        not isinstance(value, dict)
+        or value.get("pid") != pid
+        or not isinstance(value.get("identity"), str)
+        or not value["identity"]
+    ):
+        raise ResourceError("invalid managed TLC owner identity")
+    identity = value["identity"]
+    pidfd = None
+    try:
+        if _process_identity(pid) != identity:
+            raise ResourceError("managed TLC owner exited before cleanup binding")
+        if hasattr(os, "pidfd_open") and hasattr(signal, "pidfd_send_signal"):
+            with contextlib.suppress(OSError):
+                pidfd = os.pidfd_open(pid)
+        # Compare against the identity published by the owner itself, not an
+        # identity first sampled after its PID could already have been reused.
+        if _process_identity(pid) != identity:
+            raise ResourceError("managed TLC owner changed during cleanup binding")
+        yield _ManagedProcess(pid, identity, pidfd)
+    finally:
+        if pidfd is not None:
+            os.close(pidfd)
+
+
+def _terminate_managed_process(process: _ManagedProcess, grace_seconds: float = 5) -> None:
+    process.send(signal.SIGTERM)
+    deadline = time.monotonic() + grace_seconds
+    while process.running() and time.monotonic() < deadline:
+        time.sleep(OWNER_POLL_SECONDS)
+    if process.running():
+        process.send(signal.SIGKILL)
+        deadline = time.monotonic() + 5
+        while process.running() and time.monotonic() < deadline:
+            time.sleep(OWNER_POLL_SECONDS)
+    if process.running():
+        raise ResourceError("managed TLC owner did not exit after termination")
 
 
 def enforce_timeout(owner_pid: int, seconds: int, status_file: Path) -> bool:
@@ -1051,6 +1187,7 @@ def _build_parser() -> argparse.ArgumentParser:
     owner_parser.add_argument("--start-file", required=True, type=Path)
     owner_parser.add_argument("--stop-file", required=True, type=Path)
     owner_parser.add_argument("--parent-pid", required=True, type=int)
+    owner_parser.add_argument("--identity-file", type=Path)
     owner_parser.add_argument("owner_command", nargs=argparse.REMAINDER)
     release_parser = commands.add_parser("release")
     release_parser.add_argument("--lease-file", required=True, type=Path)
@@ -1058,6 +1195,9 @@ def _build_parser() -> argparse.ArgumentParser:
     watchdog_parser.add_argument("--pid", required=True, type=int)
     watchdog_parser.add_argument("--seconds", required=True, type=int)
     watchdog_parser.add_argument("--status-file", required=True, type=Path)
+    managed_parser = commands.add_parser("stop-managed")
+    managed_parser.add_argument("--pid", required=True, type=int)
+    managed_parser.add_argument("--identity-file", required=True, type=Path)
     return parser
 
 
@@ -1070,6 +1210,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "watchdog":
             timed_out = enforce_timeout(args.pid, args.seconds, args.status_file)
             return 124 if timed_out else 0
+        if args.command == "stop-managed":
+            with _bind_managed_process(args.pid, args.identity_file) as process:
+                _terminate_managed_process(process)
+            return 0
         owner_command = list(args.owner_command)
         if owner_command and owner_command[0] == "--":
             owner_command.pop(0)
@@ -1085,6 +1229,7 @@ def main(argv: list[str] | None = None) -> int:
             stop_file=args.stop_file,
             parent_pid=args.parent_pid,
             command=owner_command,
+            identity_file=args.identity_file,
         )
     except (ResourceError, ValueError, OSError) as exc:
         message = f"TLC resource budget error: {exc}"

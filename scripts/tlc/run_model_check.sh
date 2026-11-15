@@ -139,6 +139,25 @@ if [ ! -f "$RESOURCE_GUARD" ]; then
     exit 1
 fi
 
+MANAGED_WORKER_LOCK="${SPECULA_TLC_TOOL_WORKER_LOCK:-}"
+MANAGED_STOP_FILE="${SPECULA_TLC_TOOL_STOP_FILE:-}"
+MANAGED_LIFELINE_FD="${SPECULA_TLC_TOOL_LIFELINE_FD:-}"
+if { [ -n "$MANAGED_WORKER_LOCK" ] && [ -z "$MANAGED_STOP_FILE" ]; } \
+    || { [ -z "$MANAGED_WORKER_LOCK" ] && [ -n "$MANAGED_STOP_FILE" ]; }; then
+    echo "Error: managed TLC requires both a worker lock and a stop file."
+    exit 2
+fi
+if [ -n "$MANAGED_WORKER_LOCK" ]; then
+    if ! [[ "$MANAGED_LIFELINE_FD" =~ ^[0-9]+$ ]] || [ "$MANAGED_LIFELINE_FD" -lt 3 ] \
+        || ! eval ": <&$MANAGED_LIFELINE_FD" 2>/dev/null; then
+        echo "Error: managed TLC requires an open lifeline descriptor."
+        exit 2
+    fi
+elif [ -n "$MANAGED_LIFELINE_FD" ]; then
+    echo "Error: a TLC lifeline requires managed worker ownership."
+    exit 2
+fi
+
 # TLC resolves -workers auto once, at JVM startup. Resolve it with the same JVM
 # API for accounting, but continue passing "auto" to TLC itself.
 if [ "$WORKERS" = "auto" ]; then
@@ -297,17 +316,37 @@ ADMISSION_OUTPUT_FILE="$CONTROL_DIR/admission-output"
 TLC_PID=""
 WATCHDOG_PID=""
 WATCHDOG_STATUS="$CONTROL_DIR/watchdog-status"
+OWNER_IDENTITY="$CONTROL_DIR/owner-identity.json"
+LIFELINE_PID=""
+LIFELINE_STATUS="$CONTROL_DIR/lifeline-status"
+
+stop_managed_owner() {
+    python3 "$RESOURCE_GUARD" stop-managed --pid "$TLC_PID" --identity-file "$OWNER_IDENTITY"
+}
 
 cleanup() {
     local rc=$?
-    trap - EXIT
+    trap - EXIT CHLD
+    touch "$STOP_FILE"
     if [ -n "$WATCHDOG_PID" ] && kill -0 "$WATCHDOG_PID" 2>/dev/null; then
         kill "$WATCHDOG_PID" 2>/dev/null || true
         wait "$WATCHDOG_PID" 2>/dev/null || true
     fi
     if [ -n "$TLC_PID" ] && kill -0 "$TLC_PID" 2>/dev/null; then
-        kill "$TLC_PID" 2>/dev/null || true
+        if [ -n "$MANAGED_WORKER_LOCK" ]; then
+            if [ -s "$OWNER_IDENTITY" ]; then
+                stop_managed_owner 2>/dev/null || true
+            fi
+        else
+            kill "$TLC_PID" 2>/dev/null || true
+        fi
         wait "$TLC_PID" 2>/dev/null || true
+    fi
+    if [ -n "$LIFELINE_PID" ]; then
+        # A job specification refers to our own still-running child, unlike a
+        # numeric PID that Bash may already have reaped and the OS reused.
+        kill -USR1 %lifeline_watch 2>/dev/null || true
+        wait "$LIFELINE_PID" 2>/dev/null || true
     fi
     if [ -s "$LEASE_FILE" ]; then
         python3 "$RESOURCE_GUARD" release --lease-file "$LEASE_FILE" >/dev/null 2>&1 \
@@ -338,6 +377,59 @@ process_running() {
     [ -n "$pid" ] || return 1
     state="$(ps -o stat= -p "$pid" 2>/dev/null || true)"
     kill -0 "$pid" 2>/dev/null && [[ "$state" != Z* ]]
+}
+
+lifeline_watch() {
+    trap - EXIT CHLD
+    # After Java exits, the wrapper retires this reader without cancellation.
+    trap 'exit 0' USR1
+    # Ordinary worker cleanup signals the wrapper's whole process group. Keep
+    # this last-resort cleanup alive long enough to stop a stubborn Java.
+    trap 'trap "" TERM INT HUP; : > "$STOP_FILE"; stop_managed_owner 2>/dev/null; exit' TERM INT HUP
+    printf 'ready\n' > "$LIFELINE_STATUS" || return 2
+    # The worker alone holds the write end. A blocking shell read uses no
+    # polling CPU and receives EOF even when that worker is SIGKILLed.
+    IFS= read -r -u "$MANAGED_LIFELINE_FD" _ || true
+    : > "$STOP_FILE"
+    stop_managed_owner
+}
+
+managed_child_exit() {
+    [ "$HANDLING_CHILD_EXIT" = false ] || return
+    HANDLING_CHILD_EXIT=true
+    local child owner_running=false lifeline_running=false watchdog_running=false
+    # jobs and read are shell builtins. This runs only on child-exit events,
+    # not on a timer. Bash 3.2 (macOS /bin/bash) never runs CHLD traps in
+    # scripts, so there helper or watchdog loss goes unnoticed; worker loss is
+    # still handled by the lifeline.
+    jobs -pr > "$CONTROL_DIR/running-jobs"
+    while IFS= read -r child; do
+        [ "$child" != "$TLC_PID" ] || owner_running=true
+        [ "$child" != "$LIFELINE_PID" ] || lifeline_running=true
+        [ "$child" != "$WATCHDOG_PID" ] || watchdog_running=true
+    done < "$CONTROL_DIR/running-jobs"
+    if [ -n "$WATCHDOG_PID" ] && [ "$watchdog_running" = false ]; then
+        wait "$WATCHDOG_PID" 2>/dev/null
+        local watchdog_rc=$?
+        WATCHDOG_PID=""
+        if [ "$watchdog_rc" -eq 124 ]; then
+            WATCHDOG_TIMED_OUT=true
+        else
+            WATCHDOG_FAILED=true
+            echo "Error: TLC timeout watchdog exited unexpectedly; stopping TLC." >&2
+        fi
+        if [ "$owner_running" = true ]; then
+            stop_managed_owner || true
+        fi
+    fi
+    if [ "$owner_running" = true ] && [ "$lifeline_running" = false ]; then
+        if [ ! -e "$STOP_FILE" ]; then
+            LIFELINE_FAILED=true
+            echo "Error: TLC lifeline helper exited unexpectedly; stopping TLC." >&2
+        fi
+        stop_managed_owner || true
+    fi
+    HANDLING_CHILD_EXIT=false
 }
 
 register_owner_with_stop_gate() {
@@ -375,6 +467,7 @@ python3 "$RESOURCE_GUARD" owner \
     --start-file "$START_FILE" \
     --stop-file "$STOP_FILE" \
     --parent-pid "$$" \
+    --identity-file "$OWNER_IDENTITY" \
     -- "${TLC_CMD[@]}" > >(tee "$LOG_FILE") 2>&1 &
 TLC_PID=$!
 
@@ -462,6 +555,34 @@ if [ "$TIMEOUT_SECONDS" -gt 0 ]; then
     fi
 fi
 
+# Establish the blocking reader before START. It holds neither the worker's
+# write end nor its locks, so worker loss cannot leave cancellation unserved.
+if [ -n "$MANAGED_WORKER_LOCK" ]; then
+    lifeline_watch &
+    LIFELINE_PID=$!
+    printf '%s\n' "$LIFELINE_PID" > "$CONTROL_DIR/lifeline.pid"
+    LIFELINE_READY=false
+    for _ in {1..100}; do
+        if grep -qx 'ready' "$LIFELINE_STATUS" 2>/dev/null \
+            && process_running "$LIFELINE_PID"; then
+            LIFELINE_READY=true
+            break
+        fi
+        if ! process_running "$LIFELINE_PID"; then
+            break
+        fi
+        sleep 0.05
+    done
+    if [ "$LIFELINE_READY" != true ]; then
+        LIFELINE_ERROR="TLC lifeline helper did not become ready."
+        echo "Error: $LIFELINE_ERROR" >&2
+        touch "$STOP_FILE"
+        publish_admission rejected "" "$LIFELINE_ERROR" || true
+        exit 2
+    fi
+    eval "exec $MANAGED_LIFELINE_FD<&-"
+fi
+
 # The long-lived wrapper owns this registration instead of relying on the
 # short-lived background launcher. Publish the stable holder/Java PID before
 # START so even SIGKILL during launcher handoff cannot hide a live TLC from the
@@ -482,7 +603,12 @@ fi
 
 WATCHDOG_FAILED=false
 WATCHDOG_TIMED_OUT=false
-if [ -n "$WATCHDOG_PID" ]; then
+LIFELINE_FAILED=false
+HANDLING_CHILD_EXIT=false
+if [ -n "$LIFELINE_PID" ]; then
+    trap managed_child_exit CHLD
+    managed_child_exit
+elif [ -n "$WATCHDOG_PID" ]; then
     while process_running "$TLC_PID"; do
         if ! process_running "$WATCHDOG_PID"; then
             wait "$WATCHDOG_PID" 2>/dev/null
@@ -503,9 +629,19 @@ fi
 
 wait "$TLC_PID"
 EXIT_CODE=$?
+trap - CHLD
 TLC_PID=""
+if [ -n "$LIFELINE_PID" ]; then
+    kill -USR1 %lifeline_watch 2>/dev/null || true
+    wait "$LIFELINE_PID" 2>/dev/null || true
+    LIFELINE_PID=""
+    # Cancellation is not success even if Java handles SIGTERM with exit 0.
+    [ ! -e "$STOP_FILE" ] || EXIT_CODE=143
+fi
 WATCHDOG_STOPPED=false
-if [ -n "$WATCHDOG_PID" ] && process_running "$WATCHDOG_PID"; then
+# A watchdog that already fired is only finishing its own exit; let it report 124.
+if [ -n "$WATCHDOG_PID" ] && process_running "$WATCHDOG_PID" \
+    && ! grep -qx 'timed-out' "$WATCHDOG_STATUS" 2>/dev/null; then
     kill "$WATCHDOG_PID" 2>/dev/null || true
     WATCHDOG_STOPPED=true
 fi
@@ -522,7 +658,7 @@ if [ -n "$WATCHDOG_PID" ]; then
         fi
     fi
 fi
-if [ "$WATCHDOG_FAILED" = true ]; then
+if [ "$WATCHDOG_FAILED" = true ] || [ "$LIFELINE_FAILED" = true ]; then
     EXIT_CODE=2
 elif [ "$WATCHDOG_TIMED_OUT" = true ]; then
     EXIT_CODE=124

@@ -23,6 +23,7 @@ import test_adapters as adapters
 import test_run_model_check as wrappers
 
 from specula import context_runner, phaselib
+from specula import tlc_resources as resources
 from specula import tlc_tasks as tasks
 from specula.adapters.utils.resume import capture_session_id
 
@@ -57,7 +58,11 @@ def runtime(monkeypatch: pytest.MonkeyPatch) -> Iterator[wrappers.RunModelCheckT
         deadline = time.monotonic() + 8
         while time.monotonic() < deadline:
             pending = list((fixture.work / ".tlc-tasks/jobs").glob("*/request.json"))
-            if all(p.with_name("result.json").exists() for p in pending):
+            if all(
+                p.with_name("result.json").exists()
+                or (p.with_name("worker.json").exists() and not tasks._lock_is_held(p.with_name("worker.lock")))
+                for p in pending
+            ):
                 break
             time.sleep(0.05)
         fixture.doCleanups()
@@ -70,6 +75,382 @@ def start_args(runtime: wrappers.RunModelCheckTests) -> dict[str, Any]:
         "config_file": "MC.cfg",
         "options": ["-m", "1G", "-M", "1G", "-w", "1", "-t", "1"],
     }
+
+
+def wait_until(predicate: Any, timeout: float = 10) -> None:
+    deadline = time.monotonic() + timeout
+    while not predicate():
+        assert time.monotonic() < deadline, "managed task did not reach the expected state"
+        time.sleep(0.02)
+
+
+@contextlib.contextmanager
+def managed_job(
+    runtime: wrappers.RunModelCheckTests,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    deadline: str = "0",
+    stubborn: bool = False,
+    real_tlc: bool = False,
+    sigterm_exit: int | None = None,
+) -> Iterator[tuple[str, Path, int, resources._ManagedProcess, Path]]:
+    """Use real worker/wrapper/locks, and leave no process behind on assertion failure."""
+    if real_tlc:
+        java = shutil.which("java", path="/usr/bin:/bin")
+        jar = tasks.ROOT / "lib/tla2tools.jar"
+        if java is None or not jar.is_file():
+            pytest.skip("requires Java and the TLC jar")
+        (runtime.bin / "java").unlink()
+        (runtime.bin / "java").symlink_to(java)
+        runtime.spec.write_text(
+            "---- MODULE MC ----\nEXTENDS Naturals\nVARIABLE x\n"
+            "Init == x = 0\nNext == x' = x + 1\nSpec == Init /\\ [][Next]_x\n====\n"
+        )
+        runtime.config.write_text("SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\n")
+    else:
+        (runtime.bin / "java").write_text(
+            f"#!{sys.executable}\nimport os,signal,sys,time\nfrom pathlib import Path\n"
+            + ("signal.signal(signal.SIGTERM, signal.SIG_IGN)\n" if stubborn else "")
+            + (
+                f"signal.signal(signal.SIGTERM, lambda *_: sys.exit({sigterm_exit}))\n"
+                if sigterm_exit is not None
+                else ""
+            )
+            + f"Path({str(runtime.work / 'java.pid')!r}).write_text(str(os.getpid()))\n"
+            + "while True: time.sleep(0.05)\n"
+        )
+    owner = runtime.work / "agent.log"
+    parent_lock = tasks._launcher_lock(runtime.work, owner)
+    monkeypatch.setenv("SPECULA_TLC_TOOL_PARENT_LOCK", str(parent_lock))
+    args = start_args(runtime)
+    args["options"] = ["-m", "64M", "-M", "64M", "-w", "1", "-k", "0", "-t", deadline]
+    started = asyncio.run(tasks.start_tlc(**args))
+    task_id = started["task_id"]
+    path = tasks.task_path(task_id)
+    process: resources._ManagedProcess | None = None
+    worker_pid = 0
+    try:
+        wait_until(lambda: bool(list(runtime.tmp.glob("specula-tlc-control-*/owner-identity.json"))))
+        identity_file = next(runtime.tmp.glob("specula-tlc-control-*/owner-identity.json"))
+        value = json.loads(identity_file.read_text())
+        # The fixture can force a portable identity in its guard. Observe the
+        # same PID using this test process's own identity format instead.
+        identity = resources._process_identity(value["pid"])
+        assert identity is not None
+        process = resources._ManagedProcess(value["pid"], identity, None)
+        worker_pid = json.loads((path / "worker.json").read_text())["pid"]
+        if real_tlc:
+            wait_until(lambda: (path / "tlc.log").exists() and "Starting..." in (path / "tlc.log").read_text())
+        else:
+            wait_until((runtime.work / "java.pid").exists)
+            assert int((runtime.work / "java.pid").read_text()) == process.pid
+        assert process.running()
+        yield task_id, path, worker_pid, process, identity_file.parent
+    finally:
+        tasks.stop_owned_tasks(runtime.work, owner)
+        if process is not None and process.running():
+            process.send(signal.SIGKILL)
+            wait_until(lambda: not process.running())
+        if worker_pid and tasks._lock_is_held(path / "worker.lock"):
+            os.kill(worker_pid, signal.SIGTERM)
+            wait_until(lambda: not tasks._lock_is_held(path / "worker.lock"))
+
+
+@pytest.mark.parametrize("cleanup", ["stop-owned", "launcher-exit", "none"])
+@pytest.mark.parametrize("deadline", ["0", "1"])
+@pytest.mark.parametrize("real_tlc", [False, True])
+def test_hard_worker_loss_stops_tlc_without_worker_cleanup(
+    runtime: wrappers.RunModelCheckTests,
+    monkeypatch: pytest.MonkeyPatch,
+    cleanup: str,
+    deadline: str,
+    real_tlc: bool,
+) -> None:
+    with managed_job(runtime, monkeypatch, deadline=deadline, real_tlc=real_tlc) as job:
+        task_id, path, worker_pid, process, control = job
+        os.kill(worker_pid, signal.SIGKILL)
+        wait_until(lambda: not tasks._lock_is_held(path / "worker.lock"))
+        if cleanup == "stop-owned":
+            tasks.stop_owned_tasks(runtime.work, runtime.work / "agent.log")
+        elif cleanup == "launcher-exit":
+            lease = tasks._LAUNCHER_LOCKS.pop((runtime.work.resolve(), (runtime.work / "agent.log").resolve()))
+            os.close(lease[1])
+        wait_until(lambda: not process.running())
+        wait_until(lambda: not control.exists())
+        assert tasks.status(task_id)["status"] == "interrupted"
+        assert not (path / "result.json").exists()
+        assert asyncio.run(tasks.wait_tlc([task_id], timeout_seconds=0))["outcome"] == "finished"
+        ledger = next((runtime.root / "resources").glob("*/ledger.json"))
+        assert json.loads(ledger.read_text())["reservations"] == {}
+
+
+@pytest.mark.parametrize("kill_worker", [False, True])
+def test_managed_cleanup_escalates_for_tlc_that_ignores_sigterm(
+    runtime: wrappers.RunModelCheckTests, monkeypatch: pytest.MonkeyPatch, kill_worker: bool
+) -> None:
+    with managed_job(runtime, monkeypatch, stubborn=True) as job:
+        task_id, path, worker_pid, process, _control = job
+        if kill_worker:
+            os.kill(worker_pid, signal.SIGKILL)
+        tasks.stop_owned_tasks(runtime.work, runtime.work / "agent.log")
+        # During the grace period, live Java must still hold its reservation.
+        time.sleep(0.3)
+        assert process.running()
+        ledger = next((runtime.root / "resources").glob("*/ledger.json"))
+        token = next(iter(json.loads(ledger.read_text())["reservations"]))
+        assert resources._reservation_is_live(ledger.parent, token)
+        wait_until(lambda: not process.running(), timeout=12)
+        if not kill_worker:
+            wait_until(lambda: (path / "result.json").exists())
+        assert tasks.status(task_id)["status"] == "interrupted"
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="uses /proc to locate the guard and wrapper")
+@pytest.mark.parametrize("lost", ["lifeline", "watchdog", "wrapper"])
+def test_managed_job_survives_loss_of_one_cleanup_process(
+    runtime: wrappers.RunModelCheckTests, monkeypatch: pytest.MonkeyPatch, lost: str
+) -> None:
+    with managed_job(runtime, monkeypatch, deadline="1" if lost == "watchdog" else "0") as job:
+        _task_id, _path, _worker_pid, process, control = job
+        wrapper_pid = int(Path(f"/proc/{process.pid}/stat").read_text().rpartition(")")[2].split()[1])
+        victim = wrapper_pid if lost == "wrapper" else int((control / "lifeline.pid").read_text())
+        if lost == "watchdog":
+            children = Path(f"/proc/{wrapper_pid}/task/{wrapper_pid}/children").read_text().split()
+            victim = next(
+                int(pid)
+                for pid in children
+                if b" watchdog " in Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ")
+            )
+        os.kill(victim, signal.SIGKILL)
+        wait_until(lambda: not process.running())
+        if lost == "lifeline":
+            wait_until(lambda: not control.exists())
+
+
+def test_worker_loss_is_not_success_when_java_handles_sigterm_with_exit_zero(
+    runtime: wrappers.RunModelCheckTests, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with managed_job(runtime, monkeypatch, sigterm_exit=0) as job:
+        task_id, path, worker_pid, process, control = job
+        os.kill(worker_pid, signal.SIGKILL)
+        wait_until(lambda: not process.running())
+        wait_until(lambda: not control.exists())
+        assert tasks.status(task_id)["status"] == "interrupted"
+        assert "exit code: 143" in (path / "launcher.log").read_text()
+
+
+@contextlib.contextmanager
+def managed_wrapper(
+    runtime: wrappers.RunModelCheckTests,
+) -> Iterator[tuple[dict[str, str], Path, Path]]:
+    worker = runtime.work / "managed-worker.lock"
+    parent = runtime.work / "managed-parent.lock"
+    descriptors = [tasks._hold_lock(worker), tasks._hold_lock(parent)]
+    lifeline_read, lifeline_write = os.pipe()
+    descriptors.extend((lifeline_read, lifeline_write))
+    stop = runtime.work / "managed-stop"
+    (runtime.bin / "java").write_text(
+        '#!/bin/sh\nif [ "${1##*/}" = PrintAvailableProcessors.java ]; then echo 1; exit 0; fi\n'
+        f"touch '{runtime.work / 'java-started'}'\nexec sleep 60\n"
+    )
+    env = runtime.env(
+        SPECULA_TLC_TOOL_WORKER_LOCK=str(worker),
+        SPECULA_TLC_TOOL_STOP_FILE=str(stop),
+        SPECULA_TLC_TOOL_PARENT_LOCK=str(parent),
+        SPECULA_TLC_TOOL_LIFELINE_FD=str(lifeline_read),
+    )
+    try:
+        yield env, stop, worker
+    finally:
+        for descriptor in descriptors:
+            os.close(descriptor)
+
+
+@pytest.mark.parametrize("failure", ["startup", "readiness-publication"])
+def test_managed_lifeline_startup_failure_never_starts_java(runtime: wrappers.RunModelCheckTests, failure: str) -> None:
+    wrapper = runtime.root / "scripts/tlc/run_model_check.sh"
+    source = wrapper.read_text()
+    if failure == "startup":
+        source = source.replace("lifeline_watch() {", "lifeline_watch() {\n    return 2")
+    else:
+        source = source.replace("printf 'ready\\n' >", "false >")
+    wrapper.write_text(source)
+    with managed_wrapper(runtime) as (env, _stop, _worker):
+        result = runtime.run_wrapper(env, "failed-start.log")
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert not (runtime.work / "java-started").exists()
+    ledger = next((runtime.root / "resources").glob("*/ledger.json"))
+    assert json.loads(ledger.read_text())["reservations"] == {}
+
+
+@pytest.mark.parametrize("boundary", ["before-ready", "after-ready"])
+@pytest.mark.parametrize("cancellation", ["stop", "worker-lost", "launcher-lost"])
+def test_managed_startup_cancellation_never_starts_java(
+    runtime: wrappers.RunModelCheckTests, boundary: str, cancellation: str
+) -> None:
+    barrier = runtime.work / "startup-barrier"
+    proceed = runtime.work / "startup-proceed"
+    if boundary == "before-ready":
+        wrapper = runtime.root / "scripts/tlc/run_model_check.sh"
+        source = wrapper.read_text().replace(
+            "lifeline_watch() {",
+            f'lifeline_watch() {{\ntouch "{barrier}"\nwhile [ ! -f "{proceed}" ]; do sleep 0.01; done',
+        )
+        wrapper.write_text(source)
+    else:
+        wrapper = runtime.root / "scripts/tlc/run_model_check.sh"
+        wrapper.write_text(
+            wrapper.read_text().replace(
+                'touch "$START_FILE"',
+                f'touch "{barrier}"\nwhile [ ! -f "{proceed}" ]; do sleep 0.01; done\ntouch "$START_FILE"',
+            )
+        )
+    with managed_wrapper(runtime) as (env, stop, worker):
+        process = subprocess.Popen(
+            [str(runtime.root / "scripts/tlc/run_model_check.sh"), *runtime.wrapper_args("cancel-start.log")],
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            start_new_session=True,
+            pass_fds=(int(env["SPECULA_TLC_TOOL_LIFELINE_FD"]),),
+        )
+        try:
+            wait_until(barrier.exists)
+            if cancellation == "stop":
+                stop.touch()
+            else:
+                # Simulate lost ownership by removing the observed path. The
+                # original test owner keeps its descriptor for safe teardown.
+                (worker if cancellation == "worker-lost" else Path(env["SPECULA_TLC_TOOL_PARENT_LOCK"])).unlink()
+            proceed.touch()
+            stdout, stderr = process.communicate(timeout=10)
+            assert process.returncode != 0, stdout + stderr
+            assert not (runtime.work / "java-started").exists()
+        finally:
+            if process.poll() is None:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.wait(timeout=3)
+            if process.stdout is not None:
+                process.stdout.close()
+            if process.stderr is not None:
+                process.stderr.close()
+    ledger = next((runtime.root / "resources").glob("*/ledger.json"))
+    assert json.loads(ledger.read_text())["reservations"] == {}
+
+
+def test_managed_deadline_keeps_timeout_exit_code(runtime: wrappers.RunModelCheckTests) -> None:
+    wrapper = runtime.root / "scripts/tlc/run_model_check.sh"
+    wrapper.write_text(wrapper.read_text().replace("TIMEOUT_MINUTES * 60", "TIMEOUT_MINUTES * 1"))
+    with managed_wrapper(runtime) as (env, _stop, _worker):
+        result = subprocess.run(
+            [str(wrapper), *runtime.wrapper_args("managed-timeout.log"), "-t", "1"],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            pass_fds=(int(env["SPECULA_TLC_TOOL_LIFELINE_FD"]),),
+        )
+    assert result.returncode == 124, result.stdout + result.stderr
+    assert (runtime.work / "java-started").exists()
+
+
+@pytest.mark.parametrize("managed", [False, True])
+def test_deadline_waits_for_a_watchdog_that_already_fired(runtime: wrappers.RunModelCheckTests, managed: bool) -> None:
+    wrapper = runtime.root / "scripts/tlc/run_model_check.sh"
+    wrapper.write_text(wrapper.read_text().replace("TIMEOUT_MINUTES * 60", "TIMEOUT_MINUTES * 1"))
+    guard = runtime.root / "src/specula/tlc_resources.py"
+    fired = "timed_out = enforce_timeout(args.pid, args.seconds, args.status_file)"
+    source = guard.read_text()
+    assert fired in source
+    # Java exits on SIGTERM at once, while the watchdog is still exiting.
+    guard.write_text(source.replace(fired, f"{fired}\n            time.sleep(0.5)"))
+    with managed_wrapper(runtime) as (env, _stop, _worker):
+        if not managed:
+            env = {key: value for key, value in env.items() if not key.startswith("SPECULA_TLC_TOOL_")}
+        result = subprocess.run(
+            [str(wrapper), *runtime.wrapper_args("slow-watchdog.log"), "-t", "1"],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            pass_fds=(int(env["SPECULA_TLC_TOOL_LIFELINE_FD"]),) if managed else (),
+        )
+    assert result.returncode == 124, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("deadline", ["0", "1"])
+@pytest.mark.parametrize("portable", [False, True])
+def test_idle_managed_job_does_not_spawn_ps(
+    runtime: wrappers.RunModelCheckTests, monkeypatch: pytest.MonkeyPatch, deadline: str, portable: bool
+) -> None:
+    # Spawn the worker from the fixture too, so an installed TLC jar cannot
+    # make it bypass the modified guard below.
+    for filename in ("__init__.py", "context_control.py", "tlc_tasks.py"):
+        shutil.copy2(tasks.ROOT / "src/specula" / filename, runtime.root / "src/specula" / filename)
+    monkeypatch.setattr(tasks, "__file__", str(runtime.root / "src/specula/tlc_tasks.py"))
+    if portable:
+        guard = runtime.root / "src/specula/tlc_resources.py"
+        source = guard.read_text().replace('Path(f"/proc/{pid}/stat")', 'Path(f"/absent-proc/{pid}/stat")')
+        source = source.replace('Path(f"/proc/{self.pid}/stat")', 'Path(f"/absent-proc/{self.pid}/stat")')
+        guard.write_text(source.replace('hasattr(os, "pidfd_open")', "False"))
+    real_ps = shutil.which("ps")
+    assert real_ps is not None
+    calls = runtime.work / "ps.calls"
+    spy = runtime.bin / "ps"
+    spy.write_text(f"#!/bin/sh\nprintf 'ps\\n' >> '{calls}'\nexec '{real_ps}' \"$@\"\n")
+    spy.chmod(0o755)
+    with managed_job(runtime, monkeypatch, deadline=deadline) as job:
+        if portable:
+            value = json.loads((job[4] / "owner-identity.json").read_text())
+            assert value["identity"].startswith("ps:")
+        before = calls.read_text()
+        time.sleep(0.5)
+        assert calls.read_text() == before
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="inspects inherited file descriptors in /proc")
+def test_only_worker_holds_lifeline_write_end(
+    runtime: wrappers.RunModelCheckTests, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with managed_job(runtime, monkeypatch) as job:
+        _task_id, _path, worker_pid, process, control = job
+        helper_pid = int((control / "lifeline.pid").read_text())
+        helper_pipes = {
+            path.readlink()
+            for path in Path(f"/proc/{helper_pid}/fd").iterdir()
+            if str(path.readlink()).startswith("pipe:")
+        }
+        lifelines = []
+        for path in Path(f"/proc/{worker_pid}/fd").iterdir():
+            if path.readlink() not in helper_pipes:
+                continue
+            info = Path(f"/proc/{worker_pid}/fdinfo/{path.name}").read_text()
+            flags = next(line.split()[1] for line in info.splitlines() if line.startswith("flags:"))
+            if int(flags, 8) & os.O_ACCMODE == os.O_WRONLY:
+                lifelines.append(path.readlink())
+        assert len(lifelines) == 1
+        assert lifelines[0] not in {path.readlink() for path in Path(f"/proc/{process.pid}/fd").iterdir()}
+        os.kill(worker_pid, signal.SIGKILL)
+        wait_until(lambda: not process.running())
+
+
+@pytest.mark.asyncio
+async def test_worker_loss_does_not_stop_another_managed_task(
+    runtime: wrappers.RunModelCheckTests, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FAKE_JAVA_SECONDS", "3")
+    first = await tasks.start_tlc(**start_args(runtime))
+    second = await tasks.start_tlc(**start_args(runtime))
+    first_path = tasks.task_path(first["task_id"])
+    worker_pid = json.loads((first_path / "worker.json").read_text())["pid"]
+    os.kill(worker_pid, signal.SIGKILL)
+    await asyncio.sleep(0.3)
+    assert tasks.status(first["task_id"])["status"] == "interrupted"
+    assert tasks.status(second["task_id"])["status"] == "running"
+    result = await tasks.wait_tlc([second["task_id"]], timeout_seconds=10)
+    assert result["tasks"][0]["status"] == "exited"
+    assert result["tasks"][0]["exit_code"] == 0
 
 
 @pytest.mark.asyncio
