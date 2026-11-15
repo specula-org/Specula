@@ -139,6 +139,14 @@ if [ ! -f "$RESOURCE_GUARD" ]; then
     exit 1
 fi
 
+MANAGED_WORKER_LOCK="${SPECULA_TLC_TOOL_WORKER_LOCK:-}"
+MANAGED_STOP_FILE="${SPECULA_TLC_TOOL_STOP_FILE:-}"
+if { [ -n "$MANAGED_WORKER_LOCK" ] && [ -z "$MANAGED_STOP_FILE" ]; } \
+    || { [ -z "$MANAGED_WORKER_LOCK" ] && [ -n "$MANAGED_STOP_FILE" ]; }; then
+    echo "Error: managed TLC requires both a worker lock and a stop file."
+    exit 2
+fi
+
 # TLC resolves -workers auto once, at JVM startup. Resolve it with the same JVM
 # API for accounting, but continue passing "auto" to TLC itself.
 if [ "$WORKERS" = "auto" ]; then
@@ -297,16 +305,35 @@ ADMISSION_OUTPUT_FILE="$CONTROL_DIR/admission-output"
 TLC_PID=""
 WATCHDOG_PID=""
 WATCHDOG_STATUS="$CONTROL_DIR/watchdog-status"
+OWNER_IDENTITY="$CONTROL_DIR/owner-identity.json"
+SUPERVISOR_PID=""
+SUPERVISOR_STATUS="$CONTROL_DIR/supervisor-status"
+
+stop_managed_owner() {
+    python3 "$RESOURCE_GUARD" stop-managed --pid "$TLC_PID" --identity-file "$OWNER_IDENTITY"
+}
 
 cleanup() {
     local rc=$?
     trap - EXIT
+    touch "$STOP_FILE"
     if [ -n "$WATCHDOG_PID" ] && kill -0 "$WATCHDOG_PID" 2>/dev/null; then
         kill "$WATCHDOG_PID" 2>/dev/null || true
         wait "$WATCHDOG_PID" 2>/dev/null || true
     fi
+    if [ -n "$SUPERVISOR_PID" ]; then
+        # The guard observes STOP_FILE itself. Do not signal a possibly reaped
+        # guard PID; wait also consumes an already-finished child's status.
+        wait "$SUPERVISOR_PID" 2>/dev/null || true
+    fi
     if [ -n "$TLC_PID" ] && kill -0 "$TLC_PID" 2>/dev/null; then
-        kill "$TLC_PID" 2>/dev/null || true
+        if [ -n "$MANAGED_WORKER_LOCK" ]; then
+            if [ -s "$OWNER_IDENTITY" ]; then
+                stop_managed_owner 2>/dev/null || true
+            fi
+        else
+            kill "$TLC_PID" 2>/dev/null || true
+        fi
         wait "$TLC_PID" 2>/dev/null || true
     fi
     if [ -s "$LEASE_FILE" ]; then
@@ -375,6 +402,7 @@ python3 "$RESOURCE_GUARD" owner \
     --start-file "$START_FILE" \
     --stop-file "$STOP_FILE" \
     --parent-pid "$$" \
+    --identity-file "$OWNER_IDENTITY" \
     -- "${TLC_CMD[@]}" > >(tee "$LOG_FILE") 2>&1 &
 TLC_PID=$!
 
@@ -462,6 +490,37 @@ if [ "$TIMEOUT_SECONDS" -gt 0 ]; then
     fi
 fi
 
+# A deadline is optional, but managed-job cancellation is not. This guard is
+# independent of the worker and never inherits its liveness or resource lock.
+if [ -n "$MANAGED_WORKER_LOCK" ]; then
+    python3 "$RESOURCE_GUARD" supervise \
+        --pid "$TLC_PID" \
+        --identity-file "$OWNER_IDENTITY" \
+        --status-file "$SUPERVISOR_STATUS" \
+        --stop-file "$STOP_FILE" \
+        --wrapper-pid "$$" &
+    SUPERVISOR_PID=$!
+    SUPERVISOR_READY=false
+    for _ in {1..100}; do
+        if grep -qx 'ready' "$SUPERVISOR_STATUS" 2>/dev/null \
+            && process_running "$SUPERVISOR_PID"; then
+            SUPERVISOR_READY=true
+            break
+        fi
+        if ! process_running "$SUPERVISOR_PID"; then
+            break
+        fi
+        sleep 0.05
+    done
+    if [ "$SUPERVISOR_READY" != true ]; then
+        SUPERVISOR_ERROR="TLC lifetime supervisor did not become ready."
+        echo "Error: $SUPERVISOR_ERROR" >&2
+        touch "$STOP_FILE"
+        publish_admission rejected "" "$SUPERVISOR_ERROR" || true
+        exit 2
+    fi
+fi
+
 # The long-lived wrapper owns this registration instead of relying on the
 # short-lived background launcher. Publish the stable holder/Java PID before
 # START so even SIGKILL during launcher handoff cannot hide a live TLC from the
@@ -482,9 +541,19 @@ fi
 
 WATCHDOG_FAILED=false
 WATCHDOG_TIMED_OUT=false
-if [ -n "$WATCHDOG_PID" ]; then
+SUPERVISOR_FAILED=false
+if [ -n "$WATCHDOG_PID" ] || [ -n "$SUPERVISOR_PID" ]; then
     while process_running "$TLC_PID"; do
-        if ! process_running "$WATCHDOG_PID"; then
+        if [ -n "$SUPERVISOR_PID" ] && ! process_running "$SUPERVISOR_PID"; then
+            # Recheck the owner: normal guard exit can race natural Java exit.
+            if process_running "$TLC_PID"; then
+                SUPERVISOR_FAILED=true
+                echo "Error: TLC lifetime supervisor exited while TLC was running; stopping TLC." >&2
+                stop_managed_owner || true
+            fi
+            break
+        fi
+        if [ -n "$WATCHDOG_PID" ] && ! process_running "$WATCHDOG_PID"; then
             wait "$WATCHDOG_PID" 2>/dev/null
             WATCHDOG_RC=$?
             WATCHDOG_PID=""
@@ -504,6 +573,17 @@ fi
 wait "$TLC_PID"
 EXIT_CODE=$?
 TLC_PID=""
+if [ -n "$SUPERVISOR_PID" ]; then
+    wait "$SUPERVISOR_PID" 2>/dev/null
+    SUPERVISOR_RC=$?
+    SUPERVISOR_PID=""
+    if [ "$SUPERVISOR_RC" -eq 3 ]; then
+        # Cancellation is not success even if Java handles SIGTERM with exit 0.
+        EXIT_CODE=143
+    elif [ "$SUPERVISOR_RC" -ne 0 ]; then
+        SUPERVISOR_FAILED=true
+    fi
+fi
 WATCHDOG_STOPPED=false
 if [ -n "$WATCHDOG_PID" ] && process_running "$WATCHDOG_PID"; then
     kill "$WATCHDOG_PID" 2>/dev/null || true
@@ -522,7 +602,7 @@ if [ -n "$WATCHDOG_PID" ]; then
         fi
     fi
 fi
-if [ "$WATCHDOG_FAILED" = true ]; then
+if [ "$WATCHDOG_FAILED" = true ] || [ "$SUPERVISOR_FAILED" = true ]; then
     EXIT_CODE=2
 elif [ "$WATCHDOG_TIMED_OUT" = true ]; then
     EXIT_CODE=124

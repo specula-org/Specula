@@ -308,6 +308,9 @@ def worker(path: Path) -> None:
     }
     process = None
     try:
+        child_env = os.environ.copy()
+        child_env["SPECULA_TLC_TOOL_WORKER_LOCK"] = str(path / "worker.lock")
+        child_env["SPECULA_TLC_TOOL_STOP_FILE"] = str(path / "stop.json")
         with (path / "launcher.log").open("w") as log:
             process = subprocess.Popen(
                 [
@@ -325,6 +328,7 @@ def worker(path: Path) -> None:
                 stdout=log,
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
+                env=child_env,
             )
             while process.poll() is None:
                 if stopped or (path / "stop.json").exists() or (parent_lock and not _lock_is_held(Path(parent_lock))):
@@ -332,6 +336,11 @@ def worker(path: Path) -> None:
                     _stop_child(process)
                     break
                 time.sleep(0.2)
+            # The independent guard can finish cleanup before this worker's
+            # next poll. Cancellation is still an interruption, not an exit.
+            stopped = (
+                stopped or (path / "stop.json").exists() or bool(parent_lock and not _lock_is_held(Path(parent_lock)))
+            )
             result.update(exit_code=process.returncode, status="interrupted" if stopped else "exited")
     except Exception as exc:
         result["error"] = str(exc)
