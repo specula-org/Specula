@@ -4403,12 +4403,22 @@ class Pipeline:
         elif self.confirm_first != "only":
             log("Skipping Phase 3 (--skip-validate)")
 
-        phase4_covered = resumed_repair and not normal_phase3_ran
+        # A scoped repair result covers only its own target, not the whole
+        # batch. Reuse that coverage only while upstream artifacts are
+        # unchanged; fresh ordinary validation also needs fresh confirmation.
+        phase4_covered_targets = (
+            phase3_targets if resumed_repair and upstream_all_skipped and not normal_phase3_ran else set()
+        )
+        confirmation_names = [name for name in names if name not in phase4_covered_targets]
+        phase4_covered = bool(phase4_covered_targets) and not confirmation_names
         fresh_phase4_ran = False
-        if not self.skip_confirmation and not phase4_covered:
-            with self.resource_phase("phase4a", names):
+        if not self.skip_confirmation and confirmation_names:
+            with self.resource_phase("phase4a", confirmation_names):
                 self.wait_for_phase_quota("confirm")
-                self.run_phase4_confirmation()
+                if confirmation_names == names:
+                    self.run_phase4_confirmation()
+                else:
+                    self.run_phase4_confirmation_for(confirmation_names)
                 fresh_phase4_ran = True
                 if not self.skip_repair_loop:
                     self.run_repair_loop()

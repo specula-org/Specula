@@ -2583,6 +2583,239 @@ class TestRepairLoop(RRDirCase):
         self.assertEqual(pl.rr_status(old_request), "CONSUMED")
         self.assertNotIn("covered for every target", out)
 
+    def _confirmation_coverage_pipeline(
+        self,
+        *,
+        layout: str = "isolated",
+        repair: str = "partial",
+        names: tuple[str, ...] = ("alpha", "beta"),
+    ) -> tuple[pl.Pipeline, list[tuple[str, tuple[str, ...]]], _FakeResourceSummary]:
+        """Keep real repair recovery/dispatch, with a controlled launcher boundary."""
+        case_dir = Path(tempfile.mkdtemp(dir=self.tmp))
+        os.chdir(case_dir)
+        p = pl.Pipeline()
+        self.assertIsNone(
+            p.parse_args(
+                [
+                    "--agent=codex",
+                    "--skip-analysis",
+                    "--skip-specgen",
+                    "--skip-harness",
+                    "--skip-validate",
+                    "--skip-classification",
+                    *[f"{name}|g|l|r" for name in names],
+                ]
+            )
+        )
+        if layout == "isolated":
+            p.run_dir = case_dir / "run"
+            p.run_dir.mkdir()
+            resumelib.ensure_storage(p.run_dir)
+        for name in names:
+            self.write_repair_findings((f"{name}-1",), name=name, pipeline=p)
+        for method in (
+            "validate_agent_adapter",
+            "stage_guidance",
+            "prepare_source_snapshots",
+            "prepare_persistent_findings",
+            "initialize_resource_summaries",
+            "wait_for_phase_quota",
+            "refresh_output_indexes",
+            "refresh_target_indexes",
+            "persist_findings",
+        ):
+            setattr(p, method, mock.Mock())
+        tracker = _FakeResourceSummary()
+        p.resource_summary = tracker  # type: ignore[assignment]
+        calls: list[tuple[str, tuple[str, ...]]] = []
+        p.generate_summary = lambda: calls.append(("summary", ()))  # type: ignore[method-assign]
+
+        repair_names = names if repair == "all" else ("alpha",)
+        requests: dict[str, Path] = {}
+        for name in repair_names:
+            rr_dir = Path(p.repair_dir(name))
+            rr_dir.mkdir(parents=True, exist_ok=True)
+            requests[name] = make_rr(rr_dir, "RR-1", "OPEN", bug_id=f"{name}-1")
+            if repair == "committed":
+                p.persist_open_repair_snapshot(name, p.snapshot_open_repair_requests(name), 1)
+                pl.rr_set_status(requests[name], "CONSUMED", "prior repair completed")
+                self.write_repair_findings(name=name, pipeline=p)
+                p.publish_repair_phase3_commit(1, [name])
+        if repair == "deferred":
+            p.max_repair_rounds = "1"
+            p.save_repair_loop_state(1, [])
+
+        def launcher(script: str, args: list[str]) -> None:
+            selected = tuple(p._resource_names_from_args(args))
+            if script == "launch_spec_validation.sh" and "--repair" in args:
+                calls.append(("repair", selected))
+                for name in selected:
+                    pl.rr_set_status(Path(p.repair_dir(name)) / "RR-1.md", "CONSUMED", "repair completed")
+                    self.write_repair_findings(name=name, pipeline=p)
+            elif script == "launch_bug_confirmation.sh":
+                scoped = any(arg.startswith("--repair-token=") for arg in args)
+                calls.append(("scoped" if scoped else "confirmation", selected))
+                for name in selected:
+                    (Path(p.get_work_dir(name)) / "confirmed-bugs.md").write_text(f"# Confirmed {name}\n")
+            else:
+                calls.append((script, selected))
+
+        p._run_launcher = launcher  # type: ignore[method-assign]
+        return p, calls, tracker
+
+    def test_partial_repair_confirms_only_uncovered_targets(self) -> None:
+        for layout in ("isolated", "legacy"):
+            for repair in ("partial", "committed"):
+                with self.subTest(layout=layout, repair=repair):
+                    p, calls, tracker = self._confirmation_coverage_pipeline(layout=layout, repair=repair)
+                    beta_findings = Path(p.get_work_dir("beta")) / "spec/findings.json"
+                    before = beta_findings.read_bytes()
+
+                    rc, out = quiet(p.main)
+
+                    self.assertEqual(rc, 0)
+                    self.assertEqual([names for kind, names in calls if kind == "confirmation"], [("beta",)])
+                    self.assertEqual(beta_findings.read_bytes(), before)
+                    self.assertTrue((Path(p.get_work_dir("beta")) / "confirmed-bugs.md").is_file())
+                    self.assertEqual(calls[-1], ("summary", ()))
+                    self.assertNotIn("Initial Phase 4 completed by the resumed repair loop", out)
+                    # The new ordinary pass charges only Beta, not both targets.
+                    invocations = [event[:3] for event in tracker.events if event[0] == "invocation"]
+                    self.assertEqual(invocations[-1], ("invocation", "phase4a", ("beta",)))
+                    self.assertNotIn(("invocation", "phase4a", ("alpha", "beta")), invocations)
+
+    def test_deferred_repairs_do_not_cover_confirmation(self) -> None:
+        for layout in ("isolated", "legacy"):
+            with self.subTest(layout=layout):
+                p, calls, _tracker = self._confirmation_coverage_pipeline(layout=layout, repair="deferred")
+
+                rc, _out = quiet(p.main)
+
+                self.assertEqual(rc, 0)
+                self.assertEqual([names for kind, names in calls if kind == "confirmation"], [("alpha", "beta")])
+                self.assertFalse(any(kind == "repair" for kind, _names in calls))
+                self.assertEqual(pl.rr_status(Path(p.repair_dir("alpha")) / "deferred/RR-1.md"), "DEFERRED")
+                for name in p.extract_names():
+                    self.assertTrue((Path(p.get_work_dir(name)) / "confirmed-bugs.md").is_file())
+
+    def test_all_repaired_targets_skip_redundant_confirmation(self) -> None:
+        for layout in ("isolated", "legacy"):
+            with self.subTest(layout=layout):
+                p, calls, _tracker = self._confirmation_coverage_pipeline(layout=layout, repair="all")
+
+                rc, out = quiet(p.main)
+
+                self.assertEqual(rc, 0)
+                self.assertEqual([names for kind, names in calls if kind == "scoped"], [("alpha",), ("beta",)])
+                self.assertFalse(any(kind == "confirmation" for kind, _names in calls))
+                self.assertIn("Initial Phase 4 completed by the resumed repair loop", out)
+                self.assertEqual(calls[-1], ("summary", ()))
+
+    def test_fresh_validation_after_partial_repair_confirms_all_targets(self) -> None:
+        for layout in ("isolated", "legacy"):
+            for repair in ("partial", "committed"):
+                with self.subTest(layout=layout, repair=repair):
+                    p, calls, _tracker = self._confirmation_coverage_pipeline(layout=layout, repair=repair)
+                    p.skip_validation = False
+
+                    rc, _out = quiet(p.main)
+
+                    self.assertEqual(rc, 0)
+                    self.assertIn(("launch_spec_validation.sh", ("alpha", "beta")), calls)
+                    self.assertEqual([names for kind, names in calls if kind == "confirmation"], [("alpha", "beta")])
+
+    def test_upstream_rerun_invalidates_recovered_confirmation_coverage(self) -> None:
+        for skip_attr in ("skip_analysis", "skip_specgen", "skip_harness"):
+            with self.subTest(skip_attr=skip_attr):
+                p, calls, _tracker = self._confirmation_coverage_pipeline(repair="committed")
+                setattr(p, skip_attr, False)
+
+                rc, _out = quiet(p.main)
+
+                self.assertEqual(rc, 0)
+                self.assertEqual([names for kind, names in calls if kind == "confirmation"], [("alpha", "beta")])
+
+    def test_partial_repair_preserves_uncovered_target_order(self) -> None:
+        p, calls, _tracker = self._confirmation_coverage_pipeline(names=("gamma", "alpha", "beta"))
+
+        rc, _out = quiet(p.main)
+
+        self.assertEqual(rc, 0)
+        self.assertEqual([names for kind, names in calls if kind == "confirmation"], [("gamma", "beta")])
+
+    def test_uncovered_confirmation_can_start_its_own_repair(self) -> None:
+        p, calls, _tracker = self._confirmation_coverage_pipeline()
+        launcher = p._run_launcher
+        persist = mock.Mock()
+        p.persist_findings = persist  # type: ignore[method-assign]
+
+        def confirmation_requests_repair(script: str, args: list[str]) -> None:
+            launcher(script, args)
+            if script == "launch_bug_confirmation.sh" and not any(arg.startswith("--repair-token=") for arg in args):
+                rr_dir = Path(p.repair_dir("beta"))
+                rr_dir.mkdir(parents=True, exist_ok=True)
+                make_rr(rr_dir, "RR-1", "OPEN", bug_id="beta-1")
+
+        p._run_launcher = confirmation_requests_repair  # type: ignore[method-assign]
+
+        rc, _out = quiet(p.main)
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(
+            calls,
+            [
+                ("repair", ("alpha",)),
+                ("scoped", ("alpha",)),
+                ("confirmation", ("beta",)),
+                ("repair", ("beta",)),
+                ("scoped", ("beta",)),
+                ("summary", ()),
+            ],
+        )
+        self.assertEqual(pl.rr_status(Path(p.repair_dir("beta")) / "RR-1.md"), "CONSUMED")
+        persist.assert_called_once_with(["alpha", "beta"])
+
+    def test_explicit_skips_preserve_multitarget_confirmation_behavior(self) -> None:
+        for skip in ("skip_confirmation", "skip_repair_loop"):
+            with self.subTest(skip=skip):
+                p, calls, _tracker = self._confirmation_coverage_pipeline()
+                setattr(p, skip, True)
+
+                rc, _out = quiet(p.main)
+
+                self.assertEqual(rc, 0)
+                expected = [] if skip == "skip_confirmation" else [("alpha", "beta")]
+                self.assertEqual([names for kind, names in calls if kind == "confirmation"], expected)
+                self.assertFalse(any(kind in {"repair", "scoped"} for kind, _names in calls))
+
+    def test_manual_multitarget_confirmation_precedes_open_repairs(self) -> None:
+        p, calls, _tracker = self._confirmation_coverage_pipeline()
+        p._manual_resume_phase = "bug_confirmation"
+
+        rc, _out = quiet(p.main)
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(calls[0], ("confirmation", ("alpha", "beta")))
+        self.assertIn(("repair", ("alpha",)), calls[1:])
+
+    def test_uncovered_confirmation_error_prevents_success(self) -> None:
+        p, calls, _tracker = self._confirmation_coverage_pipeline()
+        launcher = p._run_launcher
+
+        def fail_confirmation(script: str, args: list[str]) -> None:
+            if script == "launch_bug_confirmation.sh" and not any(arg.startswith("--repair-token=") for arg in args):
+                raise SystemExit(7)
+            launcher(script, args)
+
+        p._run_launcher = fail_confirmation  # type: ignore[method-assign]
+
+        with self.assertRaises(SystemExit) as raised:
+            quiet(p.main)
+
+        self.assertEqual(raised.exception.code, 7)
+        self.assertNotIn(("summary", ()), calls)
+        self.assertEqual(pl.rr_status(Path(p.repair_dir("alpha")) / "RR-1.md"), "CONSUMED")
+
     def test_direct_repair_loop_clean_commit_skips_phase4(self) -> None:
         request = make_rr(self.rr_dir, "RR-1", "OPEN")
         snapshot = self.p.snapshot_open_repair_requests("footest")
