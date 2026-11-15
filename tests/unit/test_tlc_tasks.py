@@ -133,7 +133,11 @@ def managed_job(
         wait_until(lambda: bool(list(runtime.tmp.glob("specula-tlc-control-*/owner-identity.json"))))
         identity_file = next(runtime.tmp.glob("specula-tlc-control-*/owner-identity.json"))
         value = json.loads(identity_file.read_text())
-        process = resources._ManagedProcess(value["pid"], value["identity"], None)
+        # The fixture can force a portable identity in its guard. Observe the
+        # same PID using this test process's own identity format instead.
+        identity = resources._process_identity(value["pid"])
+        assert identity is not None
+        process = resources._ManagedProcess(value["pid"], identity, None)
         worker_pid = json.loads((path / "worker.json").read_text())["pid"]
         if real_tlc:
             wait_until(lambda: (path / "tlc.log").exists() and "Starting..." in (path / "tlc.log").read_text())
@@ -356,6 +360,11 @@ def test_managed_deadline_keeps_timeout_exit_code(runtime: wrappers.RunModelChec
 def test_idle_managed_job_does_not_spawn_ps(
     runtime: wrappers.RunModelCheckTests, monkeypatch: pytest.MonkeyPatch, deadline: str, portable: bool
 ) -> None:
+    # Spawn the worker from the fixture too, so an installed TLC jar cannot
+    # make it bypass the modified guard below.
+    for filename in ("__init__.py", "context_control.py", "tlc_tasks.py"):
+        shutil.copy2(tasks.ROOT / "src/specula" / filename, runtime.root / "src/specula" / filename)
+    monkeypatch.setattr(tasks, "__file__", str(runtime.root / "src/specula/tlc_tasks.py"))
     if portable:
         guard = runtime.root / "src/specula/tlc_resources.py"
         source = guard.read_text().replace('Path(f"/proc/{pid}/stat")', 'Path(f"/absent-proc/{pid}/stat")')
@@ -367,7 +376,10 @@ def test_idle_managed_job_does_not_spawn_ps(
     spy = runtime.bin / "ps"
     spy.write_text(f"#!/bin/sh\nprintf 'ps\\n' >> '{calls}'\nexec '{real_ps}' \"$@\"\n")
     spy.chmod(0o755)
-    with managed_job(runtime, monkeypatch, deadline=deadline):
+    with managed_job(runtime, monkeypatch, deadline=deadline) as job:
+        if portable:
+            value = json.loads((job[4] / "owner-identity.json").read_text())
+            assert value["identity"].startswith("ps:")
         before = calls.read_text()
         time.sleep(0.5)
         assert calls.read_text() == before
