@@ -1,0 +1,1334 @@
+{
+  "spec": "$SPECULA/research/ci-evolution/etcd-v0-v3/agent-runs/inv-evidence/out/revised-spec/V03",
+  "settings": {
+    "actions": "Update.tla:AffectedActions",
+    "seconds": 180,
+    "retry_seconds": 240,
+    "depth": 100,
+    "seed": 1,
+    "heap": "4g",
+    "ignore": "NotReached$|NotAppended$"
+  },
+  "probes": [
+    {
+      "index": 1,
+      "group": "AffectedElectionActions",
+      "label": "MCCampaign",
+      "formula": "\\E n\\in Server,t\\in Timeouts:MCCampaign(n,t)"
+    },
+    {
+      "index": 2,
+      "group": "AffectedElectionActions",
+      "label": "MCTick",
+      "formula": "\\E n\\in Server,t\\in Timeouts:MCTick(n,t)"
+    },
+    {
+      "index": 3,
+      "group": "AffectedElectionActions",
+      "label": "Receive (some message types)",
+      "formula": "\\E m\\in DOMAIN wire,t\\in Timeouts:\n         /\\ m.type\\in {\"MsgVote\",\"MsgPreVote\",\"MsgVoteResp\",\"MsgPreVoteResp\"}\n         /\\ Framed(Original!Receive(m,t))"
+    },
+    {
+      "index": 4,
+      "group": "AffectedReadyActions",
+      "label": "Ready",
+      "formula": "\\E n\\in Server:Framed(Original!Ready(n))"
+    },
+    {
+      "index": 5,
+      "group": "AffectedReadyActions",
+      "label": "Advance",
+      "formula": "\\E n\\in Server:Framed(Original!Advance(n))"
+    },
+    {
+      "index": 6,
+      "group": "AffectedRecoveryActions",
+      "label": "Restart",
+      "formula": "\\E n\\in Server,t\\in Timeouts:Framed(Original!Restart(n,t))"
+    },
+    {
+      "index": 7,
+      "group": "AffectedRecoveryActions",
+      "label": "Receive (some message types)",
+      "formula": "\\E m\\in DOMAIN wire,t\\in Timeouts:\n         /\\ m.type=\"MsgSnap\"\n         /\\ Framed(Original!Receive(m,t))"
+    },
+    {
+      "index": 8,
+      "group": "AffectedConfigurationActions",
+      "label": "MCInvoke",
+      "formula": "\\E n\\in Server,id\\in RequestId,kind\\in WorkloadKinds\\{\"Read\",\"V2\"},\n          target\\in Server\\cup{0},w\\in PayloadWeights,z\\in EncodedWeights,\n          parent\\in RequestId\\cup{0}:\n          \\E ctx\\in {id,0}:MCInvoke(n,id,kind,target,w,z,parent,ctx)"
+    },
+    {
+      "index": 9,
+      "group": "AffectedConfigurationActions",
+      "label": "MCInvokeV2",
+      "formula": "\\E n\\in Server,id\\in RequestId,changes\\in V2Batches,\n          transition\\in {\"Auto\",\"JointImplicit\",\"JointExplicit\"},\n          w\\in PayloadWeights,z\\in EncodedWeights,parent\\in RequestId\\cup{0}:\n          MCInvokeV2(n,id,changes,transition,w,z,parent)"
+    },
+    {
+      "index": 10,
+      "group": "AffectedConfigurationActions",
+      "label": "Propose",
+      "formula": "\\E n\\in Server,id\\in RequestId,t\\in Timeouts:\n          Framed(Original!Propose(n,id,t))"
+    },
+    {
+      "index": 11,
+      "group": "AffectedConfigurationActions",
+      "label": "ApplyEntry",
+      "formula": "\\E n\\in Server,t\\in Timeouts:Framed(Original!ApplyEntry(n,t))"
+    },
+    {
+      "index": 12,
+      "group": "AffectedProgressActions",
+      "label": "MCTransfer",
+      "formula": "\\E n,p\\in Server,t\\in Timeouts:MCTransfer(n,p,t)"
+    },
+    {
+      "index": 13,
+      "group": "AffectedProgressActions",
+      "label": "Receive (some message types)",
+      "formula": "\\E m\\in DOMAIN wire,t\\in Timeouts:\n         /\\ m.type\\in {\"MsgApp\",\"MsgAppResp\",\"MsgHeartbeat\",\"MsgHeartbeatResp\", \"MsgTimeoutNow\"}\n         /\\ Framed(Original!Receive(m,t))"
+    }
+  ],
+  "configs": [
+    {
+      "name": "MC.cfg",
+      "module": "Update",
+      "checks": {
+        "ElectionSafety": "invariant",
+        "LogMatching": "invariant",
+        "LeaderCompleteness": "invariant",
+        "CommittedHistory": "invariant",
+        "AppliedAgreement": "invariant",
+        "MCTypeOK": "invariant",
+        "LogStructure": "invariant",
+        "VoteDecisionEligibility": "invariant",
+        "CampaignDecisionEligibility": "invariant",
+        "TransferDecisionEligibility": "invariant",
+        "RequestCorrelatedConfigurationEffects": "invariant",
+        "ProposalConfigurationDecisions": "invariant"
+      },
+      "taken": [
+        1,
+        2,
+        4,
+        5,
+        6,
+        8,
+        10,
+        11,
+        12
+      ],
+      "enabled": [
+        1,
+        2,
+        4,
+        5,
+        6,
+        8,
+        10,
+        11,
+        12
+      ],
+      "status": "budget used",
+      "traces": 8,
+      "seconds": 420.0,
+      "retried": true
+    },
+    {
+      "name": "MC_hunt_1_durability.cfg",
+      "module": "Update",
+      "checks": {
+        "ElectionSafety": "invariant",
+        "LogMatching": "invariant",
+        "LeaderCompleteness": "invariant",
+        "CommittedHistory": "invariant",
+        "AppliedAgreement": "invariant",
+        "VoteRecovery": "invariant",
+        "RecoveryBacking": "invariant",
+        "PromiseBacking": "invariant",
+        "AckPreservation": "invariant",
+        "NoUnexpectedFatal": "invariant",
+        "VoteDecisionEligibility": "invariant",
+        "CampaignDecisionEligibility": "invariant",
+        "TransferDecisionEligibility": "invariant",
+        "RequestCorrelatedConfigurationEffects": "invariant",
+        "ProposalConfigurationDecisions": "invariant"
+      },
+      "taken": [
+        1,
+        2,
+        4,
+        5,
+        6,
+        8,
+        10,
+        11
+      ],
+      "enabled": [
+        1,
+        2,
+        4,
+        5,
+        6,
+        8,
+        10,
+        11
+      ],
+      "status": "budget used",
+      "traces": 8,
+      "seconds": 420.0,
+      "retried": true
+    },
+    {
+      "name": "MC_hunt_1_parallel.cfg",
+      "module": "Update",
+      "checks": {
+        "ElectionSafety": "invariant",
+        "LogMatching": "invariant",
+        "LeaderCompleteness": "invariant",
+        "CommittedHistory": "invariant",
+        "AppliedAgreement": "invariant",
+        "VoteRecovery": "invariant",
+        "RecoveryBacking": "invariant",
+        "PromiseBacking": "invariant",
+        "AckPreservation": "invariant",
+        "NoUnexpectedFatal": "invariant",
+        "VoteDecisionEligibility": "invariant",
+        "CampaignDecisionEligibility": "invariant",
+        "TransferDecisionEligibility": "invariant",
+        "RequestCorrelatedConfigurationEffects": "invariant",
+        "ProposalConfigurationDecisions": "invariant"
+      },
+      "taken": [
+        1,
+        2,
+        4,
+        5,
+        6,
+        8,
+        10,
+        11
+      ],
+      "enabled": [
+        1,
+        2,
+        4,
+        5,
+        6,
+        8,
+        10,
+        11
+      ],
+      "status": "budget used",
+      "traces": 6,
+      "seconds": 420.1,
+      "retried": true
+    },
+    {
+      "name": "MC_hunt_1_same_batch.cfg",
+      "module": "Update",
+      "checks": {
+        "ElectionSafety": "invariant",
+        "LogMatching": "invariant",
+        "LeaderCompleteness": "invariant",
+        "CommittedHistory": "invariant",
+        "AppliedAgreement": "invariant",
+        "VoteRecovery": "invariant",
+        "RecoveryBacking": "invariant",
+        "PromiseBacking": "invariant",
+        "AckPreservation": "invariant",
+        "NoUnexpectedFatal": "invariant",
+        "VoteDecisionEligibility": "invariant",
+        "CampaignDecisionEligibility": "invariant",
+        "TransferDecisionEligibility": "invariant",
+        "RequestCorrelatedConfigurationEffects": "invariant",
+        "ProposalConfigurationDecisions": "invariant"
+      },
+      "taken": [
+        1,
+        2,
+        4,
+        5,
+        6,
+        8,
+        10,
+        11
+      ],
+      "enabled": [
+        1,
+        2,
+        4,
+        5,
+        6,
+        8,
+        10,
+        11
+      ],
+      "status": "budget used",
+      "traces": 7,
+      "seconds": 420.2,
+      "retried": true
+    },
+    {
+      "name": "MC_hunt_2_election_transfer.cfg",
+      "module": "Update",
+      "checks": {
+        "ElectionSafety": "invariant",
+        "LogMatching": "invariant",
+        "LeaderCompleteness": "invariant",
+        "CommittedHistory": "invariant",
+        "AppliedAgreement": "invariant",
+        "LearnerEligibility": "invariant",
+        "QuorumAccounting": "invariant",
+        "ConfigurationOrigin": "invariant",
+        "NoUnexpectedFatal": "invariant",
+        "VoteDecisionEligibility": "invariant",
+        "CampaignDecisionEligibility": "invariant",
+        "TransferDecisionEligibility": "invariant",
+        "RequestCorrelatedConfigurationEffects": "invariant",
+        "ProposalConfigurationDecisions": "invariant"
+      },
+      "taken": [
+        1,
+        2,
+        4,
+        5,
+        6,
+        8,
+        10,
+        11,
+        12
+      ],
+      "enabled": [
+        1,
+        2,
+        4,
+        5,
+        6,
+        8,
+        10,
+        11,
+        12
+      ],
+      "status": "budget used",
+      "traces": 8,
+      "seconds": 420.1,
+      "retried": true
+    },
+    {
+      "name": "MC_hunt_3_configuration_application.cfg",
+      "module": "Update",
+      "checks": {
+        "ElectionSafety": "invariant",
+        "LogMatching": "invariant",
+        "LeaderCompleteness": "invariant",
+        "CommittedHistory": "invariant",
+        "AppliedAgreement": "invariant",
+        "ConfigurationOrigin": "invariant",
+        "ConfigurationTransitionSafety": "invariant",
+        "ReadyAccounting": "invariant",
+        "OutcomeSoundness": "invariant",
+        "VoteDecisionEligibility": "invariant",
+        "CampaignDecisionEligibility": "invariant",
+        "TransferDecisionEligibility": "invariant",
+        "RequestCorrelatedConfigurationEffects": "invariant",
+        "ProposalConfigurationDecisions": "invariant"
+      },
+      "taken": [
+        1,
+        2,
+        4,
+        5,
+        6,
+        8,
+        10,
+        11,
+        12
+      ],
+      "enabled": [
+        1,
+        2,
+        4,
+        5,
+        6,
+        8,
+        10,
+        11,
+        12
+      ],
+      "status": "budget used",
+      "traces": 7,
+      "seconds": 420.1,
+      "retried": true
+    },
+    {
+      "name": "MC_hunt_3_node.cfg",
+      "module": "Update",
+      "checks": {
+        "ElectionSafety": "invariant",
+        "LogMatching": "invariant",
+        "LeaderCompleteness": "invariant",
+        "CommittedHistory": "invariant",
+        "AppliedAgreement": "invariant",
+        "ConfigurationOrigin": "invariant",
+        "ConfigurationTransitionSafety": "invariant",
+        "ReadyAccounting": "invariant",
+        "OutcomeSoundness": "invariant",
+        "VoteDecisionEligibility": "invariant",
+        "CampaignDecisionEligibility": "invariant",
+        "TransferDecisionEligibility": "invariant",
+        "RequestCorrelatedConfigurationEffects": "invariant",
+        "ProposalConfigurationDecisions": "invariant"
+      },
+      "taken": [
+        1,
+        2,
+        4,
+        5,
+        6,
+        8,
+        11,
+        12
+      ],
+      "enabled": [
+        1,
+        2,
+        4,
+        5,
+        6,
+        8,
+        11,
+        12
+      ],
+      "status": "budget used",
+      "traces": 20,
+      "seconds": 420.1,
+      "retried": true
+    },
+    {
+      "name": "MC_hunt_4_replication_snapshot.cfg",
+      "module": "Update",
+      "checks": {
+        "ElectionSafety": "invariant",
+        "LogMatching": "invariant",
+        "LeaderCompleteness": "invariant",
+        "CommittedHistory": "invariant",
+        "AppliedAgreement": "invariant",
+        "ReplicationEvidence": "invariant",
+        "SnapshotBacking": "invariant",
+        "AckPreservation": "invariant",
+        "QuotaIntegrity": "invariant",
+        "NoUnexpectedFatal": "invariant",
+        "VoteDecisionEligibility": "invariant",
+        "CampaignDecisionEligibility": "invariant",
+        "TransferDecisionEligibility": "invariant",
+        "RequestCorrelatedConfigurationEffects": "invariant",
+        "ProposalConfigurationDecisions": "invariant"
+      },
+      "taken": [
+        1,
+        2,
+        4,
+        5,
+        6,
+        8,
+        10,
+        11,
+        12
+      ],
+      "enabled": [
+        1,
+        2,
+        4,
+        5,
+        6,
+        8,
+        10,
+        11,
+        12
+      ],
+      "status": "budget used",
+      "traces": 9,
+      "seconds": 420.1,
+      "retried": true
+    },
+    {
+      "name": "MC_hunt_5_reads.cfg",
+      "module": "Update",
+      "checks": {
+        "ElectionSafety": "invariant",
+        "LogMatching": "invariant",
+        "LeaderCompleteness": "invariant",
+        "CommittedHistory": "invariant",
+        "AppliedAgreement": "invariant",
+        "ReadBasis": "invariant",
+        "ReadApplication": "invariant",
+        "ReadCorrelation": "invariant",
+        "QuorumAccounting": "invariant",
+        "PromiseBacking": "invariant",
+        "VoteDecisionEligibility": "invariant",
+        "CampaignDecisionEligibility": "invariant",
+        "TransferDecisionEligibility": "invariant",
+        "RequestCorrelatedConfigurationEffects": "invariant",
+        "ProposalConfigurationDecisions": "invariant"
+      },
+      "taken": [
+        1,
+        2,
+        4,
+        5,
+        6,
+        8,
+        10,
+        11,
+        12
+      ],
+      "enabled": [
+        1,
+        2,
+        4,
+        5,
+        6,
+        8,
+        10,
+        11,
+        12
+      ],
+      "status": "budget used",
+      "traces": 7,
+      "seconds": 420.0,
+      "retried": true
+    },
+    {
+      "name": "MC_hunt_5_singleton.cfg",
+      "module": "Update",
+      "checks": {
+        "ElectionSafety": "invariant",
+        "LogMatching": "invariant",
+        "LeaderCompleteness": "invariant",
+        "CommittedHistory": "invariant",
+        "AppliedAgreement": "invariant",
+        "ReadBasis": "invariant",
+        "ReadApplication": "invariant",
+        "ReadCorrelation": "invariant",
+        "QuorumAccounting": "invariant",
+        "PromiseBacking": "invariant",
+        "VoteDecisionEligibility": "invariant",
+        "CampaignDecisionEligibility": "invariant",
+        "TransferDecisionEligibility": "invariant",
+        "RequestCorrelatedConfigurationEffects": "invariant",
+        "ProposalConfigurationDecisions": "invariant"
+      },
+      "taken": [
+        1,
+        2,
+        4,
+        5,
+        6,
+        8,
+        10,
+        11,
+        12
+      ],
+      "enabled": [
+        1,
+        2,
+        4,
+        5,
+        6,
+        8,
+        10,
+        11,
+        12
+      ],
+      "status": "budget used",
+      "traces": 64,
+      "seconds": 420.0,
+      "retried": true
+    },
+    {
+      "name": "MC_hunt_6_outcomes.cfg",
+      "module": "Update",
+      "checks": {
+        "ElectionSafety": "invariant",
+        "LogMatching": "invariant",
+        "LeaderCompleteness": "invariant",
+        "CommittedHistory": "invariant",
+        "AppliedAgreement": "invariant",
+        "OutcomeSoundness": "invariant",
+        "ReadyAccounting": "invariant",
+        "QuotaIntegrity": "invariant",
+        "ReadCorrelation": "invariant",
+        "NoUnexpectedFatal": "invariant",
+        "VoteDecisionEligibility": "invariant",
+        "CampaignDecisionEligibility": "invariant",
+        "TransferDecisionEligibility": "invariant",
+        "RequestCorrelatedConfigurationEffects": "invariant",
+        "ProposalConfigurationDecisions": "invariant"
+      },
+      "taken": [
+        1,
+        2,
+        4,
+        5,
+        6,
+        8,
+        10,
+        11,
+        12
+      ],
+      "enabled": [
+        1,
+        2,
+        4,
+        5,
+        6,
+        8,
+        10,
+        11,
+        12
+      ],
+      "status": "budget used",
+      "traces": 10,
+      "seconds": 420.0,
+      "retried": true
+    },
+    {
+      "name": "MC_smoke.cfg",
+      "module": "Update",
+      "checks": {
+        "ElectionSafety": "invariant",
+        "LogMatching": "invariant",
+        "LeaderCompleteness": "invariant",
+        "CommittedHistory": "invariant",
+        "AppliedAgreement": "invariant",
+        "MCTypeOK": "invariant",
+        "LogStructure": "invariant",
+        "VoteRecovery": "invariant",
+        "RecoveryBacking": "invariant",
+        "PromiseBacking": "invariant",
+        "ConfigurationOrigin": "invariant",
+        "ConfigurationTransitionSafety": "invariant",
+        "LearnerEligibility": "invariant",
+        "QuorumAccounting": "invariant",
+        "ReplicationEvidence": "invariant",
+        "SnapshotBacking": "invariant",
+        "AckPreservation": "invariant",
+        "ReadyAccounting": "invariant",
+        "QuotaIntegrity": "invariant",
+        "OutcomeSoundness": "invariant",
+        "ReadBasis": "invariant",
+        "ReadApplication": "invariant",
+        "ReadCorrelation": "invariant",
+        "NoUnexpectedFatal": "invariant",
+        "VoteDecisionEligibility": "invariant",
+        "CampaignDecisionEligibility": "invariant",
+        "TransferDecisionEligibility": "invariant",
+        "RequestCorrelatedConfigurationEffects": "invariant",
+        "ProposalConfigurationDecisions": "invariant"
+      },
+      "taken": [
+        1,
+        4,
+        5,
+        11
+      ],
+      "enabled": [
+        1,
+        4,
+        5,
+        11
+      ],
+      "status": "budget used",
+      "traces": 8503,
+      "seconds": 420.1,
+      "retried": true
+    },
+    {
+      "name": "Update_focused.cfg",
+      "module": "Update",
+      "checks": {
+        "MCTypeOK": "invariant",
+        "LogStructure": "invariant",
+        "UpdateJointConfigurationShape": "invariant",
+        "UpdateQuorumAccounting": "invariant",
+        "UpdateLearnerVoteContract": "invariant",
+        "UpdateLearnerCampaignEligibility": "invariant",
+        "UpdateReadyOwnership": "invariant",
+        "UpdateAdvanceOutputPreservation": "invariant",
+        "UpdateAutoLeaveAdvance": "invariant",
+        "UpdateJointSnapshotRecovery": "invariant",
+        "UpdateJointSnapshotMemberAcceptance": "invariant"
+      },
+      "taken": [
+        1,
+        2,
+        4,
+        5,
+        6,
+        9,
+        10,
+        11
+      ],
+      "enabled": [
+        1,
+        2,
+        4,
+        5,
+        6,
+        9,
+        10,
+        11
+      ],
+      "status": "budget used",
+      "traces": 3998,
+      "seconds": 180.0,
+      "retried": false
+    },
+    {
+      "name": "Update_full.cfg",
+      "module": "Update",
+      "checks": {
+        "ElectionSafety": "invariant",
+        "LogMatching": "invariant",
+        "LeaderCompleteness": "invariant",
+        "CommittedHistory": "invariant",
+        "AppliedAgreement": "invariant",
+        "MCTypeOK": "invariant",
+        "LogStructure": "invariant",
+        "UpdateJointConfigurationShape": "invariant",
+        "UpdateQuorumAccounting": "invariant",
+        "UpdateLearnerVoteContract": "invariant",
+        "UpdateLearnerCampaignEligibility": "invariant",
+        "UpdateReadyOwnership": "invariant",
+        "UpdateAdvanceOutputPreservation": "invariant",
+        "UpdateAutoLeaveAdvance": "invariant",
+        "UpdateJointSnapshotRecovery": "invariant",
+        "UpdateJointSnapshotMemberAcceptance": "invariant"
+      },
+      "taken": [
+        1,
+        2,
+        4,
+        5,
+        6,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "enabled": [
+        1,
+        2,
+        4,
+        5,
+        6,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "status": "budget used",
+      "traces": 452,
+      "seconds": 180.0,
+      "retried": false
+    },
+    {
+      "name": "Update_hunt_autoleave.cfg",
+      "module": "Update",
+      "checks": {
+        "AutoLeaveNotAppended": "invariant"
+      },
+      "taken": [
+        1,
+        2,
+        4,
+        5,
+        9,
+        10,
+        11
+      ],
+      "enabled": [
+        1,
+        2,
+        4,
+        5,
+        9,
+        10,
+        11
+      ],
+      "status": "budget used",
+      "traces": 6621,
+      "seconds": 180.0,
+      "retried": false
+    },
+    {
+      "name": "Update_hunt_joint.cfg",
+      "module": "Update",
+      "checks": {
+        "JointNotReached": "invariant"
+      },
+      "taken": [
+        1,
+        2,
+        4,
+        5,
+        9,
+        10,
+        11
+      ],
+      "enabled": [
+        1,
+        2,
+        4,
+        5,
+        9,
+        10,
+        11
+      ],
+      "status": "budget used",
+      "traces": 6681,
+      "seconds": 180.0,
+      "retried": false
+    },
+    {
+      "name": "Update_hunt_learner_vote.cfg",
+      "module": "Update",
+      "checks": {
+        "LearnerGrantNotReached": "invariant"
+      },
+      "taken": [
+        1,
+        2,
+        4,
+        5,
+        9,
+        10,
+        11
+      ],
+      "enabled": [
+        1,
+        2,
+        4,
+        5,
+        9,
+        10,
+        11
+      ],
+      "status": "budget used",
+      "traces": 1445,
+      "seconds": 180.0,
+      "retried": false
+    },
+    {
+      "name": "Update_hunt_outgoing_snapshot.cfg",
+      "module": "Update",
+      "checks": {
+        "UpdateJointSnapshotMemberAcceptance": "invariant",
+        "OutgoingSnapshotRestoreNotReached": "invariant"
+      },
+      "taken": [
+        1,
+        2,
+        4,
+        5,
+        8,
+        9,
+        10,
+        11
+      ],
+      "enabled": [
+        1,
+        2,
+        4,
+        5,
+        8,
+        9,
+        10,
+        11
+      ],
+      "status": "budget used",
+      "traces": 589,
+      "seconds": 180.0,
+      "retried": false
+    },
+    {
+      "name": "Update_hunt_ready.cfg",
+      "module": "Update",
+      "checks": {
+        "PostReadyOutputNotReached": "invariant"
+      },
+      "taken": [
+        1,
+        2,
+        4,
+        5,
+        8,
+        10,
+        11
+      ],
+      "enabled": [
+        1,
+        2,
+        4,
+        5,
+        8,
+        10,
+        11
+      ],
+      "status": "budget used",
+      "traces": 1010,
+      "seconds": 180.0,
+      "retried": false
+    },
+    {
+      "name": "Update_hunt_recovery.cfg",
+      "module": "Update",
+      "checks": {
+        "JointRecoveryNotReached": "invariant"
+      },
+      "taken": [
+        1,
+        2,
+        4,
+        5,
+        6,
+        9,
+        10,
+        11
+      ],
+      "enabled": [
+        1,
+        2,
+        4,
+        5,
+        6,
+        9,
+        10,
+        11
+      ],
+      "status": "budget used",
+      "traces": 5210,
+      "seconds": 180.1,
+      "retried": false
+    }
+  ],
+  "unreached": [
+    3,
+    7,
+    13
+  ],
+  "never_enabled": [
+    3,
+    7,
+    13
+  ],
+  "gaps": [
+    {
+      "check": "RecoveryBacking",
+      "kind": "invariant",
+      "configs": [
+        "MC_hunt_1_durability.cfg",
+        "MC_hunt_1_parallel.cfg",
+        "MC_hunt_1_same_batch.cfg",
+        "MC_smoke.cfg"
+      ],
+      "missing": [
+        9,
+        12
+      ],
+      "possible": []
+    },
+    {
+      "check": "VoteRecovery",
+      "kind": "invariant",
+      "configs": [
+        "MC_hunt_1_durability.cfg",
+        "MC_hunt_1_parallel.cfg",
+        "MC_hunt_1_same_batch.cfg",
+        "MC_smoke.cfg"
+      ],
+      "missing": [
+        9,
+        12
+      ],
+      "possible": []
+    },
+    {
+      "check": "AckPreservation",
+      "kind": "invariant",
+      "configs": [
+        "MC_hunt_1_durability.cfg",
+        "MC_hunt_1_parallel.cfg",
+        "MC_hunt_1_same_batch.cfg",
+        "MC_hunt_4_replication_snapshot.cfg",
+        "MC_smoke.cfg"
+      ],
+      "missing": [
+        9
+      ],
+      "possible": []
+    },
+    {
+      "check": "CampaignDecisionEligibility",
+      "kind": "invariant",
+      "configs": [
+        "MC.cfg",
+        "MC_hunt_1_durability.cfg",
+        "MC_hunt_1_parallel.cfg",
+        "MC_hunt_1_same_batch.cfg",
+        "MC_hunt_2_election_transfer.cfg",
+        "MC_hunt_3_configuration_application.cfg",
+        "MC_hunt_3_node.cfg",
+        "MC_hunt_4_replication_snapshot.cfg",
+        "MC_hunt_5_reads.cfg",
+        "MC_hunt_5_singleton.cfg",
+        "MC_hunt_6_outcomes.cfg",
+        "MC_smoke.cfg"
+      ],
+      "missing": [
+        9
+      ],
+      "possible": []
+    },
+    {
+      "check": "ConfigurationOrigin",
+      "kind": "invariant",
+      "configs": [
+        "MC_hunt_2_election_transfer.cfg",
+        "MC_hunt_3_configuration_application.cfg",
+        "MC_hunt_3_node.cfg",
+        "MC_smoke.cfg"
+      ],
+      "missing": [
+        9
+      ],
+      "possible": []
+    },
+    {
+      "check": "ConfigurationTransitionSafety",
+      "kind": "invariant",
+      "configs": [
+        "MC_hunt_3_configuration_application.cfg",
+        "MC_hunt_3_node.cfg",
+        "MC_smoke.cfg"
+      ],
+      "missing": [
+        9
+      ],
+      "possible": []
+    },
+    {
+      "check": "LearnerEligibility",
+      "kind": "invariant",
+      "configs": [
+        "MC_hunt_2_election_transfer.cfg",
+        "MC_smoke.cfg"
+      ],
+      "missing": [
+        9
+      ],
+      "possible": []
+    },
+    {
+      "check": "NoUnexpectedFatal",
+      "kind": "invariant",
+      "configs": [
+        "MC_hunt_1_durability.cfg",
+        "MC_hunt_1_parallel.cfg",
+        "MC_hunt_1_same_batch.cfg",
+        "MC_hunt_2_election_transfer.cfg",
+        "MC_hunt_4_replication_snapshot.cfg",
+        "MC_hunt_6_outcomes.cfg",
+        "MC_smoke.cfg"
+      ],
+      "missing": [
+        9
+      ],
+      "possible": []
+    },
+    {
+      "check": "OutcomeSoundness",
+      "kind": "invariant",
+      "configs": [
+        "MC_hunt_3_configuration_application.cfg",
+        "MC_hunt_3_node.cfg",
+        "MC_hunt_6_outcomes.cfg",
+        "MC_smoke.cfg"
+      ],
+      "missing": [
+        9
+      ],
+      "possible": []
+    },
+    {
+      "check": "PromiseBacking",
+      "kind": "invariant",
+      "configs": [
+        "MC_hunt_1_durability.cfg",
+        "MC_hunt_1_parallel.cfg",
+        "MC_hunt_1_same_batch.cfg",
+        "MC_hunt_5_reads.cfg",
+        "MC_hunt_5_singleton.cfg",
+        "MC_smoke.cfg"
+      ],
+      "missing": [
+        9
+      ],
+      "possible": []
+    },
+    {
+      "check": "ProposalConfigurationDecisions",
+      "kind": "invariant",
+      "configs": [
+        "MC.cfg",
+        "MC_hunt_1_durability.cfg",
+        "MC_hunt_1_parallel.cfg",
+        "MC_hunt_1_same_batch.cfg",
+        "MC_hunt_2_election_transfer.cfg",
+        "MC_hunt_3_configuration_application.cfg",
+        "MC_hunt_3_node.cfg",
+        "MC_hunt_4_replication_snapshot.cfg",
+        "MC_hunt_5_reads.cfg",
+        "MC_hunt_5_singleton.cfg",
+        "MC_hunt_6_outcomes.cfg",
+        "MC_smoke.cfg"
+      ],
+      "missing": [
+        9
+      ],
+      "possible": []
+    },
+    {
+      "check": "QuorumAccounting",
+      "kind": "invariant",
+      "configs": [
+        "MC_hunt_2_election_transfer.cfg",
+        "MC_hunt_5_reads.cfg",
+        "MC_hunt_5_singleton.cfg",
+        "MC_smoke.cfg"
+      ],
+      "missing": [
+        9
+      ],
+      "possible": []
+    },
+    {
+      "check": "QuotaIntegrity",
+      "kind": "invariant",
+      "configs": [
+        "MC_hunt_4_replication_snapshot.cfg",
+        "MC_hunt_6_outcomes.cfg",
+        "MC_smoke.cfg"
+      ],
+      "missing": [
+        9
+      ],
+      "possible": []
+    },
+    {
+      "check": "ReadApplication",
+      "kind": "invariant",
+      "configs": [
+        "MC_hunt_5_reads.cfg",
+        "MC_hunt_5_singleton.cfg",
+        "MC_smoke.cfg"
+      ],
+      "missing": [
+        9
+      ],
+      "possible": []
+    },
+    {
+      "check": "ReadBasis",
+      "kind": "invariant",
+      "configs": [
+        "MC_hunt_5_reads.cfg",
+        "MC_hunt_5_singleton.cfg",
+        "MC_smoke.cfg"
+      ],
+      "missing": [
+        9
+      ],
+      "possible": []
+    },
+    {
+      "check": "ReadCorrelation",
+      "kind": "invariant",
+      "configs": [
+        "MC_hunt_5_reads.cfg",
+        "MC_hunt_5_singleton.cfg",
+        "MC_hunt_6_outcomes.cfg",
+        "MC_smoke.cfg"
+      ],
+      "missing": [
+        9
+      ],
+      "possible": []
+    },
+    {
+      "check": "ReadyAccounting",
+      "kind": "invariant",
+      "configs": [
+        "MC_hunt_3_configuration_application.cfg",
+        "MC_hunt_3_node.cfg",
+        "MC_hunt_6_outcomes.cfg",
+        "MC_smoke.cfg"
+      ],
+      "missing": [
+        9
+      ],
+      "possible": []
+    },
+    {
+      "check": "ReplicationEvidence",
+      "kind": "invariant",
+      "configs": [
+        "MC_hunt_4_replication_snapshot.cfg",
+        "MC_smoke.cfg"
+      ],
+      "missing": [
+        9
+      ],
+      "possible": []
+    },
+    {
+      "check": "RequestCorrelatedConfigurationEffects",
+      "kind": "invariant",
+      "configs": [
+        "MC.cfg",
+        "MC_hunt_1_durability.cfg",
+        "MC_hunt_1_parallel.cfg",
+        "MC_hunt_1_same_batch.cfg",
+        "MC_hunt_2_election_transfer.cfg",
+        "MC_hunt_3_configuration_application.cfg",
+        "MC_hunt_3_node.cfg",
+        "MC_hunt_4_replication_snapshot.cfg",
+        "MC_hunt_5_reads.cfg",
+        "MC_hunt_5_singleton.cfg",
+        "MC_hunt_6_outcomes.cfg",
+        "MC_smoke.cfg"
+      ],
+      "missing": [
+        9
+      ],
+      "possible": []
+    },
+    {
+      "check": "SnapshotBacking",
+      "kind": "invariant",
+      "configs": [
+        "MC_hunt_4_replication_snapshot.cfg",
+        "MC_smoke.cfg"
+      ],
+      "missing": [
+        9
+      ],
+      "possible": []
+    },
+    {
+      "check": "TransferDecisionEligibility",
+      "kind": "invariant",
+      "configs": [
+        "MC.cfg",
+        "MC_hunt_1_durability.cfg",
+        "MC_hunt_1_parallel.cfg",
+        "MC_hunt_1_same_batch.cfg",
+        "MC_hunt_2_election_transfer.cfg",
+        "MC_hunt_3_configuration_application.cfg",
+        "MC_hunt_3_node.cfg",
+        "MC_hunt_4_replication_snapshot.cfg",
+        "MC_hunt_5_reads.cfg",
+        "MC_hunt_5_singleton.cfg",
+        "MC_hunt_6_outcomes.cfg",
+        "MC_smoke.cfg"
+      ],
+      "missing": [
+        9
+      ],
+      "possible": []
+    },
+    {
+      "check": "VoteDecisionEligibility",
+      "kind": "invariant",
+      "configs": [
+        "MC.cfg",
+        "MC_hunt_1_durability.cfg",
+        "MC_hunt_1_parallel.cfg",
+        "MC_hunt_1_same_batch.cfg",
+        "MC_hunt_2_election_transfer.cfg",
+        "MC_hunt_3_configuration_application.cfg",
+        "MC_hunt_3_node.cfg",
+        "MC_hunt_4_replication_snapshot.cfg",
+        "MC_hunt_5_reads.cfg",
+        "MC_hunt_5_singleton.cfg",
+        "MC_hunt_6_outcomes.cfg",
+        "MC_smoke.cfg"
+      ],
+      "missing": [
+        9
+      ],
+      "possible": []
+    }
+  ],
+  "properties": [],
+  "errors": [],
+  "ignored": [
+    "AutoLeaveNotAppended",
+    "JointNotReached",
+    "JointRecoveryNotReached",
+    "LearnerGrantNotReached",
+    "OutgoingSnapshotRestoreNotReached",
+    "PostReadyOutputNotReached"
+  ],
+  "groups": [
+    {
+      "missing": [
+        [
+          9,
+          false
+        ]
+      ],
+      "checks": [
+        "AckPreservation",
+        "CampaignDecisionEligibility",
+        "ConfigurationOrigin",
+        "ConfigurationTransitionSafety",
+        "LearnerEligibility",
+        "NoUnexpectedFatal",
+        "OutcomeSoundness",
+        "PromiseBacking",
+        "ProposalConfigurationDecisions",
+        "QuorumAccounting",
+        "QuotaIntegrity",
+        "ReadApplication",
+        "ReadBasis",
+        "ReadCorrelation",
+        "ReadyAccounting",
+        "ReplicationEvidence",
+        "RequestCorrelatedConfigurationEffects",
+        "SnapshotBacking",
+        "TransferDecisionEligibility",
+        "VoteDecisionEligibility"
+      ]
+    },
+    {
+      "missing": [
+        [
+          9,
+          false
+        ],
+        [
+          12,
+          false
+        ]
+      ],
+      "checks": [
+        "RecoveryBacking",
+        "VoteRecovery"
+      ]
+    }
+  ]
+}

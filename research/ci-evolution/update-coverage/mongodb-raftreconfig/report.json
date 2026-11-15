@@ -1,0 +1,715 @@
+{
+  "spec": "$SPECULA/case-studies/systems/mongodb/modules/raftreconfig/runs/case-studies-mongodb-raftreconfig/spec",
+  "settings": {
+    "actions": "MC.tla:MCNext",
+    "seconds": 120,
+    "retry_seconds": 240,
+    "depth": 100,
+    "seed": 1,
+    "heap": "4g",
+    "ignore": null
+  },
+  "probes": [
+    {
+      "index": 1,
+      "group": "MCNext",
+      "label": "MCWinElection",
+      "formula": "\\E s \\in AliveNodes(Server) : MCWinElection(s)"
+    },
+    {
+      "index": 2,
+      "group": "MCNext",
+      "label": "MCForceReconfig",
+      "formula": "\\E s \\in AliveNodes(Server) : MCForceReconfig(s)"
+    },
+    {
+      "index": 3,
+      "group": "MCNext",
+      "label": "MCReconfig",
+      "formula": "\\E s \\in AliveNodes(Server) : MCReconfig(s)"
+    },
+    {
+      "index": 4,
+      "group": "MCNext",
+      "label": "MCShutDown",
+      "formula": "\\E s \\in AliveNodes(Server) : MCShutDown(s)"
+    },
+    {
+      "index": 5,
+      "group": "MCNext",
+      "label": "MCClientRequest",
+      "formula": "\\E s \\in AliveNodes(Server) : MCClientRequest(s)"
+    },
+    {
+      "index": 6,
+      "group": "MCNext",
+      "label": "MCRemoveNewlyAdded",
+      "formula": "\\E s, t \\in AliveNodes(Server) : MCRemoveNewlyAdded(s, t)"
+    },
+    {
+      "index": 7,
+      "group": "MCNext",
+      "label": "MCCompleteDrain",
+      "formula": "\\E s \\in AliveNodes(Server) : MCCompleteDrain(s)"
+    },
+    {
+      "index": 8,
+      "group": "MCNext",
+      "label": "MCSendConfig",
+      "formula": "\\E s, t \\in AliveNodes(Server) : MCSendConfig(s, t)"
+    },
+    {
+      "index": 9,
+      "group": "MCNext",
+      "label": "MCGetEntry",
+      "formula": "\\E s, t \\in AliveNodes(Server) : MCGetEntry(s, t)"
+    },
+    {
+      "index": 10,
+      "group": "MCNext",
+      "label": "MCRollbackEntries",
+      "formula": "\\E s, t \\in AliveNodes(Server) : MCRollbackEntries(s, t)"
+    },
+    {
+      "index": 11,
+      "group": "MCNext",
+      "label": "MCCommitEntry",
+      "formula": "\\E s \\in AliveNodes(Server) : MCCommitEntry(s)"
+    },
+    {
+      "index": 12,
+      "group": "MCNext",
+      "label": "MCUpdateTermsOnNodes",
+      "formula": "\\E s, t \\in AliveNodes(Server) : MCUpdateTermsOnNodes(s, t)"
+    }
+  ],
+  "configs": [
+    {
+      "name": "MC.cfg",
+      "module": "MC",
+      "checks": {
+        "ElectionSafety": "invariant",
+        "ConfigTermValid": "invariant",
+        "LeaderInOwnConfig": "invariant",
+        "DrainModeOnlyForLeaders": "invariant",
+        "ConfigVersionNonNeg": "invariant",
+        "NewlyAddedSafety": "invariant",
+        "NeverRollbackCommitted": "property"
+      },
+      "taken": [
+        1,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "enabled": [
+        1,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "status": "budget used",
+      "traces": 35418,
+      "seconds": 360.1,
+      "retried": true
+    },
+    {
+      "name": "MC_hunt_arbiter.cfg",
+      "module": "MC",
+      "checks": {
+        "ElectionSafety": "invariant",
+        "ArbiterQuorumOverlap": "invariant",
+        "NeverRollbackCommitted": "property"
+      },
+      "taken": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "enabled": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "status": "budget used",
+      "traces": 8926,
+      "seconds": 360.1,
+      "retried": true
+    },
+    {
+      "name": "MC_hunt_drain.cfg",
+      "module": "MC",
+      "checks": {
+        "DrainModeReconfigSafety": "invariant",
+        "DrainModeOnlyForLeaders": "invariant",
+        "NeverRollbackCommitted": "property"
+      },
+      "taken": [
+        1,
+        2,
+        3,
+        5,
+        7,
+        8,
+        9,
+        11,
+        12
+      ],
+      "enabled": [
+        1,
+        2,
+        3,
+        5,
+        7,
+        8,
+        9,
+        11,
+        12
+      ],
+      "status": "budget used",
+      "traces": 9365,
+      "seconds": 360.1,
+      "retried": true
+    },
+    {
+      "name": "MC_hunt_drain_v2.cfg",
+      "module": "MC",
+      "checks": {
+        "ElectionSafety": "invariant",
+        "DrainModeReconfigSafety": "invariant",
+        "NeverRollbackCommitted": "property"
+      },
+      "taken": [
+        1,
+        3,
+        4,
+        5,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "enabled": [
+        1,
+        3,
+        4,
+        5,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "status": "budget used",
+      "traces": 34776,
+      "seconds": 360.1,
+      "retried": true
+    },
+    {
+      "name": "MC_hunt_drain_v3.cfg",
+      "module": "MC",
+      "checks": {
+        "ElectionSafety": "invariant",
+        "DrainModeReconfigSafety": "invariant",
+        "NeverRollbackCommitted": "property"
+      },
+      "taken": [
+        1,
+        3,
+        4,
+        5,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "enabled": [
+        1,
+        3,
+        4,
+        5,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "status": "budget used",
+      "traces": 38970,
+      "seconds": 360.1,
+      "retried": true
+    },
+    {
+      "name": "MC_hunt_force.cfg",
+      "module": "MC",
+      "checks": {
+        "ElectionSafety": "invariant",
+        "ActiveConfigsOverlap": "invariant",
+        "ForceReconfigQuorumOverlap": "invariant",
+        "NeverRollbackCommitted": "property"
+      },
+      "taken": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "enabled": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "status": "budget used",
+      "traces": 45279,
+      "seconds": 360.1,
+      "retried": true
+    },
+    {
+      "name": "MC_hunt_force_deep.cfg",
+      "module": "MC",
+      "checks": {
+        "ElectionSafety": "invariant",
+        "NeverRollbackCommitted": "property"
+      },
+      "taken": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "enabled": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "status": "budget used",
+      "traces": 15643,
+      "seconds": 120.0,
+      "retried": false
+    },
+    {
+      "name": "MC_hunt_force_rollback.cfg",
+      "module": "MC",
+      "checks": {
+        "NeverRollbackCommitted": "property"
+      },
+      "taken": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "enabled": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "status": "budget used",
+      "traces": 15643,
+      "seconds": 120.0,
+      "retried": false
+    },
+    {
+      "name": "MC_hunt_force_v2.cfg",
+      "module": "MC",
+      "checks": {
+        "NeverRollbackCommitted": "property"
+      },
+      "taken": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "enabled": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "status": "budget used",
+      "traces": 12713,
+      "seconds": 120.0,
+      "retried": false
+    },
+    {
+      "name": "MC_hunt_heartbeat.cfg",
+      "module": "MC",
+      "checks": {
+        "ElectionSafety": "invariant",
+        "ConfigPropagationSafety": "invariant",
+        "NeverRollbackCommitted": "property"
+      },
+      "taken": [
+        1,
+        2,
+        3,
+        5,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "enabled": [
+        1,
+        2,
+        3,
+        5,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "status": "budget used",
+      "traces": 24028,
+      "seconds": 360.0,
+      "retried": true
+    },
+    {
+      "name": "MC_hunt_heartbeat_v2.cfg",
+      "module": "MC",
+      "checks": {
+        "ElectionSafety": "invariant",
+        "ConfigPropagationSafety": "invariant",
+        "NeverRollbackCommitted": "property"
+      },
+      "taken": [
+        1,
+        3,
+        5,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "enabled": [
+        1,
+        3,
+        5,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "status": "budget used",
+      "traces": 24583,
+      "seconds": 360.0,
+      "retried": true
+    },
+    {
+      "name": "MC_hunt_newlyadded.cfg",
+      "module": "MC",
+      "checks": {
+        "ElectionSafety": "invariant",
+        "NewlyAddedSafety": "invariant",
+        "ForceReconfigQuorumOverlap": "invariant",
+        "NeverRollbackCommitted": "property"
+      },
+      "taken": [
+        1,
+        2,
+        3,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "enabled": [
+        1,
+        2,
+        3,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "status": "budget used",
+      "traces": 8025,
+      "seconds": 120.0,
+      "retried": false
+    },
+    {
+      "name": "MC_hunt_newlyadded_v2.cfg",
+      "module": "MC",
+      "checks": {
+        "ElectionSafety": "invariant",
+        "NewlyAddedSafety": "invariant",
+        "NeverRollbackCommitted": "property"
+      },
+      "taken": [
+        1,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "enabled": [
+        1,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "status": "budget used",
+      "traces": 14209,
+      "seconds": 120.0,
+      "retried": false
+    }
+  ],
+  "unreached": [],
+  "never_enabled": [],
+  "gaps": [
+    {
+      "check": "ConfigPropagationSafety",
+      "kind": "invariant",
+      "configs": [
+        "MC_hunt_heartbeat.cfg",
+        "MC_hunt_heartbeat_v2.cfg"
+      ],
+      "missing": [
+        4,
+        6
+      ],
+      "possible": []
+    },
+    {
+      "check": "ActiveConfigsOverlap",
+      "kind": "invariant",
+      "configs": [
+        "MC_hunt_force.cfg"
+      ],
+      "missing": [
+        6
+      ],
+      "possible": []
+    },
+    {
+      "check": "ArbiterQuorumOverlap",
+      "kind": "invariant",
+      "configs": [
+        "MC_hunt_arbiter.cfg"
+      ],
+      "missing": [
+        6
+      ],
+      "possible": []
+    },
+    {
+      "check": "ConfigTermValid",
+      "kind": "invariant",
+      "configs": [
+        "MC.cfg"
+      ],
+      "missing": [
+        2
+      ],
+      "possible": []
+    },
+    {
+      "check": "ConfigVersionNonNeg",
+      "kind": "invariant",
+      "configs": [
+        "MC.cfg"
+      ],
+      "missing": [
+        2
+      ],
+      "possible": []
+    },
+    {
+      "check": "DrainModeReconfigSafety",
+      "kind": "invariant",
+      "configs": [
+        "MC_hunt_drain.cfg",
+        "MC_hunt_drain_v2.cfg",
+        "MC_hunt_drain_v3.cfg"
+      ],
+      "missing": [
+        6
+      ],
+      "possible": []
+    },
+    {
+      "check": "LeaderInOwnConfig",
+      "kind": "invariant",
+      "configs": [
+        "MC.cfg"
+      ],
+      "missing": [
+        2
+      ],
+      "possible": []
+    }
+  ],
+  "properties": [
+    "NeverRollbackCommitted"
+  ],
+  "errors": [],
+  "ignored": [],
+  "groups": [
+    {
+      "missing": [
+        [
+          2,
+          false
+        ]
+      ],
+      "checks": [
+        "ConfigTermValid",
+        "ConfigVersionNonNeg",
+        "LeaderInOwnConfig"
+      ]
+    },
+    {
+      "missing": [
+        [
+          6,
+          false
+        ]
+      ],
+      "checks": [
+        "ActiveConfigsOverlap",
+        "ArbiterQuorumOverlap",
+        "DrainModeReconfigSafety"
+      ]
+    },
+    {
+      "missing": [
+        [
+          4,
+          false
+        ],
+        [
+          6,
+          false
+        ]
+      ],
+      "checks": [
+        "ConfigPropagationSafety"
+      ]
+    }
+  ]
+}
