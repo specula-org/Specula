@@ -399,7 +399,9 @@ managed_child_exit() {
     HANDLING_CHILD_EXIT=true
     local child owner_running=false lifeline_running=false watchdog_running=false
     # jobs and read are shell builtins. This runs only on child-exit events,
-    # not on a timer, and works with macOS's Bash without wait -n.
+    # not on a timer. Bash 3.2 (macOS /bin/bash) never runs CHLD traps in
+    # scripts, so there helper or watchdog loss goes unnoticed; worker loss is
+    # still handled by the lifeline.
     jobs -pr > "$CONTROL_DIR/running-jobs"
     while IFS= read -r child; do
         [ "$child" != "$TLC_PID" ] || owner_running=true
