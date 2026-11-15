@@ -8,6 +8,7 @@ than merely serializing threads inside one interpreter.
 from __future__ import annotations
 
 import contextlib
+import fcntl
 import json
 import multiprocessing
 import os
@@ -829,6 +830,131 @@ class TestOwnerCommand(ResourceCase):
         tr.release(first_files["lease"])
         tr.release(third_files["lease"])
         self.assertEqual(json.loads((state / "ledger.json").read_text())["reservations"], {})
+
+
+class TestManagedSupervisor(ResourceCase):
+    def owner_identity(self, pid: int, identity: str | None = None) -> Path:
+        path = self.root / "identity.json"
+        path.write_text(json.dumps({"pid": pid, "identity": identity or tr._process_identity(pid)}))
+        return path
+
+    def test_owner_identity_is_not_first_sampled_by_the_guard(self) -> None:
+        identity = self.owner_identity(os.getpid(), "original")
+        with (
+            mock.patch.object(tr, "_process_identity", return_value="replacement"),
+            mock.patch.object(os, "kill") as kill,
+            self.assertRaisesRegex(tr.ResourceError, "exited before"),
+            tr._bind_managed_process(os.getpid(), identity),
+        ):
+            self.fail("must not bind a replacement")
+        kill.assert_not_called()
+
+    def test_owner_replacement_during_pidfd_binding_is_rejected(self) -> None:
+        identity = self.owner_identity(os.getpid(), "original")
+        descriptor = os.open(identity, os.O_RDONLY)
+        with (
+            mock.patch.object(tr, "_process_identity", side_effect=["original", "replacement"]),
+            mock.patch.object(os, "pidfd_open", return_value=descriptor, create=True),
+            mock.patch.object(signal, "pidfd_send_signal", create=True),
+            self.assertRaisesRegex(tr.ResourceError, "changed during"),
+            tr._bind_managed_process(os.getpid(), identity),
+        ):
+            self.fail("must not bind a replacement")
+        with self.assertRaises(OSError):
+            os.fstat(descriptor)
+
+    def test_posix_fallback_refuses_a_replacement(self) -> None:
+        process = tr._ManagedProcess(os.getpid(), "original", None)
+        with (
+            mock.patch.object(tr, "_process_identity", return_value="replacement"),
+            mock.patch.object(os, "kill") as kill,
+        ):
+            process.send(signal.SIGKILL)
+        kill.assert_not_called()
+
+    def test_posix_fallback_does_not_treat_an_unknown_live_process_as_exited(self) -> None:
+        process = tr._ManagedProcess(os.getpid(), "original", None)
+        with (
+            mock.patch.object(tr, "_process_identity", return_value=None),
+            mock.patch.object(os, "kill") as kill,
+            self.assertRaisesRegex(tr.ResourceError, "cannot inspect"),
+        ):
+            process.send(signal.SIGTERM)
+        kill.assert_called_once_with(os.getpid(), 0)
+
+    def test_posix_fallback_can_terminate_the_original_process(self) -> None:
+        owner = subprocess.Popen(["sleep", "60"])
+        self.addCleanup(owner.wait)
+        self.addCleanup(owner.kill)
+        identity = self.owner_identity(owner.pid)
+        with (
+            mock.patch.object(os, "pidfd_open", side_effect=OSError, create=True),
+            tr._bind_managed_process(owner.pid, identity) as process,
+        ):
+            self.assertIsNone(process.pidfd)
+            tr._terminate_managed_process(process, grace_seconds=0.1)
+        self.assertEqual(owner.wait(timeout=2), -signal.SIGTERM)
+
+    @unittest.skipUnless(hasattr(os, "pidfd_open") and hasattr(signal, "pidfd_send_signal"), "requires pidfd")
+    def test_bound_pidfd_does_not_signal_a_replacement(self) -> None:
+        owner = subprocess.Popen(["sleep", "60"])
+        self.addCleanup(owner.wait)
+        self.addCleanup(owner.kill)
+        identity = self.owner_identity(owner.pid)
+        with tr._bind_managed_process(owner.pid, identity) as process:
+            self.assertIsNotNone(process.pidfd)
+            owner.terminate()
+            owner.wait(timeout=2)
+            with (
+                mock.patch.object(os, "kill") as kill,
+                mock.patch.object(tr, "_process_identity", return_value="replacement"),
+            ):
+                process.send(signal.SIGKILL)
+                self.assertFalse(process.running())
+            kill.assert_not_called()
+
+    def test_lifetime_probe_never_retains_the_owner_lock(self) -> None:
+        path = self.root / "worker.lock"
+        descriptor = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            self.assertTrue(tr._lifetime_lock_held(path))
+        finally:
+            os.close(descriptor)
+        self.assertFalse(tr._lifetime_lock_held(path))
+        self.assertFalse(tr._lifetime_lock_held(self.root / "absent"))
+
+    def test_managed_owner_checks_cancellation_before_start_signal(self) -> None:
+        start = self.root / "start"
+        start.touch()
+        stop = self.root / "stop"
+        status = self.root / "owner-status"
+        publish = tr._publish_owner_status
+
+        def publish_then_cancel(status_file: Path, report_file: Path, state: str, report: str) -> None:
+            publish(status_file, report_file, state, report)
+            if state == "admitted":
+                stop.touch()
+
+        with (
+            mock.patch.object(os, "execvpe") as execute,
+            mock.patch.object(tr, "_publish_owner_status", side_effect=publish_then_cancel),
+        ):
+            code = tr.run_owner(
+                heap=tr.MIB,
+                offheap=tr.MIB,
+                workers=1,
+                workers_label="1",
+                lease_file=self.root / "lease",
+                status_file=status,
+                report_file=self.root / "report",
+                start_file=start,
+                stop_file=stop,
+                parent_pid=os.getpid(),
+                command=["should-not-start"],
+            )
+        self.assertEqual(code, 2)
+        execute.assert_not_called()
 
 
 class TestConcurrency(ResourceCase):
