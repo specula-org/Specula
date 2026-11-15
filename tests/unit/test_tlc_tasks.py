@@ -355,6 +355,30 @@ def test_managed_deadline_keeps_timeout_exit_code(runtime: wrappers.RunModelChec
     assert (runtime.work / "java-started").exists()
 
 
+@pytest.mark.parametrize("managed", [False, True])
+def test_deadline_waits_for_a_watchdog_that_already_fired(runtime: wrappers.RunModelCheckTests, managed: bool) -> None:
+    wrapper = runtime.root / "scripts/tlc/run_model_check.sh"
+    wrapper.write_text(wrapper.read_text().replace("TIMEOUT_MINUTES * 60", "TIMEOUT_MINUTES * 1"))
+    guard = runtime.root / "src/specula/tlc_resources.py"
+    fired = "timed_out = enforce_timeout(args.pid, args.seconds, args.status_file)"
+    source = guard.read_text()
+    assert fired in source
+    # Java exits on SIGTERM at once, while the watchdog is still exiting.
+    guard.write_text(source.replace(fired, f"{fired}\n            time.sleep(0.5)"))
+    with managed_wrapper(runtime) as (env, _stop, _worker):
+        if not managed:
+            env = {key: value for key, value in env.items() if not key.startswith("SPECULA_TLC_TOOL_")}
+        result = subprocess.run(
+            [str(wrapper), *runtime.wrapper_args("slow-watchdog.log"), "-t", "1"],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            pass_fds=(int(env["SPECULA_TLC_TOOL_LIFELINE_FD"]),) if managed else (),
+        )
+    assert result.returncode == 124, result.stdout + result.stderr
+
+
 @pytest.mark.parametrize("deadline", ["0", "1"])
 @pytest.mark.parametrize("portable", [False, True])
 def test_idle_managed_job_does_not_spawn_ps(

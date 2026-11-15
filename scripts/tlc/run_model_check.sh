@@ -637,7 +637,9 @@ if [ -n "$LIFELINE_PID" ]; then
     [ ! -e "$STOP_FILE" ] || EXIT_CODE=143
 fi
 WATCHDOG_STOPPED=false
-if [ -n "$WATCHDOG_PID" ] && process_running "$WATCHDOG_PID"; then
+# A watchdog that already fired is only finishing its own exit; let it report 124.
+if [ -n "$WATCHDOG_PID" ] && process_running "$WATCHDOG_PID" \
+    && ! grep -qx 'timed-out' "$WATCHDOG_STATUS" 2>/dev/null; then
     kill "$WATCHDOG_PID" 2>/dev/null || true
     WATCHDOG_STOPPED=true
 fi
