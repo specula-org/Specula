@@ -10,6 +10,7 @@ Prototypes for #188 §3. This branch is not merged into main.
   - 3.3 Update-focused model checking: `experiments/campaign-prefix/`, `agent-runs/progress-probe-V03/`
     - Same-budget comparison of the bug B probe with ordinary model checking: `prefix-ablation/`
 - `update-coverage/`: checks that the checking configs reach the update's affected actions with the suite's checks enabled (§3.3), with results on etcd V01–V03 and a MongoDB case study.
+- `prefix-branch/`: branches from a recorded run into the update's affected actions instead of starting at Init (§3.3), with results on etcd V01–V03.
 - `blind-incremental-bugs/`: blind study of historical bug-introducing updates (§2.2): protocol, neutral cohort, runner tools.
 
 Scripts still use the original absolute paths.
