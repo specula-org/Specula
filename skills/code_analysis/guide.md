@@ -84,7 +84,7 @@ Every finding MUST be verified: re-read exact code lines, check for compensating
 
 ## Phase 4: Modeling Brief
 
-**Goal**: Synthesize findings into an actionable document for Spec Generation and Bug Confirmation — record every suspected defect in the defect ledger, organize the mechanisms worth model checking into Scenarios, propose spec extensions, and state what NOT to model and why. Priorities set the order, not a cap on the number of Scenarios.
+**Goal**: Produce an actionable handoff for the requested modeling scope and for Bug Confirmation — describe the baseline behavior and component interactions, organize findings into Scenarios, propose spec extensions, explain exclusions, and record every suspected defect, with its verification method, in the defect ledger. Priorities set the order, not a cap on the number of Scenarios.
 
 When target-specific guidance is provided, treat its priorities and scope as required investigative intent. Make their handling visible in the Modeling Brief through the relevant Scenarios, findings, exclusions, or unresolved questions, without imposing a separate format. Guidance determines what must be investigated, not what the evidence must conclude, and it remains a coverage floor rather than a ceiling on code-driven exploration. Respect explicit boundaries, while reading adjacent code when needed to establish in-scope behavior.
 
@@ -103,7 +103,7 @@ Examples record the scope and choices of earlier investigations; their length, S
 4. **Exclude false positives explicitly.** Explain WHY each exclusion was made.
 5. **Use parallel subagents aggressively.** Launch multiple Task subagents for concurrent issue verification, concurrent file analysis, and concurrent commit review. This is essential for both depth AND coverage.
 6. **Evidence-based claims only.** Show code, git commits, issue discussions, or code path inconsistencies.
-7. **Group by mechanism.** Use as many Scenarios as the evidence and scope require. A Scenario is a mechanism worth model checking, not a description of baseline behavior; baseline behavior belongs in the overview and modeling recommendations.
+7. **Group findings by mechanism.** Use as many Scenarios as the evidence and scope require. Document baseline behavior and cross-component contracts even when no candidate defect has been identified.
 8. **Thoroughness is non-negotiable.** Do not skip issues, truncate commit analysis, or sample instead of scanning. The analysis report should document coverage statistics (total commits analyzed, issues deeply read, false positives excluded).
 9. **Record every suspected defect in the defect ledger.** Include low-level defects that will not be modeled (missing null or bounds checks, leaks, integer handling, error paths, API misuse) with verification `CR`. Not modeling a defect is not a reason to omit it, and a defect you could not rule out after checking compensating mechanisms is still recorded — Bug Confirmation decides.
 10. **Classify Category A vs B explicitly.** Carry that decision into the Modeling Brief. Later phases should not have to rediscover it.
