@@ -78,7 +78,7 @@ When the brief justifies adversary actions, the encoding is target-specific. A f
 - **Counters are TLC search budgets, not adversary semantics**. If you bound Byzantine actions, the bounds belong in `MC.tla`, not in `base.tla` — a real adversary is not "limited to 3 equivocations". Each fault-injection action takes its own counter, checked AND incremented on the same transition.
 - **Some categories require base-spec changes** rather than just a wrapper. Selective dissemination needs a directed message bag (`m.to ⊆ Server`); evidence lifecycle needs a per-node evidence pool; amnesia needs per-validator history (`PriorLocks`, `LastVote`, etc.) the rest of the spec wouldn't otherwise track. Include those dependencies when the behavior is in scope.
 
-Give each modeled behavior a source-grounded purpose in the requested scope, threat model, or an unresolved question. Historical fixes can justify retaining current defenses and their interactions.
+Give each modeled behavior a source-grounded purpose in the requested scope, threat model, or an unresolved question. Historical fixes can justify retaining current defenses and their interactions; a suspected new defect is not required.
 
 ### Caveat: no answer-key adversaries
 
@@ -90,7 +90,7 @@ Preserve current guards and fixes in the reference model. An adversary that mere
 
 BFT adversary actions usually layer on top of the distributed fault vocabulary, not replace it. Byzantine bugs frequently *cross categories* — pure Byzantine actions in isolation often reproduce textbook results, while the practically interesting bugs come from Byzantine behavior composed with timing / partition / crash / config-change.
 
-Include compositions that an open question or the threat model requires, and note in the brief which components are combined.
+Include compositions supported by the requested scope and threat model, including interactions without a known bug hypothesis, and note in the brief which components are combined.
 
 ---
 

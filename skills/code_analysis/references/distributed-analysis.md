@@ -184,7 +184,7 @@ If your target's most realistic fault isn't named above — disk silent corrupti
 
 ### Composition
 
-Distributed mechanisms can interact through shared state and lifetimes (crash + non-atomic persist; partition + timeout; config change during transition). Include compositions that an open question requires, after each individual mechanism is faithful in isolation.
+Distributed mechanisms can interact through shared state and lifetimes (crash + non-atomic persist; partition + timeout; config change during transition). Include compositions supported by the requested scope and implementation, even when no specific bug is suspected, after each individual mechanism is faithful in isolation.
 
 ### Caveat: no answer-key adversaries
 
