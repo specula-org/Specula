@@ -94,7 +94,8 @@ jobs:
           PYTHONPATH: tools/trace_debugger/src
         run: uv run python tools/trace_debugger/tests/test_basic.py
       - name: tests
-        run: uv run pytest tests/ -q
+        # Bound concurrency on the standard runner and balance slow end-to-end tests.
+        run: uv run pytest tests/ -q -n 4 --dist worksteal --durations=20
 
   typecheck:
     name: Type check (mypy)

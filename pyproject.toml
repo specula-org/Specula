@@ -14,6 +14,7 @@ license = { file = "LICENSE" }
 dev = [
     "pytest",
     "pytest-asyncio",
+    "pytest-xdist",
     "mcp>=1.0.0",
     "jsonschema>=4.0.0",
     "mypy",
