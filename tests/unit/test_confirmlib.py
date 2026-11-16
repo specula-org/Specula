@@ -1012,6 +1012,39 @@ class TestDefectLedger(ConfirmCase):
         self.assertTrue((spec / "candidates.json").is_file())
         self.assertTrue((spec / C._CANDIDATE_CACHE).is_file())
 
+    def test_row_listed_only_by_a_scenario_candidate_goes_back_to_the_agent(self) -> None:
+        ws, _wd, spec = self._setup()
+        scenario = {"id": "CR-1", "source": "code-review", "ledger_ids": ["D-1", "D-2"]}
+        first = json.loads(self._cands("D-1"))
+        first["findings"].append(scenario)
+        fixed = json.loads(self._cands("D-1", "D-2"))
+        fixed["findings"].append(scenario)
+        prompts = self._run(ws, spec, [json.dumps(first), json.dumps(fixed)])
+        self.assertEqual(len(prompts), 2)
+        self.assertIn("D-2", prompts[1])
+        final = json.loads((spec / "candidates.json").read_text())
+        self.assertEqual([f["id"] for f in final["findings"]], ["CR-D-1", "CR-D-2", "CR-1"])
+
+    def test_row_absorbed_into_a_model_checking_candidate_is_covered(self) -> None:
+        ws, _wd, spec = self._setup()
+        doc = json.loads(self._cands("D-1"))
+        doc["findings"].insert(0, {"id": "MC-1", "source": "model-checking", "ledger_ids": ["D-2"]})
+        self.assertEqual(len(self._run(ws, spec, [json.dumps(doc)])), 1)
+        self.assertEqual(json.loads((spec / "ledger-coverage.json").read_text())["missing"], [])
+
+    def test_completion_round_that_drops_a_candidate_is_rejected(self) -> None:
+        ws, _wd, spec = self._setup()
+        first = json.loads(self._cands("D-1"))
+        first["findings"].insert(0, {"id": "MC-1", "source": "model-checking", "ledger_ids": []})
+        with mock.patch.object(C, "_log") as log:
+            prompts = self._run(ws, spec, [json.dumps(first), self._cands("D-1", "D-2")])
+        self.assertEqual(len(prompts), 3)
+        self.assertEqual(json.loads((spec / "candidates.json").read_text()), first)
+        self.assertFalse((spec / ".candidates-ledger-fix.json").exists())
+        self.assertIn("dropped existing candidate(s) MC-1", str(log.call_args_list))
+        report = json.loads((spec / "ledger-coverage.json").read_text())
+        self.assertEqual(report, {"ledger_rows": 2, "missing": ["D-2"], "completion_rounds": 2})
+
     def test_no_ledger_file_skips_the_check(self) -> None:
         ws = Workspace(["T"])
         spec = ws.work_dir("T") / "spec"

@@ -3877,8 +3877,24 @@ def _ledger_ids(wd: Path) -> list[str] | None:
     return ids
 
 
+def _candidate_ids(candidates: Path) -> list[str]:
+    """Ids of the candidates in a candidates.json; empty when it is unreadable."""
+    try:
+        doc = json.loads(candidates.read_text())
+    except (OSError, ValueError):
+        return []
+    findings = doc.get("findings") if isinstance(doc, dict) else None
+    if not isinstance(findings, list):
+        return []
+    return [f["id"] for f in findings if isinstance(f, dict) and isinstance(f.get("id"), str)]
+
+
 def _ledger_gaps(ids: list[str], candidates: Path) -> list[str]:
-    """Ledger rows with neither a candidate (``ledger_ids``) nor a disposition that gives a reason."""
+    """Ledger rows that are not covered. A row ``<rid>`` is covered by its own candidate
+    ``CR-<rid>``, by a model-checking candidate that lists it in ``ledger_ids``, or by a
+    ``ledger_dispositions`` entry that gives a reason. A code-review Scenario candidate
+    listing the row in its ``ledger_ids`` does not cover it: the row would be confirmed
+    only as part of the Scenario, which is the bundling the ledger exists to prevent."""
     try:
         doc = json.loads(candidates.read_text())
     except (OSError, ValueError):
@@ -3887,7 +3903,12 @@ def _ledger_gaps(ids: list[str], candidates: Path) -> list[str]:
         return list(ids)
     covered: set[str] = set()
     for cand in doc.get("findings") or []:
-        if isinstance(cand, dict) and isinstance(cand.get("ledger_ids"), list):
+        if not isinstance(cand, dict):
+            continue
+        cid = cand.get("id")
+        if isinstance(cid, str) and cid.startswith("CR-"):
+            covered.add(cid.removeprefix("CR-"))
+        if cand.get("source") == "model-checking" and isinstance(cand.get("ledger_ids"), list):
             covered.update(x.strip() for x in cand["ledger_ids"] if isinstance(x, str))
     for disp in doc.get("ledger_dispositions") or []:
         if isinstance(disp, dict) and isinstance(disp.get("id"), str) and str(disp.get("reason") or "").strip():
@@ -3896,9 +3917,10 @@ def _ledger_gaps(ids: list[str], candidates: Path) -> list[str]:
 
 
 def _close_ledger_gaps(cfg: ConfirmConfig, out: Path) -> None:
-    """Non-blocking completeness check: every defect-ledger row needs a candidate or a
-    disposition with a reason. Missing rows go back to the consolidation agent for at most
-    two rounds; whatever is still missing is reported, and the batch proceeds."""
+    """Non-blocking completeness check: every defect-ledger row needs coverage as defined by
+    ``_ledger_gaps``. Missing rows go back to the consolidation agent for at most two rounds;
+    a round's output replaces candidates.json only if it is valid and keeps every existing
+    candidate id. Whatever is still missing is reported, and the batch proceeds."""
     wd = cfg.ws.work_dir(cfg.name)
     spec_dir = wd / "spec"
     report = spec_dir / _LEDGER_COVERAGE
@@ -3930,11 +3952,17 @@ def _close_ledger_gaps(cfg: ConfirmConfig, out: Path) -> None:
             _log(f"  {cfg.name}: ledger completion round {rounds} failed ({exc}); keeping the current candidates")
             break
         resumelib.complete_turn(logical, allow_previous_owner=resumelib.manual_mode())
-        if fixed.is_file() and not _validate_candidates(fixed):
-            fixed.replace(out)
-        else:
+        if not fixed.is_file() or _validate_candidates(fixed):
             fixed.unlink(missing_ok=True)
             _log(f"  {cfg.name}: ledger completion round {rounds} wrote no valid candidates; keeping the current ones")
+        elif dropped := sorted(set(_candidate_ids(out)) - set(_candidate_ids(fixed))):
+            fixed.unlink(missing_ok=True)
+            _log(
+                f"  {cfg.name}: ledger completion round {rounds} dropped existing candidate(s) "
+                f"{', '.join(dropped)}; keeping the current ones"
+            )
+        else:
+            fixed.replace(out)
         missing = _ledger_gaps(ids, out)
     report.write_text(
         json.dumps({"ledger_rows": len(ids), "missing": missing, "completion_rounds": rounds}, indent=2) + "\n"

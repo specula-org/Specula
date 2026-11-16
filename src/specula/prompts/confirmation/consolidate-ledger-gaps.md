@@ -14,6 +14,8 @@ The ledger is `{{ledger}}`. For each listed row, either:
   `ledger_dispositions` list as `{"id": "<row id>", "disposition": "absorbed" |
   "merged" | "removed", "into": "<candidate id or null>", "reason": "<why>"}`.
 
+Listing a row in a code-review Scenario candidate's `ledger_ids` does not count.
+
 Keep every existing candidate and disposition unchanged. Do not judge whether a
 row is a real bug and do not drop known defects — confirmation decides.
 
