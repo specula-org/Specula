@@ -2137,6 +2137,7 @@ Do everything the skill specifies. Do not add, relax, or override any step here.
 
 Write your outputs to:
 - `{work_dir}/modeling-brief.md` — The primary deliverable (handoff to Spec Generation)
+- `{work_dir}/defect-ledger.json` — The brief's defect ledger (§ 6.2) in JSON (handoff to Bug Confirmation)
 - `{work_dir}/analysis-report.md` — Detailed audit trail of all findings
 """
         prompt += notes_section(work_dir, first=True)

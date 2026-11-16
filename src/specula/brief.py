@@ -10,6 +10,7 @@ from pathlib import Path
 
 BRIEF = "modeling-brief.md"
 COMPANIONS = "modeling-brief-*.md"
+LEDGER = "defect-ledger.json"
 
 
 def companions(work: Path) -> list[Path]:
@@ -21,6 +22,11 @@ def documents(work: Path) -> list[Path]:
     """The brief, when present, followed by its companion documents."""
     brief = work / BRIEF
     return [brief, *companions(work)] if brief.is_file() else companions(work)
+
+
+def ledger(work: Path) -> Path:
+    """The brief's defect ledger in JSON (one entry per suspected defect)."""
+    return work / LEDGER
 
 
 def listing(work: Path) -> str:

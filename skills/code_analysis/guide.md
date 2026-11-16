@@ -1,6 +1,6 @@
 # Code Analysis for Formal Verification
 
-Investigate a system implementation to establish the requested modeling scope and find bugs. Some bugs can be confirmed directly (copy-paste errors, data races). Protocol safety questions may need TLA+ model checking to resolve. The **Modeling Brief** describes the system behavior to model, its contracts and abstractions, and findings that need verification.
+Investigate a system implementation to find bugs. Some bugs can be confirmed directly (copy-paste errors, data races). The most critical bugs — protocol safety violations — need TLA+ model checking to verify. The **Modeling Brief** captures findings and plans how to verify them: every suspected defect goes into its defect ledger, and the mechanisms worth model checking become Scenarios.
 
 When a candidate defect appears, follow [Persistent Findings](../bug-confirmation/references/persistent-findings.md) for a lightweight history match before deeper analysis or reproduction.
 
@@ -84,14 +84,14 @@ Every finding MUST be verified: re-read exact code lines, check for compensating
 
 ## Phase 4: Modeling Brief
 
-**Goal**: Produce an actionable handoff for the requested modeling scope — describe the baseline behavior and component interactions, organize findings into Scenarios, propose spec extensions, explain exclusions, and classify findings by verification method. Priorities set the order, not a cap on the number of Scenarios.
+**Goal**: Synthesize findings into an actionable document for Spec Generation and Bug Confirmation — record every suspected defect in the defect ledger, organize the mechanisms worth model checking into Scenarios, propose spec extensions, and state what NOT to model and why. Priorities set the order, not a cap on the number of Scenarios.
 
 When target-specific guidance is provided, treat its priorities and scope as required investigative intent. Make their handling visible in the Modeling Brief through the relevant Scenarios, findings, exclusions, or unresolved questions, without imposing a separate format. Guidance determines what must be investigated, not what the evidence must conclude, and it remains a coverage floor rather than a ceiling on code-driven exploration. Respect explicit boundaries, while reading adjacent code when needed to establish in-scope behavior.
 
 **Read `references/modeling-brief-format.md`** for the format specification.
 **See `examples/hashicorp-raft-modeling-brief.md`** for a complete example.
 
-Examples record the scope and choices of earlier investigations; their length, Scenario counts, and exclusions do not constrain a new target.
+Examples record the scope and choices of earlier investigations; their length, Scenario counts, and exclusions do not constrain a new target. They predate the defect ledger: use the format's § 6.2 Defect Ledger instead of their § 6.2 / § 6.3 tables.
 
 ---
 
@@ -103,9 +103,10 @@ Examples record the scope and choices of earlier investigations; their length, S
 4. **Exclude false positives explicitly.** Explain WHY each exclusion was made.
 5. **Use parallel subagents aggressively.** Launch multiple Task subagents for concurrent issue verification, concurrent file analysis, and concurrent commit review. This is essential for both depth AND coverage.
 6. **Evidence-based claims only.** Show code, git commits, issue discussions, or code path inconsistencies.
-7. **Group findings by mechanism.** Use as many Scenarios as the evidence and scope require. Document baseline behavior and cross-component contracts even when no candidate defect has been identified.
+7. **Group by mechanism.** Use as many Scenarios as the evidence and scope require. A Scenario is a mechanism worth model checking, not a description of baseline behavior; baseline behavior belongs in the overview and modeling recommendations.
 8. **Thoroughness is non-negotiable.** Do not skip issues, truncate commit analysis, or sample instead of scanning. The analysis report should document coverage statistics (total commits analyzed, issues deeply read, false positives excluded).
-9. **Classify Category A vs B explicitly.** Carry that decision into the Modeling Brief. Later phases should not have to rediscover it.
+9. **Record every suspected defect in the defect ledger.** Include low-level defects that will not be modeled (missing null or bounds checks, leaks, integer handling, error paths, API misuse) with verification `CR`. Not modeling a defect is not a reason to omit it, and a defect you could not rule out after checking compensating mechanisms is still recorded — Bug Confirmation decides.
+10. **Classify Category A vs B explicitly.** Carry that decision into the Modeling Brief. Later phases should not have to rediscover it.
 
 ---
 

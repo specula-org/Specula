@@ -194,4 +194,4 @@ Preserve current fences, guards, and fixes in the reference model. Removing a fi
 
 ### Composition
 
-Some failure modes compose: cancellation + allocator failure exercises whether the cancel path leaks under OOM; ABA + memory ordering exercises detection under weakened visibility. Include interactions supported by the requested scope and implementation even without a specific bug hypothesis.
+Some failure modes compose: cancellation + allocator failure exercises whether the cancel path leaks under OOM; ABA + memory ordering exercises detection under weakened visibility. Include interactions that an open question about the implementation requires.

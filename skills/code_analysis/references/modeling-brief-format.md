@@ -121,25 +121,36 @@ Record an already-fixed defect in § 7 Reference Pointers or as an explicitly la
 
 **Evidence-based triage.** Exclude a candidate only on source or historical evidence, not on a predicted confirmation verdict or estimated cost.
 
-Keep candidates routed to testing or code review in § 6.2 / § 6.3; an uncertain classification is not a reason to omit a candidate.
+Record every concrete suspected defect in § 6.2 as well, including the ones a § 6.1 question targets; an uncertain classification is not a reason to omit a candidate.
 
-#### 6.2 Test-Verifiable
+#### 6.2 Defect Ledger
 
-Findings better verified by writing unit/integration tests. Not suitable for TLA+ (too low-level, implementation-specific, or performance-related).
-
-```markdown
-| ID | Description | Suggested test approach |
-|----|-------------|----------------------|
-```
-
-#### 6.3 Code-Review-Only
-
-Findings that require human judgment (design decisions, copy-paste errors, defensive programming gaps).
+Every concrete suspected defect found during Code Analysis, one row each, whether or not it will be modeled. This is the list Bug Confirmation works through: each row is confirmed on its own (rows a model-checking counterexample reproduces are confirmed with it). Include low-level defects that model checking will not cover — missing null or bounds checks, leaks, integer handling, error paths, API misuse — with verification `CR`. Not modeling a defect is not a reason to leave it out. A row states a defect, not an area to review: give the location, how it is triggered, and what goes wrong.
 
 ```markdown
-| ID | Description | Suggested action |
-|----|-------------|-----------------|
+| ID | Location | Trigger | Wrong behavior | Evidence | Category | Verification | Scenario | Known |
+|----|----------|---------|----------------|----------|----------|--------------|----------|-------|
+| D-1 | `src/foo.c:812` | Peer sends X while Y is pending | Handler reads Y's buffer after it is freed | `foo.c:790-815`; no ownership check on this path | low-level | CR | — | none |
 ```
+
+- **ID**: `D-<n>`, unique in the brief and its companion documents.
+- **Category**: `protocol`, `concurrency`, or `low-level`.
+- **Verification**: `MC` when a Scenario models the defect, otherwise `CR` (confirmed by code review and tests in Bug Confirmation).
+- **Scenario**: the Scenario that models it for `MC` rows; `—` otherwise.
+- **Known**: `none`, or the issue / PR / CVE that already reports this exact defect and whether it is fixed upstream (the defect is still present in the analyzed source). Record known defects too; Bug Confirmation applies the known-defect policy.
+
+Write the same rows to `defect-ledger.json` beside the brief, so later phases can enumerate them without parsing Markdown:
+
+```json
+{
+  "defects": [
+    {"id": "D-1", "location": ["src/foo.c:812"], "trigger": "...", "wrong_behavior": "...",
+     "evidence": "...", "category": "low-level", "verification": "CR", "scenario": null, "known": null}
+  ]
+}
+```
+
+Keep the table and the JSON identical. Write `{"defects": []}` when there is no suspected defect.
 
 ### 7. Reference Pointers
 
