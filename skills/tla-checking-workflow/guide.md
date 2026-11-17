@@ -61,7 +61,7 @@ These parameters apply to **all** model checking runs — convergence and bug hu
 
 | Parameter | Rule | Notes |
 |-----------|------|-------|
-| **Timeout** | **30 minutes** per run (`-t 30`) | The single hard constraint. If TLC hasn't found a violation in 30 min, the run ends. A timeout is not an exhaustive pass. |
+| **Timeout** | **30 minutes** per run (`-t 30`) | The single hard constraint. If TLC hasn't found a violation in 30 min, the run ends. A safety run that reaches the timeout without a violation is a completed, budget-limited check: record its coverage (distinct states, depth, queue) and proceed; do not describe it as exhaustive. |
 | **Workers** | Prefer `-w auto` for one TLC; use an explicit count when running several TLCs concurrently | `auto` uses every CPU visible to that JVM. It does not coordinate with other TLC processes. |
 | **Heap memory** | Choose together with off-heap (e.g., `-m 50G`) | The wrapper accounts for the declared heap and off-heap as one request. |
 | **Off-heap memory** | Give `OffHeapDiskFPSet` the larger share when useful (e.g., `-M 200G`) | The sum of `-m + -M` must fit the remaining Specula-run budget. |
