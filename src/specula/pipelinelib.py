@@ -1664,6 +1664,17 @@ class Pipeline:
                     if isinstance(stored_artifact, str):
                         fallback_artifact = stored_artifact
 
+        # Validate ambient reuse without enabling manual conversation resume.
+        ambient_existing_run = attached_ambient and any(
+            path.exists() or path.is_symlink() for path in (meta_file, resumelib.config_path(self.run_dir))
+        )
+        if ambient_existing_run:
+            try:
+                self._restore_resume_configuration(resumelib.load_configuration(self.run_dir))
+            except resumelib.ResumeError as exc:
+                print(f"ERROR: {exc}", file=sys.stderr)
+                return fail()
+
         if self._run_id_given and run_preexisting:
             self._attached_existing_run = True
             try:
@@ -1804,7 +1815,7 @@ class Pipeline:
         if resource_rc is not None:
             return fail(resource_rc)
         self._write_run_meta()
-        if not self._attached_existing_run or self.fresh_context:
+        if self.fresh_context or not (self._attached_existing_run or ambient_existing_run):
             try:
                 resumelib.save_configuration(self.run_dir, self._resume_configuration_document())
             except resumelib.ResumeError as exc:

@@ -187,10 +187,10 @@ class TestPipelineWorkDirMirror(EnvIsolatedCase):
         self.assertEqual(p2.get_work_dir("bar"), f"{cwd}/bar/.specula-output")
 
     def test_isolated_uniform_layout(self) -> None:
-        run = self.tmp()
-        self.set_run_dir(run)
         for targets in (["foo|o/r|Go|ref"], ["foo|o/r|Go|ref", "bar|o/r|Go|ref"]):
             with self.subTest(targets=targets):
+                run = self.tmp()
+                self.set_run_dir(run)
                 p = pl.Pipeline()
                 p.parse_args(list(targets))
                 self.assertIsNone(p.resolve_run_dir())
@@ -530,6 +530,10 @@ class TestRunMetaAndAttach(EnvIsolatedCase):
             root,
         )
         self._seed_active_turn(first)
+        assert first.run_dir is not None
+        retained = first.run_dir / "foo/.specula-output/modeling-brief.md"
+        retained.parent.mkdir(parents=True, exist_ok=True)
+        retained.write_text("retained analysis\n")
 
         resumed = pl.Pipeline()
         self.assertIsNone(resumed.parse_args(["--run-id=fresh-config", "--fresh-context", "--model=gpt-new"]))
@@ -541,6 +545,8 @@ class TestRunMetaAndAttach(EnvIsolatedCase):
         self.assertEqual(resumed.effort, "high")
         self.assertEqual(resumed.claude_alias, "work")
         self.assertEqual(resumed.targets, ["foo|o/r|Go|ref"])
+        self.assertEqual(resumelib.load_configuration(resumed.run_dir)["default"]["model"], "gpt-new")
+        self.assertEqual(retained.read_text(), "retained analysis\n")
         self.assertEqual(resumelib.active_entries(resumed.run_dir), [])
         self.assertEqual(os.environ[resumelib.FRESH_ENV], "1")
         self.assertNotIn(resumelib.MANUAL_ENV, os.environ)
@@ -1155,6 +1161,264 @@ class TestRunMetaAndAttach(EnvIsolatedCase):
         self.assertEqual(p.run_id, "external-run")
         self.assertTrue(ext.is_dir())
         self.assertFalse((root / "runs").exists())
+
+    def test_ambient_rejects_changed_settings_and_preserves_original_resume(self) -> None:
+        root = self.tmp()
+        first = self._pipeline(
+            [
+                "--run-id=ambient-protected",
+                "--agent=codex",
+                "--model=gpt-5.5",
+                "--effort=high",
+                "--claude-alias=work",
+                "foo|o/r|Go|ref",
+            ],
+            root,
+        )
+        self._seed_active_turn(first)
+        assert first.run_dir is not None
+        native_state = first.run_dir / "foo/.specula-output/agent.resume.json"
+        native_state.parent.mkdir(parents=True, exist_ok=True)
+        native_state.write_text("original-provider-session\n")
+        protected = {path: path.read_bytes() for path in first.run_dir.rglob("*") if path.is_file()}
+
+        for override in (
+            "--model=gpt-other",
+            "--agent=claude-code",
+            "--model=",
+            "--effort=medium",
+            "--claude-alias=other",
+            "--policy-retries=3",
+            "--legacy-confirm",
+            "other|o/r|Go|ref",
+        ):
+            with self.subTest(override=override):
+                self.set_run_dir(first.run_dir)
+                contender = pl.Pipeline()
+                self.assertIsNone(contender.parse_args([override]))
+                err = io.StringIO()
+                try:
+                    with contextlib.redirect_stderr(err):
+                        self.assertEqual(contender.resolve_run_dir(acquire_lock=True), 1)
+                    self.assertIn("--fresh-context", err.getvalue())
+                    self.assertIsNone(contender._run_lock_fd)
+                    for path, contents in protected.items():
+                        self.assertEqual(path.read_bytes(), contents, str(path))
+                finally:
+                    contender._release_run_lock()
+
+        resumed = pl.Pipeline()
+        self.assertIsNone(resumed.parse_args(["--run-id=ambient-protected", "--model=gpt-5.5"]))
+        self.assertIsNone(resumed.resolve_run_dir(acquire_lock=True))
+        self.addCleanup(resumed._release_run_lock)
+        self._seed_active_turn(resumed)
+        self.assertEqual(resumelib.active_entries(first.run_dir)[0]["attempt"], 2)
+        self.assertEqual(native_state.read_text(), "original-provider-session\n")
+
+    def test_ambient_restores_omitted_settings_without_manual_resume(self) -> None:
+        root = self.tmp()
+        first = self._pipeline(
+            [
+                "--run-id=ambient-restore",
+                "--agent=codex",
+                "--model=gpt-5.5",
+                "--effort=high",
+                "--claude-alias=work",
+                "foo|o/r|Go|ref",
+            ],
+            root,
+        )
+        self._seed_active_turn(first)
+        assert first.run_dir is not None
+        config = resumelib.config_path(first.run_dir)
+        before = config.read_bytes()
+        active = resumelib.active_entries(first.run_dir)
+        os.environ["SPECULA_MODEL"] = "different-environment-model"
+        os.environ["SPECULA_EFFORT"] = "low"
+
+        attached = self._pipeline([], root)
+
+        self.assertEqual(attached.agent, "codex")
+        self.assertEqual(attached.model, "gpt-5.5")
+        self.assertEqual(attached.effort, "high")
+        self.assertEqual(attached.claude_alias, "work")
+        self.assertEqual(attached.targets, ["foo|o/r|Go|ref"])
+        self.assertEqual(config.read_bytes(), before)
+        self.assertEqual(resumelib.active_entries(first.run_dir), active)
+        self.assertFalse(attached._attached_existing_run)
+        self.assertIsNone(attached._manual_resume_phase)
+        self.assertNotIn(resumelib.MANUAL_ENV, os.environ)
+
+    def test_ambient_same_settings_preserve_configuration_without_active_turn(self) -> None:
+        root = self.tmp()
+        args = ["--agent=codex", "--model=gpt-5.5", "foo|o/r|Go|ref"]
+        first = self._pipeline(["--run-id=ambient-same", *args], root)
+        assert first.run_dir is not None
+        config = resumelib.config_path(first.run_dir)
+        before = config.read_bytes()
+
+        with mock.patch.object(resumelib, "save_configuration") as save:
+            attached = self._pipeline(args, root)
+
+        self.assertEqual(attached.run_dir, first.run_dir)
+        self.assertEqual(config.read_bytes(), before)
+        save.assert_not_called()
+        self.assertNotIn(resumelib.MANUAL_ENV, os.environ)
+
+    def test_ambient_restores_saved_routes_without_original_agent_config(self) -> None:
+        root = self.tmp()
+        agents = self.tmp() / "agents.json"
+        agents.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "default_profile": "worker",
+                    "profiles": {
+                        "worker": {"agent": "codex", "model": "worker-model"},
+                        "reviewer": {"agent": "claude-code", "model": "review-model"},
+                    },
+                    "phases": {"review": "reviewer"},
+                }
+            )
+        )
+        first = self._pipeline([f"--agent-config={agents}", "foo|o/r|Go|ref"], root)
+        assert first.run_dir is not None
+        expected = first._resumable_routes()
+        agents.unlink()
+
+        attached = self._pipeline([], root)
+
+        self.assertEqual(attached._resumable_routes(), expected)
+        self.assertEqual(attached._agent_selection("review", fallback="validate").model, "review-model")
+
+    def test_ambient_restores_single_session_settings(self) -> None:
+        with mock.patch.dict(os.environ):
+            root = self.tmp()
+            first = self._pipeline(
+                ["--orchestration=single-session", "--agent=codex", "--model=main-model", "foo|o/r|Go|ref"],
+                root,
+            )
+            assert first.run_dir is not None
+            config = resumelib.config_path(first.run_dir)
+            before = config.read_bytes()
+
+            attached = self._pipeline([], root)
+
+            self.assertEqual(attached.orchestration, "single-session")
+            self.assertEqual(attached.model, "main-model")
+            self.assertEqual(config.read_bytes(), before)
+            self.assertNotIn(resumelib.MANUAL_ENV, os.environ)
+
+    def test_ambient_live_run_rejects_attachment_without_changing_settings(self) -> None:
+        root = self.tmp()
+        first = self._pipeline(["--agent=codex", "--model=running-model", "foo|o/r|Go|ref"], root)
+        first._acquire_run_lock()
+        self.addCleanup(first._release_run_lock)
+        assert first.run_dir is not None
+        config = resumelib.config_path(first.run_dir)
+        before = config.read_bytes()
+        contender = pl.Pipeline()
+        self.assertIsNone(contender.parse_args(["--model=other-model", "foo|o/r|Go|ref"]))
+        err = io.StringIO()
+
+        with contextlib.redirect_stderr(err):
+            self.assertEqual(contender.resolve_run_dir(acquire_lock=True), 1)
+
+        self.assertIn("live phase or agent", err.getvalue())
+        self.assertIsNone(contender._run_lock_fd)
+        self.assertEqual(config.read_bytes(), before)
+
+    def test_ambient_rejects_incomplete_saved_configuration_without_replacing_it(self) -> None:
+        for mode in ("missing-config", "marker-only", "invalid-json", "broken-symlink"):
+            with self.subTest(mode=mode):
+                root = self.tmp()
+                first = self._pipeline(["--run-id=incomplete", "foo|o/r|Go|ref"], root)
+                assert first.run_dir is not None
+                config = resumelib.config_path(first.run_dir)
+                metadata = first.run_dir / "run.json"
+                before_meta = metadata.read_bytes()
+                if mode == "missing-config":
+                    config.unlink()
+                elif mode == "marker-only":
+                    config.write_text('{"version": 1}\n')
+                elif mode == "invalid-json":
+                    config.write_text("{incomplete\n")
+                else:
+                    config.unlink()
+                    config.symlink_to(root / "missing-config.json")
+                before = config.read_bytes() if config.is_file() else None
+                self.set_run_dir(first.run_dir)
+                attached = pl.Pipeline()
+                self.addCleanup(attached._release_run_lock)
+                self.assertIsNone(attached.parse_args(["foo|o/r|Go|ref"]))
+
+                with contextlib.redirect_stderr(io.StringIO()):
+                    self.assertEqual(attached.resolve_run_dir(acquire_lock=True), 1)
+
+                self.assertIsNone(attached._run_lock_fd)
+                self.assertEqual(metadata.read_bytes(), before_meta)
+                if before is not None:
+                    self.assertEqual(config.read_bytes(), before)
+                else:
+                    self.assertFalse(config.exists())
+                    self.assertEqual(config.is_symlink(), mode == "broken-symlink")
+
+    def test_ambient_precreated_empty_directory_can_start_a_new_run(self) -> None:
+        root = self.tmp()
+        run = self.tmp() / "precreated"
+        run.mkdir()
+        self.set_run_dir(run)
+        pipeline = self._pipeline(["--agent=codex", "--model=new-model", "foo|o/r|Go|ref"], root)
+
+        self.assertEqual(pipeline.run_dir, run)
+        self.assertEqual(resumelib.load_configuration(run)["default"]["model"], "new-model")
+
+    def test_ambient_validation_never_spawns_processes_or_rewrites_state(self) -> None:
+        root = self.tmp()
+        first = self._pipeline(["--agent=codex", "--model=original-model", "foo|o/r|Go|ref"], root)
+        assert first.run_dir is not None
+        before = {path: path.read_bytes() for path in first.run_dir.rglob("*") if path.is_file()}
+
+        with (
+            mock.patch.object(subprocess, "Popen", side_effect=AssertionError("unexpected subprocess")),
+            mock.patch.object(resumelib, "_atomic_write", side_effect=AssertionError("unexpected state write")),
+        ):
+            for model, expected in (("original-model", None), ("changed-model", 1)):
+                with self.subTest(model=model):
+                    attached = pl.Pipeline()
+                    self.assertIsNone(attached.parse_args([f"--model={model}"]))
+                    try:
+                        with contextlib.redirect_stderr(io.StringIO()):
+                            self.assertEqual(attached.resolve_run_dir(acquire_lock=True), expected)
+                    finally:
+                        attached._release_run_lock()
+
+        for path, contents in before.items():
+            self.assertEqual(path.read_bytes(), contents, str(path))
+
+    def test_ambient_model_protection_and_fresh_context_for_each_adapter(self) -> None:
+        for agent in ("codex", "claude-code", "copilot-cli", "opencode", "pi"):
+            with self.subTest(agent=agent):
+                root = self.tmp()
+                first = self._pipeline(
+                    ["--run-id=adapter", f"--agent={agent}", "--model=original-model", "foo|o/r|Go|ref"], root
+                )
+                assert first.run_dir is not None
+                config = resumelib.config_path(first.run_dir)
+                before = config.read_bytes()
+                changed = pl.Pipeline()
+                self.assertIsNone(changed.parse_args(["--model=changed-model"]))
+                with contextlib.redirect_stderr(io.StringIO()):
+                    self.assertEqual(changed.resolve_run_dir(), 1)
+                self.assertEqual(config.read_bytes(), before)
+
+                attached = self._pipeline([], root)
+                self.assertEqual(attached.agent, agent)
+                self.assertEqual(attached.model, "original-model")
+
+                fresh = self._pipeline(["--run-id=adapter", "--fresh-context", "--model=changed-model"], root)
+                self.assertEqual(fresh.agent, agent)
+                self.assertEqual(resumelib.load_configuration(first.run_dir)["default"]["model"], "changed-model")
 
     def test_default_mints_isolated_run(self) -> None:
         # the flip (step 7d): no flags, no ambient env -> a fresh isolated run
