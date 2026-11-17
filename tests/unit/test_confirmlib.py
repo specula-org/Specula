@@ -943,6 +943,118 @@ class TestValidateCandidates(ConfirmCase):
         self.assertTrue(any("source not in" in e for e in errs))
 
 
+class TestDefectLedger(ConfirmCase):
+    LEDGER = {"defects": [{"id": "D-1", "location": ["a.c:1"]}, {"id": "D-2", "location": ["b.c:2"]}]}
+
+    def _setup(self) -> tuple[Workspace, Path, Path]:
+        ws = Workspace(["T"])
+        wd = ws.work_dir("T")
+        spec = wd / "spec"
+        spec.mkdir(parents=True)
+        (wd / "defect-ledger.json").write_text(json.dumps(self.LEDGER))
+        return ws, wd, spec
+
+    @staticmethod
+    def _cands(*ids: str, dispositions: list[dict[str, Any]] | None = None) -> str:
+        findings = [{"id": f"CR-{i}", "source": "code-review", "ledger_ids": [i]} for i in ids]
+        return json.dumps(
+            {"generated_by": "consolidate", "findings": findings, "ledger_dispositions": dispositions or []}
+        )
+
+    def _run(self, ws: Workspace, spec: Path, outputs: list[str]) -> list[str]:
+        prompts: list[str] = []
+
+        def run(_adapter: Path, prompt: str, *_args: object, **_kw: object) -> tuple[int, str]:
+            prompts.append(prompt)
+            target = "candidates.json" if len(prompts) == 1 else ".candidates-ledger-fix.json"
+            (spec / target).write_text(outputs[min(len(prompts), len(outputs)) - 1])
+            return (0, "")
+
+        with mock.patch.object(C, "run_agent_blocking", run):
+            C.consolidate(self.cfg(ws, "T"))
+        return prompts
+
+    def test_prompt_points_at_the_ledger_and_complete_list_needs_no_round(self) -> None:
+        ws, wd, spec = self._setup()
+        prompts = self._run(ws, spec, [self._cands("D-1", "D-2")])
+        self.assertEqual(len(prompts), 1)
+        self.assertIn(str(wd / "defect-ledger.json"), prompts[0])
+        self.assertIn("CR-<row id>", prompts[0])
+        report = json.loads((spec / "ledger-coverage.json").read_text())
+        self.assertEqual(report, {"ledger_rows": 2, "missing": [], "completion_rounds": 0})
+
+    def test_missing_row_goes_back_to_the_agent(self) -> None:
+        ws, _wd, spec = self._setup()
+        prompts = self._run(ws, spec, [self._cands("D-1"), self._cands("D-1", "D-2")])
+        self.assertEqual(len(prompts), 2)
+        self.assertIn("D-2", prompts[1])
+        self.assertNotIn("D-1,", prompts[1])
+        final = json.loads((spec / "candidates.json").read_text())
+        self.assertEqual([f["id"] for f in final["findings"]], ["CR-D-1", "CR-D-2"])
+        self.assertEqual(json.loads((spec / "ledger-coverage.json").read_text())["missing"], [])
+
+    def test_disposition_with_reason_covers_the_row(self) -> None:
+        ws, _wd, spec = self._setup()
+        dup = {"id": "D-2", "disposition": "removed", "into": None, "reason": "duplicate of D-1"}
+        self.assertEqual(len(self._run(ws, spec, [self._cands("D-1", dispositions=[dup])])), 1)
+
+    def test_disposition_without_reason_does_not_cover_the_row(self) -> None:
+        ws, _wd, spec = self._setup()
+        silent = {"id": "D-2", "disposition": "removed", "into": None, "reason": ""}
+        self.assertEqual(len(self._run(ws, spec, [self._cands("D-1", dispositions=[silent])] * 3)), 3)
+
+    def test_still_missing_after_two_rounds_warns_and_proceeds(self) -> None:
+        ws, _wd, spec = self._setup()
+        prompts = self._run(ws, spec, [self._cands("D-1")] * 3)
+        self.assertEqual(len(prompts), 3)
+        report = json.loads((spec / "ledger-coverage.json").read_text())
+        self.assertEqual(report, {"ledger_rows": 2, "missing": ["D-2"], "completion_rounds": 2})
+        self.assertTrue((spec / "candidates.json").is_file())
+        self.assertTrue((spec / C._CANDIDATE_CACHE).is_file())
+
+    def test_row_listed_only_by_a_scenario_candidate_goes_back_to_the_agent(self) -> None:
+        ws, _wd, spec = self._setup()
+        scenario = {"id": "CR-1", "source": "code-review", "ledger_ids": ["D-1", "D-2"]}
+        first = json.loads(self._cands("D-1"))
+        first["findings"].append(scenario)
+        fixed = json.loads(self._cands("D-1", "D-2"))
+        fixed["findings"].append(scenario)
+        prompts = self._run(ws, spec, [json.dumps(first), json.dumps(fixed)])
+        self.assertEqual(len(prompts), 2)
+        self.assertIn("D-2", prompts[1])
+        final = json.loads((spec / "candidates.json").read_text())
+        self.assertEqual([f["id"] for f in final["findings"]], ["CR-D-1", "CR-D-2", "CR-1"])
+
+    def test_row_absorbed_into_a_model_checking_candidate_is_covered(self) -> None:
+        ws, _wd, spec = self._setup()
+        doc = json.loads(self._cands("D-1"))
+        doc["findings"].insert(0, {"id": "MC-1", "source": "model-checking", "ledger_ids": ["D-2"]})
+        self.assertEqual(len(self._run(ws, spec, [json.dumps(doc)])), 1)
+        self.assertEqual(json.loads((spec / "ledger-coverage.json").read_text())["missing"], [])
+
+    def test_completion_round_that_drops_a_candidate_is_rejected(self) -> None:
+        ws, _wd, spec = self._setup()
+        first = json.loads(self._cands("D-1"))
+        first["findings"].insert(0, {"id": "MC-1", "source": "model-checking", "ledger_ids": []})
+        with mock.patch.object(C, "_log") as log:
+            prompts = self._run(ws, spec, [json.dumps(first), self._cands("D-1", "D-2")])
+        self.assertEqual(len(prompts), 3)
+        self.assertEqual(json.loads((spec / "candidates.json").read_text()), first)
+        self.assertFalse((spec / ".candidates-ledger-fix.json").exists())
+        self.assertIn("dropped existing candidate(s) MC-1", str(log.call_args_list))
+        report = json.loads((spec / "ledger-coverage.json").read_text())
+        self.assertEqual(report, {"ledger_rows": 2, "missing": ["D-2"], "completion_rounds": 2})
+
+    def test_no_ledger_file_skips_the_check(self) -> None:
+        ws = Workspace(["T"])
+        spec = ws.work_dir("T") / "spec"
+        spec.mkdir(parents=True)
+        prompts = self._run(ws, spec, ['{"generated_by":"consolidate","findings":[]}'])
+        self.assertEqual(len(prompts), 1)
+        self.assertIn("none written", prompts[0])
+        self.assertFalse((spec / "ledger-coverage.json").exists())
+
+
 class TestDriver(ConfirmCase):
     def test_dry_run_no_candidates_returns_zero(self) -> None:
         ws = Workspace(["T"])  # no candidates.json seeded

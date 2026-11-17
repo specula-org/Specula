@@ -42,6 +42,10 @@ about what it knows avoids a P3 agent inventing code-review entries it never saw
 }
 ```
 
+## Consolidated candidates
+
+Phase 4 step 0 writes `spec/candidates.json` in this format with `generated_by: "consolidate"`. Each candidate may list the defect-ledger rows it confirms in `ledger_ids` (for example `["D-3"]`). A ledger row that is not confirmed by its own candidate — absorbed by a model-checking candidate, merged into another candidate, or removed — is listed in the top-level `ledger_dispositions`, each entry `{"id": "D-3", "disposition": "absorbed" | "merged" | "removed", "into": "MC-2" | null, "reason": "..."}`.
+
 ## Field rules
 
 - **id** — stable within a run. Model-checking findings use `MC-<n>`; the

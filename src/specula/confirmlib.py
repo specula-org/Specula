@@ -3708,6 +3708,7 @@ def _candidate_fingerprint(cfg: ConfirmConfig) -> str:
         ("brief", wd / "modeling-brief.md"),
         *((f"brief:{path.name}", path) for path in modeling_brief.companions(wd)),
         ("schema", SKILLS / "validation-workflow" / "references" / "findings-json-format.md"),
+        ("ledger", modeling_brief.ledger(wd)),
     ]
     if not cfg.scenarios_only:
         # A Scenario-only pass ignores model outputs, so they do not bind it.
@@ -3719,6 +3720,7 @@ def _candidate_fingerprint(cfg: ConfirmConfig) -> str:
         ]
     else:
         sources.append(("prompt", prompts / "consolidate.md"))
+        sources.append(("ledger_prompt", prompts / "consolidate-ledger-gaps.md"))
     files = {label: path.read_text(errors="replace") if path.is_file() else "" for label, path in sources}
     identity: dict[str, Any] = {
         "version": _CACHE_VERSION,
@@ -3844,6 +3846,136 @@ def _run_consolidate_agent(
         raise ConsolidateFailed(f"consolidate adapter exited {rc}")
 
 
+_LEDGER_COMPLETION_ROUNDS = 2
+_LEDGER_COVERAGE = "ledger-coverage.json"
+
+
+def _ledger_source(wd: Path) -> str:
+    path = modeling_brief.ledger(wd)
+    if path.is_file():
+        return f"`{path}` (the brief's § 6.2 Defect Ledger as JSON; read every entry)."
+    return (
+        "none written. If the Modeling Brief lists concrete findings outside its Scenarios "
+        "(for example § 6 tables), treat each such row as a ledger row and keep its own ID."
+    )
+
+
+def _ledger_ids(wd: Path) -> list[str] | None:
+    """Row ids of the defect ledger, or None when there is no readable ledger."""
+    try:
+        doc = json.loads(modeling_brief.ledger(wd).read_text())
+    except (OSError, ValueError):
+        return None
+    rows = doc.get("defects") if isinstance(doc, dict) else None
+    if not isinstance(rows, list):
+        return None
+    ids: list[str] = []
+    for row in rows:
+        rid = row.get("id") if isinstance(row, dict) else None
+        if isinstance(rid, str) and rid.strip() and rid.strip() not in ids:
+            ids.append(rid.strip())
+    return ids
+
+
+def _candidate_ids(candidates: Path) -> list[str]:
+    """Ids of the candidates in a candidates.json; empty when it is unreadable."""
+    try:
+        doc = json.loads(candidates.read_text())
+    except (OSError, ValueError):
+        return []
+    findings = doc.get("findings") if isinstance(doc, dict) else None
+    if not isinstance(findings, list):
+        return []
+    return [f["id"] for f in findings if isinstance(f, dict) and isinstance(f.get("id"), str)]
+
+
+def _ledger_gaps(ids: list[str], candidates: Path) -> list[str]:
+    """Ledger rows that are not covered. A row ``<rid>`` is covered by its own candidate
+    ``CR-<rid>``, by a model-checking candidate that lists it in ``ledger_ids``, or by a
+    ``ledger_dispositions`` entry that gives a reason. A code-review Scenario candidate
+    listing the row in its ``ledger_ids`` does not cover it: the row would be confirmed
+    only as part of the Scenario, which is the bundling the ledger exists to prevent."""
+    try:
+        doc = json.loads(candidates.read_text())
+    except (OSError, ValueError):
+        return list(ids)
+    if not isinstance(doc, dict):
+        return list(ids)
+    covered: set[str] = set()
+    for cand in doc.get("findings") or []:
+        if not isinstance(cand, dict):
+            continue
+        cid = cand.get("id")
+        if isinstance(cid, str) and cid.startswith("CR-"):
+            covered.add(cid.removeprefix("CR-"))
+        if cand.get("source") == "model-checking" and isinstance(cand.get("ledger_ids"), list):
+            covered.update(x.strip() for x in cand["ledger_ids"] if isinstance(x, str))
+    for disp in doc.get("ledger_dispositions") or []:
+        if isinstance(disp, dict) and isinstance(disp.get("id"), str) and str(disp.get("reason") or "").strip():
+            covered.add(disp["id"].strip())
+    return [rid for rid in ids if rid not in covered]
+
+
+def _close_ledger_gaps(cfg: ConfirmConfig, out: Path) -> None:
+    """Non-blocking completeness check: every defect-ledger row needs coverage as defined by
+    ``_ledger_gaps``. Missing rows go back to the consolidation agent for at most two rounds;
+    a round's output replaces candidates.json only if it is valid and keeps every existing
+    candidate id. Whatever is still missing is reported, and the batch proceeds."""
+    wd = cfg.ws.work_dir(cfg.name)
+    spec_dir = wd / "spec"
+    report = spec_dir / _LEDGER_COVERAGE
+    ids = _ledger_ids(wd)
+    if ids is None:
+        report.unlink(missing_ok=True)
+        return
+    missing = _ledger_gaps(ids, out)
+    rounds = 0
+    while missing and rounds < _LEDGER_COMPLETION_ROUNDS:
+        rounds += 1
+        fixed = spec_dir / ".candidates-ledger-fix.json"
+        logical = ("confirm", cfg.name, f"consolidate-ledger-{rounds}")
+        prompt = (
+            render(
+                "confirmation/consolidate-ledger-gaps",
+                name=cfg.name,
+                current=str(out),
+                ledger=str(modeling_brief.ledger(wd)),
+                missing=", ".join(missing),
+                out=str(fixed),
+            )
+            + cfg.prompt_extra
+        )
+        _log(f"  {cfg.name}: {len(missing)} defect-ledger row(s) lack a candidate; completion round {rounds}")
+        try:
+            _run_consolidate_agent(cfg, prompt, fixed, logical, stem=f"consolidate-ledger-{rounds}")
+        except ConsolidateFailed as exc:
+            _log(f"  {cfg.name}: ledger completion round {rounds} failed ({exc}); keeping the current candidates")
+            break
+        resumelib.complete_turn(logical, allow_previous_owner=resumelib.manual_mode())
+        if not fixed.is_file() or _validate_candidates(fixed):
+            fixed.unlink(missing_ok=True)
+            _log(f"  {cfg.name}: ledger completion round {rounds} wrote no valid candidates; keeping the current ones")
+        elif dropped := sorted(set(_candidate_ids(out)) - set(_candidate_ids(fixed))):
+            fixed.unlink(missing_ok=True)
+            _log(
+                f"  {cfg.name}: ledger completion round {rounds} dropped existing candidate(s) "
+                f"{', '.join(dropped)}; keeping the current ones"
+            )
+        else:
+            fixed.replace(out)
+        missing = _ledger_gaps(ids, out)
+    report.write_text(
+        json.dumps({"ledger_rows": len(ids), "missing": missing, "completion_rounds": rounds}, indent=2) + "\n"
+    )
+    if missing:
+        _log(
+            f"  WARNING {cfg.name}: {len(missing)} of {len(ids)} defect-ledger row(s) still have no candidate "
+            f"or disposition after {rounds} completion round(s): {', '.join(missing)}"
+        )
+    else:
+        _log(f"  {cfg.name}: all {len(ids)} defect-ledger rows have a candidate or a recorded disposition")
+
+
 def consolidate(cfg: ConfirmConfig) -> None:
     """Phase-4 step 0: one agent merges MC (bug-report/findings.json) with
     code-review Scenarios (modeling-brief) and dedups them into candidates.json.
@@ -3890,6 +4022,7 @@ def consolidate(cfg: ConfirmConfig) -> None:
             name=cfg.name,
             mc_src=mc_src,
             brief=modeling_brief.listing(wd),
+            ledger=_ledger_source(wd),
             out=str(out),
             validation_workflow_skill=prompt_skill_ids("validation-workflow"),
         )
@@ -3908,8 +4041,9 @@ def consolidate(cfg: ConfirmConfig) -> None:
         if out.is_file():
             out.unlink()  # drop the invalid file so load_findings does not choke on it
         raise ConsolidateFailed(f"no valid candidates.json for {cfg.name}: {errs[0]}")
-    _write_candidate_cache(cfg, out)
     resumelib.complete_turn(resume_logical, allow_previous_owner=resumelib.manual_mode())
+    _close_ledger_gaps(cfg, out)
+    _write_candidate_cache(cfg, out)
     doc = json.loads(out.read_text())
     cand = doc.get("findings", [])
     n_merged = sum(1 for c in cand if c.get("dedup_note"))

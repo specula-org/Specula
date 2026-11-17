@@ -31,7 +31,7 @@ Worth glancing at:
 | §5 Proposed Invariants | named invariants with type + targets | each Safety invariant defined, wired, and enabled in ≥1 hunt cfg; each Liveness property defined and checked by its own `MC_hunt_<scenario>_live.cfg` |
 | §6.1 Model-Checkable Findings | concrete mechanism questions with expected violated invariant | each finding has a hunt cfg whose fault setup makes the trigger reachable |
 
-§6.2 / §6.3 findings are out of scope for this audit unless the brief says otherwise.
+§6.2 Defect Ledger rows with verification `CR` are out of scope for this audit (Bug Confirmation takes them directly); rows with verification `MC` belong to the Scenario that models them.
 
 ## What to glance at
 
