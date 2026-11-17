@@ -132,12 +132,20 @@ class CliE2E(unittest.TestCase):
         return bindir
 
     def run_cli(
-        self, root: Path, args: list[str], cwd: Path, stub_sleep: bool = False
+        self,
+        root: Path,
+        args: list[str],
+        cwd: Path,
+        stub_sleep: bool = False,
+        *,
+        extra_env: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         env = {k: v for k, v in os.environ.items() if k not in _VOLATILE}
         env["HOME"] = str(cwd)  # empty HOME -> quota gate finds no creds, proceeds
         if stub_sleep:
             env["PATH"] = f"{self._instant_sleep_bindir()}:" + env.get("PATH", "")
+        if extra_env:
+            env.update(extra_env)
         return subprocess.run(
             [sys.executable, str(root / "src" / "specula" / "cli.py"), *args],
             cwd=str(cwd),
@@ -509,7 +517,10 @@ class CliE2E(unittest.TestCase):
     def test_run_id_resumes_interrupted_validation_with_saved_review_route(self) -> None:
         self._resume_interrupted_validation(enable_reviews=True)
 
-    def _resume_interrupted_validation(self, *, enable_reviews: bool) -> None:
+    def test_ambient_model_rejection_preserves_interrupted_validation_resume(self) -> None:
+        self._resume_interrupted_validation(enable_reviews=False, reject_ambient_model=True)
+
+    def _resume_interrupted_validation(self, *, enable_reviews: bool, reject_ambient_model: bool = False) -> None:
         root = self.specroot()
         work = self.workdir()
         artifact = work / "artifact"
@@ -556,7 +567,7 @@ class CliE2E(unittest.TestCase):
         run_id = "resume-validation"
         config = work / "agents.json"
         reviewer = adapter.with_name("fake-reviewer.sh")
-        routing_args = ["--agent=fake"]
+        routing_args = ["--agent=fake", "--model=worker-model"]
         if enable_reviews:
             config.write_text(
                 json.dumps(
@@ -633,6 +644,27 @@ class CliE2E(unittest.TestCase):
         if enable_reviews:
             self.assertFalse(Path(f"{reviewer}.args").exists())
             config.unlink()
+
+        if reject_ambient_model:
+            protected_paths = [
+                run / ".specula-resume/config.json",
+                run / "run.json",
+                pipeline_log,
+                *list((run / ".specula-resume/active").glob("*.json")),
+                *list(wd.glob("*.resume.json")),
+            ]
+            protected = {path: path.read_bytes() for path in protected_paths}
+            rejected = self.run_cli(
+                root,
+                ["run", "--agent=fake", "--model=other-model", f"--artifact={artifact}", target],
+                cwd=work,
+                extra_env={"SPECULA_RUN_DIR": str(run)},
+            )
+            self.assertEqual(rejected.returncode, 1, rejected.stdout + rejected.stderr)
+            self.assertIn("this run uses model 'worker-model'", rejected.stderr)
+            for path, contents in protected.items():
+                self.assertEqual(path.read_bytes(), contents, str(path))
+            self.assertEqual(Path(f"{adapter}.validation-count").read_text(), "x")
 
         resumed = self.run_cli(root, ["run", f"--run-id={run_id}"], cwd=work)
 
