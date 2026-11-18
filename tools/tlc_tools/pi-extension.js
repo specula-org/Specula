@@ -2,9 +2,9 @@ import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 export default function (pi) {
-  const python = process.env.SPECULA_TLC_TOOL_PYTHON;
+  const python = process.env.SPECULAR_TLC_TOOL_PYTHON;
   if (!python) return;
-  const script = fileURLToPath(new URL("../../src/specula/tlc_tasks.py", import.meta.url));
+  const script = fileURLToPath(new URL("../../src/specular/tlc_tasks.py", import.meta.url));
   const definitions = [
     {
       name: "start_tlc",

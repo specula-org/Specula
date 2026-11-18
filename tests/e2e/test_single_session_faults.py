@@ -1,9 +1,9 @@
 """Fault injection for single-session orchestration with real process signals.
 
-Each test runs the real ``specula run`` controller with the deterministic
+Each test runs the real ``specular run`` controller with the deterministic
 single-session fixture adapter, holds a process at a named fault point (a marker
 the fixture or ``fixtures/faults/controller.py`` publishes), delivers a real
-SIGKILL or SIGTERM, and attaches with ``specula run --run-id`` to check the
+SIGKILL or SIGTERM, and attaches with ``specular run --run-id`` to check the
 recovery invariants of the S2 robustness matrix. No model or agent CLI runs.
 
 Kill modes:
@@ -29,8 +29,8 @@ from unittest import mock
 
 import test_cli_pipeline as fixtures
 
-from specula.phaselib import _MANUAL_SESSION_RESUME_PROMPT
-from specula.rules import RULES_SEPARATOR, RULES_TITLE
+from specular.phaselib import _MANUAL_SESSION_RESUME_PROMPT
+from specular.rules import RULES_SEPARATOR, RULES_TITLE
 
 FIXTURES = Path(__file__).parent / "fixtures"
 FAULTS = FIXTURES / "faults"
@@ -84,7 +84,7 @@ class SingleSessionFaults(unittest.TestCase):
         # SANY checks every handoff: a fake one; no ambient TLA+ tools or strict switch.
         path = f"{self.helper.fake_sany(self.root)}{os.pathsep}{os.environ.get('PATH', '')}"
         patcher = mock.patch.dict(
-            os.environ, {"PATH": path, "SPECULA_ROOT": "", "SPECULA_STRICT_OUTPUTS": "", "SPECULA_DELEGATION": ""}
+            os.environ, {"PATH": path, "SPECULAR_ROOT": "", "SPECULAR_STRICT_OUTPUTS": "", "SPECULAR_DELEGATION": ""}
         )
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -136,7 +136,7 @@ class SingleSessionFaults(unittest.TestCase):
         if faults or quota:
             command = [sys.executable, str(FAULTS / "controller.py"), str(self.root / "src")]
         else:
-            command = [sys.executable, str(self.root / "src/specula/cli.py"), "run"]
+            command = [sys.executable, str(self.root / "src/specular/cli.py"), "run"]
         extra = {"FAULT_DIR": str(self.adapters), "FAULT_BLOCK": faults}
         if quota:
             extra["FAULT_QUOTA"] = "1"
@@ -156,7 +156,7 @@ class SingleSessionFaults(unittest.TestCase):
         return subprocess.run(
             [
                 sys.executable,
-                str(self.root / "src/specula/cli.py"),
+                str(self.root / "src/specular/cli.py"),
                 "run",
                 f"--run-id={self.run_dir().name}",
                 *single_session_args(args),
@@ -230,7 +230,7 @@ class SingleSessionFaults(unittest.TestCase):
         return self.finish(process)
 
     def lock_is_free(self) -> bool:
-        descriptor = os.open(self.run_dir() / ".specula-resume/run.lock", os.O_RDWR)
+        descriptor = os.open(self.run_dir() / ".specular-resume/run.lock", os.O_RDWR)
         try:
             fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
@@ -248,7 +248,7 @@ class SingleSessionFaults(unittest.TestCase):
         return self.helper.sole_run_dir(self.root)
 
     def target(self) -> Path:
-        return self.run_dir() / "footest/.specula-output"
+        return self.run_dir() / "footest/.specular-output"
 
     def state(self) -> dict[str, Any]:
         value: dict[str, Any] = json.loads((self.target() / ".context-control/main-state.json").read_text())
@@ -263,7 +263,7 @@ class SingleSessionFaults(unittest.TestCase):
         return value
 
     def active(self) -> list[str]:
-        return sorted(path.name for path in (self.run_dir() / ".specula-resume/active").glob("*.json"))
+        return sorted(path.name for path in (self.run_dir() / ".specular-resume/active").glob("*.json"))
 
     def events(self) -> list[dict[str, Any]]:
         path = self.adapters / "events.jsonl"
@@ -478,10 +478,10 @@ class SingleSessionFaults(unittest.TestCase):
         self.assertEqual(self.request()["session_id"], "main-footest-1")
 
     def test_crash_after_the_yield_dispatches_the_pending_request_once(self) -> None:
-        self.check_yield_kill("specula.single_session:SingleSessionRun._dispatch", "pending")
+        self.check_yield_kill("specular.single_session:SingleSessionRun._dispatch", "pending")
 
     def test_crash_after_dispatch_is_recorded_confirms_once(self) -> None:
-        self.check_yield_kill("specula.pipelinelib:Pipeline.run_phase4_confirmation_for", "confirming")
+        self.check_yield_kill("specular.pipelinelib:Pipeline.run_phase4_confirmation_for", "confirming")
 
     # ── 5. kill -9 of the controller mid-confirmation ──
     def hold_second_worker(self) -> subprocess.Popen[bytes]:
@@ -661,7 +661,7 @@ class SingleSessionFaults(unittest.TestCase):
         self.assertEqual(len(archived), 1)
 
     def test_fresh_context_after_a_crash_after_the_yield_ignores_the_old_request(self) -> None:
-        run, _ = self.start("--agent=fake", "footest", faults="specula.single_session:SingleSessionRun._dispatch")
+        run, _ = self.start("--agent=fake", "footest", faults="specular.single_session:SingleSessionRun._dispatch")
         self.reached("SingleSessionRun._dispatch", run)
         self.crash(run)
         (self.adapters / "release-SingleSessionRun._dispatch").touch()
@@ -688,7 +688,7 @@ class SingleSessionFaults(unittest.TestCase):
         self.reached("main-1", run)
         self.crash(run)
         (self.adapters / "block-main-1").unlink()
-        fault = "specula.pipelinelib:Pipeline.prepare_repair_state"
+        fault = "specular.pipelinelib:Pipeline.prepare_repair_state"
         fresh, _ = self.start(f"--run-id={self.run_dir().name}", "--fresh-context", faults=fault)
         self.reached("Pipeline.prepare_repair_state", fresh)
         self.assertFalse((self.target() / ".context-control/main-state.json").exists())
@@ -721,7 +721,7 @@ class SingleSessionFaults(unittest.TestCase):
 
     # ── 10. crash after classification, before the summary ──
     def test_crash_after_classification_does_not_repeat_it(self) -> None:
-        run, _ = self.start("--agent=fake", "footest", faults="specula.pipelinelib:Pipeline.generate_summary")
+        run, _ = self.start("--agent=fake", "footest", faults="specular.pipelinelib:Pipeline.generate_summary")
         self.reached("Pipeline.generate_summary", run)
         self.assertEqual(self.state()["stage"], "classified")
         self.crash(run)

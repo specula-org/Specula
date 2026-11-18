@@ -72,19 +72,19 @@ class DebugSession:
         # Try to find lib directory relative to this file or use environment variable
         if tla_jar is None or community_jar is None:
             # Try environment variable first
-            specula_root = os.environ.get("SPECULA_ROOT")
-            if specula_root:
-                default_lib = os.path.join(specula_root, "lib")
+            specular_root = os.environ.get("SPECULAR_ROOT")
+            if specular_root:
+                default_lib = os.path.join(specular_root, "lib")
             else:
                 # Calculate relative to this file: tools/trace_debugger/src/debugger/session.py
-                # Go up to specula root: ../../../../lib
+                # Go up to specular root: ../../../../lib
                 this_file = os.path.abspath(__file__)
                 debugger_src_dir = os.path.dirname(this_file)  # .../src/debugger
                 src_dir = os.path.dirname(debugger_src_dir)  # .../src
                 tool_dir = os.path.dirname(src_dir)  # .../trace_debugger
                 tools_dir = os.path.dirname(tool_dir)  # .../tools
-                specula_root = os.path.dirname(tools_dir)  # .../specula
-                default_lib = os.path.join(specula_root, "lib")
+                specular_root = os.path.dirname(tools_dir)  # .../specular
+                default_lib = os.path.join(specular_root, "lib")
 
         self.tla_jar = tla_jar or os.path.join(default_lib, "tla2tools.jar")
         self.community_jar = community_jar or os.path.join(default_lib, "CommunityModules-deps.jar")

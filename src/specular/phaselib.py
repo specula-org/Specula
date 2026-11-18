@@ -1,0 +1,3983 @@
+#!/usr/bin/env python3
+"""Specula phase launchers — Python framework (port of scripts/launch/launch_*.sh).
+
+Each historical `launch_<phase>.sh` spawns one agent per target: parse args,
+check prerequisites, build a per-phase prompt that defers to a skill, run the
+agent adapter (throttled, in the background), then summarize. This module folds
+that shared skeleton into one `Phase` base + a small subclass per phase, so the
+`launch_<phase>.sh` scripts become thin shims (`exec python3 phaselib.py <phase>`).
+
+Behavior is a faithful port of the original bash launchers; the phase logic is
+covered by tests/unit and the end-to-end CLI chain by tests/e2e.
+
+Usage:  python3 phaselib.py <phase> [options] "<target>" [...]
+"""
+
+from __future__ import annotations
+
+import contextlib
+import json
+import locale
+import os
+import re
+import secrets
+import signal
+import stat
+import subprocess
+import sys
+import threading
+import time
+from collections.abc import Iterator, MutableMapping
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, TypedDict
+
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    # The launch shims execute this file by path. Later, bug confirmation
+    # imports ``specular.phaselib`` from worker modules; keep both names bound to
+    # this module so process-local launcher state is shared rather than copied.
+    sys.modules["specular.phaselib"] = sys.modules[__name__]
+import specular.progress as progress
+from specular import brief as modeling_brief
+from specular import quota, rename_check, resumelib, tlc_tasks
+from specular.adapters.utils.policy import POLICY_BLOCKED_RC
+from specular.adapters.utils.transient import AUTH_REFRESH_FAILURE_RC, TRANSIENT_FAILURE_RC
+from specular.agent_config import codex_profile_name_error
+from specular.context_control import CONFIRMATION_YIELD_RC, CONTEXT_CONTROL_PHASES
+from specular.notes import notes_section
+from specular.output_index import BYOM_REPORT_FILENAME, PIPELINE_LOG_ENV, is_safe_target_name, write_target_index
+from specular.prompts import render
+from specular.resource_summary import (
+    RESOURCE_INVOCATION_ENV,
+    RESOURCE_PHASE_ENV,
+    RESOURCE_ROOT_ENV,
+    ResourceInvocationRecorder,
+    findings_fragment_issue,
+    invalidate_summary,
+    publish_findings_summary,
+)
+from specular.rules import rules_block, with_rules
+from specular.skill_refs import materialize_skill_refs, prompt_skill_ids
+from specular.snapshotlib import (
+    SNAPSHOT_MODE_ENV,
+    SOURCE_MAP,
+    SnapshotError,
+    load_sources,
+    sanitize_snapshot_git_environment,
+)
+from specular.tlc_resources import (
+    MEMORY_LIMIT_ENV,
+    RUN_POLICY_FILENAME,
+    SCOPE_ENV,
+    WORKER_LIMIT_ENV,
+    ResourceError,
+    load_run_policy,
+    parse_memory_limit,
+    parse_worker_limit,
+)
+
+SCRIPT_DIR = Path(__file__).resolve().parent  # src/specular
+SPECULAR_ROOT = SCRIPT_DIR.parent.parent
+# the launch_*.sh shims and the agent adapters stay under scripts/launch/
+LAUNCH_DIR = SPECULAR_ROOT / "scripts" / "launch"
+AGENT_TERMINATION_GRACE_SECONDS = 2.0
+MAX_DEBATE_ROUNDS = 5
+DEFAULT_POLICY_RETRIES = 20
+DEFAULT_TRANSIENT_RESUMES = 20
+# A credential-refresh race clears on the next attempt; a dead login does not,
+# so it must fail in bounded time instead of using the full transient budget.
+AUTH_REFRESH_RESUMES = 2
+TRANSIENT_RESUME_BACKOFF_MAX_SECONDS = 60.0
+BYOM_PATH_ENV = "SPECULAR_BYOM_PATH"
+
+_RESOURCE_RECORDER: ResourceInvocationRecorder | None = None
+
+
+def _byom_path() -> Path | None:
+    raw = os.environ.get(BYOM_PATH_ENV)
+    return Path(raw) if raw else None
+
+
+def _resource_start_target(name: str, work_dir: Path) -> None:
+    if _RESOURCE_RECORDER is not None:
+        try:
+            _RESOURCE_RECORDER.start_target(name, work_dir)
+        except (OSError, UnicodeError, ValueError) as exc:
+            print(f"WARNING: resource summary for {name}: {exc}", file=sys.stderr)
+
+
+def _resource_note_agent(
+    work_dir: Path,
+    log_file: Path,
+    *,
+    attempt: int = 1,
+    archived_usage_path: Path | None = None,
+) -> None:
+    if _RESOURCE_RECORDER is not None:
+        try:
+            _RESOURCE_RECORDER.note_agent(
+                work_dir,
+                log_file.with_suffix(".usage.json"),
+                attempt=attempt,
+                archived_usage_path=archived_usage_path,
+            )
+        except (OSError, UnicodeError, ValueError) as exc:
+            print(f"WARNING: resource summary for {work_dir}: {exc}", file=sys.stderr)
+
+
+def _resource_pause_target(name: str) -> None:
+    if _RESOURCE_RECORDER is not None:
+        try:
+            _RESOURCE_RECORDER.pause_target(name)
+        except (OSError, UnicodeError, ValueError) as exc:
+            print(f"WARNING: resource summary for {name}: {exc}", file=sys.stderr)
+
+
+def _resource_finish_target(name: str) -> None:
+    if _RESOURCE_RECORDER is not None:
+        try:
+            _RESOURCE_RECORDER.finish_target(name)
+        except (OSError, UnicodeError, ValueError) as exc:
+            print(f"WARNING: resource summary for {name}: {exc}", file=sys.stderr)
+
+
+@dataclass
+class PolicyRetryState:
+    """Retry cursor and exact native session for one logical agent turn."""
+
+    policy_attempt: int = 0
+    transient_attempt: int = 0
+    invocation_attempt: int = 0
+    resume_state: Path | None = None
+    retry_reason: str = "fresh"
+    _lock: Any = field(default_factory=threading.Lock, init=False, repr=False, compare=False)
+
+
+@dataclass(frozen=True)
+class _LaunchRequest:
+    """One scheduler request with a single logical-turn retry ledger."""
+
+    target: str
+    rate_limit_attempt: int = 1
+    policy_attempt: int = 0
+    transient_attempt: int = 0
+    invocation_attempt: int = 1
+    retry_reason: str = "fresh"
+    ready_at: float = 0.0
+
+
+_POLICY_RECOVERY_NOTE = """
+
+## Continue After Provider Policy Interruption
+
+The previous invocation was interrupted because the provider blocked a response under its content policy. Continue the same legitimate formal-verification task from the existing workspace. Inspect and preserve completed work, rephrase the blocked portion in neutral formal-verification terms, and complete every required deliverable for this phase. Do not repeat work that is already complete.
+"""
+
+_SESSION_RESUME_PROMPT = """Continue the current Specula task from this exact session. The previous invocation was interrupted by a temporary provider, capacity, or transport failure. Preserve completed work, inspect the current workspace, and finish every remaining deliverable. Do not restart completed analysis."""
+
+_MANUAL_SESSION_RESUME_PROMPT = """Continue the current Specula task from this exact session. The previous run ended before this work was accepted. Inspect the latest failure for this task in the pipeline log (`$SPECULAR_PIPELINE_LOG` when set) and any relevant `error.txt`. If artifact validation failed, fix the reported issues and recheck the required deliverables before submitting again; do not merely repeat the previous response. Preserve completed work, inspect the current workspace, and finish every remaining deliverable. Do not restart completed analysis."""
+
+_POLICY_SESSION_RESUME_PROMPT = """Continue the same legitimate formal-verification task from this exact session. The previous response was interrupted by the provider's content policy. Preserve completed work, rephrase the interrupted portion in neutral formal-verification terms, and finish every remaining deliverable without restarting the phase."""
+
+
+def _policy_recovery_prompt(prompt: str) -> str:
+    """Change a blocked request while retaining its phase contract."""
+    return prompt.rstrip() + _POLICY_RECOVERY_NOTE
+
+
+def _parse_policy_retries(raw: str) -> int:
+    """Parse a continuation count shared by pipeline, phases, and reviews."""
+    if not re.fullmatch(r"[0-9]+", raw):
+        raise ValueError("expected a non-negative integer")
+    return int(raw)
+
+
+def _parse_transient_resumes(raw: str) -> int:
+    """Parse a transient native-session continuation count."""
+    if not re.fullmatch(r"[0-9]+", raw):
+        raise ValueError("expected a non-negative integer")
+    return int(raw)
+
+
+def _resume_state_path(log_file: Path) -> Path:
+    return log_file.with_suffix(".resume.json")
+
+
+def _attempt_path(path: Path, attempt: int) -> Path:
+    return path.with_name(f"{path.stem}.attempt-{attempt}{path.suffix}")
+
+
+def _archive_attempt(paths: tuple[Path, ...], attempt: int) -> dict[Path, Path]:
+    """Keep failed invocation evidence before an adapter truncates its logs."""
+    archived: dict[Path, Path] = {}
+    for path in paths:
+        if path.is_file():
+            destination = _attempt_path(path, attempt)
+            try:
+                os.replace(path, destination)
+            except OSError:
+                continue
+            archived[path] = destination
+    return archived
+
+
+def _clear_attempt_archives(paths: tuple[Path, ...]) -> None:
+    """Drop stale retry evidence when a new logical turn reuses its log path."""
+    for path in paths:
+        for archived in path.parent.glob(f"{path.stem}.attempt-*{path.suffix}"):
+            with contextlib.suppress(OSError):
+                archived.unlink()
+
+
+def _clear_resume_state(path: Path) -> None:
+    """Remove an earlier logical turn's exact-session binding or fail closed."""
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        raise RuntimeError(f"cannot clear stale resume state {path}: {exc}") from exc
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        raise RuntimeError(f"cannot verify cleared resume state {path}: {exc}") from exc
+    raise RuntimeError(f"stale resume state still exists after removal: {path}")
+
+
+def _seed_resume_state(source: Path, destination: Path) -> None:
+    """Bind a new logical turn to an earlier turn's exact native session."""
+    try:
+        info = source.lstat()
+    except OSError as exc:
+        raise RuntimeError(f"cannot continue native session from {source}: {exc}") from exc
+    if not stat.S_ISREG(info.st_mode):
+        raise RuntimeError(f"unsafe native session state: {source}")
+    temporary = destination.with_name(f".{destination.name}.{os.getpid()}.{secrets.token_hex(4)}.tmp")
+    try:
+        temporary.write_bytes(source.read_bytes())
+        os.replace(temporary, destination)
+    finally:
+        with contextlib.suppress(FileNotFoundError):
+            temporary.unlink()
+
+
+def _transient_resume_delay(attempt: int) -> float:
+    """Short bounded backoff; attempt is the 1-based resume number."""
+    return min(TRANSIENT_RESUME_BACKOFF_MAX_SECONDS, float(2 ** min(attempt + 1, 6)))
+
+
+def _transient_resume_limit(rc: int, transient_resumes: int) -> int | None:
+    """Session-resume budget for a retryable adapter status, else None.
+
+    Both statuses resume the exact session and share one transient cursor. A
+    credential-refresh failure is retried only while that cursor is below its
+    small cap, so a turn never spends more than the cap on a dead login.
+    """
+    if rc == TRANSIENT_FAILURE_RC:
+        return transient_resumes
+    if rc == AUTH_REFRESH_FAILURE_RC:
+        return min(transient_resumes, AUTH_REFRESH_RESUMES)
+    return None
+
+
+def _transient_failure_label(rc: int) -> str:
+    return "credential refresh failure" if rc == AUTH_REFRESH_FAILURE_RC else "temporary provider failure"
+
+
+def _retry_prompt(original: str, reason: str, *, resumable: bool, manual_extra: str = "") -> str:
+    """The exact prompt an invocation sends: fresh, replayed, or a continuation.
+
+    Every launcher (phase agents, reviews, blocking confirmation turns) writes
+    its prompt file through here, so the pinned rules block (specular.rules) is
+    prepended exactly once to every fresh, replayed, and continuation prompt.
+    """
+    return with_rules(_select_retry_prompt(original, reason, resumable=resumable, manual_extra=manual_extra))
+
+
+def _select_retry_prompt(original: str, reason: str, *, resumable: bool, manual_extra: str = "") -> str:
+    if not resumable:
+        return _policy_recovery_prompt(original) if reason == "policy" else original
+    if reason == "policy":
+        return _POLICY_SESSION_RESUME_PROMPT
+    if reason == "manual":
+        return _MANUAL_SESSION_RESUME_PROMPT + manual_extra
+    if reason in {"rate_limit", "transient"}:
+        return _SESSION_RESUME_PROMPT
+    return original
+
+
+def _system_prompt_path(prompt_file: Path) -> Path:
+    """Sidecar holding the pinned rules for the adapter's system prompt."""
+    return prompt_file.with_name(f"{prompt_file.stem}.system{prompt_file.suffix}")
+
+
+def _system_prompt_argv(prompt_file: Path) -> list[str]:
+    """Write the rules beside ``prompt_file`` and return the adapter flag.
+
+    The flag is repeated on every invocation of a logical turn, including
+    native-session resumes, so adapters whose CLI rebuilds its system prompt
+    after compaction keep the rules. ``SPECULAR_RULES=off`` writes nothing and
+    returns no flag, leaving the adapter argv exactly as before rule pinning.
+    """
+    block = rules_block()
+    if not block:
+        return []
+    path = _system_prompt_path(prompt_file)
+    path.write_text(block)
+    return [f"--system-prompt-file={path}"]
+
+
+# bash pathname expansion (`for d in .../*/`) orders by the locale collating
+# sequence; adopt the ambient locale so find_repo_dir picks the same repo the
+# bash launcher did (codepoint sort can order e.g. 'Backup-old' before 'braft'
+# where strcoll does the reverse). Falls back to bytewise (C) if unset/invalid.
+with contextlib.suppress(locale.Error):
+    locale.setlocale(locale.LC_COLLATE, "")
+
+
+def _ts() -> str:
+    """[HH:MM:SS] — mirrors bash `date '+%H:%M:%S'`."""
+    return time.strftime("%H:%M:%S")
+
+
+@contextlib.contextmanager
+def _cleanup_on_signal() -> Iterator[None]:
+    """Make SIGTERM/SIGHUP take the same exit path Ctrl-C already takes.
+
+    Agents run with start_new_session=True, so they are no longer in the
+    launcher's process group: a `kill <launcher>` (scheduler, timeout, a closing
+    terminal) that skips the cleanup handler leaves them orphaned and burning
+    quota. SystemExit unwinds through `run`'s `except BaseException` -> the agents
+    are terminated -> the interpreter exits 128+N without a traceback.
+
+    `signal.signal` is main-thread only; off-thread callers just get no handler.
+    """
+
+    def _raise(signum: int, _frame: Any) -> None:
+        raise SystemExit(128 + signum)
+
+    installed: list[tuple[int, Any]] = []
+    for name in ("SIGTERM", "SIGHUP"):
+        sig = getattr(signal, name, None)
+        if sig is None:  # pragma: no cover - non-POSIX
+            continue
+        with contextlib.suppress(ValueError, OSError):
+            installed.append((sig, signal.signal(sig, _raise)))
+    try:
+        yield
+    finally:
+        for sig, previous in installed:
+            with contextlib.suppress(ValueError, OSError):
+                signal.signal(sig, previous)
+
+
+def _trim(s: str) -> str:
+    """Mirror bash `echo "$x" | xargs` word-trim (leading/trailing whitespace)."""
+    return s.strip()
+
+
+def _wc_l(path: Path) -> int:
+    """Line count matching bash `wc -l < file` (counts newlines, NOT splitlines —
+    they differ by 1 when the file has no trailing newline). Byte-oriented like
+    wc: agent-written files aren't guaranteed valid UTF-8, and a summary must
+    never crash after the agents already ran."""
+    return path.read_bytes().count(b"\n")
+
+
+def _logical_cwd() -> Path:
+    """bash `$PWD`: the logical path (symlink components preserved) when the
+    inherited PWD still names the current directory; physical getcwd otherwise
+    (bash performs the same same-directory validation at startup)."""
+    pwd = os.environ.get("PWD", "")
+    if pwd.startswith("/"):
+        with contextlib.suppress(OSError):
+            if os.path.samefile(pwd, os.curdir):
+                return Path(pwd)
+    return Path.cwd()
+
+
+def _normalize_artifact_dir(raw: str) -> str | None:
+    """Expand and stabilize an explicit ``--artifact`` directory.
+
+    ``~`` after ``--artifact=`` is passed through literally by the shell, so
+    expand it here before validation.  ``Path.expanduser()`` raises
+    ``RuntimeError`` when a home directory cannot be resolved; path inspection
+    can also fail with ``OSError``.  Both mean the CLI should report its usual
+    invalid-directory error instead of exposing a traceback.
+    """
+    if not raw:
+        return None
+    try:
+        path = Path(raw).expanduser()
+        if not path.is_dir():
+            return None
+        return str(path.resolve())
+    except (OSError, RuntimeError):
+        return None
+
+
+def _grep_num(text: str, prefix: str) -> str:
+    """First integer on the first line starting with `prefix`, else '?' — mirrors
+    bash `grep -E "^prefix" | grep -oE '[0-9]+' | head -1`."""
+    for ln in text.splitlines():
+        if ln.startswith(prefix):
+            m = re.search(r"\d+", ln)
+            return m.group(0) if m else "?"
+    return "?"
+
+
+class AgentFiles(TypedDict):
+    """Shape of `Phase.agent_files`: per-agent paths + dirs to create."""
+
+    log: Path
+    pid: Path
+    prompt: Path
+    mkdirs: list[Path]
+
+
+class Workspace:
+    """Path resolution for a run.
+
+    Legacy (no `SPECULAR_RUN_DIR`): faithful to the bash `get_work_dir` /
+    `find_repo_dir` — single-target writes to `$PWD/.specular-output`; batch to
+    `$PWD/<name>/.specular-output`.
+
+    Isolated (`SPECULAR_RUN_DIR` set, step 4 workspace control): every output
+    lands under `<run>/<name>/.specular-output` — uniform batch-style layout,
+    single/batch no longer fork — and canonical *inputs* (artifact checkout,
+    .prompt-extra.md) fall back to `case-studies/<name>` since no cd into the
+    case directory happens anymore.
+    """
+
+    def __init__(
+        self,
+        targets: list[str],
+        artifact: str = "",
+        cwd: Path | None = None,
+        opts: dict[str, str | bool] | None = None,
+        run_dir: Path | None = None,
+    ) -> None:
+        self.targets = targets
+        self.artifact = artifact
+        self.cwd = Path(cwd) if cwd else _logical_cwd()  # bash $PWD, not the physical getcwd
+        self.single = len(targets) == 1
+        # phase-specific run options (e.g. validation/confirmation --repair)
+        self.opts = opts or {}
+        env_run_dir = os.environ.get("SPECULAR_RUN_DIR", "")
+        configured_run_dir = Path(run_dir) if run_dir is not None else (Path(env_run_dir) if env_run_dir else None)
+        if configured_run_dir is not None and not configured_run_dir.is_absolute():
+            configured_run_dir = self.cwd / configured_run_dir
+        self.run_dir = Path(os.path.abspath(configured_run_dir)) if configured_run_dir is not None else None
+
+    def work_dir(self, name: str) -> Path:
+        if self.run_dir:
+            return self.run_dir / name / ".specular-output"
+        if self.single:
+            return self.cwd / ".specular-output"
+        return self.cwd / name / ".specular-output"
+
+    def case_dir(self, name: str) -> Path:
+        """Canonical `case-studies/<name>` — the fallback root for canonical
+        inputs when the run is isolated (the legacy flow reached these via the
+        single-target cd)."""
+        return SPECULAR_ROOT / "case-studies" / name
+
+    @staticmethod
+    def _repo_under(artifact_dir: Path) -> str:
+        """First `<artifact_dir>/<repo-with-.git>/` (bash keeps the trailing slash)."""
+        if artifact_dir.is_dir():
+            for d in sorted(artifact_dir.iterdir(), key=lambda p: locale.strxfrm(p.name)):
+                # bash `for d in "$artifact_dir"/*/` — the glob never matches
+                # dotdirs, so a hidden .git-bearing dir (stale backup, tool
+                # cache) must not shadow the real repo.
+                if d.name.startswith("."):
+                    continue
+                if d.is_dir() and (d / ".git").exists():
+                    return str(d) + "/"
+        return ""
+
+    def find_original_repo_dir(self, name: str) -> str:
+        # Explicit --artifact wins.
+        if self.artifact:
+            return self.artifact
+        if self.run_dir:
+            # Isolated: the run root holds no sources, so neither the batch
+            # cwd search nor the single-target "source is $PWD" rule applies —
+            # only the canonical checkout can supply the repo.
+            return self._repo_under(self.case_dir(name) / "artifact")
+        found = self._repo_under(self.cwd / name / "artifact")
+        if found:
+            return found
+        # Single target: source is $PWD.
+        if self.single:
+            return str(self.cwd)
+        return ""
+
+    def find_repo_dir(self, name: str) -> str:
+        if self.uses_private_source():
+            assert self.run_dir is not None
+            snapshot = self.run_dir / name / "source"
+            return str(snapshot) if snapshot.is_dir() and not snapshot.is_symlink() else ""
+        return self.find_original_repo_dir(name)
+
+    def uses_private_source(self) -> bool:
+        if self.run_dir is None:
+            return False
+        source_map = self.run_dir / SOURCE_MAP
+        if source_map.exists() or source_map.is_symlink() or os.environ.get(SNAPSHOT_MODE_ENV):
+            return True
+        try:
+            metadata = json.loads((self.run_dir / "run.json").read_text())
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            return False
+        return isinstance(metadata, dict) and metadata.get("source_mode") == "snapshot"
+
+    def validate_private_sources(self, names: list[str]) -> list[Path]:
+        """Fail closed when a run declares private sources but cannot restore them."""
+        if not self.uses_private_source():
+            return []
+        assert self.run_dir is not None
+        snapshots = load_sources(self.run_dir)
+        missing = [name for name in names if name not in snapshots]
+        if missing:
+            raise SnapshotError(f"private source map is missing target(s): {', '.join(missing)}")
+        return [snapshots[name].source for name in names]
+
+    def private_git_ceiling(self, names: list[str]) -> str | None:
+        if not self.uses_private_source():
+            return None
+        roots = [str(Path(repo).resolve().parent) for name in names if (repo := self.find_repo_dir(name))]
+        if any(os.pathsep in root for root in roots):
+            raise RuntimeError("private source path cannot be represented in GIT_CEILING_DIRECTORIES")
+        return os.pathsep.join(dict.fromkeys(roots)) or None
+
+
+def _refresh_target_indexes(ws: Workspace, names: list[str]) -> None:
+    """Best-effort navigation refresh; indexes never affect phase results."""
+    configured_log = os.environ.get(PIPELINE_LOG_ENV)
+    pipeline_log = Path(configured_log) if configured_log else None
+    if pipeline_log is None:
+        pipeline_log = (
+            ws.run_dir / "pipeline.log" if ws.run_dir is not None else ws.cwd / ".specular-output/pipeline.log"
+        )
+    output_root = ws.run_dir if ws.run_dir is not None else ws.cwd
+    for name in dict.fromkeys(names):
+        if not is_safe_target_name(name):
+            print(f"WARNING: cannot update output index for unsafe target name {name!r}", file=sys.stderr)
+            continue
+        try:
+            write_target_index(
+                name,
+                ws.work_dir(name),
+                output_root=output_root,
+                pipeline_log=pipeline_log,
+            )
+        except Exception as exc:
+            print(f"WARNING: cannot update output index for {name}: {exc}", file=sys.stderr)
+
+
+def _pin_sandbox_config(env: MutableMapping[str, str], launch_cwd: Path) -> None:
+    """Resolve sandbox configuration before an agent changes directory."""
+    if env.get("SPECULAR_SANDBOX", "").lower() != "on":
+        return
+    launch_cwd = launch_cwd.expanduser().resolve()
+    configured = env.get("SPECULAR_SANDBOX_CONFIG")
+    if configured:
+        config = Path(configured).expanduser()
+        if not config.is_absolute():
+            config = launch_cwd / config
+        config = config.resolve()
+    else:
+        candidates = [
+            launch_cwd / ".specular" / "sandbox.json",
+            Path.home() / ".specular" / "sandbox.json",
+        ]
+        default_config = (LAUNCH_DIR / "sandbox" / "sandbox.default.json").resolve()
+        config = next((path.resolve() for path in candidates if path.is_file()), default_config)
+    env["SPECULAR_SANDBOX_CONFIG"] = str(config)
+
+
+def _activate_private_sources(ws: Workspace, names: list[str]) -> None:
+    """Validate and expose one snapshot run consistently to every phase path."""
+    sources = ws.validate_private_sources(names)
+    if not sources:
+        return
+    existing = [path for path in os.environ.get("SPECULAR_SANDBOX_EXTRA_WRITE", "").split(os.pathsep) if path]
+    os.environ["SPECULAR_SANDBOX_EXTRA_WRITE"] = os.pathsep.join(
+        dict.fromkeys([*existing, *(str(source) for source in sources)])
+    )
+    _pin_sandbox_config(os.environ, ws.cwd)
+    os.environ[SNAPSHOT_MODE_ENV] = "1"
+    sanitize_snapshot_git_environment(os.environ, ceiling=ws.private_git_ceiling(names))
+
+
+class Phase:
+    """Base launcher. Subclasses set the per-phase specifics; `run` is shared."""
+
+    key = ""  # cli name (e.g. "code_analysis")
+    title = ""  # banner title
+    usage = ""  # --help text: the bash launcher's header comment, extracted verbatim
+    check_header = "Checking prerequisites..."
+    check_fail_msg = "ERROR: Missing prerequisites."
+    check_ok_msg = "All prerequisites OK."  # code_analysis says "All repos OK."
+    accepts_artifact = True  # bug_classification takes no --artifact (rejects it)
+    artifact_rejection_message: str | None = None
+    dry_prompt_flag = "--prompt"  # bug_classification's dry-run line shows --prompt-file
+    next_phase_key: str | None = None  # consumer whose existing check() validates this handoff
+    yield_message = "Incremental conversation yielded to bug confirmation."  # context-control phases only
+    # Whether a relaunch of an unfinished conversation (a CI confirmation
+    # handoff or a manual attach) keeps the retry budgets it already spent.
+    # The single-session main session budgets each controller step instead.
+    carry_retry_budgets = True
+    progress_config = progress.ProgressConfig()
+    # Tri-state tuning values set in run(): None = unspecified, "" = explicit
+    # reset to the adapter/CLI default, non-empty = explicit override.
+    _model: str | None = None
+    _effort: str | None = None
+    _codex_profile: str | None = None  # Codex --profile name; codex adapter only
+    _policy_retries = DEFAULT_POLICY_RETRIES
+    _transient_resumes = DEFAULT_TRANSIENT_RESUMES
+    _rate_limit_agent = "claude-code"
+
+    # ── per-phase hooks ──
+    def parse_flag(self, arg: str, extra: dict[str, str | bool]) -> bool:
+        """Consume a phase-specific flag into `extra`; return True if handled.
+        Override for extra flags (e.g. validation --repair, confirmation
+        --legacy-confirm/--debate). `extra` is exposed to hooks as `ws.opts`."""
+        return False
+
+    def default_max_parallel(self, extra: dict[str, str | bool]) -> int:
+        """Concurrent-agent default when ``--max-parallel`` is omitted."""
+        return 1
+
+    def validate_options(self, extra: dict[str, str | bool]) -> str | None:
+        """Return a user-facing error for an invalid option combination."""
+        return None
+
+    def target_name(self, target: str) -> str:
+        """Extract the display/work name from a target string. Downstream phases
+        get name-only targets, so the whole (trimmed) string is the name;
+        code_analysis overrides this to split the 'name|github|lang|ref' form."""
+        return _trim(target)
+
+    def check(self, ws: Workspace, names: list[str]) -> bool:
+        """Print a per-target prerequisite line; return True iff all satisfied."""
+        raise NotImplementedError
+
+    def agent_files(self, ws: Workspace, name: str) -> AgentFiles:
+        """Return {log, pid, prompt, mkdir} paths for this phase's agent run."""
+        raise NotImplementedError
+
+    def build_prompt(self, ws: Workspace, target: str) -> str:
+        raise NotImplementedError
+
+    def prepare_fresh_outputs(self, ws: Workspace, name: str) -> None:
+        """Remove phase-owned outputs that a fresh agent must replace."""
+
+    def invalidate_target_output(self, ws: Workspace, name: str) -> None:
+        """Remove user-facing output that is stale while a target is unfinished."""
+
+    def publish_target_output(self, ws: Workspace, name: str) -> None:
+        """Publish user-facing output after target results pass validation."""
+
+    def summarize(self, ws: Workspace, names: list[str]) -> None:
+        raise NotImplementedError
+
+    def monitor_line(self, ws: Workspace) -> str | None:
+        """The '  Monitor: tail -f ...' hint printed once after all agents launch
+        (per-phase; code_analysis prints none). Legacy is faithful to each bash
+        launcher's hand-written glob — quirks and all: some omit the
+        .specular-output/ segment, and spec_validation uses an absolute ${PWD}
+        path. Isolated runs re-root the glob under the run dir (see _monitor)."""
+        return None
+
+    def _monitor(self, ws: Workspace, logname: str, legacy: str) -> str:
+        """Monitor hint. Isolated (SPECULAR_RUN_DIR set): an accurate run-rooted
+        glob — the legacy relative `*/` points at the launch cwd, which an
+        isolated run no longer writes to. Legacy: the bash launcher's original
+        string, verbatim."""
+        if ws.run_dir:
+            return f"  Monitor: tail -f {ws.run_dir}/*/.specular-output/{logname}"
+        return legacy
+
+    def _reap_agents(
+        self, running: list[progress.RunningAgent], show_progress: bool
+    ) -> tuple[list[progress.RunningAgent], list[tuple[progress.RunningAgent, int]]]:
+        """Final-drain completed children before dropping them."""
+        live: list[progress.RunningAgent] = []
+        completed: list[tuple[progress.RunningAgent, int]] = []
+        for agent in running:
+            rc = agent.proc.poll()
+            if rc is None:
+                live.append(agent)
+            else:
+                if show_progress:
+                    # The process may finish between the regular report and this
+                    # poll. Drain its last event and workspace changes now, before
+                    # removing the only object that carries the read offsets.
+                    progress.report([agent], self.progress_config)
+                    print(f"[{_ts()}] {agent.name}: completed (exit {rc})")
+                completed.append((agent, rc))
+                # A completed adapter can still leave background descendants in
+                # its session. They are phase-scoped and must not outlive it.
+                self._terminate_agents([agent], announce=False)
+        return live, completed
+
+    @staticmethod
+    def _group_exists(pgid: int) -> bool:
+        try:
+            os.killpg(pgid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        return True
+
+    @classmethod
+    def _terminate_processes(cls, processes: list[subprocess.Popen[bytes]], *, announce: bool = True) -> None:
+        groups = [proc for proc in processes if cls._group_exists(proc.pid)]
+        if groups:
+            # Signal first. A closed stdout/tee must never prevent cleanup.
+            for proc in groups:
+                with contextlib.suppress(ProcessLookupError):
+                    os.killpg(proc.pid, signal.SIGTERM)
+            if announce:
+                with contextlib.suppress(OSError, ValueError):
+                    print(f"\n[{_ts()}] Interrupt received; stopping {len(groups)} agent(s)...")
+            deadline = time.monotonic() + AGENT_TERMINATION_GRACE_SECONDS
+            while time.monotonic() < deadline and any(cls._group_exists(proc.pid) for proc in groups):
+                time.sleep(0.05)
+            for proc in groups:
+                if cls._group_exists(proc.pid):
+                    with contextlib.suppress(ProcessLookupError):
+                        os.killpg(proc.pid, signal.SIGKILL)
+
+        # poll() normally reaps completed leaders, but an exception can enter
+        # cleanup before the next poll. Reap every tracked Popen even when its
+        # process group has already disappeared.
+        for proc in processes:
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                proc.wait(timeout=0.5)
+
+    @classmethod
+    def _terminate_agents(cls, running: list[progress.RunningAgent], *, announce: bool = True) -> None:
+        for agent in running:
+            tlc_tasks.stop_owned_tasks(agent.work_dir, agent.log)
+        cls._terminate_processes([agent.proc for agent in running], announce=announce)
+
+    @staticmethod
+    def _failure_code(failures: list[tuple[str, int]]) -> int:
+        if not failures:
+            return 0
+        # A quota retry must never hide a permanent failure from another target.
+        rc = next((code for _, code in failures if code != quota.RATE_LIMIT_RC), failures[0][1])
+        return 128 - rc if rc < 0 else rc
+
+    @staticmethod
+    def _rate_limit_retries() -> int:
+        raw = os.environ.get("SPECULAR_RATE_LIMIT_RETRIES", str(quota.RATE_LIMIT_RETRIES))
+        try:
+            return max(0, int(raw))
+        except ValueError:
+            return quota.RATE_LIMIT_RETRIES
+
+    @staticmethod
+    def _reactive_rate_limit_enabled() -> bool:
+        return os.environ.get("SPECULAR_RATE_LIMIT_REACTIVE", "").lower() in {"1", "true", "yes", "on"}
+
+    def _wait_for_rate_limit(self) -> None:
+        if self._rate_limit_agent != "claude-code":
+            seconds = quota.RATE_LIMIT_FALLBACK_SECONDS
+            print(
+                f"[{_ts()}] No quota reset endpoint for {self._rate_limit_agent}; "
+                f"sleeping {seconds:g}s after rate limit"
+            )
+            time.sleep(seconds)
+            return
+        quota.wait_for_quota(
+            usage_script=SPECULAR_ROOT / "scripts" / "exp" / "usage.sh",
+            q5=os.environ.get("SPECULAR_QUOTA_5H") or "85",
+            q7=os.environ.get("SPECULAR_QUOTA_7D") or "95",
+            max_waits=os.environ.get("SPECULAR_QUOTA_MAX_WAITS") or "6",
+            claude_alias=os.environ.get("SPECULAR_CLAUDE_ALIAS") or "claude",
+            log_fn=lambda message: print(f"[{_ts()}] {message}"),
+            reactive=True,
+        )
+
+    # ── shared prompt-extra injection (identical across phases) ──
+    def _latest_prompt_extra(self, ws: Workspace, name: str) -> str:
+        """Read the current target guidance without consulting its frozen copy."""
+        extra = ws.work_dir(name) / ".prompt-extra.md"
+        if not extra.is_file():
+            fallback = ws.case_dir(name) if ws.run_dir else ws.cwd
+            extra = fallback / ".prompt-extra.md"
+        if extra.is_file():
+            # errors="replace": bash `cat` concatenated raw bytes; a stray
+            # non-UTF-8 byte in a user's .prompt-extra.md must not crash the run.
+            return "\n## Target-Specific Instructions\n\n" + extra.read_text(errors="replace")
+        return ""
+
+    def _read_prompt_extra(self, ws: Workspace, name: str) -> str:
+        """Return run-frozen guidance so manual supplements do not invalidate caches."""
+        if ws.run_dir is None:
+            return self._latest_prompt_extra(ws, name)
+        frozen = ws.work_dir(name) / ".prompt-extra.initial.md"
+        if frozen.is_file() and not frozen.is_symlink():
+            content = frozen.read_text(errors="replace")
+            return "\n## Target-Specific Instructions\n\n" + content if content else ""
+        current = self._latest_prompt_extra(ws, name)
+        marker = "\n## Target-Specific Instructions\n\n"
+        raw = current[len(marker) :] if current.startswith(marker) else ""
+        frozen.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with frozen.open("x", encoding="utf-8") as stream:
+                stream.write(raw)
+        except FileExistsError as exc:
+            if frozen.is_symlink() or not frozen.is_file():
+                raise RuntimeError(f"unsafe frozen prompt-extra path: {frozen}") from exc
+            raw = frozen.read_text(errors="replace")
+        return marker + raw if raw else ""
+
+    def _manual_prompt_extra(self, ws: Workspace, name: str) -> str:
+        return self._latest_prompt_extra(ws, name) if resumelib.manual_mode() else ""
+
+    def _with_extra(self, ws: Workspace, name: str, prompt: str) -> str:
+        return prompt + self._read_prompt_extra(ws, name)
+
+    # ── shared driver ──
+    def run(self, argv: list[str]) -> int:
+        max_parallel: int | None = None
+        max_turns = "0"
+        policy_retries = DEFAULT_POLICY_RETRIES
+        transient_resumes = DEFAULT_TRANSIENT_RESUMES
+        dry_run = False
+        check_only = False
+        agent = "claude-code"
+        # `or`: bash ${CLAUDE_ALIAS:-claude} treats an exported-but-empty var as unset
+        claude_alias = os.environ.get("CLAUDE_ALIAS") or "claude"
+        model: str | None = None
+        effort: str | None = None
+        codex_profile: str | None = None
+        artifact = ""
+        artifact_provided = False
+        targets: list[str] = []
+        extra: dict[str, str | bool] = {}
+
+        for arg in argv:
+            if arg == "--dry-run":
+                dry_run = True
+            elif arg == "--check":
+                check_only = True
+            elif arg.startswith("--max-parallel="):
+                val = arg[len("--max-parallel=") :]
+                try:
+                    max_parallel = int(val)
+                except ValueError:
+                    # bash never validated this; a garbage value hung its throttle
+                    # loop forever (empty crashed the arithmetic mid-run). Fail fast
+                    # instead — pinned by bad_max_parallel_code_analysis.
+                    print(f"Invalid --max-parallel: '{val}' (expected an integer)")
+                    return 1
+                if max_parallel < 1:
+                    print(f"Invalid --max-parallel: '{val}' (expected an integer >= 1)")
+                    return 1
+            elif arg.startswith("--max-turns="):
+                # Adapter-specific passthrough. Keep it a string: an adapter may
+                # deliberately accept values beyond the launcher's vocabulary.
+                max_turns = arg[len("--max-turns=") :]
+            elif arg.startswith("--policy-retries="):
+                raw = arg[len("--policy-retries=") :]
+                try:
+                    policy_retries = _parse_policy_retries(raw)
+                except ValueError:
+                    print(f"Invalid --policy-retries: '{raw}' (expected a non-negative integer)")
+                    return 1
+            elif arg.startswith("--transient-resumes="):
+                raw = arg[len("--transient-resumes=") :]
+                try:
+                    transient_resumes = _parse_transient_resumes(raw)
+                except ValueError:
+                    print(f"Invalid --transient-resumes: '{raw}' (expected a non-negative integer)")
+                    return 1
+            elif arg.startswith("--agent="):
+                agent = arg[len("--agent=") :]
+            elif arg.startswith("--claude-alias="):
+                claude_alias = arg[len("--claude-alias=") :]
+            elif arg.startswith("--model="):
+                model = arg[len("--model=") :]
+            elif arg.startswith("--effort="):
+                effort = arg[len("--effort=") :]
+            elif arg.startswith("--codex-profile="):
+                codex_profile = arg[len("--codex-profile=") :]
+            elif arg.startswith("--artifact="):
+                if not self.accepts_artifact:
+                    print(self.artifact_rejection_message or f"Unknown option: {arg}")
+                    return 1
+                artifact_provided = True
+                artifact = arg[len("--artifact=") :]
+            elif arg in ("--help", "-h"):
+                sys.stdout.write(self.usage)
+                return 0
+            elif self.parse_flag(arg, extra):
+                pass
+            elif arg.startswith("-"):
+                print(f"Unknown option: {arg}")
+                return 1
+            else:
+                targets.append(arg)
+
+        if artifact_provided:
+            normalized_artifact = _normalize_artifact_dir(artifact)
+            if normalized_artifact is None:
+                print(f"ERROR: --artifact must be an existing directory: {artifact}")
+                return 1
+            artifact = normalized_artifact
+
+        option_error = self.validate_options(extra) or _codex_profile_option_error(agent, codex_profile)
+        if option_error is not None:
+            print(option_error)
+            return 1
+
+        if max_parallel is None:
+            max_parallel = self.default_max_parallel(extra)
+
+        if not targets:
+            targets = [_logical_cwd().name]  # bash `basename "$PWD"` (logical under symlinks)
+
+        # An explicit flag wins even when its value is empty.  Only an absent
+        # flag consults the run-wide environment; an empty environment value is
+        # treated as unset.  Keeping None distinct from "" is also what lets an
+        # unspecified Claude run retain its deliberate max-effort default while
+        # `--effort=` can still reset the underlying CLI to its own default.
+        self._model = model if model is not None else (os.environ.get("SPECULAR_MODEL") or None)
+        self._effort = effort if effort is not None else (os.environ.get("SPECULAR_EFFORT") or None)
+        self._codex_profile = codex_profile
+        self._policy_retries = policy_retries
+        self._transient_resumes = transient_resumes
+
+        # A direct multi-target phase command has no Pipeline.run_dir, but its
+        # agents must still share one TLC budget. Preserve the scope supplied by
+        # a legacy Pipeline invocation; otherwise mint one command-scoped,
+        # absolute identity before target-specific work directories diverge.
+        if not os.environ.get(SCOPE_ENV):
+            run_dir = os.environ.get("SPECULAR_RUN_DIR")
+            if run_dir:
+                os.environ[SCOPE_ENV] = str(Path(run_dir).expanduser().resolve())
+            else:
+                scope_name = f".specular-tlc-phase-{os.getpid()}-{secrets.token_hex(8)}"
+                os.environ[SCOPE_ENV] = str((_logical_cwd() / scope_name).resolve())
+
+        run_dir = os.environ.get("SPECULAR_RUN_DIR")
+        if run_dir and (Path(run_dir).expanduser() / RUN_POLICY_FILENAME).is_file():
+            try:
+                stored_memory, stored_workers = load_run_policy(Path(run_dir).expanduser())
+                current_memory = os.environ.get(MEMORY_LIMIT_ENV) or None
+                current_workers = os.environ.get(WORKER_LIMIT_ENV) or None
+                if current_memory is None:
+                    os.environ[MEMORY_LIMIT_ENV] = stored_memory
+                elif parse_memory_limit(current_memory) != parse_memory_limit(stored_memory):
+                    raise ResourceError(
+                        f"this Specula run uses TLC memory limit {stored_memory}; "
+                        "the limit cannot change in a direct phase"
+                    )
+                if current_workers is None and stored_workers is not None:
+                    os.environ[WORKER_LIMIT_ENV] = stored_workers
+                elif current_workers is not None and (
+                    stored_workers is None or parse_worker_limit(current_workers) != parse_worker_limit(stored_workers)
+                ):
+                    label = "unbounded" if stored_workers is None else stored_workers
+                    raise ResourceError(
+                        f"this Specula run uses TLC worker limit {label}; the limit cannot change in a direct phase"
+                    )
+            except (ResourceError, ValueError) as exc:
+                print(f"ERROR: {exc}")
+                return 1
+
+        adapter = LAUNCH_DIR / "adapters" / f"{agent}.sh"
+        if not adapter.is_file():
+            print(f"ERROR: Unknown agent '{agent}' — adapter not found at {adapter}")
+            return 1
+        self._rate_limit_agent = agent
+
+        ws = Workspace(targets, artifact=artifact, opts=extra)
+        names = [self.target_name(t) for t in targets]
+        try:
+            _activate_private_sources(ws, names)
+        except SnapshotError as exc:
+            print(f"ERROR: cannot restore private source: {exc}")
+            return 1
+
+        phase_prefix = ("phase", self.key)
+        try:
+            if resumelib.manual_mode():
+                completed_calls = resumelib.completed_logicals(phase_prefix)
+                for logical in completed_calls:
+                    # Reconcile the safe write-before-unlink crash window in
+                    # mark_completed(). The accepted call must not run again.
+                    resumelib.reconcile_completed(logical)
+            else:
+                resumelib.clear_completed(phase_prefix)
+                completed_calls = set()
+        except resumelib.ResumeError as exc:
+            print(f"ERROR: {exc}")
+            return 1
+        accepted_names = {
+            logical[2] for logical in completed_calls if len(logical) == 3 and logical[:2] == phase_prefix
+        }
+
+        try:
+            resumelib.ensure_phase(self.key)
+            recovering = resumelib.previous_entries(phase=self.key)
+        except resumelib.ResumeError as exc:
+            print(f"ERROR: {exc}")
+            return 1
+        if recovering:
+            order = {str(entry.get("target")): index for index, entry in enumerate(recovering)}
+            original_order = {id(target): index for index, target in enumerate(targets)}
+            targets.sort(
+                key=lambda target: (order.get(self.target_name(target), len(order)), original_order[id(target)])
+            )
+            names = [self.target_name(target) for target in targets]
+            # Ordinary target agents recover one at a time. Phase 4 owns a
+            # finer per-finding recovery frontier and restores its normal
+            # parallelism after those interrupted turns are settled.
+            if self.key != "bug_confirmation" or ws.opts.get("legacy"):
+                max_parallel = 1
+
+        print("========================================")
+        print(f" {self.title}")
+        print("========================================")
+        print(f"Targets:      {len(targets)}")
+        print(f"Max parallel: {max_parallel}")
+        print(f"Max turns:    {max_turns}")
+        print(f"Policy retries: {policy_retries}")
+        print(f"Transient resumes: {transient_resumes}")
+        print()
+
+        if not dry_run and not check_only:
+            _refresh_target_indexes(ws, names)
+
+        print(self.check_header)
+        if not self.check(ws, names):
+            print()
+            print(self.check_fail_msg)
+            return 1
+        print()
+
+        if check_only:
+            print(self.check_ok_msg)
+            return 0
+
+        # A phase may take over its own per-target execution (e.g. parallel
+        # per-finding bug confirmation) instead of the default single-agent
+        # `_launch` loop below. None = fall through to the single-agent loop.
+        alt = self.run_alternate(
+            ws,
+            names,
+            adapter=adapter,
+            claude_alias=claude_alias,
+            max_parallel=max_parallel,
+            max_turns=max_turns,
+            dry_run=dry_run,
+        )
+        if alt is not None:
+            if not dry_run:
+                _refresh_target_indexes(ws, names)
+            return alt
+
+        integrity_snapshot = self.capture_output_integrity(
+            ws,
+            names,
+            adapter=adapter,
+            dry_run=dry_run,
+        )
+        show_progress = progress.enabled()
+        running: list[progress.RunningAgent] = []
+        failures: list[tuple[str, int]] = []
+        successful_names: set[str] = set(accepted_names)
+        completed_names: set[str] = set(accepted_names)
+        started_names: set[str] = set()
+        published_names: set[str] = set()
+        pending = [_LaunchRequest(target) for target in targets if self.target_name(target) not in accepted_names]
+        rate_limited: list[_LaunchRequest] = []
+        pause_for_rate_limit = False
+        stop_launching = False
+        waiting_announced = False
+        retry_limit = self._rate_limit_retries()
+        with _cleanup_on_signal():
+            try:
+                while pending or running:
+                    while pending and len(running) < max_parallel and not pause_for_rate_limit and not stop_launching:
+                        now = time.monotonic()
+                        ready_index = next(
+                            (index for index, candidate in enumerate(pending) if candidate.ready_at <= now),
+                            None,
+                        )
+                        if ready_index is None:
+                            break
+                        request = pending.pop(ready_index)
+                        name = self.target_name(request.target)
+                        if not dry_run:
+                            try:
+                                self.invalidate_target_output(ws, name)
+                            except (OSError, UnicodeError, ValueError) as exc:
+                                print(f"ERROR: cannot invalidate output for {name}: {exc}")
+                                failures.append((name, 1))
+                                continue
+                            started_names.add(name)
+                        _resource_start_target(name, ws.work_dir(name))
+                        prompt = self.build_prompt(ws, request.target)
+                        self._launch(
+                            ws,
+                            name,
+                            prompt,
+                            dry_run,
+                            max_turns,
+                            claude_alias,
+                            adapter,
+                            owner=running,
+                            target=request.target,
+                            attempt=request.rate_limit_attempt,
+                            policy_attempt=request.policy_attempt,
+                            transient_attempt=request.transient_attempt,
+                            invocation_attempt=request.invocation_attempt,
+                            retry_reason=request.retry_reason,
+                        )
+                        print()
+
+                    if dry_run:
+                        continue
+
+                    if not waiting_announced and not pending and not stop_launching:
+                        print(f"[{_ts()}] All agents launched. Waiting...")
+                        monitor = self.monitor_line(ws)
+                        if monitor is not None:
+                            print(monitor)
+                        print()
+                        waiting_announced = True
+
+                    if show_progress and running:
+                        progress.report(running, self.progress_config)
+                    running, completed = self._reap_agents(running, show_progress)
+                    for completed_agent, rc in completed:
+                        completed_names.add(completed_agent.name)
+                        _refresh_target_indexes(ws, [completed_agent.name])
+                        if rc == 0:
+                            successful_names.add(completed_agent.name)
+                            _resource_finish_target(completed_agent.name)
+                            continue
+                        if rc == POLICY_BLOCKED_RC:
+                            if completed_agent.policy_attempt < self._policy_retries:
+                                _resource_pause_target(completed_agent.name)
+                                next_policy_attempt = completed_agent.policy_attempt + 1
+                                print(
+                                    f"[{_ts()}] {completed_agent.name}: provider policy interrupted the run; "
+                                    f"retrying with a revised request "
+                                    f"({next_policy_attempt}/{self._policy_retries})"
+                                )
+                                pending.insert(
+                                    0,
+                                    _LaunchRequest(
+                                        completed_agent.target,
+                                        rate_limit_attempt=completed_agent.attempt,
+                                        policy_attempt=next_policy_attempt,
+                                        transient_attempt=completed_agent.transient_attempt,
+                                        invocation_attempt=completed_agent.invocation_attempt + 1,
+                                        retry_reason="policy",
+                                    ),
+                                )
+                            else:
+                                failures.append((completed_agent.name, rc))
+                                _resource_finish_target(completed_agent.name)
+                            continue
+                        transient_limit = _transient_resume_limit(rc, self._transient_resumes)
+                        if transient_limit is not None:
+                            if completed_agent.transient_attempt < transient_limit:
+                                _resource_pause_target(completed_agent.name)
+                                next_transient_attempt = completed_agent.transient_attempt + 1
+                                delay = _transient_resume_delay(next_transient_attempt)
+                                mode = (
+                                    "resuming the exact session"
+                                    if completed_agent.resume_state is not None
+                                    and completed_agent.resume_state.is_file()
+                                    else "retrying before a session was captured"
+                                )
+                                print(
+                                    f"[{_ts()}] {completed_agent.name}: {_transient_failure_label(rc)}; {mode} "
+                                    f"({next_transient_attempt}/{transient_limit}) after {delay:g}s"
+                                )
+                                pending.insert(
+                                    0,
+                                    _LaunchRequest(
+                                        completed_agent.target,
+                                        rate_limit_attempt=completed_agent.attempt,
+                                        policy_attempt=completed_agent.policy_attempt,
+                                        transient_attempt=next_transient_attempt,
+                                        invocation_attempt=completed_agent.invocation_attempt + 1,
+                                        retry_reason="transient",
+                                        ready_at=time.monotonic() + delay,
+                                    ),
+                                )
+                            else:
+                                failures.append((completed_agent.name, rc))
+                                _resource_finish_target(completed_agent.name)
+                            continue
+                        if rc == quota.RATE_LIMIT_RC:
+                            if self._reactive_rate_limit_enabled() and completed_agent.attempt <= retry_limit:
+                                _resource_pause_target(completed_agent.name)
+                                rate_limited.append(
+                                    _LaunchRequest(
+                                        completed_agent.target,
+                                        rate_limit_attempt=completed_agent.attempt + 1,
+                                        policy_attempt=completed_agent.policy_attempt,
+                                        transient_attempt=completed_agent.transient_attempt,
+                                        invocation_attempt=completed_agent.invocation_attempt + 1,
+                                        retry_reason="rate_limit",
+                                    )
+                                )
+                                pause_for_rate_limit = True
+                            else:
+                                failures.append((completed_agent.name, rc))
+                                _resource_finish_target(completed_agent.name)
+                                stop_launching = True
+                        else:
+                            failures.append((completed_agent.name, rc))
+                            _resource_finish_target(completed_agent.name)
+
+                    if pause_for_rate_limit and any(rc != quota.RATE_LIMIT_RC for _, rc in failures):
+                        # A permanent failure wins over 75, but permanent failures
+                        # alone do not suppress independent batch targets.
+                        for request in rate_limited:
+                            name = self.target_name(request.target)
+                            failures.append((name, quota.RATE_LIMIT_RC))
+                            _resource_finish_target(name)
+                        stop_launching = True
+
+                    if stop_launching:
+                        # A 75 that cannot be retried stops new quota-consuming
+                        # work. Let agents already in the current wave finish.
+                        if pending:
+                            skipped = [self.target_name(request.target) for request in pending]
+                            print(
+                                f"[{_ts()}] Rate limit stopped new launches; "
+                                f"skipping {len(skipped)} unstarted target(s): {', '.join(skipped)}"
+                            )
+                        pending.clear()
+                        rate_limited.clear()
+                        pause_for_rate_limit = False
+                    elif pause_for_rate_limit and not running:
+                        names_to_retry = ", ".join(self.target_name(request.target) for request in rate_limited)
+                        print(f"[{_ts()}] Rate limited: waiting before retrying {names_to_retry}")
+                        self._wait_for_rate_limit()
+                        # Retry only targets that returned 75. Successful targets
+                        # stay complete, and untouched targets retain their place.
+                        pending = rate_limited + pending
+                        rate_limited = []
+                        pause_for_rate_limit = False
+
+                    if running:
+                        time.sleep(self.progress_config.poll_seconds)
+                    elif pending and not pause_for_rate_limit and not stop_launching:
+                        next_ready = min(request.ready_at for request in pending)
+                        delay = max(0.0, next_ready - time.monotonic())
+                        if delay:
+                            time.sleep(min(self.progress_config.poll_seconds, delay))
+
+                if not dry_run:
+                    print(f"[{_ts()}] All agents completed.")
+            except BaseException:
+                self._terminate_agents(running)
+                if not dry_run:
+                    for name in sorted(started_names):
+                        try:
+                            self.invalidate_target_output(ws, name)
+                        except (OSError, UnicodeError, ValueError) as exc:
+                            print(f"ERROR: cannot invalidate output for {name}: {exc}")
+                    _refresh_target_indexes(ws, names)
+                raise
+
+        if self.key in CONTEXT_CONTROL_PHASES and failures and all(rc == CONFIRMATION_YIELD_RC for _, rc in failures):
+            print(self.yield_message)
+            return CONFIRMATION_YIELD_RC
+
+        integrity_failures = self.audit_output_integrity(
+            ws,
+            [name for name in names if name in completed_names],
+            integrity_snapshot,
+            adapter=adapter,
+            dry_run=dry_run,
+        )
+        finalized = self.finalize_outputs(
+            ws,
+            [name for name in names if name in successful_names],
+            adapter=adapter,
+            dry_run=dry_run,
+        )
+        failed_names = {name for name, _ in failures}
+        finalized = [(name, rc) for name, rc in finalized if name not in failed_names]
+        invalid_names = {name for name, _ in integrity_failures + finalized}
+        handoff_failures = self.check_handoff(
+            ws,
+            [name for name in names if name in successful_names and name not in invalid_names],
+            dry_run=dry_run,
+        )
+        invalid_names.update(name for name, _ in handoff_failures)
+        if not dry_run:
+            for name in sorted(successful_names - invalid_names):
+                publish_required = name not in accepted_names
+                if not publish_required:
+                    try:
+                        summary_info = (ws.work_dir(name) / "summary.md").lstat()
+                    except OSError:
+                        publish_required = True
+                    else:
+                        publish_required = not stat.S_ISREG(summary_info.st_mode)
+                if publish_required:
+                    try:
+                        self.publish_target_output(ws, name)
+                    except (OSError, UnicodeError, ValueError) as exc:
+                        finalized.append((name, 1))
+                        invalid_names.add(name)
+                        print(f"ERROR: cannot publish output for {name}: {exc}")
+                        continue
+                try:
+                    resumelib.mark_completed(("phase", self.key, name))
+                except resumelib.ResumeError as exc:
+                    finalized.append((name, 1))
+                    print(f"ERROR: {exc}")
+                    continue
+                if name in started_names:
+                    published_names.add(name)
+
+            for name in sorted(started_names - published_names):
+                try:
+                    self.invalidate_target_output(ws, name)
+                except (OSError, UnicodeError, ValueError) as exc:
+                    finalized.append((name, 1))
+                    print(f"ERROR: cannot invalidate output for {name}: {exc}")
+
+        self.summarize(ws, names)
+        if not dry_run:
+            _refresh_target_indexes(ws, names)
+            self._acceptance(ws, names)
+        if failures:
+            print()
+            print("Agent failures:")
+            for name, rc in failures:
+                print(f"  FAILED  {name}: adapter exited {rc}")
+        if finalized:
+            print()
+            print("Output validation failures:")
+            for name, rc in finalized:
+                print(f"  FAILED  {name}: invalid phase output (exit {rc})")
+        if handoff_failures:
+            print()
+            print("Handoff validation failures:")
+            for name, rc in handoff_failures:
+                print(f"  FAILED  {name}: next-phase prerequisites not met (exit {rc})")
+        if integrity_failures:
+            print()
+            print("Output integrity failures:")
+            for name, rc in integrity_failures:
+                print(f"  FAILED  {name}: protected output was restored (exit {rc})")
+        result = self._failure_code(failures + integrity_failures + finalized + handoff_failures)
+        if result == 0 and not dry_run:
+            try:
+                resumelib.clear_completed(phase_prefix)
+            except resumelib.ResumeError as exc:
+                print(f"ERROR: {exc}")
+                return 1
+        return result
+
+    def run_alternate(
+        self,
+        ws: Workspace,
+        names: list[str],
+        *,
+        adapter: Path,
+        claude_alias: str,
+        max_parallel: int,
+        max_turns: str,
+        dry_run: bool,
+    ) -> int | None:
+        """Hook: let a phase run its targets its own way instead of the default
+        single-agent `_launch` loop. Return an exit code to mean "handled, stop
+        here"; return None (the default) to fall through to the single-agent
+        loop. Overridden by BugConfirmationPhase for parallel per-finding
+        confirmation."""
+        return None
+
+    def finalize_outputs(
+        self,
+        ws: Workspace,
+        names: list[str],
+        *,
+        adapter: Path,
+        dry_run: bool,
+    ) -> list[tuple[str, int]]:
+        """Validate phase-specific output that cannot be trusted to the agent.
+
+        The default has no extra contract. A returned target/code pair is folded
+        into normal agent failures so downstream phases cannot consume an
+        invalid artifact after a nominally successful adapter exit.
+        """
+        return []
+
+    def check_handoff(
+        self,
+        ws: Workspace,
+        names: list[str],
+        *,
+        dry_run: bool,
+    ) -> list[tuple[str, int]]:
+        """Reuse the consumer's prerequisite check before publishing success.
+
+        The consumer runs this same ``check()`` again when it starts. Checking
+        both sides of a potentially long wait catches incomplete producer runs
+        immediately without creating a second output-contract implementation.
+        """
+        if dry_run or not names or self.next_phase_key is None:
+            return []
+        next_phase = PHASES[self.next_phase_key]
+        print()
+        print(f"Checking handoff to {self.next_phase_key}...")
+        return [(name, 1) for name in names if not next_phase.check(ws, [name])]
+
+    def capture_output_integrity(
+        self,
+        ws: Workspace,
+        names: list[str],
+        *,
+        adapter: Path,
+        dry_run: bool,
+    ) -> Any:
+        """Capture phase-owned immutable output before any adapter runs."""
+        return None
+
+    def audit_output_integrity(
+        self,
+        ws: Workspace,
+        names: list[str],
+        snapshot: Any,
+        *,
+        adapter: Path,
+        dry_run: bool,
+    ) -> list[tuple[str, int]]:
+        """Restore protected output after every adapter that actually ended."""
+        return []
+
+    # ── acceptance layer (stop gate) ──
+    def _acceptance(self, ws: Workspace, names: list[str]) -> None:
+        """Audit each target's phase contract after the agents exit: deliverable
+        present, or an explicit BLOCKED.md declaring failure. Alarm-only by
+        design — the exit code stays 0 (downstream prerequisite gates still stop
+        the pipeline); this makes a slipped-through failure loud instead of a
+        silent all-OK summary. Contract lives in src/specular/stop_gate.py."""
+        gate = SPECULAR_ROOT / "src" / "specular" / "stop_gate.py"
+        failures: list[tuple[str, str]] = []
+        for name in names:
+            try:
+                r = subprocess.run(
+                    [sys.executable, str(gate), "accept", self.key, str(ws.work_dir(name))],
+                    capture_output=True,
+                    text=True,
+                )
+            except OSError:
+                continue  # fail-open for THIS target only; still audit the rest
+            if r.returncode != 0:
+                failures.append((name, (r.stdout or r.stderr).strip()))
+        if failures:
+            print()
+            print("Acceptance gate:")
+            for name, msg in failures:
+                print(f"  FAILED  {name}: {msg}")
+
+    def _launch(
+        self,
+        ws: Workspace,
+        name: str,
+        prompt: str,
+        dry_run: bool,
+        max_turns: str,
+        claude_alias: str,
+        adapter: Path,
+        *,
+        owner: list[progress.RunningAgent] | None = None,
+        target: str = "",
+        attempt: int = 1,
+        policy_attempt: int = 0,
+        transient_attempt: int = 0,
+        invocation_attempt: int = 1,
+        retry_reason: str = "fresh",
+    ) -> progress.RunningAgent | None:
+        files = self.agent_files(ws, name)
+        for d in files["mkdirs"]:
+            d.mkdir(parents=True, exist_ok=True)
+        resume_state = _resume_state_path(files["log"])
+        repo_dir = ws.find_repo_dir(name)
+        launch_cwd = Path.cwd().resolve()
+        if ws.uses_private_source():
+            if not repo_dir:
+                raise RuntimeError(f"private source is missing for {name!r}")
+            launch_cwd = Path(repo_dir)
+        activity_sidecar = files["log"].with_suffix(".activity.jsonl")
+        attempt_files = (
+            files["prompt"],
+            files["log"],
+            _last_message_path(files["log"]),
+            activity_sidecar,
+            files["log"].with_suffix(".raw.json"),
+            files["log"].with_suffix(".usage.json"),
+        )
+        resume_logical = ("phase", self.key, name)
+        claim = resumelib.ResumeClaim(attempt=invocation_attempt, manual=False, resumable=False)
+        if not dry_run and resumelib.enabled():
+            checkpoint_model, checkpoint_effort = _checkpoint_tuning(adapter, self._model, self._effort)
+            claim = resumelib.prepare_turn(
+                resume_logical,
+                phase=self.key,
+                target=name,
+                kind="phase",
+                adapter=adapter,
+                model=checkpoint_model,
+                effort=checkpoint_effort,
+                codex_profile=self._codex_profile,
+                claude_alias=claude_alias,
+                cwd=launch_cwd,
+                resume_state=resume_state,
+                prompt_file=files["prompt"],
+                log_file=files["log"],
+            )
+        archived_attempts: dict[Path, Path] = {}
+        if not dry_run:
+            if (claim.manual or claim.attempt > 1) and self.carry_retry_budgets:
+                # A CI confirmation handoff re-enters this launcher while the
+                # same logical conversation and its spent budgets stay active.
+                attempt = max(attempt, claim.rate_limit_attempt)
+                policy_attempt = max(policy_attempt, claim.policy_attempt)
+                transient_attempt = max(transient_attempt, claim.transient_attempt)
+            invocation_attempt = claim.attempt
+            if resumelib.enabled():
+                resumelib.update_turn(
+                    resume_logical,
+                    rate_limit_attempt=attempt,
+                    policy_attempt=policy_attempt,
+                    transient_attempt=transient_attempt,
+                    invocation_attempt=invocation_attempt,
+                    retry_reason="manual" if claim.manual else retry_reason,
+                )
+            if invocation_attempt == 1:
+                _clear_attempt_archives(attempt_files)
+                _clear_resume_state(resume_state)
+                if not claim.manual:
+                    self.prepare_fresh_outputs(ws, name)
+            else:
+                archived_attempts = _archive_attempt(attempt_files, invocation_attempt - 1)
+        resumable = resume_state.is_file()
+        prompt_reason = (
+            "manual" if claim.manual else ("policy" if policy_attempt > 0 and not resumable else retry_reason)
+        )
+        prompt = _retry_prompt(
+            prompt,
+            prompt_reason,
+            resumable=resumable,
+            manual_extra=self._manual_prompt_extra(ws, name) if claim.manual else "",
+        )
+        prompt = materialize_skill_refs(prompt, adapter)
+        files["prompt"].write_text(prompt)
+        print(f"[{_ts()}] Launching agent: {name}")
+        if dry_run:
+            tuning = _model_effort_argv(adapter, self._model, self._effort, self._codex_profile)
+            tuning_text = (" " + " ".join(tuning)) if tuning else ""
+            print(
+                f"  [DRY RUN] {adapter} {self.dry_prompt_flag}=<prompt> "
+                f"--max-turns={max_turns} --claude-alias={claude_alias}{tuning_text} "
+                f"--log={files['log']} --resume-state={resume_state} --background"
+            )
+            print(f"  Prompt saved: {files['prompt']}")
+            return None
+        system_prompt_args = _system_prompt_argv(files["prompt"])
+        # Generic stop-gate interface (src/specular/stop_gate.py): tell the
+        # adapter which phase this agent runs and where its work dir is, so
+        # hook-capable adapters arm the completion gate. Per-launch env copy,
+        # not os.environ: targets differ under --max-parallel.
+        env = os.environ.copy()
+        env.pop("SPECULAR_CI_BORROW_LEASE", None)
+        for key in (RESOURCE_INVOCATION_ENV, RESOURCE_ROOT_ENV, RESOURCE_PHASE_ENV):
+            env.pop(key, None)
+        env["SPECULAR_PHASE"] = self.key
+        env["SPECULAR_WORK_DIR"] = str(ws.work_dir(name))
+        env["SPECULAR_ROOT"] = str(SPECULAR_ROOT)
+        if repo_dir:
+            env["SPECULAR_TARGET_REPO_DIR"] = repo_dir
+        if ws.uses_private_source():
+            env["PWD"] = str(launch_cwd)
+            sanitize_snapshot_git_environment(env, ceiling=ws.private_git_ceiling([name]))
+        else:
+            env["PWD"] = str(launch_cwd)
+        work_dir = ws.work_dir(name)
+        with contextlib.suppress(OSError):
+            activity_sidecar.unlink()
+        # SPECULAR_PROGRESS=off disables the retained activity sidecar and live
+        # reporting. Resume-capable adapters may still consume a private
+        # structured stream so they can durably capture the exact native session
+        # ID; that temporary capture is not progress telemetry.
+        env.pop("SPECULAR_ACTIVITY_LOG", None)
+        if progress.enabled():
+            env["SPECULAR_ACTIVITY_LOG"] = str(activity_sidecar)
+        # Do not report launcher plumbing as agent work. The generic adapter
+        # contract derives raw/usage data from the .log stem, so ignore those
+        # files as well when they live in the workspace.
+        runtime_files = (
+            files["prompt"],
+            _system_prompt_path(files["prompt"]),
+            files["pid"],
+            files["log"],
+            _last_message_path(files["log"]),
+            activity_sidecar,
+            files["log"].with_suffix(".raw.json"),
+            files["log"].with_suffix(".usage.json"),
+            resume_state,
+        )
+        ignored: set[Path] = set()
+        for path in runtime_files:
+            with contextlib.suppress(ValueError):
+                ignored.add(path.relative_to(work_dir))
+        snapshot = progress.workspace_snapshot(work_dir, ignored)
+        prelaunch_log_stamp = progress.file_stamp(files["log"])
+        activity_log = activity_sidecar
+        prelaunch_activity_stamp = progress.file_stamp(activity_log)
+        proc: subprocess.Popen[bytes] | None = None
+        launched: progress.RunningAgent | None = None
+        try:
+            usage_path = files["log"].with_suffix(".usage.json")
+            _resource_note_agent(
+                work_dir,
+                files["log"],
+                attempt=invocation_attempt,
+                archived_usage_path=archived_attempts.get(usage_path),
+            )
+            command = [
+                str(adapter),
+                f"--prompt-file={files['prompt']}",
+                f"--max-turns={max_turns}",
+                f"--claude-alias={claude_alias}",
+                *_model_effort_argv(adapter, self._model, self._effort, self._codex_profile),
+                f"--log={files['log']}",
+                f"--resume-state={resume_state}",
+                *system_prompt_args,
+                "--background",
+            ]
+            if self.key in CONTEXT_CONTROL_PHASES:
+                command = [sys.executable, str(SCRIPT_DIR / "context_runner.py"), *command]
+            tlc_tasks.prepare_environment(env, files["log"], SPECULAR_ROOT)
+            proc = subprocess.Popen(
+                command,
+                env=env,
+                cwd=launch_cwd,
+                start_new_session=True,
+                pass_fds=resumelib.inherited_run_lock_fds(),
+            )
+            launched = progress.RunningAgent(
+                name=name,
+                proc=proc,
+                work_dir=work_dir,
+                log=files["log"],
+                activity_log=activity_log,
+                ignored=ignored,
+                reported_snapshot=snapshot,
+                log_stamp=prelaunch_log_stamp,
+                activity_stamp=prelaunch_activity_stamp,
+                adapter_name=adapter.stem,
+                target=target,
+                attempt=attempt,
+                policy_attempt=policy_attempt,
+                transient_attempt=transient_attempt,
+                invocation_attempt=invocation_attempt,
+                resume_state=resume_state,
+            )
+            if owner is not None:
+                owner.append(launched)
+            files["pid"].write_text(f"{proc.pid}\n")
+            print(f"  PID={proc.pid}  Log: {files['log']}")
+        except BaseException:
+            # Own the Popen immediately: construction, registration, pid writes,
+            # logging, and signal delivery all stay inside the cleanup boundary.
+            if proc is not None:
+                self._terminate_processes([proc], announce=False)
+            if owner is not None and launched in owner:
+                owner.remove(launched)
+            raise
+        return launched
+
+
+def _model_effort_argv(
+    adapter: Path,
+    model: str | None,
+    effort: str | None,
+    codex_profile: str | None = None,
+) -> list[str]:
+    """Build adapter tuning flags without collapsing "unset" and "empty".
+
+    Claude phase launches deliberately default to ``max`` so an ambient
+    ``CLAUDE_EFFORT`` injected by an IDE cannot silently downgrade a pipeline.
+    Codex and Copilot receive no effort flag when unspecified and therefore use
+    their own environment/config defaults.  An explicit empty value is always
+    forwarded so the adapter can clear its environment fallback and return to
+    the underlying CLI's configured default.  A Codex profile is forwarded only
+    when one was selected.
+    """
+    argv: list[str] = []
+    if model is not None:
+        argv.append(f"--model={model}")
+    if effort is not None:
+        argv.append(f"--effort={effort}")
+    elif adapter.stem == "claude-code":
+        argv.append("--effort=max")
+    if codex_profile is not None:
+        argv.append(f"--codex-profile={codex_profile}")
+    return argv
+
+
+def _codex_profile_option_error(agent: str, codex_profile: str | None) -> str | None:
+    """Reject a Codex profile that the selected adapter cannot honor."""
+    if codex_profile is None:
+        return None
+    if agent != "codex":
+        return f"--codex-profile requires --agent=codex (got --agent={agent})"
+    name_error = codex_profile_name_error(codex_profile)
+    if name_error is not None:
+        return f"--codex-profile {name_error}"
+    return None
+
+
+def _checkpoint_tuning(adapter: Path, model: str | None, effort: str | None) -> tuple[str | None, str | None]:
+    """Return the exact tuning values forwarded to the adapter."""
+    forwarded_model: str | None = None
+    forwarded_effort: str | None = None
+    for arg in _model_effort_argv(adapter, model, effort):
+        if arg.startswith("--model="):
+            forwarded_model = arg.removeprefix("--model=")
+        elif arg.startswith("--effort="):
+            forwarded_effort = arg.removeprefix("--effort=")
+    return forwarded_model, forwarded_effort
+
+
+def _last_message_path(log_file: Path) -> Path:
+    """Mirror the Codex adapter's bash `${log_file%.log}` derivation."""
+    raw = str(log_file)
+    stem = raw[:-4] if raw.endswith(".log") else raw
+    return Path(stem + ".last-message.txt")
+
+
+def run_agent_blocking(
+    adapter: Path,
+    prompt: str,
+    prompt_file: Path,
+    log_file: Path,
+    *,
+    phase_key: str,
+    work_dir: Path,
+    claude_alias: str,
+    gate_work_dir: Path | None = None,
+    cwd: str | Path | None = None,
+    max_turns: str = "0",
+    stop_gate: bool = False,
+    model: str | None = None,
+    effort: str | None = None,
+    codex_profile: str | None = None,
+    policy_retries: int = DEFAULT_POLICY_RETRIES,
+    transient_resumes: int = DEFAULT_TRANSIENT_RESUMES,
+    policy_state: PolicyRetryState | None = None,
+    resume_logical: tuple[str, ...] | None = None,
+    resume_phase: str | None = None,
+    resume_target: str = "",
+    resume_kind: str = "turn",
+    resume_finding_id: str | None = None,
+    manual_prompt_extra: str = "",
+    resume_from: Path | None = None,
+) -> tuple[int, str]:
+    """Run an agent turn, blocking, and return (returncode, log text).
+
+    The blocking sibling of `Phase._launch`: it shares the same adapter path, the
+    same flag set (`--prompt-file` / `--max-turns` / `--claude-alias` /
+    `--model` / `--effort` / `--log`), and the same stop-gate env keys — but
+    drops `--background` so the caller can read the result before issuing the
+    next turn. That is the shape a per-finding confirmation debate needs (turn
+    N+1 reads turn N's output), which the fire-all-then-wait `_launch` loop
+    cannot express.
+
+    ``SPECULAR_WORK_DIR`` remains the target workspace used by the outer sandbox.
+    ``gate_work_dir`` may narrow the execution gate's state and PID scan to one
+    parallel worker without narrowing that sandbox; it defaults to ``work_dir``.
+    Per-turn calls use a phase key with no deliverable contract by default: a
+    phase deliverable (`confirmed-bugs.md`) exists only after all findings
+    aggregate, never after one turn. ``stop_gate=True`` opts back into the
+    original phase key and therefore its deliverable contract. Rate-limit (exit
+    75) is the caller's concern. A provider policy block (exit 76) advances up
+    to ``policy_retries`` continuation levels. A retryable provider/transport
+    failure (exit 74) resumes up to ``transient_resumes`` times with bounded
+    backoff; a credential-refresh failure (exit 72) takes the same path only
+    while fewer than ``AUTH_REFRESH_RESUMES`` resumes have been used. Every
+    retry reuses the exact native session captured in a state
+    file; if the CLI failed before emitting an ID, Specula safely replays the
+    original prompt. Callers that automatically replay exit 75 may pass
+    ``policy_state`` so the native session and both budgets survive that wait.
+    The caller must discard that state after any non-75 terminal result.
+    ``resume_from`` binds a new logical turn to another turn's native session
+    state, so its first invocation continues that exact conversation. Its
+    retries replay the original prompt (with the policy note after a policy
+    block) instead of a generic continuation. The caller must use that turn's
+    cwd, adapter, and tuning.
+    """
+    if policy_retries < 0:
+        raise ValueError("policy_retries must be a non-negative integer")
+    if transient_resumes < 0:
+        raise ValueError("transient_resumes must be a non-negative integer")
+    caller_cwd = Path.cwd()
+    adapter = adapter if adapter.is_absolute() else (caller_cwd / adapter).resolve()
+    prompt_file = prompt_file if prompt_file.is_absolute() else (caller_cwd / prompt_file).resolve()
+    log_file = log_file if log_file.is_absolute() else (caller_cwd / log_file).resolve()
+    work_dir = work_dir if work_dir.is_absolute() else (caller_cwd / work_dir).resolve()
+    gate_dir = gate_work_dir or work_dir
+    gate_dir = gate_dir if gate_dir.is_absolute() else (caller_cwd / gate_dir).resolve()
+    run_cwd = None if cwd is None else Path(cwd)
+    if run_cwd is not None and not run_cwd.is_absolute():
+        run_cwd = (caller_cwd / run_cwd).resolve()
+
+    prompt = materialize_skill_refs(prompt, adapter)
+    prompt_file.parent.mkdir(parents=True, exist_ok=True)
+    last_message_file = _last_message_path(log_file)
+    resume_state = _resume_state_path(log_file)
+    activity_file = log_file.with_suffix(".activity.jsonl")
+    attempt_files = (
+        prompt_file,
+        log_file,
+        last_message_file,
+        activity_file,
+        log_file.with_suffix(".raw.json"),
+        log_file.with_suffix(".usage.json"),
+    )
+    env = os.environ.copy()
+    env.pop("SPECULAR_CI_BORROW_LEASE", None)
+    for key in (RESOURCE_INVOCATION_ENV, RESOURCE_ROOT_ENV, RESOURCE_PHASE_ENV):
+        env.pop(key, None)
+    env["SPECULAR_PHASE"] = phase_key if stop_gate else f"{phase_key}_turn"
+    env["SPECULAR_WORK_DIR"] = str(work_dir)
+    env["SPECULAR_STOP_GATE_WORK_DIR"] = str(gate_dir)
+    # subprocess cwd changes the process's real working directory but does not
+    # rewrite an explicitly inherited PWD.  OpenCode prefers PWD over getcwd()
+    # when selecting its project root, so keep both views on the trusted cwd.
+    if run_cwd is not None:
+        env["PWD"] = str(run_cwd)
+    if env.get(SNAPSHOT_MODE_ENV):
+        # Confirmation agents start in a trusted output cwd, then work in the
+        # sibling private source.  The ceiling therefore belongs to the target
+        # root, not the launch cwd.
+        git_ceiling = str(work_dir.resolve().parent)
+        if os.pathsep in git_ceiling:
+            raise RuntimeError("private target path cannot be represented in GIT_CEILING_DIRECTORIES")
+        sanitize_snapshot_git_environment(env, ceiling=git_ceiling)
+    if run_cwd is not None:
+        _pin_sandbox_config(env, caller_cwd)
+    cmd = [
+        str(adapter),
+        f"--prompt-file={prompt_file}",
+        f"--max-turns={max_turns}",
+        f"--claude-alias={claude_alias}",
+        *_model_effort_argv(adapter, model, effort, codex_profile),
+        f"--log={log_file}",
+        f"--resume-state={resume_state}",
+        *_system_prompt_argv(prompt_file),
+    ]
+    state = policy_state if policy_state is not None else PolicyRetryState()
+    claim = resumelib.ResumeClaim(attempt=1, manual=False, resumable=False)
+    if resume_logical is not None:
+        checkpoint_model, checkpoint_effort = _checkpoint_tuning(adapter, model, effort)
+        claim = resumelib.prepare_turn(
+            resume_logical,
+            phase=resume_phase or phase_key,
+            target=resume_target,
+            kind=resume_kind,
+            adapter=adapter,
+            model=checkpoint_model,
+            effort=checkpoint_effort,
+            codex_profile=codex_profile,
+            claude_alias=claude_alias,
+            cwd=run_cwd,
+            resume_state=resume_state,
+            prompt_file=prompt_file,
+            log_file=log_file,
+            finding_id=resume_finding_id,
+        )
+    with state._lock:
+        if claim.attempt > 1:
+            state.policy_attempt = max(state.policy_attempt, claim.policy_attempt)
+            state.transient_attempt = max(state.transient_attempt, claim.transient_attempt)
+            state.invocation_attempt = max(
+                state.invocation_attempt,
+                claim.invocation_attempt,
+                claim.attempt - 1,
+            )
+            if not claim.manual and state.retry_reason == "fresh":
+                state.retry_reason = claim.retry_reason
+        if not 0 <= state.policy_attempt <= policy_retries:
+            raise ValueError("policy_state attempt must be within policy_retries")
+        if not 0 <= state.transient_attempt <= transient_resumes:
+            raise ValueError("policy_state transient attempt must be within transient_resumes")
+        if claim.manual:
+            state.resume_state = resume_state
+            state.retry_reason = "manual"
+        if state.resume_state is None:
+            _clear_attempt_archives(attempt_files)
+            _clear_resume_state(resume_state)
+            state.resume_state = resume_state
+        elif state.resume_state != resume_state:
+            raise ValueError("policy_state belongs to a different logical turn")
+        if resume_from is not None and not resume_state.is_file():
+            _seed_resume_state(resume_from, resume_state)
+
+        def persist_cursor() -> None:
+            if resume_logical is not None:
+                resumelib.update_turn(
+                    resume_logical,
+                    rate_limit_attempt=claim.rate_limit_attempt,
+                    policy_attempt=state.policy_attempt,
+                    transient_attempt=state.transient_attempt,
+                    invocation_attempt=state.invocation_attempt,
+                    retry_reason=state.retry_reason,
+                )
+
+        while True:
+            policy_attempt = state.policy_attempt
+            state.invocation_attempt += 1
+            archived_attempts: dict[Path, Path] = {}
+            if state.invocation_attempt > 1:
+                archived_attempts = _archive_attempt(attempt_files, state.invocation_attempt - 1)
+            persist_cursor()
+            # A turn seeded from another session may fail before the provider
+            # records its request, so every retry replays that request.
+            resumable = resume_state.is_file() and resume_from is None
+            prompt_reason = "policy" if policy_attempt > 0 and not resumable else state.retry_reason
+            current_prompt = _retry_prompt(
+                prompt,
+                prompt_reason,
+                resumable=resumable,
+                manual_extra=manual_prompt_extra if state.retry_reason == "manual" else "",
+            )
+            if resume_from is not None and state.retry_reason == "manual":
+                current_prompt += manual_prompt_extra  # like every other manual continuation
+            prompt_file.write_text(current_prompt)
+            with contextlib.suppress(OSError):
+                log_file.unlink()
+            if adapter.stem == "codex":
+                with contextlib.suppress(OSError):
+                    last_message_file.unlink()
+
+            usage_path = log_file.with_suffix(".usage.json")
+            _resource_note_agent(
+                work_dir,
+                log_file,
+                attempt=state.invocation_attempt,
+                archived_usage_path=archived_attempts.get(usage_path),
+            )
+            try:
+                tlc_tasks.prepare_environment(env, log_file, SPECULAR_ROOT)
+                rc = subprocess.run(
+                    cmd,
+                    env=env,
+                    cwd=run_cwd,
+                    pass_fds=resumelib.inherited_run_lock_fds(),
+                ).returncode
+            finally:
+                tlc_tasks.stop_owned_tasks(work_dir, log_file)
+            persist_cursor()
+            # Codex stdout is a complete CLI transcript, not the assistant's final
+            # response. The adapter keeps that transcript in `log_file` for
+            # diagnosis and asks `codex exec --output-last-message` for the response
+            # separately. A missing Codex sidecar is an incomplete turn; never
+            # reinterpret the CLI transcript as an assistant answer. Other
+            # adapters' log contract remains result-only.
+            result_file = last_message_file if adapter.stem == "codex" else log_file
+            text = result_file.read_text(errors="replace") if result_file.is_file() else ""
+            # Resource runtime is target-level wall time. A Phase 4a target can
+            # have sibling turns running, so only outer target schedulers pause it.
+            transient_limit = _transient_resume_limit(rc, transient_resumes)
+            if transient_limit is not None and state.transient_attempt < transient_limit:
+                state.transient_attempt += 1
+                state.retry_reason = "transient"
+                persist_cursor()
+                delay = _transient_resume_delay(state.transient_attempt)
+                mode = "resuming the exact session" if resume_state.is_file() else "retrying the original request"
+                print(
+                    f"[{_ts()}] {_transient_failure_label(rc).capitalize()}; {mode} "
+                    f"({state.transient_attempt}/{transient_limit}) after {delay:g}s"
+                )
+                time.sleep(delay)
+                continue
+            if rc == POLICY_BLOCKED_RC and policy_attempt < policy_retries:
+                state.policy_attempt = policy_attempt + 1
+                state.retry_reason = "policy"
+                persist_cursor()
+                print(
+                    f"[{_ts()}] Provider policy interrupted the agent turn; retrying with a revised request "
+                    f"({state.policy_attempt}/{policy_retries})"
+                )
+                continue
+            if rc == quota.RATE_LIMIT_RC:
+                state.retry_reason = "rate_limit"
+                persist_cursor()
+            return rc, text
+
+
+class CodeAnalysisPhase(Phase):
+    key = "code_analysis"
+    next_phase_key = "spec_generation"
+    title = "Specula — Code Analysis Batch Runner"
+    usage = r"""
+Batch launcher: spawn one agent per target system for code analysis.
+Each agent follows the code-analysis skill methodology and produces a modeling brief.
+
+Usage:
+  specular analyze [options] "name|github|lang|reference" [...]
+
+Single-target (run from your project directory):
+  cd my-project
+  specular analyze "myproject|me/myproject|Go|Raft"
+
+Batch (run from a directory containing multiple targets):
+  cd case-studies
+  specular analyze \
+    "braft|brpc/braft|C++|Raft (Ongaro 2014)" \
+    "sofa-jraft|sofastack/sofa-jraft|Java|Raft (Ongaro 2014)"
+
+Options:
+  --dry-run           Print commands without executing
+  --check             Only verify repos exist
+  --max-parallel=N    Max concurrent agents (default: 1)
+  --max-turns=N       Max agent turns (default: 0 = unlimited)
+  --policy-retries=N  Policy-block continuation retries (default: 20; 0 disables)
+  --transient-resumes=N  Transient provider/transport session resumes (default: 20; 0 disables)
+  --agent=NAME        Agent adapter to use (default: claude-code)
+  --claude-alias=NAME Claude CLI profile (default: claude)
+  --model=NAME        Model forwarded to the selected adapter
+  --effort=LEVEL      Reasoning effort forwarded to the selected adapter
+  --codex-profile=NAME  Codex config profile ($CODEX_HOME/NAME.config.toml; codex only)
+  --artifact=PATH     Source code path (default: $PWD for single target,
+                      $PWD/<name>/artifact/<repo>/ for batch)
+
+"""
+    check_header = "Checking repositories..."
+    check_fail_msg = (
+        "ERROR: Some repositories are missing. Use --artifact=<path> or place repos under <name>/artifact/<repo>/."
+    )
+    check_ok_msg = "All repos OK."
+
+    def target_name(self, target: str) -> str:
+        # code_analysis targets are "name|github|lang|reference"; name is field 1.
+        return _trim(target.split("|", 1)[0])
+
+    def check(self, ws: Workspace, names: list[str]) -> bool:
+        ok = True
+        for name in names:
+            repo_dir = ws.find_repo_dir(name)
+            if repo_dir:
+                # An explicit --artifact has already been validated as a
+                # directory, but it need not be a Git checkout. Degrade the
+                # optional commit count to "?" when git cannot inspect it.
+                commits = "?"
+                if Path(repo_dir).is_dir():
+                    r = subprocess.run(
+                        ["git", "rev-list", "--count", "HEAD"],
+                        cwd=repo_dir,
+                        capture_output=True,
+                        text=True,
+                    )
+                    if r.returncode == 0:
+                        commits = r.stdout.strip()
+                print(f"  OK  {name} ({commits} commits)")
+            else:
+                print(f"  MISSING  {name} — use --artifact=<path> or place repo at {name}/artifact/<repo>/")
+                ok = False
+        return ok
+
+    def agent_files(self, ws: Workspace, name: str) -> AgentFiles:
+        wd = ws.work_dir(name)
+        return {"log": wd / "agent.log", "pid": wd / "agent.pid", "prompt": wd / ".prompt.md", "mkdirs": [wd]}
+
+    def build_prompt(self, ws: Workspace, target: str) -> str:
+        # maxsplit=3: bash `IFS='|' read -r name github lang reference` folds any
+        # further '|'-separated content (pipes included) into the reference field.
+        parts = [_trim(x) for x in target.split("|", 3)]
+        parts += [""] * (4 - len(parts))
+        name, github, language, reference = parts[0], parts[1], parts[2], parts[3]
+        repo_dir = ws.find_repo_dir(name)
+        work_dir = ws.work_dir(name)
+        prompt = f"""# Code Analysis Task
+
+You are analyzing the following system:
+
+- **Name**: {name}
+- **GitHub**: {github}
+- **Language**: {language}
+- **Reference Algorithm**: {reference}
+- **Repository**: {repo_dir}
+- **Working Directory**: {work_dir}
+
+## Instructions
+
+Use the installed Specula skill {prompt_skill_ids("code-analysis")}. Read it in full and follow it exactly — it is the single source of methodology (its 4 phases, references, rules, Scenario modeling-brief format, and Category A/B handling).
+
+Do everything the skill specifies. Do not add, relax, or override any step here. Scale the work to the requested scope; the skill sets no fixed counts or document-size targets.
+
+## Output
+
+Write your outputs to:
+- `{work_dir}/modeling-brief.md` — The primary deliverable (handoff to Spec Generation)
+- `{work_dir}/defect-ledger.json` — The brief's defect ledger (§ 6.2) in JSON (handoff to Bug Confirmation)
+- `{work_dir}/analysis-report.md` — Detailed audit trail of all findings
+"""
+        prompt += notes_section(work_dir, first=True)
+        return self._with_extra(ws, name, prompt)
+
+    def summarize(self, ws: Workspace, names: list[str]) -> None:
+        print()
+        print("========================================")
+        print(" Results")
+        print("========================================")
+        for name in names:
+            wd = ws.work_dir(name)
+            brief = wd / "modeling-brief.md"
+            report = wd / "analysis-report.md"
+            if brief.is_file():
+                n = _wc_l(brief)
+                print(f"  OK  {name} -> modeling-brief.md ({n} lines)")
+            elif report.is_file():
+                n = _wc_l(report)
+                print(f"  ~~  {name} -> analysis-report.md only ({n} lines, no modeling brief)")
+            else:
+                print(f"  --  {name} (no output)")
+
+
+class SpecGenerationPhase(Phase):
+    key = "spec_generation"
+    next_phase_key = "harness_generation"
+    title = "Specula — Spec Generation Batch Runner"
+    usage = r"""
+Batch launcher: spawn one agent per target system for TLA+ spec generation.
+Each agent follows the spec-generation skill methodology and produces base/MC/Trace specs.
+
+Usage:
+  specular specgen [options] "name" [...]
+
+Example:
+  specular specgen cometbft
+  specular specgen braft sofa-jraft dragonboat
+
+Options:
+  --dry-run           Print commands without executing
+  --check             Only verify prerequisites exist
+  --max-parallel=N    Max concurrent agents (default: 1)
+  --max-turns=N       Max agent turns (default: 0 = unlimited)
+  --policy-retries=N  Policy-block continuation retries (default: 20; 0 disables)
+  --transient-resumes=N  Transient provider/transport session resumes (default: 20; 0 disables)
+  --agent=NAME        Agent adapter to use (default: claude-code)
+  --claude-alias=NAME Claude CLI profile (default: claude)
+  --model=NAME        Model forwarded to the selected adapter
+  --effort=LEVEL      Reasoning effort forwarded to the selected adapter
+  --codex-profile=NAME  Codex config profile ($CODEX_HOME/NAME.config.toml; codex only)
+  --artifact=PATH     Explicit path to the artifact repo (bypasses auto-detection)
+
+Prerequisites:
+  - Selected agent CLI installed and authenticated
+  - modeling-brief.md exists at <name>/.specular-output/modeling-brief.md
+  - Source repo cloned at <name>/artifact/<repo>/ (or supplied via --artifact)
+
+"""
+    check_header = "Checking prerequisites..."
+    check_fail_msg = "ERROR: Missing prerequisites. Run code analysis first."
+
+    def check(self, ws: Workspace, names: list[str]) -> bool:
+        ok = True
+        byom_path = _byom_path()
+        for name in names:
+            brief = ws.work_dir(name) / "modeling-brief.md"
+            repo_dir = ws.find_repo_dir(name)
+            if byom_path is not None and (byom_path.is_file() or byom_path.is_dir()):
+                line = f"  {name:<20} BYOM input OK"
+            elif byom_path is not None:
+                line = f"  {name:<20} BYOM input MISSING"
+                ok = False
+            elif brief.is_file():
+                lines = _wc_l(brief)
+                line = f"  {name:<20} modeling-brief.md ({lines} lines)"
+            else:
+                line = f"  {name:<20} MISSING modeling-brief.md"
+                ok = False
+            line += "  repo OK" if repo_dir else "  repo MISSING"
+            if not repo_dir:
+                ok = False
+            print(line)
+        return ok
+
+    def agent_files(self, ws: Workspace, name: str) -> AgentFiles:
+        wd = ws.work_dir(name)
+        return {
+            "log": wd / "spec-gen.log",
+            "pid": wd / "spec-gen.pid",
+            "prompt": wd / ".spec-gen-prompt.md",
+            "mkdirs": [wd / "spec"],
+        }
+
+    def build_prompt(self, ws: Workspace, target: str) -> str:
+        name = self.target_name(target)
+        wd = ws.work_dir(name)
+        spec_dir = wd / "spec"
+        brief = wd / "modeling-brief.md"
+        repo_dir = ws.find_repo_dir(name)
+        byom_path = _byom_path()
+        if byom_path is not None:
+            prompt = f"""# BYOM Phase 2 Task: {name}
+
+Use the installed Specula skill {prompt_skill_ids("byom")}. Read it in full and complete its Phase 2 responsibilities for this target.
+
+- **User-provided artifacts**: {byom_path}
+- **Source code**: {repo_dir}
+- **Target workspace**: {wd}
+
+Combine those artifacts with the target-specific instructions below. Reuse supplied work, perform the focused Scenario supplement, and leave the ordinary Phase 2 outputs ready for the harness phase.
+"""
+            prompt += notes_section(wd, first=False)
+            return self._with_extra(ws, name, prompt)
+        prompt = f"""# TLA+ Spec Generation Task
+
+You are generating a TLA+ specification for: **{name}**
+
+## Inputs
+
+- **Modeling Brief**: {brief}
+- **Source Code**: {repo_dir}
+- **Output Directory**: {spec_dir}
+
+## Instructions
+
+Use the installed Specula skill {prompt_skill_ids("spec-generation")}. Read it in full and follow it exactly — it is the single source of methodology (its phases, references, rules, Category A/B handling, and the mandatory brief-coverage self-audit).
+
+Do everything the skill specifies. Do not add, relax, or override any step here. Scale the work to the requested scope; the skill sets no fixed counts or document-size targets.
+
+## Output
+
+Create the output directory and write all files to:
+  {spec_dir}/
+
+Expected files:
+- `{spec_dir}/base.tla` — Base specification
+- `{spec_dir}/base.cfg` — Base config
+- `{spec_dir}/MC.tla` — Model checking specification
+- `{spec_dir}/MC.cfg` — Model checking config
+- `{spec_dir}/brief-coverage.md` — Coverage audit mapping the requested scope and brief §2/§5/§6.1 to hunt cfgs and invariants
+- `{spec_dir}/Trace.tla` — Trace validation specification
+- `{spec_dir}/Trace.cfg` — Trace validation config
+- `{spec_dir}/instrumentation-spec.md` — Instrumentation mapping
+"""
+        prompt += notes_section(wd, first=False)
+        return self._with_extra(ws, name, prompt)
+
+    def summarize(self, ws: Workspace, names: list[str]) -> None:
+        print()
+        print("========================================")
+        print(" Results")
+        print("========================================")
+        for name in names:
+            spec_dir = ws.work_dir(name) / "spec"
+            base = spec_dir / "base.tla"
+            mc = spec_dir / "MC.tla"
+            trace = spec_dir / "Trace.tla"
+            instr = spec_dir / "instrumentation-spec.md"
+            count = sum(f.is_file() for f in (base, mc, trace, instr))
+            if count == 4:
+                n = _wc_l(base)
+                print(f"  OK  {name} -> {count}/4 files (base.tla: {n} lines)")
+            elif count > 0:
+                print(f"  ~~  {name} -> {count}/4 files (incomplete)")
+                if not base.is_file():
+                    print("        missing: base.tla")
+                if not mc.is_file():
+                    print("        missing: MC.tla")
+                if not trace.is_file():
+                    print("        missing: Trace.tla")
+                if not instr.is_file():
+                    print("        missing: instrumentation-spec.md")
+            else:
+                print(f"  --  {name} (no output)")
+
+    def monitor_line(self, ws: Workspace) -> str | None:
+        return self._monitor(ws, "spec-gen.log", "  Monitor: tail -f */.specular-output/spec-gen.log")
+
+
+class HarnessGenerationPhase(Phase):
+    key = "harness_generation"
+    next_phase_key = "spec_validation"
+    title = "Specula — Harness Generation (Phase 2.5)"
+    usage = r"""
+Batch launcher: spawn one agent per target system for harness generation (Phase 2.5).
+Each agent instruments the source code and collects NDJSON traces for spec validation.
+
+Usage:
+  specular harness [options] "name" [...]
+
+Example:
+  specular harness cometbft
+  specular harness braft sofa-jraft dragonboat
+  specular harness --artifact=/path/to/repo myproject
+
+Options:
+  --dry-run           Print commands without executing
+  --check             Only verify prerequisites exist
+  --max-parallel=N    Max concurrent agents (default: 1)
+  --max-turns=N       Max agent turns (default: 0 = unlimited)
+  --policy-retries=N  Policy-block continuation retries (default: 20; 0 disables)
+  --transient-resumes=N  Transient provider/transport session resumes (default: 20; 0 disables)
+  --agent=NAME        Agent adapter to use (default: claude-code)
+  --claude-alias=NAME Claude CLI profile (default: claude)
+  --model=NAME        Model forwarded to the selected adapter
+  --effort=LEVEL      Reasoning effort forwarded to the selected adapter
+  --codex-profile=NAME  Codex config profile ($CODEX_HOME/NAME.config.toml; codex only)
+  --artifact=PATH     Explicit path to artifact repo (overrides auto-detection)
+
+Prerequisites:
+  - Selected agent CLI installed and authenticated
+  - Phase 2 complete: spec/base.tla, spec/Trace.tla, spec/instrumentation-spec.md
+  - Source repo at <name>/artifact/<repo>/ or specified via --artifact
+
+"""
+    check_header = "Checking prerequisites..."
+    check_fail_msg = "ERROR: Missing prerequisites. Run spec generation (Phase 2) first."
+
+    def check(self, ws: Workspace, names: list[str]) -> bool:
+        ok = True
+        byom_path = _byom_path()
+        for name in names:
+            spec_dir = ws.work_dir(name) / "spec"
+            repo_dir = ws.find_repo_dir(name)
+            line = f"  {name:<20}"
+            if (spec_dir / "base.tla").is_file() and (spec_dir / "Trace.tla").is_file():
+                line += "specs OK"
+            else:
+                line += "specs MISSING"
+                ok = False
+            if (spec_dir / "instrumentation-spec.md").is_file():
+                line += "  instr OK"
+            else:
+                line += "  instr MISSING"
+                ok = False
+            if byom_path is not None:
+                if (ws.work_dir(name) / "modeling-brief.md").is_file():
+                    line += "  brief OK"
+                else:
+                    line += "  brief MISSING"
+                    ok = False
+            line += "  repo OK" if repo_dir else "  repo MISSING"
+            if not repo_dir:
+                ok = False
+            print(line)
+        return ok
+
+    def agent_files(self, ws: Workspace, name: str) -> AgentFiles:
+        wd = ws.work_dir(name)
+        return {
+            "log": wd / "harness-gen.log",
+            "pid": wd / "harness-gen.pid",
+            "prompt": wd / ".harness-gen-prompt.md",
+            "mkdirs": [wd / "harness", wd / "traces"],
+        }
+
+    def build_prompt(self, ws: Workspace, target: str) -> str:
+        name = self.target_name(target)
+        wd = ws.work_dir(name)
+        spec_dir = wd / "spec"
+        repo_dir = ws.find_repo_dir(name)
+        byom_path = _byom_path()
+        if byom_path is not None:
+            prompt = f"""# BYOM Phase 2.5 Task: {name}
+
+Use the installed Specula skill {prompt_skill_ids("byom")}. Read it in full and complete its Phase 2.5 responsibilities for this target.
+
+- **User-provided artifacts**: {byom_path}
+- **Source code**: {repo_dir}
+- **Specification workspace**: {spec_dir}
+- **Target workspace**: {wd}
+
+Combine those artifacts with the target-specific instructions below. Reuse supplied instrumentation, harnesses, and traces; fill only what is missing or unusable; then leave the ordinary Phase 2.5 outputs ready for validation.
+"""
+            prompt += notes_section(wd, first=False)
+            return self._with_extra(ws, name, prompt)
+        prompt = f"""# Trace Harness Generation Task: {name}
+
+You are generating a trace harness for **{name}** — instrumenting the real source code to produce NDJSON traces for TLA+ trace validation.
+
+## Inputs
+
+- **Instrumentation spec**: {spec_dir}/instrumentation-spec.md
+- **Trace spec**: {spec_dir}/Trace.tla + {spec_dir}/Trace.cfg
+- **Base spec**: {spec_dir}/base.tla (for understanding spec actions)
+- **Source code**: {repo_dir}
+
+## Workflow
+
+Use the installed Specula skill {prompt_skill_ids("harness-generation")}. Read it in full and follow it exactly — it is the single source of methodology (instrument real code, trace format, run.sh, end-to-end validation).
+
+Do everything the skill specifies. Do not add, relax, or override any step here. Scale the work to the requested scope; the skill sets no fixed counts or document-size targets.
+
+## Output
+
+Write all harness files to: {wd}/harness/
+Collect traces to: {wd}/traces/
+
+Expected outputs:
+- `{wd}/harness/src/` — Trace emission module + test scenarios
+- `{wd}/harness/apply.sh` — Apply instrumentation to artifact
+- `{wd}/harness/run.sh` — One-command build + run + collect traces
+- `{wd}/harness/INSTRUMENTATION.md` — Guide for Phase 3 agent to adjust instrumentation
+- `{wd}/traces/*.ndjson` — Trace files from test runs
+"""
+        prompt += notes_section(wd, first=False)
+        return self._with_extra(ws, name, prompt)
+
+    def summarize(self, ws: Workspace, names: list[str]) -> None:
+        print()
+        print("========================================")
+        print(" Results")
+        print("========================================")
+        for name in names:
+            wd = ws.work_dir(name)
+            harness_dir = wd / "harness"
+            traces_dir = wd / "traces"
+            has_run = (harness_dir / "run.sh").is_file()
+            has_guide = (harness_dir / "INSTRUMENTATION.md").is_file()
+            trace_count = len(list(traces_dir.rglob("*.ndjson"))) if traces_dir.is_dir() else 0
+            if has_run and trace_count > 0:
+                print(f"  OK  {name} -> run.sh: yes, traces: {trace_count}")
+                if not has_guide:
+                    print("        warning: missing INSTRUMENTATION.md")
+            elif has_run:
+                print(f"  ~~  {name} -> run.sh: yes, traces: 0 (no traces generated)")
+            else:
+                print(f"  --  {name} (no harness output)")
+
+    def monitor_line(self, ws: Workspace) -> str | None:
+        return self._monitor(ws, "harness-gen.log", "  Monitor: tail -f */.specular-output/harness-gen.log")
+
+
+class BugClassificationPhase(Phase):
+    key = "bug_classification"
+    title = "Specula — Bug Classification Batch Runner"
+    usage = r"""
+Batch launcher: spawn one agent per target system for Phase 4b final reporting.
+Each agent reads the confirmed-bugs.md produced by Phase 4a (bug-confirmation),
+writes bug-severity.md, then writes .summary-findings.md for the user-facing
+summary. No new analysis, no repro work, and no modification to
+confirmed-bugs.md.
+
+Usage:
+  specular classify [options] "name" [...]
+
+Example:
+  specular classify libgomp_3 autobahn_3
+
+Options:
+  --dry-run           Print commands without executing
+  --check             Only verify prerequisites exist
+  --max-parallel=N    Max concurrent agents (default: 1)
+  --max-turns=N       Max agent turns (default: 0 = unlimited)
+  --policy-retries=N  Policy-block continuation retries (default: 20; 0 disables)
+  --transient-resumes=N  Transient provider/transport session resumes (default: 20; 0 disables)
+  --agent=NAME        Agent adapter to use (default: claude-code)
+  --claude-alias=NAME Claude CLI profile (default: claude)
+  --model=NAME        Model forwarded to the selected adapter
+  --effort=LEVEL      Reasoning effort forwarded to the selected adapter
+  --codex-profile=NAME  Codex config profile ($CODEX_HOME/NAME.config.toml; codex only)
+
+Prerequisites:
+  - Confirmed bug report at <name>/confirmed-bugs.md (from Phase 4a)
+
+"""
+    check_header = "Checking prerequisites..."
+    check_fail_msg = "ERROR: Missing prerequisites. Run Phase 4a ('specular confirm') first."
+    accepts_artifact = False  # this launcher takes no --artifact
+    artifact_rejection_message = (
+        "ERROR: classify does not accept --artifact; this phase reads the existing "
+        ".specular-output/confirmed-bugs.md and does not inspect source code."
+    )
+    dry_prompt_flag = "--prompt-file"  # its dry-run line shows --prompt-file=<prompt>
+
+    def check(self, ws: Workspace, names: list[str]) -> bool:
+        ok = True
+        for name in names:
+            cb = ws.work_dir(name) / "confirmed-bugs.md"
+            line = f"  {name:<20}"
+            if cb.is_file() and cb.stat().st_size > 0:
+                line += "confirmed-bugs OK"
+            else:
+                line += "confirmed-bugs MISSING"
+                ok = False
+            print(line)
+        return ok
+
+    def agent_files(self, ws: Workspace, name: str) -> AgentFiles:
+        wd = ws.work_dir(name)
+        return {
+            "log": wd / "bug-classification.log",
+            "pid": wd / "bug-classification.pid",
+            "prompt": wd / ".bug-classification-prompt.md",
+            "mkdirs": [],  # bash does not mkdir; work_dir already exists (has confirmed-bugs.md)
+        }
+
+    def build_prompt(self, ws: Workspace, target: str) -> str:
+        # NOTE: bash bug_classification generate_prompt does NOT inject .prompt-extra.
+        name = self.target_name(target)
+        wd = ws.work_dir(name)
+        prompt = f"""# Final Bug Reporting Task: {name}
+
+You are completing the Phase 4 final reports for **{name}**.
+
+## Input
+
+- **Confirmed bug report (from Phase 4a)**: {wd}/confirmed-bugs.md
+
+## Output
+
+- **Severity classification**: {wd}/bug-severity.md (you create this file)
+- **Findings summary fragment**: {wd}/.summary-findings.md (you create this file)
+
+## Methodology
+
+Use the installed Specula skill {prompt_skill_ids("bug-classification")}. Read it in full and follow it exactly — it is the single source of methodology. For bug-severity.md, assign a four-tier Severity only to `REPRODUCED`, `ENV_LIMITED`, and `MASKED`; use `—` for `FALSE POSITIVE`, `NEEDS MORE INFO`, `DROPPED`, `PENDING REPAIR`, `DEFERRED`, and `INCOMPLETE`. Keep reproduced bugs, finding-tier entries, and no-severity dispositions separate in the mandatory Summary. Complete and validate bug-severity.md before starting .summary-findings.md. The findings summary must not contain severity classifications, internal reproduction levels, URLs, or Markdown links. Do not modify confirmed-bugs.md or any Status field.
+
+Do everything the skill specifies. Do not add, relax, or override any step here.
+"""
+        byom_path = _byom_path()
+        if byom_path is None:
+            return prompt + notes_section(wd, first=False)
+        prompt += f"""
+## BYOM Modification Report
+
+After completing and validating the normal Phase 4b outputs, use the installed Specula skill {prompt_skill_ids("byom")} and complete its final modification-report responsibility.
+
+- **Original user-provided artifacts**: {byom_path}
+- **Final target workspace**: {wd}
+- **Required report**: {wd}/{BYOM_REPORT_FILENAME}
+
+Compare the supplied artifacts with the final workspace, explain what was reused, modified, or added and why, and state any uncertain correspondence. Do not modify verification artifacts while writing this report.
+"""
+        prompt += notes_section(wd, first=False)
+        return prompt + self._read_prompt_extra(ws, name)
+
+    def prepare_fresh_outputs(self, ws: Workspace, name: str) -> None:
+        filenames = ["bug-severity.md", ".summary-findings.md"]
+        if _byom_path() is not None:
+            filenames.append(BYOM_REPORT_FILENAME)
+        for filename in filenames:
+            path = ws.work_dir(name) / filename
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                raise RuntimeError(f"cannot clear stale Phase 4b output {path}: {exc}") from exc
+
+    def invalidate_target_output(self, ws: Workspace, name: str) -> None:
+        invalidate_summary(ws.work_dir(name), ws.run_dir if ws.run_dir is not None else ws.cwd)
+
+    def publish_target_output(self, ws: Workspace, name: str) -> None:
+        publish_findings_summary(
+            name,
+            ws.work_dir(name),
+            ws.run_dir if ws.run_dir is not None else ws.cwd,
+        )
+
+    def finalize_outputs(
+        self,
+        ws: Workspace,
+        names: list[str],
+        *,
+        adapter: Path,
+        dry_run: bool,
+    ) -> list[tuple[str, int]]:
+        if dry_run:
+            return []
+        failures: list[tuple[str, int]] = []
+        for name in names:
+            issues: list[str] = []
+            report = ws.work_dir(name) / "bug-severity.md"
+            try:
+                report_info = report.lstat()
+            except OSError:
+                issues.append("bug-severity.md missing")
+            else:
+                if not stat.S_ISREG(report_info.st_mode):
+                    issues.append("bug-severity.md is not a regular file")
+                else:
+                    try:
+                        report_text = report.read_text()
+                    except (OSError, UnicodeError):
+                        issues.append("bug-severity.md unreadable")
+                    else:
+                        if not report_text.strip():
+                            issues.append("bug-severity.md empty")
+                        elif any(
+                            heading not in report_text for heading in ("## Summary", "## Per-entry classification")
+                        ):
+                            issues.append("bug-severity.md has an invalid structure")
+
+            fragment_issue: str | None = None
+            fragment = ws.work_dir(name) / ".summary-findings.md"
+            try:
+                fragment_info = fragment.lstat()
+            except OSError:
+                fragment_issue = "missing"
+            else:
+                if not stat.S_ISREG(fragment_info.st_mode):
+                    fragment_issue = "is not a regular file"
+                else:
+                    try:
+                        fragment_text = fragment.read_text()
+                        confirmed_text = (ws.work_dir(name) / "confirmed-bugs.md").read_text()
+                    except (OSError, UnicodeError):
+                        fragment_issue = "or confirmed-bugs.md is unreadable"
+                    else:
+                        if not fragment_text.strip():
+                            fragment_issue = "empty"
+                        else:
+                            fragment_issue = findings_fragment_issue(fragment_text, confirmed_text)
+            if fragment_issue is not None:
+                print(
+                    f"  WARNING: {name}: .summary-findings.md {fragment_issue}; "
+                    "summary.md will omit the findings fragment"
+                )
+            if _byom_path() is not None:
+                byom_report = ws.work_dir(name) / BYOM_REPORT_FILENAME
+                try:
+                    byom_report_info = byom_report.lstat()
+                except OSError:
+                    issues.append(f"{BYOM_REPORT_FILENAME} missing")
+                else:
+                    if not stat.S_ISREG(byom_report_info.st_mode):
+                        issues.append(f"{BYOM_REPORT_FILENAME} is not a regular file")
+                    else:
+                        try:
+                            byom_report_text = byom_report.read_text()
+                        except (OSError, UnicodeError):
+                            issues.append(f"{BYOM_REPORT_FILENAME} unreadable")
+                        else:
+                            if not byom_report_text.strip():
+                                issues.append(f"{BYOM_REPORT_FILENAME} empty")
+            if issues:
+                print(f"  {name}: Phase 4b output invalid ({'; '.join(issues)})")
+                failures.append((name, 1))
+        return failures
+
+    def summarize(self, ws: Workspace, names: list[str]) -> None:
+        print()
+        print("========================================")
+        print(" Results")
+        print("========================================")
+        for name in names:
+            wd = ws.work_dir(name)
+            report = wd / "bug-severity.md"
+            summary = wd / ".summary-findings.md"
+            try:
+                report_info = report.lstat()
+            except OSError:
+                report_info = None
+            try:
+                summary_info = summary.lstat()
+            except OSError:
+                summary_info = None
+            summary_state = (
+                "yes"
+                if summary_info is not None and stat.S_ISREG(summary_info.st_mode) and summary_info.st_size > 0
+                else "missing"
+            )
+            if report_info is not None and stat.S_ISREG(report_info.st_mode) and report_info.st_size > 0:
+                text = report.read_text(errors="replace")  # bash grep is byte-safe
+                total = _grep_num(text, "- Total entries:")
+                bugs = _grep_num(text, "- Reproduced bugs:")
+                findings = _grep_num(text, "- Severity-bearing findings:")
+                critical = _grep_num(text, "- Critical:")
+                high = _grep_num(text, "- High:")
+                medium = _grep_num(text, "- Medium:")
+                low = _grep_num(text, "- Low:")
+                dispositions = _grep_num(text, "- No-severity dispositions:")
+                print(
+                    f"  {name}: entries={total}  bugs={bugs} findings={findings}  "
+                    f"C={critical} H={high} M={medium} L={low}  dispositions={dispositions}  "
+                    f"summary={summary_state}"
+                )
+            elif report_info is not None and stat.S_ISREG(report_info.st_mode):
+                print(f"  {name}: bug-severity.md empty (check log)")
+            else:
+                print(f"  {name}: (no report — check log)")
+
+    def monitor_line(self, ws: Workspace) -> str | None:
+        # bash glob omits the .specular-output/ segment — replicated verbatim in legacy.
+        return self._monitor(ws, "bug-classification.log", "  Monitor: tail -f */bug-classification.log")
+
+
+class SpecValidationPhase(Phase):
+    key = "spec_validation"
+    next_phase_key = "bug_confirmation"
+    title = "Specula — Spec Validation Batch Runner"
+    usage = r"""
+Batch launcher: spawn one agent per target system for spec validation.
+Each agent iteratively runs trace validation and invariant checking using existing
+skills until both pass. Harness and traces must already exist (Phase 2.5).
+
+Usage:
+  specular validate [options] "name" [...]
+
+Example:
+  specular validate cometbft
+  specular validate braft sofa-jraft dragonboat
+  specular validate --artifact=/path/to/repo myproject
+
+Options:
+  --dry-run           Print commands without executing
+  --check             Run a lightweight prerequisite path check
+  --repair            Repair mode: process OPEN repair requests (confirmation back-edge)
+  --max-parallel=N    Max concurrent agents (default: 1)
+  --max-turns=N       Max agent turns (default: 0 = unlimited)
+  --policy-retries=N  Policy-block continuation retries (default: 20; 0 disables)
+  --transient-resumes=N  Transient provider/transport session resumes (default: 20; 0 disables)
+  --agent=NAME        Agent adapter to use (default: claude-code)
+  --claude-alias=NAME Claude CLI profile (default: claude)
+  --model=NAME        Model forwarded to the selected adapter
+  --effort=LEVEL      Reasoning effort forwarded to the selected adapter
+  --codex-profile=NAME  Codex config profile ($CODEX_HOME/NAME.config.toml; codex only)
+  --artifact=PATH     Explicit path to the artifact repo (overrides auto-detection)
+
+Prerequisites:
+  - Spec files at <name>/.specular-output/spec/ (from Phase 2)
+  - Source repo at <name>/artifact/<repo>/ or specified via --artifact
+
+"""
+    check_header = "Checking prerequisites..."
+    check_fail_msg = "ERROR: Missing prerequisites. Run spec generation first."
+    check_ok_msg = "Required path checks passed; review any warnings above."
+
+    def parse_flag(self, arg: str, extra: dict[str, str | bool]) -> bool:
+        if arg == "--repair":
+            extra["repair"] = True
+            return True
+        return False
+
+    def check(self, ws: Workspace, names: list[str]) -> bool:
+        ok = True
+        for name in names:
+            spec_dir = ws.work_dir(name) / "spec"
+            repo_dir = ws.find_repo_dir(name)
+            line = f"  {name:<20}"
+            base = spec_dir / "base.tla"
+            if base.is_file() and (spec_dir / "MC.tla").is_file() and (spec_dir / "Trace.tla").is_file():
+                line += f"specs OK ({_wc_l(base)}L)"
+            else:
+                line += "specs MISSING"
+                ok = False
+            if (spec_dir / "instrumentation-spec.md").is_file():
+                line += "  instr OK"
+            else:
+                line += "  instr MISSING"
+                ok = False
+            line += "  repo OK" if repo_dir else "  repo MISSING"
+            if not repo_dir:
+                ok = False
+            traces_dir = ws.work_dir(name) / "traces"
+            n = len(list(traces_dir.rglob("*.ndjson"))) if traces_dir.is_dir() else 0
+            line += f"  traces OK ({n})" if n > 0 else "  traces WARN (0 ndjson files)"
+            print(line)
+        return ok
+
+    def agent_files(self, ws: Workspace, name: str) -> AgentFiles:
+        wd = ws.work_dir(name)
+        tag = "spec-repair" if ws.opts.get("repair") else "spec-validation"
+        return {
+            "log": wd / f"{tag}.log",
+            "pid": wd / "spec-validation.pid",  # bash always writes spec-validation.pid
+            "prompt": wd / f".{tag}-prompt.md",
+            "mkdirs": [wd / "traces"],
+        }
+
+    def build_prompt(self, ws: Workspace, target: str) -> str:
+        name = self.target_name(target)
+        wd = ws.work_dir(name)
+        spec_dir = wd / "spec"
+        repo_dir = ws.find_repo_dir(name)
+        if ws.opts.get("repair"):
+            prompt = f"""# Spec Repair Task (confirmation back-edge): {name}
+
+You are running spec validation in **REPAIR MODE**. The bug-confirmation phase handed
+back counterexamples it judged to be spec / fault-model / invariant **artifacts** (not
+real bugs), each recorded as a repair request. Use each request's cited evidence and
+cross-check the relevant implementation, tests, documentation, and declared failure model
+to revise the spec, fault model, or invariant so it faithfully expresses what the system
+permits and guarantees; do not optimize merely for making the artifact disappear.
+Run the complete conformance pass (full trace validation and model checking), update
+the existing evidence and repair-request History, write the current violations to
+`findings.json`, and mark each request CONSUMED. Do not run confirmation here.
+
+## Inputs
+- **Repair requests**: {spec_dir}/repair-requests/   (process ONLY status OPEN)
+- **Spec directory**: {spec_dir}   (base.tla, MC.tla, Trace.tla, *.cfg, MC_hunt_*.cfg)
+- **Source code**: {repo_dir}
+- **Modeling brief**: {wd}/modeling-brief.md
+- **Traces**: {wd}/traces/
+
+## Methodology — use these installed skills and follow them exactly
+- {prompt_skill_ids("bug-confirmation")} — apply its repair-request format, request state machine, and per-request repair procedure (how to repair each target, the full-trace soundness gate, and the OPEN → IN_REPAIR → CONSUMED transitions you own).
+- {prompt_skill_ids("validation-workflow")} — repair and re-validate without overfitting, including the {prompt_skill_ids("tla-trace-workflow")} and {prompt_skill_ids("tla-checking-workflow")} skills it delegates to.
+
+Process ONLY OPEN requests. Do everything those skills specify; do not add, relax, or override any step here.
+"""
+        else:
+            prompt = f"""# Spec Validation Task: {name}
+
+You are validating the TLA+ specification for **{name}** through iterative trace validation and invariant checking.
+
+## Inputs
+
+- **Spec directory**: {spec_dir}
+  - base.tla, base.cfg — Base specification
+  - MC.tla, MC.cfg — Model checking specification
+  - Trace.tla, Trace.cfg — Trace validation specification
+  - instrumentation-spec.md — Action-to-code mapping for harness generation
+- **Source code**: {repo_dir}
+- **Modeling brief**: {wd}/modeling-brief.md
+
+## Workflow
+
+Use the installed Specula skill {prompt_skill_ids("validation-workflow")}. Read it in full and follow it exactly — it is the single source of methodology (its iterative trace-validation ↔ model-checking loop, the Case A/B/C classification, convergence, bug hunting, and required artifacts such as changelog.md / bug-report.md), including the {prompt_skill_ids("tla-trace-workflow")} and {prompt_skill_ids("tla-checking-workflow")} skills it delegates to.
+
+Do everything the skill specifies. Do not add, relax, or override any step here. Harness and traces already exist from Phase 2.5 under `{wd}/traces/` and `{wd}/harness/`; the skill's Phase 0 covers verifying and (if needed) regenerating them.
+"""
+        prompt += notes_section(wd, first=False)
+        return self._with_extra(ws, name, prompt)
+
+    def summarize(self, ws: Workspace, names: list[str]) -> None:
+        print()
+        print("========================================")
+        print(" Results")
+        print("========================================")
+        for name in names:
+            changelog = ws.work_dir(name) / "spec" / "changelog.md"
+            if changelog.is_file() and changelog.stat().st_size > 0:
+                print(f"  {name}: changelog written ({_wc_l(changelog)} lines)")
+            elif changelog.is_file():
+                print(f"  {name}: changelog empty (check log)")
+            else:
+                print(f"  {name}: no changelog (check log)")
+
+    def monitor_line(self, ws: Workspace) -> str | None:
+        # bash uses an absolute ${PWD} path and always spec-validation.log (even
+        # in --repair mode, whose log is spec-repair.log) — replicated verbatim in legacy.
+        return self._monitor(
+            ws, "spec-validation.log", f"  Monitor: tail -f {ws.cwd}/*/.specular-output/spec-validation.log"
+        )
+
+
+class BugConfirmationPhase(Phase):
+    key = "bug_confirmation"
+    next_phase_key = "bug_classification"
+    title = "Specula — Bug Confirmation Batch Runner"
+    usage = r"""
+Bug confirmation for each target system. By DEFAULT this runs parallel
+per-finding confirmation (step 0 consolidate + dedup, then one Reproducer agent
+per finding, in parallel — see confirmlib.py). `--legacy-confirm` reverts to the
+single agent that consolidates and reproduces every finding in one context.
+
+Usage:
+  specular confirm [options] "name" [...]
+
+Example:
+  specular confirm hashicorp-raft nuraft
+
+Options:
+  --dry-run           Print commands without executing
+  --check             Only verify prerequisites exist
+  --legacy-confirm    Single-agent confirmation (one agent, all findings) instead of parallel
+  --repair-round=N    Internal: confirm only Phase-3 violations from repair round N
+  --repair-token=ID   Internal: durable identity of the committed Phase-3 repair result
+  --scenarios-only    Confirm only the Phase 1 Scenarios; no model outputs are needed or read
+  --after-scenarios   Confirm model checking against sealed Scenario results (<name>/confirm-first/)
+  --debate            Add an adversarial Challenger after each confirmation (parallel mode; default off)
+  --rounds=N          Max debate rounds with --debate (default: 5; range: 1-5)
+  --max-parallel=N    Hard limit for concurrent findings in parallel mode, or concurrent target agents in
+                      --legacy-confirm (defaults: 4 in parallel mode, 1 otherwise)
+  --max-turns=N       Max agent turns (default: 0 = unlimited)
+  --policy-retries=N  Policy-block continuation retries (default: 20; 0 disables)
+  --transient-resumes=N  Transient provider/transport session resumes (default: 20; 0 disables)
+  --agent=NAME        Agent adapter to use (default: claude-code)
+  --claude-alias=NAME Claude CLI profile (default: claude)
+  --model=NAME        Model forwarded to the selected adapter
+  --effort=LEVEL      Reasoning effort forwarded to the selected adapter
+  --codex-profile=NAME  Codex config profile ($CODEX_HOME/NAME.config.toml; codex only)
+  --artifact=PATH     Explicit path to the artifact repo (overrides auto-detection)
+
+Prerequisites:
+  - Bug report at <name>/spec/bug-report.md (from Phase 3; not with --scenarios-only)
+  - Modeling brief at <name>/modeling-brief.md (from Phase 1)
+  - Source repo at <name>/artifact/<repo>/ (or supplied via --artifact)
+
+"""
+    check_header = "Checking prerequisites..."
+    check_fail_msg = "ERROR: Missing prerequisites. Run full pipeline first."
+
+    def parse_flag(self, arg: str, extra: dict[str, str | bool]) -> bool:
+        if arg == "--legacy-confirm":
+            extra["legacy"] = True
+            return True
+        if arg == "--debate":
+            extra["debate"] = True
+            return True
+        if arg.startswith("--repair-round="):
+            extra["repair_round"] = arg[len("--repair-round=") :]
+            return True
+        if arg.startswith("--repair-token="):
+            extra["repair_token"] = arg[len("--repair-token=") :]
+            return True
+        if arg.startswith("--rounds="):
+            extra["rounds"] = arg[len("--rounds=") :]
+            return True
+        if arg in ("--scenarios-only", "--after-scenarios"):
+            extra[arg[2:].replace("-", "_")] = True
+            return True
+        return False
+
+    def default_max_parallel(self, extra: dict[str, str | bool]) -> int:
+        return 1 if extra.get("legacy") else 4
+
+    def validate_options(self, extra: dict[str, str | bool]) -> str | None:
+        if extra.get("legacy") and extra.get("debate"):
+            return "Invalid options: --legacy-confirm and --debate cannot be used together"
+        if extra.get("legacy") and "repair_round" in extra:
+            return "Invalid options: --legacy-confirm and --repair-round cannot be used together"
+        if extra.get("scenarios_only") and extra.get("after_scenarios"):
+            return "Invalid options: --scenarios-only and --after-scenarios cannot be used together"
+        if extra.get("legacy") and (extra.get("scenarios_only") or extra.get("after_scenarios")):
+            return "Invalid options: --legacy-confirm cannot be used with --scenarios-only or --after-scenarios"
+        if extra.get("scenarios_only") and "repair_round" in extra:
+            return "Invalid options: --scenarios-only and --repair-round cannot be used together"
+        if "repair_token" in extra and "repair_round" not in extra:
+            return "Invalid options: --repair-token requires --repair-round"
+        if "repair_round" in extra and "repair_token" not in extra:
+            return "Invalid options: --repair-round requires --repair-token"
+        if "repair_round" in extra:
+            raw_repair_round = str(extra["repair_round"])
+            try:
+                repair_round = int(raw_repair_round)
+            except ValueError:
+                return f"Invalid --repair-round: '{raw_repair_round}' (expected an integer >= 1)"
+            if repair_round < 1:
+                return f"Invalid --repair-round: '{raw_repair_round}' (expected an integer >= 1)"
+        if "repair_token" in extra:
+            repair_token = str(extra["repair_token"])
+            if re.fullmatch(r"[0-9a-f]{32}", repair_token) is None:
+                return "Invalid --repair-token (expected 32 lowercase hexadecimal characters)"
+        raw_rounds = str(extra.get("rounds", "5"))
+        try:
+            rounds = int(raw_rounds)
+        except ValueError:
+            return f"Invalid --rounds: '{raw_rounds}' (expected an integer from 1 to {MAX_DEBATE_ROUNDS})"
+        if not 1 <= rounds <= MAX_DEBATE_ROUNDS:
+            return f"Invalid --rounds: '{raw_rounds}' (expected an integer from 1 to {MAX_DEBATE_ROUNDS})"
+        return None
+
+    def run_alternate(
+        self,
+        ws: Workspace,
+        names: list[str],
+        *,
+        adapter: Path,
+        claude_alias: str,
+        max_parallel: int,
+        max_turns: str,
+        dry_run: bool,
+    ) -> int | None:
+        """Parallel per-finding confirmation — the DEFAULT first-pass mode.
+        `--legacy-confirm` falls back to the single-agent path. None defers to the
+        single-agent loop in Phase.run."""
+        if ws.opts.get("legacy"):
+            if dry_run:
+                return None
+            preflight_failures = self._legacy_rr_identity_failures(
+                ws,
+                names,
+                adapter=adapter,
+                verify_against_report=True,
+                require_active_report_link=False,
+                stage="preflight",
+            )
+            if preflight_failures:
+                print()
+                print("Repair identity preflight failures:")
+                for name, rc in preflight_failures:
+                    print(f"  FAILED  {name}: invalid existing repair identity (exit {rc})")
+                return self._failure_code(preflight_failures)
+            return None
+        # Local import: confirmlib imports phaselib, so a top-level import here
+        # would be circular.
+        from specular.confirmlib import ConfirmConfig, run_parallel_confirmation
+
+        debate = bool(ws.opts.get("debate"))
+        rounds = int(str(ws.opts.get("rounds", "5")))
+        repair_round = int(str(ws.opts["repair_round"])) if "repair_round" in ws.opts else None
+        repair_token = str(ws.opts["repair_token"]) if "repair_token" in ws.opts else None
+        failures: list[tuple[str, int]] = []
+        successful_names: list[str] = []
+        retry_limit = self._rate_limit_retries()
+        for name in names:
+            _resource_start_target(name, ws.work_dir(name))
+            if not dry_run:
+                print(f"  Monitor: tail -f {ws.work_dir(name)}/bug-confirmation.log")
+            cfg = ConfirmConfig(
+                name=name,
+                ws=ws,
+                adapter=adapter,
+                repo_dir=ws.find_repo_dir(name),
+                max_parallel=max_parallel,
+                max_turns=max_turns,
+                debate=debate,
+                rounds=rounds,
+                claude_alias=claude_alias,
+                model=self._model,
+                effort=self._effort,
+                codex_profile=self._codex_profile,
+                policy_retries=self._policy_retries,
+                transient_resumes=self._transient_resumes,
+                repair_round=repair_round,
+                repair_token=repair_token,
+                scenarios_only=bool(ws.opts.get("scenarios_only")),
+                after_scenarios=bool(ws.opts.get("after_scenarios")),
+                dry_run=dry_run,
+                prompt_extra=self._read_prompt_extra(ws, name),
+                resume_prompt_extra=self._manual_prompt_extra(ws, name),
+            )
+            attempt = 1
+            try:
+                while True:
+                    # This also tells confirmation that a 75 is replayed, so a
+                    # batch whose rate-limited findings sit beside a permanent
+                    # failure returns 75 while a retry remains and 1 after it.
+                    will_retry_rate_limit = (
+                        not failures and self._reactive_rate_limit_enabled() and attempt <= retry_limit
+                    )
+                    code = run_parallel_confirmation(
+                        cfg,
+                        retain_rate_limited_state=will_retry_rate_limit,
+                    )
+                    if code == quota.RATE_LIMIT_RC and will_retry_rate_limit:
+                        _resource_pause_target(name)
+                        print(f"[{_ts()}] Rate limited: waiting before retrying {name}")
+                        self._wait_for_rate_limit()
+                        _resource_start_target(name, ws.work_dir(name))
+                        attempt += 1
+                        continue
+                    break
+            finally:
+                try:
+                    # A quota wait can abort (or the process can be interrupted)
+                    # after the confirmation driver deliberately retained its exact
+                    # session/worktree. Never leak that runtime lease when no next
+                    # replay will execute in this process.
+                    cfg.clear_retry_runtime()
+                finally:
+                    if not dry_run:
+                        _refresh_target_indexes(ws, [name])
+            if code != 0:
+                _resource_finish_target(name)
+                failures.append((name, code))
+                if code == quota.RATE_LIMIT_RC:
+                    break
+            else:
+                _resource_finish_target(name)
+                successful_names.append(name)
+        handoff_failures = self.check_handoff(ws, successful_names, dry_run=dry_run)
+        self.summarize(ws, names)
+        if not dry_run:
+            self._acceptance(ws, names)
+        if handoff_failures:
+            print()
+            print("Handoff validation failures:")
+            for name, rc in handoff_failures:
+                print(f"  FAILED  {name}: next-phase prerequisites not met (exit {rc})")
+        return self._failure_code(failures + handoff_failures)
+
+    def finalize_outputs(
+        self,
+        ws: Workspace,
+        names: list[str],
+        *,
+        adapter: Path,
+        dry_run: bool,
+    ) -> list[tuple[str, int]]:
+        """Make legacy agent-authored RRs safe before returning success."""
+        if dry_run or not ws.opts.get("legacy"):
+            return []
+        return self._legacy_rr_identity_failures(
+            ws,
+            names,
+            adapter=adapter,
+            verify_against_report=True,
+            require_active_report_link=True,
+            stage="validation",
+        )
+
+    def capture_output_integrity(
+        self,
+        ws: Workspace,
+        names: list[str],
+        *,
+        adapter: Path,
+        dry_run: bool,
+    ) -> Any:
+        if dry_run or not ws.opts.get("legacy"):
+            return {}
+        from specular.confirmlib import ConfirmConfig, snapshot_terminal_rr_audit
+
+        snapshots: dict[str, Any] = {}
+        for name in names:
+            cfg = ConfirmConfig(name=name, ws=ws, adapter=adapter)
+            snapshots[name] = snapshot_terminal_rr_audit(cfg)
+        return snapshots
+
+    def audit_output_integrity(
+        self,
+        ws: Workspace,
+        names: list[str],
+        snapshot: Any,
+        *,
+        adapter: Path,
+        dry_run: bool,
+    ) -> list[tuple[str, int]]:
+        if dry_run or not ws.opts.get("legacy") or not isinstance(snapshot, dict):
+            return []
+        from specular.confirmlib import ConfirmConfig, restore_terminal_rr_audit
+
+        failures: list[tuple[str, int]] = []
+        for name in names:
+            cfg = ConfirmConfig(name=name, ws=ws, adapter=adapter)
+            try:
+                violations = restore_terminal_rr_audit(cfg, snapshot.get(name, {}))
+            except (OSError, UnicodeError, ValueError) as exc:
+                print(f"  {name}: terminal repair audit restore FAILED ({exc})")
+                failures.append((name, 1))
+                continue
+            if violations:
+                for violation in violations:
+                    print(f"  {name}: {violation}")
+                failures.append((name, 1))
+        return failures
+
+    def _legacy_rr_identity_failures(
+        self,
+        ws: Workspace,
+        names: list[str],
+        *,
+        adapter: Path,
+        verify_against_report: bool,
+        require_active_report_link: bool,
+        stage: str,
+    ) -> list[tuple[str, int]]:
+        from specular.confirmlib import (
+            ConfirmationFailed,
+            ConfirmConfig,
+            ensure_rr_stable_identities,
+            validate_report_repair_references,
+        )
+
+        failures: list[tuple[str, int]] = []
+        for name in names:
+            cfg = ConfirmConfig(
+                name=name,
+                ws=ws,
+                adapter=adapter,
+                repo_dir=ws.find_repo_dir(name),
+                model=self._model,
+                effort=self._effort,
+                codex_profile=self._codex_profile,
+                prompt_extra=self._read_prompt_extra(ws, name),
+            )
+            try:
+                ensure_rr_stable_identities(
+                    cfg,
+                    verify_against_report=verify_against_report,
+                    require_active_report_link=require_active_report_link,
+                )
+                if require_active_report_link:
+                    validate_report_repair_references(cfg)
+            except (ConfirmationFailed, OSError, UnicodeError, ValueError) as exc:
+                print(f"  {name}: legacy repair identity {stage} FAILED ({exc})")
+                failures.append((name, 1))
+        return failures
+
+    def check(self, ws: Workspace, names: list[str]) -> bool:
+        from specular import confirm_first
+
+        ok = True
+        repair_mode = "repair_round" in ws.opts
+        scenarios_only = bool(ws.opts.get("scenarios_only"))
+        for name in names:
+            wd = ws.work_dir(name)
+            repo_dir = ws.find_repo_dir(name)
+            repair_has_findings = True
+            line = f"  {name:<20}"
+            if ws.opts.get("after_scenarios"):
+                try:
+                    confirm_first.load(wd)
+                    line += "Scenario results OK  "
+                except confirm_first.SealError as exc:
+                    line += f"Scenario results INVALID ({exc})  "
+                    ok = False
+            if scenarios_only:
+                line += "Scenarios only"
+            elif repair_mode and (wd / "spec" / "findings.json").is_file():
+                line += "findings OK"
+                try:
+                    findings_doc = json.loads((wd / "spec" / "findings.json").read_text())
+                    repair_has_findings = bool(findings_doc.get("findings"))
+                except (OSError, UnicodeError, json.JSONDecodeError, AttributeError):
+                    # The dispatcher reports the precise schema error.
+                    repair_has_findings = True
+            elif repair_mode:
+                line += "findings MISSING"
+                ok = False
+            elif (wd / "spec" / "bug-report.md").is_file():
+                line += "bug-report OK"
+            else:
+                line += "bug-report MISSING"
+                ok = False
+            if repair_mode:
+                line += "  repair-scoped"
+            elif (wd / "modeling-brief.md").is_file():
+                line += "  brief OK"
+            else:
+                line += "  brief MISSING"
+                ok = False
+            repo_required = not repair_mode or repair_has_findings
+            line += "  repo OK" if repo_dir else ("  repo NOT NEEDED" if not repo_required else "  repo MISSING")
+            if repo_required and not repo_dir:
+                ok = False
+            print(line)
+        return ok
+
+    def agent_files(self, ws: Workspace, name: str) -> AgentFiles:
+        wd = ws.work_dir(name)
+        tag = "bug-confirmation"
+        return {
+            "log": wd / f"{tag}.log",
+            "pid": wd / "bug-confirmation.pid",  # bash always writes bug-confirmation.pid
+            "prompt": wd / f".{tag}-prompt.md",
+            "mkdirs": [],
+        }
+
+    def build_prompt(self, ws: Workspace, target: str) -> str:
+        name = self.target_name(target)
+        wd = ws.work_dir(name)
+        spec_dir = wd / "spec"
+        repo_dir = ws.find_repo_dir(name)
+        # Multi-finding orchestration lives in a prompt file (like the parallel
+        # mode's reproduce.md), rendered here — the loop + aggregation around the
+        # single-bug skill (guide.md), which it applies to each candidate. After a
+        # Phase-3 repair the pipeline re-runs THIS same confirmation on the fresh
+        # bug-report (no separate re-check mode).
+        prompt = render(
+            "confirmation/orchestrate",
+            name=name,
+            bug_report=str(spec_dir / "bug-report.md"),
+            brief=modeling_brief.listing(wd),
+            repo=repo_dir,
+            spec_dir=str(spec_dir),
+            repro_dir=str(wd / "repro"),
+            report=str(wd / "confirmed-bugs.md"),
+            bug_confirmation_skill=prompt_skill_ids("bug-confirmation"),
+        )
+        prompt += notes_section(wd, first=False)
+        return self._with_extra(ws, name, prompt)
+
+    def summarize(self, ws: Workspace, names: list[str]) -> None:
+        print()
+        print("========================================")
+        print(" Results")
+        print("========================================")
+        for name in names:
+            wd = ws.work_dir(name)
+            report = wd / "confirmed-bugs.md"
+            repro_dir = wd / "repro"
+            repro_count = len([p for p in repro_dir.rglob("test_bug*") if p.is_file()]) if repro_dir.is_dir() else 0
+            if report.is_file() and report.stat().st_size > 0:
+                n = _wc_l(report)
+                print(f"  {name}: confirmed-bugs.md written ({n} lines, repro/ tests: {repro_count})")
+            elif report.is_file():
+                print(f"  {name}: confirmed-bugs.md empty (check log; repro/ tests: {repro_count})")
+            else:
+                print(f"  {name}: (no report — check log; repro/ tests: {repro_count})")
+
+    def monitor_line(self, ws: Workspace) -> str | None:
+        # bash glob omits the .specular-output/ segment and always bug-confirmation.log —
+        # replicated verbatim in legacy.
+        return self._monitor(ws, "bug-confirmation.log", "  Monitor: tail -f */bug-confirmation.log")
+
+
+class ReviewPhase(Phase):
+    """Inter-phase review agent (used by launch_pipeline.sh between phases; off by
+    default). The outlier: args are `<phase> <name...>`, no --dry-run/--check, an
+    inline --prompt, and hardcoded --max-turns=30 — so it overrides run() wholesale
+    instead of using the shared driver. The review's contract is the agent-facing
+    prompt it assembles."""
+
+    key = "review"
+    usage = r"""
+Run a review agent on phase outputs.
+Used by specular run between phases. Can also be used standalone.
+
+Usage:
+  specular review <phase> <name> [name ...]
+
+Options (after <phase>):
+  --agent=NAME        Agent adapter to use (default: claude-code)
+  --claude-alias=NAME Claude CLI profile (default: claude)
+  --model=NAME        Model forwarded to the selected adapter
+  --effort=LEVEL      Reasoning effort forwarded to the selected adapter
+  --codex-profile=NAME  Codex config profile ($CODEX_HOME/NAME.config.toml; codex only)
+  --policy-retries=N  Policy-block continuation retries (default: 20; 0 disables)
+  --transient-resumes=N  Transient provider/transport session resumes (default: 20; 0 disables)
+
+Phases:
+  analysis    — Review code analysis output (modeling-brief.md, analysis-report.md)
+  specgen     — Review spec generation output (base.tla, MC.tla, Trace.tla)
+  validation  — Review validation results (validation-report.md)
+
+Output:
+  analysis:    .specular-output/review-analysis.md
+  specgen:     .specular-output/spec/review-specgen.md
+  validation:  .specular-output/spec/review-validation.md
+
+"""
+
+    def run(self, argv: list[str]) -> int:
+        phase = argv[0] if argv else ""
+        if phase in ("--help", "-h"):
+            sys.stdout.write(self.usage)
+            return 0
+        agent = "claude-code"
+        claude_alias = os.environ.get("CLAUDE_ALIAS") or "claude"
+        model: str | None = None
+        effort: str | None = None
+        codex_profile: str | None = None
+        policy_retries = DEFAULT_POLICY_RETRIES
+        transient_resumes = DEFAULT_TRANSIENT_RESUMES
+        targets: list[str] = []
+        for arg in argv[1:]:
+            if arg.startswith("--agent="):
+                agent = arg[len("--agent=") :]
+            elif arg.startswith("--claude-alias="):
+                claude_alias = arg[len("--claude-alias=") :]
+            elif arg.startswith("--model="):
+                model = arg[len("--model=") :]
+            elif arg.startswith("--effort="):
+                effort = arg[len("--effort=") :]
+            elif arg.startswith("--codex-profile="):
+                codex_profile = arg[len("--codex-profile=") :]
+            elif arg.startswith("--policy-retries="):
+                raw = arg[len("--policy-retries=") :]
+                try:
+                    policy_retries = _parse_policy_retries(raw)
+                except ValueError:
+                    print(f"Invalid --policy-retries: '{raw}' (expected a non-negative integer)")
+                    return 1
+            elif arg.startswith("--transient-resumes="):
+                raw = arg[len("--transient-resumes=") :]
+                try:
+                    transient_resumes = _parse_transient_resumes(raw)
+                except ValueError:
+                    print(f"Invalid --transient-resumes: '{raw}' (expected a non-negative integer)")
+                    return 1
+            elif arg in ("--help", "-h"):
+                sys.stdout.write(self.usage)
+                return 0
+            else:
+                targets.append(arg)
+
+        profile_error = _codex_profile_option_error(agent, codex_profile)
+        if profile_error is not None:
+            print(profile_error)
+            return 1
+        self._model = model if model is not None else (os.environ.get("SPECULAR_MODEL") or None)
+        self._effort = effort if effort is not None else (os.environ.get("SPECULAR_EFFORT") or None)
+        self._codex_profile = codex_profile
+        self._policy_retries = policy_retries
+        self._transient_resumes = transient_resumes
+
+        if not phase or not targets:
+            print(f"Usage: {SCRIPT_DIR}/phaselib.py review <analysis|specgen|validation> name [name ...]")
+            return 1
+
+        adapter = LAUNCH_DIR / "adapters" / f"{agent}.sh"
+        if not adapter.is_file():
+            print(f"ERROR: Unknown agent '{agent}' — adapter not found at {adapter}")
+            return 1
+        self._rate_limit_agent = agent
+
+        ws = Workspace(targets)
+        names = [_trim(t) for t in targets]
+        try:
+            _activate_private_sources(ws, names)
+        except SnapshotError as exc:
+            print(f"ERROR: cannot restore private source: {exc}")
+            return 1
+
+        completed_prefix = ("review", phase)
+        try:
+            if resumelib.manual_mode():
+                completed_calls = resumelib.completed_logicals(completed_prefix)
+                for logical in completed_calls:
+                    resumelib.reconcile_completed(logical)
+            else:
+                resumelib.clear_completed(completed_prefix)
+                completed_calls = set()
+        except resumelib.ResumeError as exc:
+            print(f"ERROR: {exc}")
+            return 1
+        accepted_names = {
+            logical[2] for logical in completed_calls if len(logical) == 3 and logical[:2] == completed_prefix
+        }
+
+        resume_phase = f"review:{phase}"
+        try:
+            resumelib.ensure_phase(resume_phase)
+            recovering = resumelib.previous_entries(phase=resume_phase)
+        except resumelib.ResumeError as exc:
+            print(f"ERROR: {exc}")
+            return 1
+        if recovering:
+            order = {str(entry.get("target")): index for index, entry in enumerate(recovering)}
+            names = sorted(names, key=lambda name: order.get(name, len(order)))
+        recovery_cursors = {str(entry["target"]): entry for entry in recovering}
+
+        _refresh_target_indexes(ws, names)
+
+        print("========================================")
+        print(f" Specula — Review Agent ({phase})")
+        print("========================================")
+        print(f"Policy retries: {policy_retries}")
+        print(f"Transient resumes: {transient_resumes}")
+        print()
+
+        with _cleanup_on_signal():
+            for name in names:
+                if name in accepted_names:
+                    continue
+                cursor = recovery_cursors.get(name)
+                request = (
+                    _LaunchRequest(
+                        name,
+                        rate_limit_attempt=cursor.get("rate_limit_attempt", 1),
+                        policy_attempt=cursor.get("policy_attempt", 0),
+                        transient_attempt=cursor.get("transient_attempt", 0),
+                        invocation_attempt=max(1, cursor.get("invocation_attempt", 0)),
+                        retry_reason=cursor.get("retry_reason", "fresh"),
+                    )
+                    if cursor is not None
+                    else _LaunchRequest(name)
+                )
+                while True:
+                    _resource_start_target(name, ws.work_dir(name))
+                    try:
+                        rc = self._launch_review(
+                            ws,
+                            name,
+                            phase,
+                            adapter,
+                            claude_alias,
+                            rate_limit_attempt=request.rate_limit_attempt,
+                            policy_attempt=request.policy_attempt,
+                            transient_attempt=request.transient_attempt,
+                            invocation_attempt=request.invocation_attempt,
+                            retry_reason=request.retry_reason,
+                        )
+                    finally:
+                        _refresh_target_indexes(ws, [name])
+                    if (
+                        rc == quota.RATE_LIMIT_RC
+                        and self._reactive_rate_limit_enabled()
+                        and request.rate_limit_attempt <= self._rate_limit_retries()
+                    ):
+                        _resource_pause_target(name)
+                        print(f"[{_ts()}] Rate limited: waiting before retrying {name}")
+                        self._wait_for_rate_limit()
+                        request = _LaunchRequest(
+                            name,
+                            rate_limit_attempt=request.rate_limit_attempt + 1,
+                            policy_attempt=request.policy_attempt,
+                            transient_attempt=request.transient_attempt,
+                            invocation_attempt=request.invocation_attempt + 1,
+                            retry_reason="rate_limit",
+                        )
+                        continue
+                    if rc == POLICY_BLOCKED_RC and request.policy_attempt < self._policy_retries:
+                        _resource_pause_target(name)
+                        next_policy_attempt = request.policy_attempt + 1
+                        print(
+                            f"[{_ts()}] {name}: provider policy interrupted the review; "
+                            f"retrying with a revised request ({next_policy_attempt}/{self._policy_retries})"
+                        )
+                        request = _LaunchRequest(
+                            name,
+                            rate_limit_attempt=request.rate_limit_attempt,
+                            policy_attempt=next_policy_attempt,
+                            transient_attempt=request.transient_attempt,
+                            invocation_attempt=request.invocation_attempt + 1,
+                            retry_reason="policy",
+                        )
+                        continue
+                    transient_limit = _transient_resume_limit(rc, self._transient_resumes)
+                    if transient_limit is not None and request.transient_attempt < transient_limit:
+                        _resource_pause_target(name)
+                        next_transient_attempt = request.transient_attempt + 1
+                        delay = _transient_resume_delay(next_transient_attempt)
+                        print(
+                            f"[{_ts()}] {name}: {_transient_failure_label(rc)}; resuming review "
+                            f"({next_transient_attempt}/{transient_limit}) after {delay:g}s"
+                        )
+                        time.sleep(delay)
+                        request = _LaunchRequest(
+                            name,
+                            rate_limit_attempt=request.rate_limit_attempt,
+                            policy_attempt=request.policy_attempt,
+                            transient_attempt=next_transient_attempt,
+                            invocation_attempt=request.invocation_attempt + 1,
+                            retry_reason="transient",
+                        )
+                        continue
+                    if rc != 0:
+                        _resource_finish_target(name)
+                        return self._failure_code([(name, rc)])
+                    _resource_finish_target(name)
+                    resumelib.mark_completed(("review", phase, name))
+                    break
+
+        print()
+        print("Review agents completed.")
+
+        print()
+        print("========================================")
+        print(" Review Results")
+        print("========================================")
+        for name in names:
+            wd = ws.work_dir(name)
+            if phase == "specgen":
+                review_file = wd / "spec" / "review-specgen.md"
+            elif phase == "validation":
+                review_file = wd / "spec" / "review-validation.md"
+            else:  # analysis
+                review_file = wd / "review-analysis.md"
+            if review_file.is_file() and review_file.stat().st_size > 0:
+                print(f"  {name}: review written ({_wc_l(review_file)} lines)")
+            elif review_file.is_file():
+                print(f"  {name}: review empty (check log)")
+            else:
+                print(f"  {name}: (no review file generated — check log)")
+        try:
+            resumelib.clear_completed(completed_prefix)
+        except resumelib.ResumeError as exc:
+            print(f"ERROR: {exc}")
+            return 1
+        return 0
+
+    def _launch_review(
+        self,
+        ws: Workspace,
+        name: str,
+        phase: str,
+        adapter: Path,
+        claude_alias: str,
+        *,
+        rate_limit_attempt: int = 1,
+        policy_attempt: int = 0,
+        transient_attempt: int = 0,
+        invocation_attempt: int = 1,
+        retry_reason: str = "fresh",
+    ) -> int:
+        wd = ws.work_dir(name)
+        # specgen/validation logs go under spec/ to match pipeline summary expectations
+        log_dir = wd / "spec" if phase in ("specgen", "validation") else wd
+        log_file = log_dir / f"review-{phase}.log"
+        if phase == "analysis":
+            prompt = self._analysis_prompt(wd, name)
+        elif phase == "specgen":
+            prompt = self._specgen_prompt(wd, name)
+        elif phase == "validation":
+            prompt = self._validation_prompt(wd, name)
+        else:
+            print(f"Unknown phase: {phase}")
+            raise SystemExit(1)
+        print(f"[{_ts()}] Reviewing {name} ({phase})...")
+        log_dir.mkdir(parents=True, exist_ok=True)
+        pid_file = log_dir / f"review-{phase}.pid"
+        prompt_file = log_dir / f".review-{phase}-prompt.md"
+        activity_log = log_file.with_suffix(".activity.jsonl")
+        resume_state = _resume_state_path(log_file)
+        attempt_files = (
+            prompt_file,
+            log_file,
+            _last_message_path(log_file),
+            activity_log,
+            log_file.with_suffix(".raw.json"),
+            log_file.with_suffix(".usage.json"),
+        )
+        repo_dir = ws.find_repo_dir(name)
+        launch_cwd = Path.cwd().resolve()
+        if ws.uses_private_source():
+            if not repo_dir:
+                raise RuntimeError(f"private source is missing for {name!r}")
+            launch_cwd = Path(repo_dir)
+        resume_logical = ("review", phase, name)
+        checkpoint_model, checkpoint_effort = _checkpoint_tuning(adapter, self._model, self._effort)
+        claim = resumelib.prepare_turn(
+            resume_logical,
+            phase=f"review:{phase}",
+            target=name,
+            kind="review",
+            adapter=adapter,
+            model=checkpoint_model,
+            effort=checkpoint_effort,
+            codex_profile=self._codex_profile,
+            claude_alias=claude_alias,
+            cwd=launch_cwd,
+            resume_state=resume_state,
+            prompt_file=prompt_file,
+            log_file=log_file,
+        )
+        if claim.manual:
+            rate_limit_attempt = claim.rate_limit_attempt
+            policy_attempt = claim.policy_attempt
+            transient_attempt = claim.transient_attempt
+            retry_reason = "manual"
+        invocation_attempt = claim.attempt
+        resumelib.update_turn(
+            resume_logical,
+            rate_limit_attempt=rate_limit_attempt,
+            policy_attempt=policy_attempt,
+            transient_attempt=transient_attempt,
+            invocation_attempt=invocation_attempt,
+            retry_reason=retry_reason,
+        )
+        archived_attempts: dict[Path, Path] = {}
+        if invocation_attempt == 1:
+            _clear_attempt_archives(attempt_files)
+            _clear_resume_state(resume_state)
+        else:
+            archived_attempts = _archive_attempt(attempt_files, invocation_attempt - 1)
+        resumable = resume_state.is_file()
+        prompt_reason = (
+            "manual" if claim.manual else ("policy" if policy_attempt > 0 and not resumable else retry_reason)
+        )
+        prompt = _retry_prompt(
+            prompt,
+            prompt_reason,
+            resumable=resumable,
+            manual_extra=self._manual_prompt_extra(ws, name) if claim.manual else "",
+        )
+        prompt_file.write_text(prompt)
+        system_prompt_args = _system_prompt_argv(prompt_file)
+        with contextlib.suppress(OSError):
+            activity_log.unlink()
+        env = os.environ.copy()
+        for key in (RESOURCE_INVOCATION_ENV, RESOURCE_ROOT_ENV, RESOURCE_PHASE_ENV):
+            env.pop(key, None)
+        env["SPECULAR_WORK_DIR"] = str(wd)
+        if ws.uses_private_source():
+            env["SPECULAR_TARGET_REPO_DIR"] = repo_dir
+            env["PWD"] = str(launch_cwd)
+            sanitize_snapshot_git_environment(env, ceiling=ws.private_git_ceiling([name]))
+        else:
+            env["PWD"] = str(launch_cwd)
+        env.pop("SPECULAR_ACTIVITY_LOG", None)
+        show_progress = progress.enabled()
+        if show_progress:
+            env["SPECULAR_ACTIVITY_LOG"] = str(activity_log)
+
+        ignored: set[Path] = set()
+        for path in (
+            log_file,
+            pid_file,
+            _system_prompt_path(prompt_file),
+            _last_message_path(log_file),
+            activity_log,
+            log_file.with_suffix(".raw.json"),
+            log_file.with_suffix(".usage.json"),
+            resume_state,
+        ):
+            with contextlib.suppress(ValueError):
+                ignored.add(path.relative_to(wd))
+        snapshot = progress.workspace_snapshot(wd, ignored)
+        prelaunch_log_stamp = progress.file_stamp(log_file)
+        prelaunch_activity_stamp = progress.file_stamp(activity_log)
+        proc: subprocess.Popen[bytes] | None = None
+        running: progress.RunningAgent | None = None
+        try:
+            usage_path = log_file.with_suffix(".usage.json")
+            _resource_note_agent(
+                wd,
+                log_file,
+                attempt=invocation_attempt,
+                archived_usage_path=archived_attempts.get(usage_path),
+            )
+            tlc_tasks.prepare_environment(env, log_file, SPECULAR_ROOT)
+            proc = subprocess.Popen(
+                [
+                    str(adapter),
+                    # bash: prompt=$(generate_..._prompt) — command substitution
+                    # strips trailing newlines before the adapter sees the prompt.
+                    f"--prompt={prompt.rstrip(chr(10))}",
+                    "--max-turns=30",
+                    f"--claude-alias={claude_alias}",
+                    *_model_effort_argv(adapter, self._model, self._effort, self._codex_profile),
+                    f"--log={log_file}",
+                    f"--resume-state={resume_state}",
+                    *system_prompt_args,
+                    "--background",
+                ],
+                env=env,
+                cwd=launch_cwd,
+                start_new_session=True,
+                pass_fds=resumelib.inherited_run_lock_fds(),
+            )
+            running = progress.RunningAgent(
+                name=name,
+                proc=proc,
+                work_dir=wd,
+                log=log_file,
+                activity_log=activity_log,
+                ignored=ignored,
+                reported_snapshot=snapshot,
+                log_stamp=prelaunch_log_stamp,
+                activity_stamp=prelaunch_activity_stamp,
+                adapter_name=adapter.stem,
+                target=name,
+                policy_attempt=policy_attempt,
+                transient_attempt=transient_attempt,
+                invocation_attempt=invocation_attempt,
+                resume_state=resume_state,
+            )
+            pid_file.write_text(f"{proc.pid}\n")
+            print(f"  PID={proc.pid}  Log: {log_file}")
+            while True:
+                if show_progress:
+                    progress.report([running], self.progress_config)
+                _, completed = self._reap_agents([running], show_progress)
+                if completed:
+                    return completed[0][1]
+                time.sleep(self.progress_config.poll_seconds)
+        except BaseException:
+            if proc is not None:
+                self._terminate_processes([proc])
+            raise
+
+    def _analysis_prompt(self, wd: Path, name: str) -> str:
+        return f"""# Code Analysis Review: {name}
+
+Review the code analysis outputs for quality and completeness.
+
+## Files to Review
+
+- Modeling Brief: {wd}/modeling-brief.md
+- Analysis Report: {wd}/analysis-report.md
+
+## Review Checklist
+
+Score each item 1-5 (1=missing, 3=adequate, 5=excellent):
+
+1. **Coverage Statistics**: Are they reported? Is coverage sufficient for the requested scope?
+2. **Scenarios**: Are mechanisms and interactions well-defined and supported by evidence? Judge coverage against the scope, without a fixed Scenario count.
+3. **Evidence Quality**: Does each bug cite file:line, issue numbers, and commit references?
+4. **Model-Checkable Findings**: Are findings classified? How many are model-checkable?
+5. **Modeling Brief Completeness**: Variables, actions, invariants, extensions all specified for the requested scope?
+6. **False Positive Control**: Were excluded issues documented with reasons?
+7. **Source Code Annotations**: Are file:line references present throughout?
+
+## Output
+
+Write your review to: {wd}/review-analysis.md
+
+Format:
+```markdown
+# Code Analysis Review: {name}
+
+## Scores
+| Criterion | Score | Notes |
+|-----------|-------|-------|
+| Coverage Statistics | X/5 | ... |
+| Scenarios | X/5 | ... |
+| Evidence Quality | X/5 | ... |
+| Model-Checkable Findings | X/5 | ... |
+| Modeling Brief Completeness | X/5 | ... |
+| False Positive Control | X/5 | ... |
+| Source Code Annotations | X/5 | ... |
+
+## Overall: X/35
+
+## Issues Found
+- ...
+
+## Verdict: PASS / NEEDS_IMPROVEMENT
+```
+"""
+
+    def _specgen_prompt(self, wd: Path, name: str) -> str:
+        spec_dir = wd / "spec"
+        return f"""# Spec Generation Review: {name}
+
+Review the generated TLA+ specs for correctness and completeness.
+
+## Files to Review
+
+- Base Spec: {spec_dir}/base.tla
+- Base Config: {spec_dir}/base.cfg
+- MC Spec: {spec_dir}/MC.tla
+- MC Config: {spec_dir}/MC.cfg
+- Trace Spec: {spec_dir}/Trace.tla
+- Trace Config: {spec_dir}/Trace.cfg
+- Instrumentation: {spec_dir}/instrumentation-spec.md
+- Modeling Brief (reference): {wd}/modeling-brief.md
+- Coverage Audit: {spec_dir}/brief-coverage.md
+
+## Review Checklist
+
+Score each item 1-5:
+
+1. **Scope and Scenario Coverage**: Does the spec cover the requested scope and each Scenario in the brief, including behavior without a bug hypothesis?
+2. **Action Design**: Are actions named after impl functions? Are code paths split where they diverge?
+3. **Source Annotations**: Does every logic block cite file:line?
+4. **Invariant Coverage**: Are standard + extension invariants present for each Scenario?
+5. **MC Spec Structure**: Are only fault-injection actions bounded? Symmetry/view/constraints present?
+6. **Trace Spec Design**: Are silent actions tightly constrained? Post-state validation present?
+7. **Instrumentation Mapping**: Is there a 1:1 mapping between spec actions and code locations?
+8. **Logical Correctness**: Check for tautologies, impossible guards, typos in temporal properties.
+
+## Output
+
+Write your review to: {spec_dir}/review-specgen.md
+
+Format:
+```markdown
+# Spec Generation Review: {name}
+
+## Scores
+| Criterion | Score | Notes |
+|-----------|-------|-------|
+| Scope and Scenario Coverage | X/5 | ... |
+| Action Design | X/5 | ... |
+| Source Annotations | X/5 | ... |
+| Invariant Coverage | X/5 | ... |
+| MC Spec Structure | X/5 | ... |
+| Trace Spec Design | X/5 | ... |
+| Instrumentation Mapping | X/5 | ... |
+| Logical Correctness | X/5 | ... |
+
+## Overall: X/40
+
+## Issues Found
+- ...
+
+## Verdict: PASS / NEEDS_IMPROVEMENT
+```
+"""
+
+    def _validation_prompt(self, wd: Path, name: str) -> str:
+        spec_dir = wd / "spec"
+        return f"""# Validation Review: {name}
+
+Review the spec validation results and summarize readiness for trace validation.
+
+## Files to Review
+
+- Validation Report: {spec_dir}/validation-report.md
+- Quick MC Log (if exists): {spec_dir}/quick-mc.log
+
+## Review Checklist
+
+1. **Syntax**: Did all specs pass SANY?
+2. **MC Results**: Any violations found? Expected or unexpected?
+3. **Readiness**: Is the spec ready for trace validation? What needs instrumentation first?
+
+## Output
+
+Write your review to: {spec_dir}/review-validation.md
+
+Format:
+```markdown
+# Validation Review: {name}
+
+## Status
+- Syntax: PASS/FAIL
+- MC: PASS/FAIL/TIMEOUT/SKIPPED
+- Ready for trace validation: YES/NO
+
+## Next Steps
+- ...
+
+## Verdict: PASS / NEEDS_IMPROVEMENT
+```
+"""
+
+
+PHASES: dict[str, Phase] = {
+    p.key: p
+    for p in [
+        CodeAnalysisPhase(),
+        SpecGenerationPhase(),
+        HarnessGenerationPhase(),
+        BugClassificationPhase(),
+        SpecValidationPhase(),
+        BugConfirmationPhase(),
+        ReviewPhase(),
+    ]
+}
+
+
+def main(argv: list[str]) -> int:
+    rename_check.exit_on_legacy_settings()
+    # bash echo flushed per line; python block-buffers when stdout is a pipe
+    # (launch_pipeline.sh tees everything), which would hold progress lines —
+    # including the Monitor hint — in the buffer for the hours p.wait() blocks.
+    # errors="replace": progress now relays agent-written text, and an ambient
+    # non-UTF-8 locale must not kill the launcher on the first non-ASCII byte.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(line_buffering=True, errors="replace")
+    if argv and argv[0] == "incremental":
+        from specular.ci_phase import IncrementalPhase
+
+        PHASES["incremental"] = IncrementalPhase()
+    elif argv and argv[0] == "main":
+        from specular.single_session import SingleSessionPhase, apply_prompt_defaults
+
+        apply_prompt_defaults()
+        PHASES["main"] = SingleSessionPhase()
+    if not argv or argv[0] not in PHASES:
+        print(f"usage: phaselib.py <phase> [options] <target>...\nphases: {', '.join(PHASES)}", file=sys.stderr)
+        return 2
+    global _RESOURCE_RECORDER
+    recorder = ResourceInvocationRecorder.from_environment()
+    previous_recorder = _RESOURCE_RECORDER
+    _RESOURCE_RECORDER = recorder
+    try:
+        return PHASES[argv[0]].run(argv[1:])
+    finally:
+        _RESOURCE_RECORDER = previous_recorder
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

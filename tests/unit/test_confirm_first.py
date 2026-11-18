@@ -1,6 +1,6 @@
 """--confirm-first: confirm the Phase 1 Scenarios before modeling.
 
-Pins the sealed Scenario record (``specula.confirm_first``), the Scenario-only
+Pins the sealed Scenario record (``specular.confirm_first``), the Scenario-only
 and after-Scenario consolidation modes, carried verdicts and covered
 model-checking findings in the dispatcher (including repair rounds), the
 confirmation phase options, and the pipeline's phase order and resume rules.
@@ -22,12 +22,12 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-from specula import confirm_first as CF
-from specula import confirmlib as C
-from specula import phaselib as PhaseLib
-from specula import pipelinelib as PL
-from specula import resumelib
-from specula.phaselib import Workspace
+from specular import confirm_first as CF
+from specular import confirmlib as C
+from specular import phaselib as PhaseLib
+from specular import pipelinelib as PL
+from specular import resumelib
+from specular.phaselib import Workspace
 
 EVIDENCE = "The investigation inspected the real call path and captured concrete observed behavior."
 TOKEN = "0123456789abcdef0123456789abcdef"
@@ -62,7 +62,7 @@ class Case(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.tmp, True)
-        patcher = mock.patch.dict(os.environ, {"SPECULA_RUN_DIR": self.tmp})
+        patcher = mock.patch.dict(os.environ, {"SPECULAR_RUN_DIR": self.tmp})
         patcher.start()
         self.addCleanup(patcher.stop)
         self.ws = Workspace([self.name])
@@ -137,7 +137,7 @@ class TestSeal(Case):
         self.assertEqual(CF.seal(self.work).ids, sealed.ids)
 
     def test_target_index_links_the_scenario_report(self) -> None:
-        from specula.output_index import render_target_index
+        from specular.output_index import render_target_index
 
         self.assertNotIn("Scenario confirmation report", render_target_index(self.name, self.work))
         self.scenario_pass()
@@ -632,7 +632,7 @@ class TestPipeline(unittest.TestCase):
         self.assertTrue(p.skip_analysis)
         self.assertFalse(p.skip_specgen or p.skip_harness or p.skip_validation)
 
-        work = run_dir / "a" / ".specula-output"
+        work = run_dir / "a" / ".specular-output"
         (work / "spec").mkdir(parents=True)
         (work / "modeling-brief.md").write_text(BRIEF)
         (work / "spec" / "candidates.json").write_text('{"findings": []}')

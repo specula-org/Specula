@@ -9,8 +9,8 @@ from pathlib import Path
 
 import test_incremental_ci as fixtures
 
-from specula import persistent_findings
-from specula.ci_store import CIStore
+from specular import persistent_findings
+from specular.ci_store import CIStore
 
 
 class IssueReuseCLI(unittest.TestCase):
@@ -24,7 +24,7 @@ class IssueReuseCLI(unittest.TestCase):
         helper.write_text(
             "import json, subprocess, sys\nfrom pathlib import Path\n"
             f"sys.path.insert(0, {str(fixture.root / 'src')!r})\n"
-            "from specula import persistent_findings\n"
+            "from specular import persistent_findings\n"
             "work, adapter = map(Path, sys.argv[1:])\n"
             "mode = Path(str(adapter) + '.issue-mode').read_text()\n"
             "path = work / 'spec/final-result.json'\n"
@@ -50,7 +50,7 @@ class IssueReuseCLI(unittest.TestCase):
         fixture.adapter.write_text(
             fixture.adapter.read_text().replace(
                 '    if [ -f "$0.omit-verdict" ];',
-                f'    python3 {shlex.quote(str(helper))} "$SPECULA_WORK_DIR" "$0"\n    if [ -f "$0.omit-verdict" ];',
+                f'    python3 {shlex.quote(str(helper))} "$SPECULAR_WORK_DIR" "$0"\n    if [ -f "$0.omit-verdict" ];',
             )
         )
         mode = Path(f"{fixture.adapter}.issue-mode")
@@ -75,7 +75,7 @@ class IssueReuseCLI(unittest.TestCase):
         self.assertEqual(Path(f"{fixture.adapter}.analysis-count").read_text(), "x")
         report = (current / "ci-report.md").read_text()
         self.assertIn("historical conclusion reused", report)
-        summary = (fixture.latest() / "footest/.specula-output/summary.md").read_text()
+        summary = (fixture.latest() / "footest/.specular-output/summary.md").read_text()
         self.assertIn("MC-1", summary)
         self.assertNotIn("findings summary is unavailable", summary)
         self.assertEqual(CIStore(fixture.ci).current()["verdict"], "FAIL")
@@ -104,7 +104,7 @@ class IssueReuseCLI(unittest.TestCase):
         self.assertNotEqual(rejected.returncode, 0)
         self.assertEqual((fixture.ci / "current/model").resolve(), current)
         fixture.unfinished()
-        work = fixture.latest() / "footest/.specula-output"
+        work = fixture.latest() / "footest/.specular-output"
         self.assertFalse((work / persistent_findings.RECEIPTS / "MC-1.json").exists())
         self.assertFalse((work / "spec/issue-input/MC-1.json").exists())
 

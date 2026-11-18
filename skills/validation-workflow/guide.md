@@ -27,7 +27,7 @@ These pull in opposite directions. Fixing trace failures may loosen the spec (in
 
 ### Required Artifacts
 
-All artifacts are relative to `.specula-output/`:
+All artifacts are relative to `.specular-output/`:
 
 | Artifact | Path | Description |
 |----------|------|-------------|

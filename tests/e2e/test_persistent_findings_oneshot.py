@@ -10,7 +10,7 @@ from pathlib import Path
 
 import test_incremental_ci as fixtures
 
-from specula import persistent_findings as findings
+from specular import persistent_findings as findings
 
 
 class OneShotFindings(unittest.TestCase):
@@ -23,7 +23,7 @@ class OneShotFindings(unittest.TestCase):
         helper.write_text(
             "import json, subprocess, sys\nfrom pathlib import Path\n"
             f"sys.path.insert(0, {str(fixture.root / 'src')!r})\n"
-            "from specula import persistent_findings as pf\n"
+            "from specular import persistent_findings as pf\n"
             + textwrap.dedent("""\
                 mode, location, log, adapter = sys.argv[1:]
                 location, adapter = Path(location), Path(adapter)
@@ -66,15 +66,15 @@ class OneShotFindings(unittest.TestCase):
                 """)
         )
         script = adapter.read_text()
-        old = '    printf \'{"generated_by":"consolidate","findings":[]}\\n\' > "$SPECULA_WORK_DIR/spec/candidates.json"\n'
+        old = '    printf \'{"generated_by":"consolidate","findings":[]}\\n\' > "$SPECULAR_WORK_DIR/spec/candidates.json"\n'
         self.assertIn(old, script)
         script = script.replace(
             old, f'    python3 {shlex.quote(str(helper))} confirm "$prompt" "$log" "$0"\n    exit 0\n'
         )
         script = script.replace(
             "esac\n",
-            'esac\nif [ "$SPECULA_PHASE" = spec_validation ]; then\n'
-            f'    python3 {shlex.quote(str(helper))} validate "$SPECULA_WORK_DIR" "$log" "$0"\nfi\n',
+            'esac\nif [ "$SPECULAR_PHASE" = spec_validation ]; then\n'
+            f'    python3 {shlex.quote(str(helper))} validate "$SPECULAR_WORK_DIR" "$log" "$0"\nfi\n',
         )
         adapter.write_text(script)
         guidance = fixture.work / "guidance.md"
@@ -92,7 +92,7 @@ class OneShotFindings(unittest.TestCase):
         result = fixture.helper.run_cli(fixture.root, args, cwd=fixture.work)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         first_run = (fixture.root / "runs/latest").resolve()
-        first = first_run / "footest/.specula-output"
+        first = first_run / "footest/.specular-output"
         original = findings.load(first, "MC-1")
         self.assertTrue(original["reusable"])
         self.assertFalse((first_run / "ci-input.json").exists())
@@ -115,7 +115,7 @@ class OneShotFindings(unittest.TestCase):
         result = fixture.helper.run_cli(fixture.root, [*args, f"--findings-from={first}"], cwd=fixture.work)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         second_run = (fixture.root / "runs/latest").resolve()
-        second = second_run / "footest/.specula-output"
+        second = second_run / "footest/.specular-output"
         self.assertEqual(findings.load(second, "MC-1"), original)
         self.assertIn("historical conclusion reused", (second / "confirmed-bugs.md").read_text())
         self.assertEqual(adapter.with_suffix(".confirmation-count").read_text(), "x")
@@ -128,7 +128,7 @@ class OneShotFindings(unittest.TestCase):
         result = fixture.helper.run_cli(fixture.root, [*args, f"--findings-from={second}"], cwd=fixture.work)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         third_run = (fixture.root / "runs/latest").resolve()
-        third = third_run / "footest/.specula-output"
+        third = third_run / "footest/.specular-output"
         self.assertEqual(adapter.with_suffix(".confirmation-count").read_text(), "xx")
         self.assertEqual(findings.load(third, "MC-1")["origin_run"], third_run.name)
         self.assertNotIn("historical conclusion reused", (third / "confirmed-bugs.md").read_text())
@@ -210,15 +210,15 @@ class OneShotFindings(unittest.TestCase):
                 """)
         )
         script = adapter.read_text()
-        old = '    printf \'{"generated_by":"consolidate","findings":[]}\\n\' > "$SPECULA_WORK_DIR/spec/candidates.json"\n'
+        old = '    printf \'{"generated_by":"consolidate","findings":[]}\\n\' > "$SPECULAR_WORK_DIR/spec/candidates.json"\n'
         self.assertIn(old, script)
         script = script.replace(
             old, f'    python3 {shlex.quote(str(helper))} confirm "$prompt" "$log" "$0" "$resume"\n    exit $?\n'
         )
         script = script.replace(
             "esac\n",
-            'esac\nif [ "$SPECULA_PHASE" = spec_validation ]; then\n'
-            f'    python3 {shlex.quote(str(helper))} validate "$SPECULA_WORK_DIR" "$log" "$0"\nfi\n',
+            'esac\nif [ "$SPECULAR_PHASE" = spec_validation ]; then\n'
+            f'    python3 {shlex.quote(str(helper))} validate "$SPECULAR_WORK_DIR" "$log" "$0"\nfi\n',
         )
         adapter.write_text(script)
         guidance = fixture.work / "guidance.md"
@@ -229,7 +229,7 @@ class OneShotFindings(unittest.TestCase):
         args = ["run", "--agent=fake", f"--artifact={fixture.source}", f"--guidance={guidance}", "--skip-repair-loop"]
         first = fixture.helper.run_cli(fixture.root, [*args, "footest"], cwd=fixture.work)
         run = (fixture.root / "runs/latest").resolve()
-        work = run / "footest/.specula-output"
+        work = run / "footest/.specular-output"
         mc1 = work / "confirmation/MC-1"
         self.assertIn("| 1 | MC-1 | REPRODUCED | yes |", (work / "confirmed-bugs.md").read_text())
         self.assertFalse((mc1 / "issue.json").exists())

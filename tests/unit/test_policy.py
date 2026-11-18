@@ -12,8 +12,8 @@ SRC = Path(__file__).resolve().parents[2] / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from specula.adapters.utils.event_stream import StreamStatus, stream_events  # noqa: E402
-from specula.adapters.utils.policy import (  # noqa: E402
+from specular.adapters.utils.event_stream import StreamStatus, stream_events  # noqa: E402
+from specular.adapters.utils.policy import (  # noqa: E402
     failed_log_has_policy_block,
     final_diagnostic_has_policy_block,
     looks_claude_safeguard_block,

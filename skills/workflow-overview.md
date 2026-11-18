@@ -182,7 +182,7 @@ Pauses when API usage exceeds threshold, waits for reset, resumes automatically.
 ## Directory Structure (per case study)
 
 ```
-.specula-output/
+.specular-output/
 ├── analysis-report.md           # Phase 1
 ├── modeling-brief.md            # Phase 1 → Phase 2 handoff
 ├── confirmed-bugs.md            # Phase 4 final confirmation report

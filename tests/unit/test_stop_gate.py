@@ -1,4 +1,4 @@
-"""Unit tests for src/specula/stop_gate.py — the completion gate.
+"""Unit tests for src/specular/stop_gate.py — the completion gate.
 
 Pins the decision tree (fail-open, BLOCKED.md surrender, fuse, live-pid
 detection, per-phase deliverable contracts) and the by-path CLI entry points
@@ -24,9 +24,9 @@ from unittest import mock
 
 SRC = Path(__file__).resolve().parents[2] / "src"
 sys.path.insert(0, str(SRC))
-from specula import stop_gate as sg  # noqa: E402
+from specular import stop_gate as sg  # noqa: E402
 
-GATE = SRC / "specula" / "stop_gate.py"
+GATE = SRC / "specular" / "stop_gate.py"
 
 
 class GateCase(unittest.TestCase):
@@ -39,7 +39,7 @@ class GateCase(unittest.TestCase):
         self.addCleanup(self._td.cleanup)
         self.wd = Path(self._td.name).resolve()
         (self.wd / "spec").mkdir()
-        for var in ("SPECULA_STOP_GATE", "SPECULA_STOP_GATE_CAP", "SPECULA_STOP_GATE_WORK_DIR"):
+        for var in ("SPECULAR_STOP_GATE", "SPECULAR_STOP_GATE_CAP", "SPECULAR_STOP_GATE_WORK_DIR"):
             self._stash(var)
 
     def _stash(self, var: str) -> None:
@@ -70,7 +70,7 @@ class TestDecideFailOpen(GateCase):
         self.assertTrue(allow)
 
     def test_off_switch(self) -> None:
-        os.environ["SPECULA_STOP_GATE"] = "off"
+        os.environ["SPECULAR_STOP_GATE"] = "off"
         allow, reason = sg.decide("spec_validation", self.wd)
         self.assertTrue(allow)
         self.assertIn("disabled", reason)
@@ -153,7 +153,7 @@ class TestFuse(GateCase):
         self.assertTrue((self.wd / sg.STATE_DIRNAME / "FAILED-HOOK-CAP").is_file())
 
     def test_cap_env_override(self) -> None:
-        os.environ["SPECULA_STOP_GATE_CAP"] = "1"
+        os.environ["SPECULAR_STOP_GATE_CAP"] = "1"
         (self.wd / sg.STATE_DIRNAME).mkdir()
         (self.wd / sg.STATE_DIRNAME / "blocks").write_text("1\n")
         allow, _ = sg.decide("spec_validation", self.wd)
@@ -320,20 +320,20 @@ class TestLivePids(GateCase):
     def test_ps_ppid_map_tolerates_unusable_output(self) -> None:
         for stdout in ("", "garbage\n", "1\n", "a b\n"):
             completed = subprocess.CompletedProcess(["ps"], 0, stdout, "")
-            with mock.patch("specula.stop_gate.subprocess.run", return_value=completed):
+            with mock.patch("specular.stop_gate.subprocess.run", return_value=completed):
                 self.assertEqual(sg._ps_ppid_map(), {})
 
     def test_ps_ppid_map_parses_pid_ppid_pairs(self) -> None:
         completed = subprocess.CompletedProcess(["ps"], 0, "  10   1\n  20  10\n", "")
-        with mock.patch("specula.stop_gate.subprocess.run", return_value=completed):
+        with mock.patch("specular.stop_gate.subprocess.run", return_value=completed):
             self.assertEqual(sg._ps_ppid_map(), {10: 1, 20: 10})
 
     def test_ps_ppid_map_handles_failure_modes(self) -> None:
         failed = subprocess.CompletedProcess(["ps"], 1, "10 1\n", "")
-        with mock.patch("specula.stop_gate.subprocess.run", return_value=failed):
+        with mock.patch("specular.stop_gate.subprocess.run", return_value=failed):
             self.assertEqual(sg._ps_ppid_map(), {})
         for error in (OSError("missing"), subprocess.TimeoutExpired(["ps"], 10)):
-            with mock.patch("specula.stop_gate.subprocess.run", side_effect=error):
+            with mock.patch("specular.stop_gate.subprocess.run", side_effect=error):
                 self.assertEqual(sg._ps_ppid_map(), {})
 
     def test_ps_resolved_without_bin_on_path(self) -> None:
@@ -347,20 +347,20 @@ class TestLivePids(GateCase):
             self.assertIn(grandparent, sg._ancestor_pids())
 
     def test_ps_executable_prefers_path(self) -> None:
-        with mock.patch("specula.stop_gate.shutil.which", return_value="/opt/x/ps"):
+        with mock.patch("specular.stop_gate.shutil.which", return_value="/opt/x/ps"):
             self.assertEqual(sg._ps_executable(), "/opt/x/ps")
 
     def test_ps_executable_falls_back_to_standard_locations(self) -> None:
         with (
-            mock.patch("specula.stop_gate.shutil.which", return_value=None),
-            mock.patch("specula.stop_gate.os.access", side_effect=lambda p, _m: p == "/usr/bin/ps"),
+            mock.patch("specular.stop_gate.shutil.which", return_value=None),
+            mock.patch("specular.stop_gate.os.access", side_effect=lambda p, _m: p == "/usr/bin/ps"),
         ):
             self.assertEqual(sg._ps_executable(), "/usr/bin/ps")
 
     def test_no_ps_anywhere_degrades_without_spawning(self) -> None:
         with (
             mock.patch.object(sg, "_ps_executable", return_value=None),
-            mock.patch("specula.stop_gate.subprocess.run") as run,
+            mock.patch("specular.stop_gate.subprocess.run") as run,
         ):
             self.assertEqual(sg._ps_ppid_map(), {})
         run.assert_not_called()
@@ -500,10 +500,10 @@ class TestHookEntry(GateCase):
         gate_work_dir: Path | None = None,
     ) -> tuple[int, str]:
         env = os.environ.copy()
-        env["SPECULA_PHASE"] = phase
-        env["SPECULA_WORK_DIR"] = str(self.wd)
+        env["SPECULAR_PHASE"] = phase
+        env["SPECULAR_WORK_DIR"] = str(self.wd)
         if gate_work_dir is not None:
-            env["SPECULA_STOP_GATE_WORK_DIR"] = str(gate_work_dir)
+            env["SPECULAR_STOP_GATE_WORK_DIR"] = str(gate_work_dir)
         r = subprocess.run(
             [sys.executable, str(GATE), flavor],
             input=json.dumps({"hook_event_name": "Stop", "stop_hook_active": False}),
@@ -567,7 +567,7 @@ class TestHookEntry(GateCase):
             input="not json",
             capture_output=True,
             text=True,
-            env={k: v for k, v in os.environ.items() if not k.startswith("SPECULA_")},
+            env={k: v for k, v in os.environ.items() if not k.startswith("SPECULAR_")},
         )
         self.assertEqual(r.returncode, 0)
         self.assertEqual(r.stdout, "")
@@ -576,8 +576,8 @@ class TestHookEntry(GateCase):
         # the load-bearing guarantee: a crash inside decide() must allow the
         # stop (exit 0, no block), never wedge a healthy run
         env = os.environ.copy()
-        env["SPECULA_PHASE"] = "spec_validation"
-        env["SPECULA_WORK_DIR"] = str(self.wd)
+        env["SPECULAR_PHASE"] = "spec_validation"
+        env["SPECULAR_WORK_DIR"] = str(self.wd)
         with mock.patch.object(sg, "decide", side_effect=RuntimeError("boom")):
             buf = io.StringIO()
             with redirect_stdout(buf):

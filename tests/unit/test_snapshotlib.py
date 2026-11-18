@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from specula import snapshotlib as sl
+from specular import snapshotlib as sl
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -550,7 +550,7 @@ class SnapshotTests(unittest.TestCase):
         pre_commit.write_text(f'#!/bin/sh\n: > "{marker}"\nexit 0\n')
         pre_commit.chmod(0o755)
         _git(original, "config", "core.hooksPath", str(hooks))
-        _git(original, "config", "specula.snapshotSentinel", "original-only")
+        _git(original, "config", "specular.snapshotSentinel", "original-only")
         run = self.root / "run"
         run.mkdir()
 
@@ -560,7 +560,7 @@ class SnapshotTests(unittest.TestCase):
 
         self.assertFalse(marker.exists())
         self.assertNotIn(str(original), private_config)
-        self.assertNotIn("specula.snapshotsentinel=", private_settings)
+        self.assertNotIn("specular.snapshotsentinel=", private_settings)
         _git(source, "status", "--short")
         (source / "tracked.txt").write_text("private change\n")
         _git(source, "add", "tracked.txt")
@@ -661,7 +661,7 @@ class SnapshotTests(unittest.TestCase):
         run = self.root / "run"
         run.mkdir()
         source = sl.prepare_sources(run, {"demo": original})["demo"].source
-        worktree = run / "demo" / ".specula-output" / "confirmation" / "MC-1" / "worktree"
+        worktree = run / "demo" / ".specular-output" / "confirmation" / "MC-1" / "worktree"
         worktree.parent.mkdir(parents=True)
         _git(source, "worktree", "add", "--quiet", "--detach", str(worktree))
 

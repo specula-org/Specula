@@ -8,9 +8,9 @@ from pathlib import Path
 
 import test_ci_store as fixtures
 
-from specula.ci_inheritance import inherit, matches_source, register_candidate
-from specula.ci_store import CIError, git
-from specula.github_ci import Event, GitHubCI
+from specular.ci_inheritance import inherit, matches_source, register_candidate
+from specular.ci_store import CIError, git
+from specular.github_ci import Event, GitHubCI
 
 
 class InheritanceTests(unittest.TestCase):
@@ -22,7 +22,7 @@ class InheritanceTests(unittest.TestCase):
         self.store.publish(self.fixture.run_dir, self.fixture.work, self.fixture.inputs)
         self.initial = self.store.current_token()
         self.candidate_run = self.fixture.root / "runs/candidate"
-        self.candidate_work = self.candidate_run / "project/.specula-output"
+        self.candidate_work = self.candidate_run / "project/.specular-output"
         self.candidate_source = self.candidate_run / "ci-source"
         shutil.copytree(self.fixture.work, self.candidate_work)
         shutil.copytree(self.fixture.source, self.candidate_source)

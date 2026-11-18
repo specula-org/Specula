@@ -8,9 +8,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from specula.adapters.utils.copilot_usage import collect_usage
-from specula.adapters.utils.event_stream import stream_events
-from specula.adapters.utils.usage import augment_pi_usage, pi_subagent_results
+from specular.adapters.utils.copilot_usage import collect_usage
+from specular.adapters.utils.event_stream import stream_events
+from specular.adapters.utils.usage import augment_pi_usage, pi_subagent_results
 
 
 def _usage(input_tokens: int = 100) -> dict[str, object]:

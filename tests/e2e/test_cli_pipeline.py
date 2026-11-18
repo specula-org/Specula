@@ -1,4 +1,4 @@
-"""End-to-end dry-run test for the `specula` CLI.
+"""End-to-end dry-run test for the `specular` CLI.
 
 Drives the whole chain a user hits — `cli.py` -> `bash launch_pipeline.sh` (the
 exec shim) -> `python3 pipelinelib.py` — with `--dry-run`, and asserts on the
@@ -8,7 +8,7 @@ the canonical case dir is written. No unit test crosses the shim boundary; this
 one does. `--dry-run` prints each phase's command instead of spawning an agent,
 so it needs no `claude` and no network.
 
-Hermetic via a copied specroot: `SPECULA_ROOT` derives from the entry file's
+Hermetic via a copied specroot: `SPECULAR_ROOT` derives from the entry file's
 location (`parents[2]`), so copying the package + launch scripts into a tmp tree
 makes the minted `runs/` land there, never in the real repo.
 
@@ -32,10 +32,10 @@ import time
 import unittest
 from pathlib import Path
 
-from specula import phaselib
+from specular import phaselib
 
 REAL_ROOT = Path(__file__).resolve().parents[2]
-REAL_PKG = REAL_ROOT / "src" / "specula"
+REAL_PKG = REAL_ROOT / "src" / "specular"
 REAL_LAUNCH = REAL_ROOT / "scripts" / "launch"
 REAL_SCHEDULER = REAL_ROOT / "scripts" / "exp" / "scheduler.sh"
 
@@ -43,18 +43,18 @@ REAL_SCHEDULER = REAL_ROOT / "scripts" / "exp" / "scheduler.sh"
 RUN_ID_RE = re.compile(r"^\d{8}-\d{6}-[0-9a-f]{4}$")
 
 # env that would steer isolation/agent selection; popped so the default-mint
-# path is what runs (an ambient SPECULA_RUN_DIR would reroute the mint).
+# path is what runs (an ambient SPECULAR_RUN_DIR would reroute the mint).
 _VOLATILE = (
-    "SPECULA_RUN_DIR",
-    "SPECULA_PHASE",
-    "SPECULA_WORK_DIR",
-    "SPECULA_PIPELINE_LOG",
-    "SPECULA_SOURCE_SNAPSHOT",
-    "SPECULA_SANDBOX_EXTRA_WRITE",
-    "SPECULA_STOP_GATE",
-    "SPECULA_MODEL",
-    "SPECULA_EFFORT",
-    "SPECULA_BYOM_PATH",
+    "SPECULAR_RUN_DIR",
+    "SPECULAR_PHASE",
+    "SPECULAR_WORK_DIR",
+    "SPECULAR_PIPELINE_LOG",
+    "SPECULAR_SOURCE_SNAPSHOT",
+    "SPECULAR_SANDBOX_EXTRA_WRITE",
+    "SPECULAR_STOP_GATE",
+    "SPECULAR_MODEL",
+    "SPECULAR_EFFORT",
+    "SPECULAR_BYOM_PATH",
     "CLAUDE_CONFIG_DIR",
     "CLAUDE_ALIAS",
     "CLAUDE_EFFORT",
@@ -62,10 +62,10 @@ _VOLATILE = (
     "CODEX_MODEL",
     "CODEX_EFFORT",
     "COPILOT_MODEL",
-    "SPECULA_INVOCATION_ID",
-    "SPECULA_MANUAL_RESUME",
-    "SPECULA_FRESH_CONTEXT",
-    "SPECULA_RUN_LOCK_FD",
+    "SPECULAR_INVOCATION_ID",
+    "SPECULAR_MANUAL_RESUME",
+    "SPECULAR_FRESH_CONTEXT",
+    "SPECULAR_RUN_LOCK_FD",
 )
 
 ALL_PHASE_SKIPS = (
@@ -88,7 +88,7 @@ class CliE2E(unittest.TestCase):
         self.addCleanup(d.cleanup)
         root = Path(d.name).resolve() / "specroot"
         (root / "src").mkdir(parents=True)
-        shutil.copytree(REAL_PKG, root / "src" / "specula", ignore=shutil.ignore_patterns("__pycache__"))
+        shutil.copytree(REAL_PKG, root / "src" / "specular", ignore=shutil.ignore_patterns("__pycache__"))
         shutil.copytree(REAL_LAUNCH, root / "scripts" / "launch", ignore=shutil.ignore_patterns("__pycache__"))
         (root / "scripts" / "exp").mkdir(parents=True, exist_ok=True)
         shutil.copy2(REAL_SCHEDULER, root / "scripts" / "exp" / "scheduler.sh")
@@ -147,7 +147,7 @@ class CliE2E(unittest.TestCase):
         if extra_env:
             env.update(extra_env)
         return subprocess.run(
-            [sys.executable, str(root / "src" / "specula" / "cli.py"), *args],
+            [sys.executable, str(root / "src" / "specular" / "cli.py"), *args],
             cwd=str(cwd),
             env=env,
             capture_output=True,
@@ -177,8 +177,8 @@ class CliE2E(unittest.TestCase):
         self.assertEqual(os.readlink(latest), run.name)
 
         # neither the launch cwd nor the canonical case dir is written
-        self.assertFalse((work / ".specula-output").exists(), "launch cwd polluted")
-        self.assertFalse((root / "case-studies" / "footest" / ".specula-output").exists(), "case dir polluted")
+        self.assertFalse((work / ".specular-output").exists(), "launch cwd polluted")
+        self.assertFalse((root / "case-studies" / "footest" / ".specular-output").exists(), "case dir polluted")
 
     def test_run_dry_run_sequences_phases(self) -> None:
         root = self.specroot()
@@ -209,7 +209,7 @@ class CliE2E(unittest.TestCase):
         self.assertEqual(len(inputs), 1)
         self.assertEqual((inputs[0] / "user-guidance.md").read_text(), user_text)
         effective = (inputs[0] / "effective-guidance.md").read_text()
-        self.assertEqual((run / "footest/.specula-output/.prompt-extra.initial.md").read_text(), effective)
+        self.assertEqual((run / "footest/.specular-output/.prompt-extra.initial.md").read_text(), effective)
         self.assertEqual(guidance.read_text(), user_text)
         self.assertFalse((run / "ci-baseline.json").exists())
         for launcher in (
@@ -232,31 +232,31 @@ class CliE2E(unittest.TestCase):
             "  --log=*) log=${arg#*=} ;;\n"
             "  --resume-state=*) resume=${arg#*=} ;;\n"
             "esac; done\n"
-            'printf "%s\\n" "$SPECULA_PHASE" >> "$0.phases"\n'
-            'cp "$prompt" "$0.$SPECULA_PHASE.prompt"\n'
-            'printf "%s\\n" "${SPECULA_BYOM_PATH-}" > "$0.$SPECULA_PHASE.byom"\n'
-            'case "$SPECULA_PHASE" in\n'
+            'printf "%s\\n" "$SPECULAR_PHASE" >> "$0.phases"\n'
+            'cp "$prompt" "$0.$SPECULAR_PHASE.prompt"\n'
+            'printf "%s\\n" "${SPECULAR_BYOM_PATH-}" > "$0.$SPECULAR_PHASE.byom"\n'
+            'case "$SPECULAR_PHASE" in\n'
             "  code_analysis)\n"
-            '    printf "# Fixture modeling brief\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
+            '    printf "# Fixture modeling brief\\n" > "$SPECULAR_WORK_DIR/modeling-brief.md"\n'
             "    ;;\n"
             "  spec_generation)\n"
-            '    mkdir -p "$SPECULA_WORK_DIR/spec"\n'
-            '    if [ -n "${SPECULA_BYOM_PATH-}" ]; then\n'
-            '      printf "# Adopted fixture scope\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
-            '      if [ -d "$SPECULA_BYOM_PATH" ]; then\n'
-            '        cp -R "$SPECULA_BYOM_PATH/." "$SPECULA_WORK_DIR/"\n'
+            '    mkdir -p "$SPECULAR_WORK_DIR/spec"\n'
+            '    if [ -n "${SPECULAR_BYOM_PATH-}" ]; then\n'
+            '      printf "# Adopted fixture scope\\n" > "$SPECULAR_WORK_DIR/modeling-brief.md"\n'
+            '      if [ -d "$SPECULAR_BYOM_PATH" ]; then\n'
+            '        cp -R "$SPECULAR_BYOM_PATH/." "$SPECULAR_WORK_DIR/"\n'
             "      else\n"
-            '        cp "$SPECULA_BYOM_PATH" "$SPECULA_WORK_DIR/spec/base.tla"\n'
+            '        cp "$SPECULAR_BYOM_PATH" "$SPECULAR_WORK_DIR/spec/base.tla"\n'
             "      fi\n"
             "    fi\n"
             "    for file in base.tla MC.tla Trace.tla instrumentation-spec.md; do\n"
-            '      if [ ! -f "$SPECULA_WORK_DIR/spec/$file" ]; then printf "fixture model\\n" > "$SPECULA_WORK_DIR/spec/$file"; fi\n'
+            '      if [ ! -f "$SPECULAR_WORK_DIR/spec/$file" ]; then printf "fixture model\\n" > "$SPECULAR_WORK_DIR/spec/$file"; fi\n'
             "    done\n"
             "    ;;\n"
             "  harness_generation)\n"
-            '    mkdir -p "$SPECULA_WORK_DIR/harness" "$SPECULA_WORK_DIR/traces"\n'
-            '    if [ ! -f "$SPECULA_WORK_DIR/harness/run.sh" ]; then printf "#!/bin/sh\\n" > "$SPECULA_WORK_DIR/harness/run.sh"; fi\n'
-            '    if [ -z "$(ls -A "$SPECULA_WORK_DIR/traces")" ]; then printf \'{"event":"fixture"}\\n\' > "$SPECULA_WORK_DIR/traces/fixture.ndjson"; fi\n'
+            '    mkdir -p "$SPECULAR_WORK_DIR/harness" "$SPECULAR_WORK_DIR/traces"\n'
+            '    if [ ! -f "$SPECULAR_WORK_DIR/harness/run.sh" ]; then printf "#!/bin/sh\\n" > "$SPECULAR_WORK_DIR/harness/run.sh"; fi\n'
+            '    if [ -z "$(ls -A "$SPECULAR_WORK_DIR/traces")" ]; then printf \'{"event":"fixture"}\\n\' > "$SPECULAR_WORK_DIR/traces/fixture.ndjson"; fi\n'
             "    ;;\n"
             "  spec_validation)\n"
             '    printf x >> "$0.validation-count"\n'
@@ -265,19 +265,19 @@ class CliE2E(unittest.TestCase):
             '      printf "interrupted\\n" > "$log"\n'
             "      exit 9\n"
             "    fi\n"
-            '    printf "# Fixture report\\nValidation remains unverified.\\n" > "$SPECULA_WORK_DIR/spec/bug-report.md"\n'
+            '    printf "# Fixture report\\nValidation remains unverified.\\n" > "$SPECULAR_WORK_DIR/spec/bug-report.md"\n'
             '    printf \'{"schema_version":"2","system":"footest","generated_by":"validation-workflow","findings":[]}\\n\' '
-            '> "$SPECULA_WORK_DIR/spec/findings.json"\n'
-            '    printf "# Fixture validation limits\\nMC was not run by this fixture.\\n" > "$SPECULA_WORK_DIR/spec/changelog.md"\n'
+            '> "$SPECULAR_WORK_DIR/spec/findings.json"\n'
+            '    printf "# Fixture validation limits\\nMC was not run by this fixture.\\n" > "$SPECULAR_WORK_DIR/spec/changelog.md"\n'
             "    ;;\n"
             "  bug_confirmation_turn)\n"
-            '    printf \'{"generated_by":"consolidate","findings":[]}\\n\' > "$SPECULA_WORK_DIR/spec/candidates.json"\n'
+            '    printf \'{"generated_by":"consolidate","findings":[]}\\n\' > "$SPECULAR_WORK_DIR/spec/candidates.json"\n'
             "    ;;\n"
             "  bug_classification)\n"
-            '    printf "# Severity Classification\\n\\n## Summary\\n\\n## Per-entry classification\\n" > "$SPECULA_WORK_DIR/bug-severity.md"\n'
-            '    printf "No impact-bearing findings were recorded.\\n\\n## Findings\\n\\n- Other dispositions: 0.\\n\\n## Validation limits\\n\\nFixture only; no semantic validation was performed.\\n" > "$SPECULA_WORK_DIR/.summary-findings.md"\n'
-            '    if [ -n "${SPECULA_BYOM_PATH-}" ] && [ ! -f "$0.omit-byom-report" ]; then\n'
-            '      printf "# BYOM Modification Report\\nSupplied assets copied; missing fixture assets added. No semantic verification performed.\\n" > "$SPECULA_WORK_DIR/byom-modification-report.md"\n'
+            '    printf "# Severity Classification\\n\\n## Summary\\n\\n## Per-entry classification\\n" > "$SPECULAR_WORK_DIR/bug-severity.md"\n'
+            '    printf "No impact-bearing findings were recorded.\\n\\n## Findings\\n\\n- Other dispositions: 0.\\n\\n## Validation limits\\n\\nFixture only; no semantic validation was performed.\\n" > "$SPECULAR_WORK_DIR/.summary-findings.md"\n'
+            '    if [ -n "${SPECULAR_BYOM_PATH-}" ] && [ ! -f "$0.omit-byom-report" ]; then\n'
+            '      printf "# BYOM Modification Report\\nSupplied assets copied; missing fixture assets added. No semantic verification performed.\\n" > "$SPECULAR_WORK_DIR/byom-modification-report.md"\n'
             "    fi\n"
             "    ;;\n"
             "  *) exit 97 ;;\n"
@@ -344,11 +344,11 @@ class CliE2E(unittest.TestCase):
         run = self.sole_run_dir(root)
         baseline = (run / "ci-baseline.json").read_bytes()
         self.assertEqual(json.loads(baseline)["pipeline_exit_code"], 9)
-        effective = (run / "footest/.specula-output/.prompt-extra.initial.md").read_text()
+        effective = (run / "footest/.specular-output/.prompt-extra.initial.md").read_text()
         resumed = self.run_cli(root, ["run", f"--run-id={run.name}"], cwd=work)
         self.assertEqual(resumed.returncode, 0, resumed.stdout + resumed.stderr)
         self.assertEqual((run / "ci-baseline.json").read_bytes(), baseline)
-        self.assertEqual((run / "footest/.specula-output/.prompt-extra.initial.md").read_text(), effective)
+        self.assertEqual((run / "footest/.specular-output/.prompt-extra.initial.md").read_text(), effective)
         snapshots = list((run / "ci-init/baselines").iterdir())
         self.assertEqual(len(snapshots), 2)
         self.assertEqual(
@@ -441,38 +441,38 @@ class CliE2E(unittest.TestCase):
         adapter.write_text(
             "#!/bin/sh\n"
             "set -eu\n"
-            'printf "%s\\n" "$SPECULA_PHASE" >> "$0.phases"\n'
-            'test "$SPECULA_BYOM_PATH" = "' + str(supplied) + '"\n'
-            'case "$SPECULA_PHASE" in\n'
+            'printf "%s\\n" "$SPECULAR_PHASE" >> "$0.phases"\n'
+            'test "$SPECULAR_BYOM_PATH" = "' + str(supplied) + '"\n'
+            'case "$SPECULAR_PHASE" in\n'
             "  spec_generation)\n"
-            '    mkdir -p "$SPECULA_WORK_DIR/spec"\n'
-            '    printf "# BYOM brief\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
+            '    mkdir -p "$SPECULAR_WORK_DIR/spec"\n'
+            '    printf "# BYOM brief\\n" > "$SPECULAR_WORK_DIR/modeling-brief.md"\n'
             "    for file in base.tla MC.tla Trace.tla instrumentation-spec.md; do\n"
-            '      printf "seeded\\n" > "$SPECULA_WORK_DIR/spec/$file"\n'
+            '      printf "seeded\\n" > "$SPECULAR_WORK_DIR/spec/$file"\n'
             "    done\n"
             "    ;;\n"
             "  harness_generation)\n"
-            '    mkdir -p "$SPECULA_WORK_DIR/harness" "$SPECULA_WORK_DIR/traces"\n'
-            '    printf "#!/bin/sh\\n" > "$SPECULA_WORK_DIR/harness/run.sh"\n'
-            '    printf \'{"event":"seed"}\\n\' > "$SPECULA_WORK_DIR/traces/seed.ndjson"\n'
+            '    mkdir -p "$SPECULAR_WORK_DIR/harness" "$SPECULAR_WORK_DIR/traces"\n'
+            '    printf "#!/bin/sh\\n" > "$SPECULAR_WORK_DIR/harness/run.sh"\n'
+            '    printf \'{"event":"seed"}\\n\' > "$SPECULAR_WORK_DIR/traces/seed.ndjson"\n'
             "    ;;\n"
             "  spec_validation)\n"
-            '    printf "# Bug report\\n\\nNo violations found.\\n" > "$SPECULA_WORK_DIR/spec/bug-report.md"\n'
+            '    printf "# Bug report\\n\\nNo violations found.\\n" > "$SPECULAR_WORK_DIR/spec/bug-report.md"\n'
             '    printf \'{"schema_version":"2","system":"footest","generated_by":"validation-workflow","findings":[]}\\n\' '
-            '> "$SPECULA_WORK_DIR/spec/findings.json"\n'
-            '    printf "# Validation changelog\\n" > "$SPECULA_WORK_DIR/spec/changelog.md"\n'
+            '> "$SPECULAR_WORK_DIR/spec/findings.json"\n'
+            '    printf "# Validation changelog\\n" > "$SPECULAR_WORK_DIR/spec/changelog.md"\n'
             "    ;;\n"
             "  bug_confirmation_turn)\n"
             '    printf \'{"generated_by":"consolidate","findings":[]}\\n\' '
-            '> "$SPECULA_WORK_DIR/spec/candidates.json"\n'
+            '> "$SPECULAR_WORK_DIR/spec/candidates.json"\n'
             "    ;;\n"
             "  bug_classification)\n"
             '    printf "# Severity Classification\\n\\n## Summary\\n\\n## Per-entry classification\\n" '
-            '> "$SPECULA_WORK_DIR/bug-severity.md"\n'
+            '> "$SPECULAR_WORK_DIR/bug-severity.md"\n'
             '    printf "No impact-bearing findings were recorded.\\n\\n## Findings\\n\\n- Other dispositions: 0.\\n\\n## Validation limits\\n\\nNo finding-specific validation limits were recorded.\\n" '
-            '> "$SPECULA_WORK_DIR/.summary-findings.md"\n'
+            '> "$SPECULAR_WORK_DIR/.summary-findings.md"\n'
             '    printf "# BYOM Modification Report\\n\\nThe supplied model was reused.\\n" '
-            '> "$SPECULA_WORK_DIR/byom-modification-report.md"\n'
+            '> "$SPECULAR_WORK_DIR/byom-modification-report.md"\n'
             "    ;;\n"
             "  *) exit 97 ;;\n"
             "esac\n"
@@ -493,7 +493,7 @@ class CliE2E(unittest.TestCase):
 
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         run = self.sole_run_dir(root)
-        target = run / "footest" / ".specula-output"
+        target = run / "footest" / ".specular-output"
         self.assertTrue((target / "byom-modification-report.md").is_file())
         summary = (run / "pipeline-summary.md").read_text()
         self.assertIn("- **Phase 1 (Analysis)**: SKIPPED (BYOM)", summary)
@@ -535,7 +535,7 @@ class CliE2E(unittest.TestCase):
             "  --log=*) log=${arg#*=} ;;\n"
             "  --resume-state=*) resume=${arg#*=} ;;\n"
             "esac; done\n"
-            'case "$SPECULA_PHASE" in\n'
+            'case "$SPECULAR_PHASE" in\n'
             "  spec_validation)\n"
             '    printf x >> "$0.validation-count"\n'
             '    attempt=$(wc -c < "$0.validation-count")\n'
@@ -546,17 +546,17 @@ class CliE2E(unittest.TestCase):
             "    fi\n"
             '    test "$(cat "$resume")" = "validation-session"\n'
             '    cp "$prompt" "$0.validation-prompt"\n'
-            '    printf "bug report\n" > "$SPECULA_WORK_DIR/spec/bug-report.md"\n'
+            '    printf "bug report\n" > "$SPECULAR_WORK_DIR/spec/bug-report.md"\n'
             "    ;;\n"
             "  bug_confirmation_turn)\n"
             '    printf \'{"generated_by":"consolidate","findings":[]}\\n\' '
-            '> "$SPECULA_WORK_DIR/spec/candidates.json"\n'
+            '> "$SPECULAR_WORK_DIR/spec/candidates.json"\n'
             "    ;;\n"
             "  bug_classification)\n"
             '    printf "# Severity Classification\\n\\n## Summary\\n\\n## Per-entry classification\\n" '
-            '> "$SPECULA_WORK_DIR/bug-severity.md"\n'
+            '> "$SPECULAR_WORK_DIR/bug-severity.md"\n'
             '    printf "No impact-bearing findings were recorded.\\n\\n## Findings\\n\\n- Other dispositions: 0.\\n\\n## Validation limits\\n\\nNo finding-specific validation limits were recorded.\\n" '
-            '> "$SPECULA_WORK_DIR/.summary-findings.md"\n'
+            '> "$SPECULAR_WORK_DIR/.summary-findings.md"\n'
             "    ;;\n"
             "  *) exit 97 ;;\n"
             "esac\n"
@@ -587,7 +587,7 @@ class CliE2E(unittest.TestCase):
                 'printf "%s\\n" "$@" > "$0.args"\n'
                 'for arg do case "$arg" in --log=*) log=${arg#*=} ;; esac; done\n'
                 'test "${log##*/}" = "review-validation.log"\n'
-                'printf "fixture review\\n" > "$SPECULA_WORK_DIR/spec/review-validation.md"\n'
+                'printf "fixture review\\n" > "$SPECULAR_WORK_DIR/spec/review-validation.md"\n'
                 'printf "review completed\\n" > "$log"\n'
             )
             reviewer.chmod(0o755)
@@ -609,7 +609,7 @@ class CliE2E(unittest.TestCase):
         run = root / "runs" / run_id
         pipeline_log = run / "pipeline.log"
         setup_log = pipeline_log.read_bytes()
-        wd = run / "footest" / ".specula-output"
+        wd = run / "footest" / ".specular-output"
         for rel in (
             "modeling-brief.md",
             "spec/base.tla",
@@ -647,10 +647,10 @@ class CliE2E(unittest.TestCase):
 
         if reject_ambient_model:
             protected_paths = [
-                run / ".specula-resume/config.json",
+                run / ".specular-resume/config.json",
                 run / "run.json",
                 pipeline_log,
-                *list((run / ".specula-resume/active").glob("*.json")),
+                *list((run / ".specular-resume/active").glob("*.json")),
                 *list(wd.glob("*.resume.json")),
             ]
             protected = {path: path.read_bytes() for path in protected_paths}
@@ -658,7 +658,7 @@ class CliE2E(unittest.TestCase):
                 root,
                 ["run", "--agent=fake", "--model=other-model", f"--artifact={artifact}", target],
                 cwd=work,
-                extra_env={"SPECULA_RUN_DIR": str(run)},
+                extra_env={"SPECULAR_RUN_DIR": str(run)},
             )
             self.assertEqual(rejected.returncode, 1, rejected.stdout + rejected.stderr)
             self.assertIn("this run uses model 'worker-model'", rejected.stderr)
@@ -695,8 +695,8 @@ class CliE2E(unittest.TestCase):
         self.assertIn("## Validation limits", summary)
         self.assertIn("## Detailed reports", summary)
         self.assertIn("## Resource usage", summary)
-        self.assertEqual(list((run / ".specula-resume" / "active").glob("*.json")), [])
-        self.assertEqual(list((run / ".specula-resume" / "completed").glob("*.json")), [])
+        self.assertEqual(list((run / ".specular-resume" / "active").glob("*.json")), [])
+        self.assertEqual(list((run / ".specular-resume" / "completed").glob("*.json")), [])
 
     def test_attach_refuses_live_orphan_after_dispatcher_sigkill(self) -> None:
         root = self.specroot()
@@ -723,7 +723,7 @@ class CliE2E(unittest.TestCase):
         first = subprocess.Popen(
             [
                 sys.executable,
-                str(root / "src" / "specula" / "cli.py"),
+                str(root / "src" / "specular" / "cli.py"),
                 "run",
                 f"--run-id={run_id}",
                 "--agent=fake",
@@ -757,7 +757,7 @@ class CliE2E(unittest.TestCase):
 
         self.addCleanup(cleanup)
         run = root / "runs" / run_id
-        active_dir = run / ".specula-resume" / "active"
+        active_dir = run / ".specular-resume" / "active"
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
             if Path(f"{adapter}.started").is_file() and list(active_dir.glob("*.json")):
@@ -792,11 +792,11 @@ class CliE2E(unittest.TestCase):
 
         run = self.sole_run_dir(root)
         run_index = (run / "index.md").read_text()
-        target_dir = run / "footest" / ".specula-output"
+        target_dir = run / "footest" / ".specular-output"
         target_index = (target_dir / "index.md").read_text()
         resource_summary = (target_dir / "summary.md").read_text()
 
-        self.assertIn("| footest | [Open results](footest/.specula-output/index.md) |", run_index)
+        self.assertIn("| footest | [Open results](footest/.specular-output/index.md) |", run_index)
         self.assertIn("- Final summary: [pipeline-summary.md](pipeline-summary.md)", run_index)
         self.assertNotIn("run.json", run_index)
         self.assertNotIn("tlc-resources.json", run_index)
@@ -828,16 +828,16 @@ class CliE2E(unittest.TestCase):
 
         run = self.sole_run_dir(root)
         run_index = (run / "index.md").read_text()
-        self.assertIn("| alpha | [Open results](alpha/.specula-output/index.md) |", run_index)
-        self.assertIn("| beta | [Open results](beta/.specula-output/index.md) |", run_index)
-        alpha = (run / "alpha" / ".specula-output" / "index.md").read_text()
-        beta = (run / "beta" / ".specula-output" / "index.md").read_text()
+        self.assertIn("| alpha | [Open results](alpha/.specular-output/index.md) |", run_index)
+        self.assertIn("| beta | [Open results](beta/.specular-output/index.md) |", run_index)
+        alpha = (run / "alpha" / ".specular-output" / "index.md").read_text()
+        beta = (run / "beta" / ".specular-output" / "index.md").read_text()
         self.assertIn("# alpha Results", alpha)
         self.assertNotIn("beta", alpha)
         self.assertIn("# beta Results", beta)
         self.assertNotIn("alpha", beta)
-        self.assertTrue((run / "alpha" / ".specula-output" / "summary.md").is_file())
-        self.assertTrue((run / "beta" / ".specula-output" / "summary.md").is_file())
+        self.assertTrue((run / "alpha" / ".specular-output" / "summary.md").is_file())
+        self.assertTrue((run / "beta" / ".specular-output" / "summary.md").is_file())
 
     def test_run_tuning_and_retry_budgets_reach_phase_and_review_commands(self) -> None:
         for model, effort in (("gpt-5.5", "high"), ("", "")):
@@ -994,7 +994,7 @@ class CliE2E(unittest.TestCase):
         work = self.workdir()
         proc = self.run_cli(root, ["run", "--dry-run", "--no-isolate", "nocase"], cwd=work)
         self.assertEqual(proc.returncode, 0, proc.stderr)
-        self.assertTrue((work / ".specula-output" / "pipeline.log").is_file(), "legacy layout not written")
+        self.assertTrue((work / ".specular-output" / "pipeline.log").is_file(), "legacy layout not written")
         self.assertFalse((root / "runs").exists(), "--no-isolate must not mint a run dir")
 
     def test_no_isolate_single_target_uses_one_detailed_index(self) -> None:
@@ -1003,13 +1003,13 @@ class CliE2E(unittest.TestCase):
         proc = self.run_cli(root, ["run", "--no-isolate", *ALL_PHASE_SKIPS, "nocase"], cwd=work)
         self.assertEqual(proc.returncode, 0, proc.stderr)
 
-        index = (work / ".specula-output" / "index.md").read_text()
+        index = (work / ".specular-output" / "index.md").read_text()
         self.assertIn("# nocase Results", index)
         self.assertIn("## Final Reports", index)
         self.assertIn("## Supporting Analysis", index)
         self.assertNotIn("# Specula Run", index)
         self.assertIn("[pipeline.log](pipeline.log)", index)
-        self.assertTrue((work / ".specula-output" / "summary.md").is_file())
+        self.assertTrue((work / ".specular-output" / "summary.md").is_file())
         self.assertFalse((root / "runs").exists())
 
     def test_no_isolate_canonical_single_target_links_launch_log(self) -> None:
@@ -1018,15 +1018,15 @@ class CliE2E(unittest.TestCase):
         proc = self.run_cli(root, ["run", "--no-isolate", *ALL_PHASE_SKIPS, "footest"], cwd=work)
         self.assertEqual(proc.returncode, 0, proc.stderr)
 
-        target_dir = root / "case-studies" / "footest" / ".specula-output"
+        target_dir = root / "case-studies" / "footest" / ".specular-output"
         target_index = (target_dir / "index.md").read_text()
-        pipeline_log = work / ".specula-output" / "pipeline.log"
+        pipeline_log = work / ".specular-output" / "pipeline.log"
         relative_log = os.path.relpath(pipeline_log, start=target_dir).replace(os.sep, "/")
         self.assertIn("# footest Results", target_index)
         self.assertIn(f"[pipeline.log]({relative_log})", target_index)
         self.assertTrue((target_dir / "pipeline-summary.md").is_file())
         self.assertTrue((target_dir / "summary.md").is_file())
-        self.assertFalse((work / ".specula-output" / "index.md").exists())
+        self.assertFalse((work / ".specular-output" / "index.md").exists())
 
     def test_no_isolate_multi_target_keeps_a_distinct_run_chooser(self) -> None:
         root = self.specroot(case_dirs=())
@@ -1044,16 +1044,16 @@ class CliE2E(unittest.TestCase):
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)
 
-        run_index = (work / ".specula-output" / "index.md").read_text()
+        run_index = (work / ".specular-output" / "index.md").read_text()
         self.assertIn("# Specula Run", run_index)
-        self.assertIn("[Open results](../alpha/.specula-output/index.md)", run_index)
-        self.assertIn("[Open results](../beta/.specula-output/index.md)", run_index)
-        self.assertIn("# alpha Results", (work / "alpha" / ".specula-output" / "index.md").read_text())
-        self.assertIn("# beta Results", (work / "beta" / ".specula-output" / "index.md").read_text())
+        self.assertIn("[Open results](../alpha/.specular-output/index.md)", run_index)
+        self.assertIn("[Open results](../beta/.specular-output/index.md)", run_index)
+        self.assertIn("# alpha Results", (work / "alpha" / ".specular-output" / "index.md").read_text())
+        self.assertIn("# beta Results", (work / "beta" / ".specular-output" / "index.md").read_text())
 
     # ── batch (scheduler) dry-run ────────────────────────────────────────────
     def test_batch_dry_run_over_queue(self) -> None:
-        # `specula batch` -> scheduler.sh -> schedulerlib.py. Dry-run logs the
+        # `specular batch` -> scheduler.sh -> schedulerlib.py. Dry-run logs the
         # per-task clone + pipeline command and never executes them (no network,
         # no mint), so the whole queue runs hermetically.
         root = self.specroot(case_dirs=())

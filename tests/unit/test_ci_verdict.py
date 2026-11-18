@@ -8,8 +8,8 @@ from typing import Any
 
 import pytest
 
-from specula import ci_verdict
-from specula.ci_store import CIError
+from specular import ci_verdict
+from specular.ci_store import CIError
 
 
 def write_record(work: Path, statuses: list[str], **overrides: Any) -> None:

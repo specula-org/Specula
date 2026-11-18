@@ -1,4 +1,4 @@
-"""Tests for the pinned hard-rules block (specula.rules, prompts/optional/rules.md)."""
+"""Tests for the pinned hard-rules block (specular.rules, prompts/optional/rules.md)."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ import re
 import unittest
 from unittest import mock
 
-from specula import rules
-from specula.prompts import PROMPTS_DIR
+from specular import rules
+from specular.prompts import PROMPTS_DIR
 
 RULES_MD = PROMPTS_DIR / "optional/rules.md"
 

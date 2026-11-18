@@ -12,6 +12,6 @@ PHASE_PROMPTS=(
   "full-p3b.md"                 # Phase 3B: Model Checking (same as full)
 )
 
-SPECULA_SKILLS=("code_analysis" "spec_generation" "tla-checking-workflow" "validation-workflow")
+SPECULAR_SKILLS=("code_analysis" "spec_generation" "tla-checking-workflow" "validation-workflow")
 TLAPLUS_SKILLS=()
 MCP_TOOLS=true

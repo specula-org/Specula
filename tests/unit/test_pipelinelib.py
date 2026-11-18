@@ -1,4 +1,4 @@
-"""Unit tests for specula.pipelinelib (migration step 5).
+"""Unit tests for specular.pipelinelib (migration step 5).
 
 The end-to-end CLI chain is covered by tests/e2e; these tests pin the
 state-transition and decision tables at function level —
@@ -32,11 +32,11 @@ from unittest import mock
 
 SRC = Path(__file__).resolve().parents[2] / "src"
 
-from specula import pipelinelib as pl
-from specula import resumelib
-from specula.phaselib import Workspace, _logical_cwd
-from specula.resource_summary import RunDetails
-from specula.snapshotlib import SOURCE_MAP, SnapshotError
+from specular import pipelinelib as pl
+from specular import resumelib
+from specular.phaselib import Workspace, _logical_cwd
+from specular.resource_summary import RunDetails
+from specular.snapshotlib import SOURCE_MAP, SnapshotError
 
 RR_TEMPLATE = """\
 ---
@@ -732,7 +732,7 @@ class TestResourceSummaryPipeline(TmpCwd):
         )
         fresh.initialize_resource_summaries(["footest"])
 
-        summary = (run / "footest" / ".specula-output" / "summary.md").read_text()
+        summary = (run / "footest" / ".specular-output" / "summary.md").read_text()
         self.assertIn(f"| Original source commit | {original} |", summary)
         self.assertIn(f"| Current attempt source commit | {current} |", summary)
 
@@ -886,9 +886,9 @@ class TestParsing(TmpCwd):
         pipeline.validate_agent_adapter = lambda: None  # type: ignore[method-assign]
         pipeline.refresh_output_indexes = lambda: None  # type: ignore[method-assign]
         pipeline.generate_summary = mock.Mock()  # type: ignore[method-assign]
-        work = run / "foo" / ".specula-output"
+        work = run / "foo" / ".specular-output"
         env = {
-            "SPECULA_RUN_DIR": str(run),
+            "SPECULAR_RUN_DIR": str(run),
             resumelib.INVOCATION_ENV: "invocation-1",
         }
         with mock.patch.dict(os.environ, env, clear=False):
@@ -1104,8 +1104,8 @@ class TestParsing(TmpCwd):
                 self.assertIn("ERROR:", err.getvalue())
 
     def test_tlc_resource_limit_environment_is_validated(self) -> None:
-        os.environ["SPECULA_TLC_MEMORY_LIMIT"] = "bad"
-        self.addCleanup(os.environ.pop, "SPECULA_TLC_MEMORY_LIMIT", None)
+        os.environ["SPECULAR_TLC_MEMORY_LIMIT"] = "bad"
+        self.addCleanup(os.environ.pop, "SPECULAR_TLC_MEMORY_LIMIT", None)
         err = io.StringIO()
         with contextlib.redirect_stderr(err):
             rc = pl.Pipeline().parse_args(["t|g|l|r"])
@@ -1261,7 +1261,7 @@ class TestParsing(TmpCwd):
             ("legacy", False, False),
             ("legacy", True, True),
         )
-        with mock.patch.object(pl, "SPECULA_ROOT", self.tmp):
+        with mock.patch.object(pl, "SPECULAR_ROOT", self.tmp):
             for run_id, fresh_context, expected in cases:
                 with self.subTest(run_id=run_id):
                     p = pl.Pipeline()
@@ -1282,13 +1282,13 @@ class TestParsing(TmpCwd):
         guidance.write_text("changed during invocation\n")
         p.stage_guidance(["t"])
 
-        work = run / "t" / ".specula-output"
+        work = run / "t" / ".specular-output"
         self.assertEqual((work / ".prompt-extra.md").read_text(), "first version\n")
         self.assertEqual((work / ".prompt-extra.initial.md").read_text(), "first version\n")
 
     def test_omitted_guidance_does_not_touch_existing_compatibility_input(self) -> None:
         run = self.tmp / "run"
-        work = run / "t" / ".specula-output"
+        work = run / "t" / ".specular-output"
         work.mkdir(parents=True)
         compatibility_input = work / ".prompt-extra.md"
         compatibility_input.write_text("existing\n")
@@ -1529,9 +1529,9 @@ class TestParsing(TmpCwd):
 
     def test_get_work_dir_single_vs_batch(self) -> None:
         single = make_pipeline(["a|x|y|z"])
-        self.assertEqual(single.get_work_dir("a"), f"{self.tmp}/.specula-output")
+        self.assertEqual(single.get_work_dir("a"), f"{self.tmp}/.specular-output")
         batch = make_pipeline(["a|x|y|z", "b|x|y|z"])
-        self.assertEqual(batch.get_work_dir("a"), f"{self.tmp}/a/.specula-output")
+        self.assertEqual(batch.get_work_dir("a"), f"{self.tmp}/a/.specular-output")
 
 
 class TestOutputIndexNavigation(TmpCwd):
@@ -1561,8 +1561,8 @@ class TestOutputIndexNavigation(TmpCwd):
         self.assertEqual(result_index, run / "index.md")
         index = (run / "index.md").read_text()
         self.assertLess(index.index("| alpha |"), index.index("| beta |"))
-        self.assertTrue((run / "alpha" / ".specula-output" / "index.md").is_file())
-        self.assertTrue((run / "beta" / ".specula-output" / "index.md").is_file())
+        self.assertTrue((run / "alpha" / ".specular-output" / "index.md").is_file())
+        self.assertTrue((run / "beta" / ".specular-output" / "index.md").is_file())
 
     def test_unsafe_stored_target_cannot_escape_run_root(self) -> None:
         run = self.tmp / "run"
@@ -1927,7 +1927,7 @@ class TestPhaseParallelArgs(TmpCwd):
 class TestSourceSnapshots(TmpCwd):
     def setUp(self) -> None:
         super().setUp()
-        for name in ("SPECULA_RUN_DIR", "SPECULA_SOURCE_SNAPSHOT", "SPECULA_SANDBOX_EXTRA_WRITE"):
+        for name in ("SPECULAR_RUN_DIR", "SPECULAR_SOURCE_SNAPSHOT", "SPECULAR_SANDBOX_EXTRA_WRITE"):
             previous = os.environ.pop(name, None)
 
             def restore(key: str = name, value: str | None = previous) -> None:
@@ -1947,14 +1947,14 @@ class TestSourceSnapshots(TmpCwd):
         p = make_pipeline(["demo|g|l|r"], keep_original=True)
         p.run_dir = run
         p._snapshot_sources = {"demo": original}
-        os.environ["SPECULA_RUN_DIR"] = str(run)
-        os.environ["SPECULA_SANDBOX_EXTRA_WRITE"] = "/cache"
+        os.environ["SPECULAR_RUN_DIR"] = str(run)
+        os.environ["SPECULAR_SANDBOX_EXTRA_WRITE"] = "/cache"
 
         p.prepare_source_snapshots(["demo"])
 
         source = run / "demo" / "source"
         self.assertEqual(Workspace(p.targets, artifact=str(original)).find_repo_dir("demo"), str(source))
-        self.assertEqual(os.environ["SPECULA_SANDBOX_EXTRA_WRITE"].split(os.pathsep), ["/cache", str(source)])
+        self.assertEqual(os.environ["SPECULAR_SANDBOX_EXTRA_WRITE"].split(os.pathsep), ["/cache", str(source)])
         self.assertFalse(any(arg.startswith("--artifact=") for arg in p._phase_args(p.targets)))
 
     def test_attempt_provenance_uses_the_private_snapshot_commit(self) -> None:
@@ -2162,7 +2162,7 @@ class RRDirCase(TmpCwd):
     def setUp(self) -> None:
         super().setUp()
         self.p = make_pipeline(["footest|g|l|r"])
-        self.rr_dir = self.tmp / ".specula-output" / "spec" / "repair-requests"
+        self.rr_dir = self.tmp / ".specular-output" / "spec" / "repair-requests"
         self.rr_dir.mkdir(parents=True)
 
 
@@ -2235,25 +2235,25 @@ class TestLedger(RRDirCase):
         make_rr(self.rr_dir, "RR-1", "OPEN", bug_id="DA-1 | pipes", round_=1)
         make_rr(self.rr_dir, "RR-2", "CONSUMED", bug_id="DA-2", round_=3)
         self.p.regenerate_ledger()
-        text = (self.tmp / ".specula-output" / "spec" / "repair-ledger.md").read_text()
+        text = (self.tmp / ".specular-output" / "spec" / "repair-ledger.md").read_text()
         self.assertIn("# Repair Ledger — footest", text)
         self.assertIn("| RR-1 | DA-1 \\| pipes | SPEC_REPAIR | OPEN | 1 |", text)
         self.assertIn("| RR-2 | DA-2 | SPEC_REPAIR | CONSUMED | 3 |", text)
 
     def test_no_requests_no_ledger(self) -> None:
         self.p.regenerate_ledger()
-        self.assertFalse((self.tmp / ".specula-output" / "spec" / "repair-ledger.md").exists())
+        self.assertFalse((self.tmp / ".specular-output" / "spec" / "repair-ledger.md").exists())
 
     def test_deferred_requests_remain_in_ledger(self) -> None:
         deferred = self.rr_dir / "deferred"
         deferred.mkdir()
         make_rr(deferred, "RR-1", "OPEN", bug_id="legacy", round_=2)
         self.p.regenerate_ledger()
-        text = (self.tmp / ".specula-output" / "spec" / "repair-ledger.md").read_text()
+        text = (self.tmp / ".specular-output" / "spec" / "repair-ledger.md").read_text()
         self.assertIn("| RR-1 | legacy | SPEC_REPAIR | DEFERRED | 2 |", text)
 
     def test_empty_state_removes_stale_ledger(self) -> None:
-        ledger = self.tmp / ".specula-output" / "spec" / "repair-ledger.md"
+        ledger = self.tmp / ".specular-output" / "spec" / "repair-ledger.md"
         ledger.write_text("stale\n")
         self.p.regenerate_ledger()
         self.assertFalse(ledger.exists())
@@ -2262,7 +2262,7 @@ class TestLedger(RRDirCase):
         make_rr(self.rr_dir, "RR-1", "OPEN")
         self.p.dry_run = True
         self.p.regenerate_ledger()
-        self.assertFalse((self.tmp / ".specula-output" / "spec" / "repair-ledger.md").exists())
+        self.assertFalse((self.tmp / ".specular-output" / "spec" / "repair-ledger.md").exists())
 
     def test_status_file_count_exact_token(self) -> None:
         # wart fix (step 7): the bash grep matched CONSUMED as a PREFIX, so a
@@ -2551,8 +2551,8 @@ class TestRepairLoop(RRDirCase):
 
     def test_partial_multitarget_commit_never_covers_new_target_phase3(self) -> None:
         p = make_pipeline(["old|g|l|r", "new|g|l|r"])
-        old_rr_dir = self.tmp / "old" / ".specula-output" / "spec" / "repair-requests"
-        new_rr_dir = self.tmp / "new" / ".specula-output" / "spec" / "repair-requests"
+        old_rr_dir = self.tmp / "old" / ".specular-output" / "spec" / "repair-requests"
+        new_rr_dir = self.tmp / "new" / ".specular-output" / "spec" / "repair-requests"
         old_rr_dir.mkdir(parents=True)
         new_rr_dir.mkdir(parents=True)
         old_request = make_rr(old_rr_dir, "RR-1", "OPEN", bug_id="OLD-1")
@@ -2935,7 +2935,7 @@ class TestRepairLoop(RRDirCase):
         pipeline = make_pipeline(["alpha|g|l|r", "beta|g|l|r"])
         requests: dict[str, Path] = {}
         for name in ("alpha", "beta"):
-            rr_dir = self.tmp / name / ".specula-output" / "spec" / "repair-requests"
+            rr_dir = self.tmp / name / ".specular-output" / "spec" / "repair-requests"
             rr_dir.mkdir(parents=True)
             requests[name] = make_rr(rr_dir, "RR-1", "OPEN", bug_id=f"{name}-1")
             snapshot = pipeline.snapshot_open_repair_requests(name)
@@ -3089,8 +3089,8 @@ class TestRepairLoop(RRDirCase):
 
     def test_failure_in_later_target_keeps_earlier_target_consumed(self) -> None:
         p = make_pipeline(["alpha|g|l|r", "beta|g|l|r"])
-        alpha_dir = self.tmp / "alpha" / ".specula-output" / "spec" / "repair-requests"
-        beta_dir = self.tmp / "beta" / ".specula-output" / "spec" / "repair-requests"
+        alpha_dir = self.tmp / "alpha" / ".specular-output" / "spec" / "repair-requests"
+        beta_dir = self.tmp / "beta" / ".specular-output" / "spec" / "repair-requests"
         alpha_dir.mkdir(parents=True)
         beta_dir.mkdir(parents=True)
         alpha = make_rr(alpha_dir, "RR-1", "OPEN", bug_id="A-1")
@@ -3189,7 +3189,7 @@ class TestRepairLoop(RRDirCase):
                 name = "skip-confirm" if skip_confirmation else "skip-repair"
                 pipeline = make_pipeline([f"{name}|g|l|r"])
                 pipeline.run_dir = self.tmp / f"run-{name}"
-                rr_dir = pipeline.run_dir / name / ".specula-output" / "spec" / "repair-requests"
+                rr_dir = pipeline.run_dir / name / ".specular-output" / "spec" / "repair-requests"
                 rr_dir.mkdir(parents=True)
                 request = make_rr(rr_dir, "RR-1", "OPEN")
                 snapshot = pipeline.snapshot_open_repair_requests(name)
@@ -3822,9 +3822,9 @@ class TestRunLauncherExitCodes(TmpCwd):
     def test_phase_receives_rate_limit_contract(self) -> None:
         captured = self.tmp / "env"
         p = self._pipeline(
-            f'printf \'%s\\n\' "$SPECULA_RATE_LIMIT_REACTIVE" "$SPECULA_RATE_LIMIT_RETRIES" '
-            f'"$SPECULA_QUOTA_5H" "$SPECULA_QUOTA_7D" "$SPECULA_QUOTA_MAX_WAITS" '
-            f'"$SPECULA_CLAUDE_ALIAS" > "{captured}"\n'
+            f'printf \'%s\\n\' "$SPECULAR_RATE_LIMIT_REACTIVE" "$SPECULAR_RATE_LIMIT_RETRIES" '
+            f'"$SPECULAR_QUOTA_5H" "$SPECULAR_QUOTA_7D" "$SPECULAR_QUOTA_MAX_WAITS" '
+            f'"$SPECULAR_CLAUDE_ALIAS" > "{captured}"\n'
         )
         p.quota_5h = "81"
         p.quota_7d = "91"
@@ -3836,14 +3836,14 @@ class TestRunLauncherExitCodes(TmpCwd):
     def test_phase_receives_explicit_tlc_resource_limits(self) -> None:
         captured = self.tmp / "resources"
         p = self._pipeline(
-            f'printf \'%s\\n\' "$SPECULA_TLC_MEMORY_LIMIT" "$SPECULA_TLC_WORKER_LIMIT" '
-            f'"$SPECULA_TLC_SCOPE" > "{captured}"\n'
+            f'printf \'%s\\n\' "$SPECULAR_TLC_MEMORY_LIMIT" "$SPECULAR_TLC_WORKER_LIMIT" '
+            f'"$SPECULAR_TLC_SCOPE" > "{captured}"\n'
         )
         p.tlc_memory_limit = "80G"
         p.tlc_worker_limit = "12"
-        p.tlc_scope = "/tmp/specula-run-scope"
+        p.tlc_scope = "/tmp/specular-run-scope"
         p._run_launcher("fake.sh", [])
-        self.assertEqual(captured.read_text().splitlines(), ["80G", "12", "/tmp/specula-run-scope"])
+        self.assertEqual(captured.read_text().splitlines(), ["80G", "12", "/tmp/specular-run-scope"])
 
     def test_resume_lock_and_resource_context_reach_the_same_launcher(self) -> None:
         captured = self.tmp / "launcher-context"
@@ -3852,9 +3852,9 @@ class TestRunLauncherExitCodes(TmpCwd):
         run_dir = self.tmp / "run"
         run_dir.mkdir()
         p = self._pipeline(
-            f'lock_state=$(test -e "/proc/self/fd/$SPECULA_RUN_LOCK_FD" && printf open)\n'
-            f'printf \'%s\\n\' "$PWD" "$SPECULA_RESOURCE_ROOT" "$SPECULA_RESOURCE_INVOCATION" '
-            f'"$SPECULA_RESOURCE_PHASE" "$lock_state" > "{captured}"\n'
+            f'lock_state=$(test -e "/proc/self/fd/$SPECULAR_RUN_LOCK_FD" && printf open)\n'
+            f'printf \'%s\\n\' "$PWD" "$SPECULAR_RESOURCE_ROOT" "$SPECULAR_RESOURCE_INVOCATION" '
+            f'"$SPECULAR_RESOURCE_PHASE" "$lock_state" > "{captured}"\n'
         )
         lock_file = (self.tmp / "run.lock").open("w")
         self.addCleanup(lock_file.close)
@@ -4041,7 +4041,7 @@ class TestMainTeeTeardown(TmpCwd):
         d.write_text(
             "import sys\n"
             f"sys.path.insert(0, {str(SRC)!r})\n"
-            "from specula import pipelinelib as pl\n"
+            "from specular import pipelinelib as pl\n"
             f"{patch}\n"
             f"sys.exit(pl.main({args!r}))\n"
         )
@@ -4051,7 +4051,7 @@ class TestMainTeeTeardown(TmpCwd):
         root = self.tmp / "root"
         run = root / "runs" / "declined"
         r = self._run_entry(
-            f"pl.SPECULA_ROOT = pl.Path({str(root)!r})\npl.Pipeline.confirm_without_guidance = lambda self: False",
+            f"pl.SPECULAR_ROOT = pl.Path({str(root)!r})\npl.Pipeline.confirm_without_guidance = lambda self: False",
             ["--run-id=declined", "t|g|l|r"],
         )
 
@@ -4068,7 +4068,7 @@ class TestMainTeeTeardown(TmpCwd):
         active = resumelib.active_dir(run) / "keep.json"
         active.write_text("{}\n")
         r = self._run_entry(
-            f"pl.SPECULA_ROOT = pl.Path({str(root)!r})\npl.Pipeline.confirm_without_guidance = lambda self: False",
+            f"pl.SPECULAR_ROOT = pl.Path({str(root)!r})\npl.Pipeline.confirm_without_guidance = lambda self: False",
             ["--run-id=existing", "--fresh-context", "t|g|l|r"],
         )
 
@@ -4083,12 +4083,12 @@ class TestMainTeeTeardown(TmpCwd):
         )
         self.assertEqual(r.returncode, 1)
         self.assertIn("ValueError: boom", r.stdout)  # traceback flowed through the tee
-        log_text = (self.tmp / ".specula-output" / "pipeline.log").read_text()
+        log_text = (self.tmp / ".specular-output" / "pipeline.log").read_text()
         self.assertIn("pre-crash progress", log_text)
         self.assertIn("ValueError: boom", log_text)
 
     def test_legacy_restarts_append_history_and_distinct_invocation_boundaries(self) -> None:
-        out = self.tmp / ".specula-output"
+        out = self.tmp / ".specular-output"
         out.mkdir()
         log_path = out / "pipeline.log"
         original = b"older interrupted output without a newline"
@@ -4119,7 +4119,7 @@ class TestMainTeeTeardown(TmpCwd):
         self.assertNotIn("first attempt", second.stdout)
 
     def test_isolated_restart_preserves_interrupted_log(self) -> None:
-        setup = f"pl.SPECULA_ROOT = pl.Path({str(self.tmp)!r})\n"
+        setup = f"pl.SPECULAR_ROOT = pl.Path({str(self.tmp)!r})\n"
         first = self._run_entry(
             setup
             + "def interrupt(self):\n    print('before interruption')\n    raise KeyboardInterrupt\npl.Pipeline.main = interrupt",
@@ -4146,7 +4146,7 @@ class TestMainTeeTeardown(TmpCwd):
         )
 
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
-        log_text = (self.tmp / ".specula-output" / "pipeline.log").read_text()
+        log_text = (self.tmp / ".specular-output" / "pipeline.log").read_text()
         self.assertIn("finished (exit 2)", log_text)
         self.assertNotIn("finished (exit 0)", log_text)
 
@@ -4185,7 +4185,7 @@ class TestMainTeeTeardown(TmpCwd):
     def test_success_points_terminal_to_run_index_without_logging_guide(self) -> None:
         run = self.tmp / "runs" / "guide-run"
         r = self._run_entry(
-            f"pl.SPECULA_ROOT = pl.Path({str(self.tmp)!r})\npl.Pipeline.main = lambda self: 0",
+            f"pl.SPECULAR_ROOT = pl.Path({str(self.tmp)!r})\npl.Pipeline.main = lambda self: 0",
             ["--run-id=guide-run", "t|g|l|r"],
         )
 
@@ -4200,7 +4200,7 @@ class TestMainTeeTeardown(TmpCwd):
         case = self.tmp / "case-studies" / "t"
         case.mkdir(parents=True)
         r = self._run_entry(
-            f"pl.SPECULA_ROOT = pl.Path({str(self.tmp)!r})\n"
+            f"pl.SPECULAR_ROOT = pl.Path({str(self.tmp)!r})\n"
             "def succeed(self):\n"
             f"    case = pl.Path({str(case)!r})\n"
             "    pl.os.chdir(case)\n"
@@ -4210,11 +4210,11 @@ class TestMainTeeTeardown(TmpCwd):
         )
 
         self.assertEqual(r.returncode, 0, r.stdout)
-        self.assertIn(f"View all results: {case / '.specula-output' / 'index.md'}", r.stdout)
-        self.assertNotIn(f"View all results: {self.tmp / '.specula-output' / 'index.md'}", r.stdout)
+        self.assertIn(f"View all results: {case / '.specular-output' / 'index.md'}", r.stdout)
+        self.assertNotIn(f"View all results: {self.tmp / '.specular-output' / 'index.md'}", r.stdout)
 
     def test_success_does_not_point_to_stale_index_when_refresh_fails(self) -> None:
-        stale = self.tmp / ".specula-output" / "index.md"
+        stale = self.tmp / ".specular-output" / "index.md"
         stale.parent.mkdir()
         stale.write_text("# stale results\n")
         r = self._run_entry(
@@ -4227,7 +4227,7 @@ class TestMainTeeTeardown(TmpCwd):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertNotIn("View all results:", r.stdout)
         self.assertEqual(stale.read_text(), "# stale results\n")
-        log_text = (self.tmp / ".specula-output" / "pipeline.log").read_text()
+        log_text = (self.tmp / ".specular-output" / "pipeline.log").read_text()
         self.assertIn("injected index failure", log_text)
 
     @unittest.skipUnless(os.name == "posix", "surrogateescaped paths are a POSIX behavior")
@@ -4238,7 +4238,7 @@ class TestMainTeeTeardown(TmpCwd):
         driver.write_text(
             "import sys\n"
             f"sys.path.insert(0, {str(SRC)!r})\n"
-            "from specula import pipelinelib as pl\n"
+            "from specular import pipelinelib as pl\n"
             "pl.Pipeline.main = lambda self: 0\n"
             "raise SystemExit(pl.main(['--no-isolate', 't|g|l|r']))\n"
         )
@@ -4248,10 +4248,10 @@ class TestMainTeeTeardown(TmpCwd):
         r = subprocess.run([sys.executable, os.fsencode(driver)], cwd=raw_cwd, env=env, capture_output=True)
 
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        expected = raw_cwd + b"/.specula-output/index.md"
+        expected = raw_cwd + b"/.specular-output/index.md"
         self.assertIn(b"View all results: " + expected, r.stdout)
         self.assertNotIn(
-            b"View all results:", (Path(os.fsdecode(raw_cwd)) / ".specula-output/pipeline.log").read_bytes()
+            b"View all results:", (Path(os.fsdecode(raw_cwd)) / ".specular-output/pipeline.log").read_bytes()
         )
 
     def test_final_source_capture_failure_suppresses_terminal_guide(self) -> None:
@@ -4269,13 +4269,13 @@ class TestMainTeeTeardown(TmpCwd):
     def test_failure_publishes_partial_index_without_completion_summary(self) -> None:
         r = self._run_entry(
             "def boom(self):\n"
-            "    open('.specula-output/modeling-brief.md', 'w').write('# Brief\\n')\n"
+            "    open('.specular-output/modeling-brief.md', 'w').write('# Brief\\n')\n"
             "    raise SystemExit(7)\n"
             "pl.Pipeline.main = boom"
         )
 
         self.assertEqual(r.returncode, 7)
-        out = self.tmp / ".specula-output"
+        out = self.tmp / ".specular-output"
         index = (out / "index.md").read_text()
         self.assertIn("[Modeling brief](modeling-brief.md)", index)
         self.assertIn("[pipeline.log](pipeline.log)", index)
@@ -4283,7 +4283,7 @@ class TestMainTeeTeardown(TmpCwd):
 
     def test_isolated_failure_publishes_two_level_indexes_without_summary(self) -> None:
         r = self._run_entry(
-            f"pl.SPECULA_ROOT = pl.Path({str(self.tmp)!r})\n"
+            f"pl.SPECULAR_ROOT = pl.Path({str(self.tmp)!r})\n"
             "def boom(self):\n"
             "    work = pl.Path(self.get_work_dir('t'))\n"
             "    work.mkdir(parents=True, exist_ok=True)\n"
@@ -4296,9 +4296,9 @@ class TestMainTeeTeardown(TmpCwd):
         self.assertEqual(r.returncode, 7)
         run = self.tmp / "runs" / "failed-run"
         run_index = (run / "index.md").read_text()
-        target_index = (run / "t" / ".specula-output" / "index.md").read_text()
+        target_index = (run / "t" / ".specular-output" / "index.md").read_text()
         self.assertIn(
-            "| t | [Open results](t/.specula-output/index.md) | Not available | Not available |",
+            "| t | [Open results](t/.specular-output/index.md) | Not available | Not available |",
             run_index,
         )
         self.assertIn("- Final summary: Not available", run_index)
@@ -4308,7 +4308,7 @@ class TestMainTeeTeardown(TmpCwd):
     def test_failing_tee_fails_the_pipeline(self) -> None:
         # bash pipefail: `main 2>&1 | tee log` exited non-zero when tee could
         # not write the log, even though main succeeded
-        out = self.tmp / ".specula-output"
+        out = self.tmp / ".specular-output"
         out.mkdir()
         logf = out / "pipeline.log"
         logf.write_text("")
@@ -4322,7 +4322,7 @@ class TestMainTeeTeardown(TmpCwd):
     def test_failing_tee_wins_over_failing_main(self) -> None:
         # bash pipefail returns the rightmost non-zero status: when main fails
         # (rc=2) AND tee fails, the pipeline exits with tee's code (1), not 2
-        out = self.tmp / ".specula-output"
+        out = self.tmp / ".specular-output"
         out.mkdir()
         logf = out / "pipeline.log"
         logf.write_text("")

@@ -69,14 +69,14 @@ def test_tlc_override_preserves_native_code_mode(
         "print(json.dumps({'type': 'turn.completed', 'usage': {}}))\n"
     )
     wrapper.chmod(0o755)
-    env = {key: value for key, value in os.environ.items() if not key.startswith(("SPECULA_", "CODEX_"))}
+    env = {key: value for key, value in os.environ.items() if not key.startswith(("SPECULAR_", "CODEX_"))}
     env.update(
         {
             "CODEX_HOME": str(profile),
             "NATIVE_CODEX": str(Path(CODEX).resolve()),
             "PATH": f"{bindir}:/usr/bin:/bin",
-            "SPECULA_STOP_GATE": "off",
-            "SPECULA_TLC_TOOL_CODEX": '{command="python3",args=[],tool_timeout_sec=3720}',
+            "SPECULAR_STOP_GATE": "off",
+            "SPECULAR_TLC_TOOL_CODEX": '{command="python3",args=[],tool_timeout_sec=3720}',
         }
     )
     before = subprocess.run(
@@ -105,5 +105,5 @@ def test_tlc_override_preserves_native_code_mode(
     observed = next(line.split()[-1] for line in effective.splitlines() if line.split()[0] == "code_mode")
     assert observed == expected
     argv = json.loads((work / "adapter-argv.json").read_text())
-    assert 'features.code_mode.direct_only_tool_namespaces=["mcp__specula_tlc"]' in argv
+    assert 'features.code_mode.direct_only_tool_namespaces=["mcp__specular_tlc"]' in argv
     assert all(path.read_bytes() == data for path, data in originals.items())

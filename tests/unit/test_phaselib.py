@@ -1,4 +1,4 @@
-"""Behavior tests for the phase launchers (src/specula/phaselib.py).
+"""Behavior tests for the phase launchers (src/specular/phaselib.py).
 
 With the characterization goldens retired there is no bash to diff against, so
 these tests ARE the pin for each `launch_<phase>.sh`'s observable contract — the
@@ -13,9 +13,9 @@ only *prints* the launcher command lines and never enters phaselib):
     (the deleted dryrun_* / check_ok_* goldens);
   - the review agent's prompt contract (the deleted review_* goldens).
 
-Each phase runs in-process under an isolated SPECULA_RUN_DIR, so every output
+Each phase runs in-process under an isolated SPECULAR_RUN_DIR, so every output
 lands in a tmp run dir; --dry-run means no adapter is spawned and no network is
-touched. SPECULA_ROOT is patched to a tmp tree so skill/case-dir paths resolve
+touched. SPECULAR_ROOT is patched to a tmp tree so skill/case-dir paths resolve
 hermetically (LAUNCH_DIR — the real adapter the gate checks exists — is a
 module global and stays pointed at the repo).
 
@@ -47,15 +47,15 @@ SRC = Path(__file__).resolve().parents[2] / "src"
 if str(SRC) not in sys.path:  # test the tree this file lives in, installed or not
     sys.path.insert(0, str(SRC))
 
-import specula.progress as progress_module  # noqa: E402
-import specula.quota as quota  # noqa: E402
-from specula import notes, phaselib, resource_summary, resumelib, snapshotlib  # noqa: E402
-from specula.adapters.utils.policy import POLICY_BLOCKED_RC  # noqa: E402
-from specula.adapters.utils.transient import AUTH_REFRESH_FAILURE_RC, TRANSIENT_FAILURE_RC  # noqa: E402
-from specula.output_index import BYOM_REPORT_FILENAME  # noqa: E402
-from specula.progress import ProgressConfig, RunningAgent  # noqa: E402
-from specula.rules import RULES_SEPARATOR, RULES_TITLE, rules_block, with_rules  # noqa: E402
-from specula.skill_refs import CODEX_PLUGIN_NAME, prompt_skill_ids  # noqa: E402
+import specular.progress as progress_module  # noqa: E402
+import specular.quota as quota  # noqa: E402
+from specular import notes, phaselib, resource_summary, resumelib, snapshotlib  # noqa: E402
+from specular.adapters.utils.policy import POLICY_BLOCKED_RC  # noqa: E402
+from specular.adapters.utils.transient import AUTH_REFRESH_FAILURE_RC, TRANSIENT_FAILURE_RC  # noqa: E402
+from specular.output_index import BYOM_REPORT_FILENAME  # noqa: E402
+from specular.progress import ProgressConfig, RunningAgent  # noqa: E402
+from specular.rules import RULES_SEPARATOR, RULES_TITLE, rules_block, with_rules  # noqa: E402
+from specular.skill_refs import CODEX_PLUGIN_NAME, prompt_skill_ids  # noqa: E402
 
 NAME = "footest"
 
@@ -143,7 +143,7 @@ PHASES: list[PhaseSpec] = [
         "key": "bug_classification",
         "artifact": False,
         "inputs": ["confirmed-bugs.md"],
-        "fail": "Run Phase 4a ('specula confirm') first.",
+        "fail": "Run Phase 4a ('specular confirm') first.",
         "ok": "All prerequisites OK.",
         "log": "bug-classification.log",
         "prompt": ".bug-classification-prompt.md",
@@ -164,43 +164,43 @@ PUBLIC_COMMANDS = {
 
 
 class PhaseCase(unittest.TestCase):
-    """A phase run in-process under an isolated, hermetic tmp SPECULA_ROOT +
-    SPECULA_RUN_DIR."""
+    """A phase run in-process under an isolated, hermetic tmp SPECULAR_ROOT +
+    SPECULAR_RUN_DIR."""
 
     def setUp(self) -> None:
-        self.root = self.tmp()  # patched SPECULA_ROOT: skills/case dirs resolve here
-        self.run_dir = self.tmp()  # SPECULA_RUN_DIR: every output lands here
-        self.patch_attr(phaselib, "SPECULA_ROOT", self.root)
+        self.root = self.tmp()  # patched SPECULAR_ROOT: skills/case dirs resolve here
+        self.run_dir = self.tmp()  # SPECULAR_RUN_DIR: every output lands here
+        self.patch_attr(phaselib, "SPECULAR_ROOT", self.root)
         # Env the driver reads; restore so one test can't leak into the next.
         for var in (
-            "SPECULA_RUN_DIR",
-            "SPECULA_PHASE",
-            "SPECULA_WORK_DIR",
-            "SPECULA_STOP_GATE",
-            "SPECULA_STOP_GATE_WORK_DIR",
-            "SPECULA_SANDBOX",
-            "SPECULA_SANDBOX_CONFIG",
-            "SPECULA_SANDBOX_EXTRA_WRITE",
-            "SPECULA_PROGRESS",
-            "SPECULA_RULES",
-            "SPECULA_ACTIVITY_LOG",
-            "SPECULA_PIPELINE_LOG",
-            "SPECULA_RATE_LIMIT_REACTIVE",
-            "SPECULA_RATE_LIMIT_RETRIES",
-            "SPECULA_TLC_SCOPE",
-            "SPECULA_TLC_MEMORY_LIMIT",
-            "SPECULA_TLC_WORKER_LIMIT",
-            "SPECULA_QUOTA_5H",
-            "SPECULA_QUOTA_7D",
-            "SPECULA_QUOTA_MAX_WAITS",
-            "SPECULA_CLAUDE_ALIAS",
-            "SPECULA_MODEL",
-            "SPECULA_EFFORT",
+            "SPECULAR_RUN_DIR",
+            "SPECULAR_PHASE",
+            "SPECULAR_WORK_DIR",
+            "SPECULAR_STOP_GATE",
+            "SPECULAR_STOP_GATE_WORK_DIR",
+            "SPECULAR_SANDBOX",
+            "SPECULAR_SANDBOX_CONFIG",
+            "SPECULAR_SANDBOX_EXTRA_WRITE",
+            "SPECULAR_PROGRESS",
+            "SPECULAR_RULES",
+            "SPECULAR_ACTIVITY_LOG",
+            "SPECULAR_PIPELINE_LOG",
+            "SPECULAR_RATE_LIMIT_REACTIVE",
+            "SPECULAR_RATE_LIMIT_RETRIES",
+            "SPECULAR_TLC_SCOPE",
+            "SPECULAR_TLC_MEMORY_LIMIT",
+            "SPECULAR_TLC_WORKER_LIMIT",
+            "SPECULAR_QUOTA_5H",
+            "SPECULAR_QUOTA_7D",
+            "SPECULAR_QUOTA_MAX_WAITS",
+            "SPECULAR_CLAUDE_ALIAS",
+            "SPECULAR_MODEL",
+            "SPECULAR_EFFORT",
             notes.NOTES_ENV,
             phaselib.BYOM_PATH_ENV,
             "CLAUDE_ALIAS",
             "CLAUDE_EFFORT",
-            "SPECULA_SOURCE_SNAPSHOT",
+            "SPECULAR_SOURCE_SNAPSHOT",
             "GIT_CEILING_DIRECTORIES",
             resumelib.INVOCATION_ENV,
             resumelib.MANUAL_ENV,
@@ -209,7 +209,7 @@ class PhaseCase(unittest.TestCase):
             resource_summary.RESOURCE_ROOT_ENV,
             resource_summary.RESOURCE_PHASE_ENV,
         ):
-            self.set_env(var, str(self.run_dir) if var == "SPECULA_RUN_DIR" else None)
+            self.set_env(var, str(self.run_dir) if var == "SPECULAR_RUN_DIR" else None)
 
     def tmp(self) -> Path:
         d = tempfile.TemporaryDirectory()
@@ -241,7 +241,7 @@ class PhaseCase(unittest.TestCase):
             os.environ[var] = value
 
     def work_dir(self, name: str = NAME) -> Path:
-        return self.run_dir / name / ".specula-output"
+        return self.run_dir / name / ".specular-output"
 
     def seed(self, inputs: list[str], name: str = NAME) -> None:
         for rel in inputs:
@@ -276,7 +276,7 @@ class TestDirectExecution(unittest.TestCase):
             env.pop("PYTHONPATH", None)
             env["PYTHONNOUSERSITE"] = "1"
             proc = subprocess.run(
-                [sys.executable, "-S", str(SRC / "specula" / "phaselib.py"), "bug_confirmation", "--help"],
+                [sys.executable, "-S", str(SRC / "specular" / "phaselib.py"), "bug_confirmation", "--help"],
                 cwd=cwd,
                 env=env,
                 capture_output=True,
@@ -289,7 +289,7 @@ class TestDirectExecution(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()
             run_dir = root / "run"
-            work_dir = run_dir / NAME / ".specula-output"
+            work_dir = run_dir / NAME / ".specular-output"
             spec_dir = work_dir / "spec"
             spec_dir.mkdir(parents=True)
             (spec_dir / "bug-report.md").write_text("# Bug report\n")
@@ -307,8 +307,8 @@ class TestDirectExecution(unittest.TestCase):
             env = os.environ.copy()
             env["PATH"] = f"{fake_bin}{os.pathsep}{env.get('PATH', '')}"
             env["FAKE_CLAUDE_MARKER"] = str(marker)
-            env["SPECULA_RUN_DIR"] = str(run_dir)
-            env["SPECULA_SANDBOX"] = "off"
+            env["SPECULAR_RUN_DIR"] = str(run_dir)
+            env["SPECULAR_SANDBOX"] = "off"
             env[resource_summary.RESOURCE_ROOT_ENV] = str(run_dir)
             env[resource_summary.RESOURCE_INVOCATION_ENV] = invocation_id
             env[resource_summary.RESOURCE_PHASE_ENV] = "phase4a"
@@ -316,7 +316,7 @@ class TestDirectExecution(unittest.TestCase):
             proc = subprocess.run(
                 [
                     sys.executable,
-                    str(SRC / "specula" / "phaselib.py"),
+                    str(SRC / "specular" / "phaselib.py"),
                     "bug_confirmation",
                     "--agent=claude-code",
                     "--policy-retries=0",
@@ -455,7 +455,7 @@ class TestDryRunCommand(PhaseCase):
                 self.assertIn(f"**{spec['skill']}**", body)  # standalone installed skill ID
                 self.assertNotIn(f"${spec['skill']}", body)
                 self.assertNotIn(f"${CODEX_PLUGIN_NAME}:{spec['skill']}", body)
-                self.assertNotIn("<!-- specula-skill:", body)
+                self.assertNotIn("<!-- specular-skill:", body)
                 self.assertNotIn("/skills/", body)
                 self.assertNotIn(".claude/skills", body)
                 self.assertIn(str(wd / spec["out"]), body)  # a key output/inputs path
@@ -466,7 +466,7 @@ class TestDryRunCommand(PhaseCase):
             with (
                 self.subTest(plugin_enabled=plugin_enabled),
                 mock.patch(
-                    "specula.skill_refs._codex_plugin_enabled",
+                    "specular.skill_refs._codex_plugin_enabled",
                     return_value=plugin_enabled,
                 ),
             ):
@@ -477,7 +477,7 @@ class TestDryRunCommand(PhaseCase):
                 rejected = f"${spec['skill']}" if plugin_enabled else f"${CODEX_PLUGIN_NAME}:{spec['skill']}"
                 self.assertIn(selected, body)
                 self.assertNotIn(rejected, body)
-                self.assertNotIn("<!-- specula-skill:", body)
+                self.assertNotIn("<!-- specular-skill:", body)
 
     def test_local_skill_adapter_prompt_includes_skill_file_path(self) -> None:
         spec = BY_KEY["code_analysis"]
@@ -490,7 +490,7 @@ class TestDryRunCommand(PhaseCase):
                 self.assertIn("**code-analysis**", body)
                 self.assertIn("/skills/code_analysis/SKILL.md", body)
                 self.assertIn("read the local Specula skill file", body)
-                self.assertNotIn("<!-- specula-skill:", body)
+                self.assertNotIn("<!-- specular-skill:", body)
 
     def test_bug_confirmation_defaults_to_parallel(self) -> None:
         # No --legacy-confirm: Phase 4a runs parallel per-finding confirmation
@@ -602,7 +602,7 @@ class TestDryRunCommand(PhaseCase):
         self.assertIn("Max parallel: 1", out)
 
     def test_bug_confirmation_forwards_max_turns(self) -> None:
-        from specula import confirmlib
+        from specular import confirmlib
 
         seen: list[tuple[int, str]] = []
 
@@ -633,8 +633,8 @@ class TestDryRunCommand(PhaseCase):
         self.assertIn("--effort=high", out)
         self.assertNotIn("--effort=max", out)
 
-        self.set_env("SPECULA_MODEL", "env-model")
-        self.set_env("SPECULA_EFFORT", "low")
+        self.set_env("SPECULAR_MODEL", "env-model")
+        self.set_env("SPECULAR_EFFORT", "low")
         rc, out = self.dry_run(
             BY_KEY["code_analysis"],
             extra=["--model=", "--effort="],
@@ -652,7 +652,7 @@ class TestDryRunCommand(PhaseCase):
         self.assertEqual(
             out,
             "ERROR: classify does not accept --artifact; this phase reads the existing "
-            ".specula-output/confirmed-bugs.md and does not inspect source code.\n",
+            ".specular-output/confirmed-bugs.md and does not inspect source code.\n",
         )
 
 
@@ -673,13 +673,13 @@ class TestRepairMode(PhaseCase):
             self.assertIn(f"**{skill}**", body)
             self.assertNotIn(f"${skill}", body)
             self.assertNotIn(f"${CODEX_PLUGIN_NAME}:{skill}", body)
-        self.assertNotIn("<!-- specula-skill:", body)
+        self.assertNotIn("<!-- specular-skill:", body)
         self.assertNotIn("/skills/", body)
         self.assertNotIn(".claude/skills", body)
 
 
 class TestWorkingNotes(PhaseCase):
-    """S1b: with SPECULA_NOTES=on every phase prompt points at the shared notes area,
+    """S1b: with SPECULAR_NOTES=on every phase prompt points at the shared notes area,
     appended after the phase's own contract and before the target guidance; off
     (the default) removes exactly that section and nothing else."""
 
@@ -701,7 +701,7 @@ class TestWorkingNotes(PhaseCase):
         self.repo.mkdir()
         self.work_dir().mkdir(parents=True)
         (self.work_dir() / ".prompt-extra.md").write_text("Target guidance.\n")
-        self.set_env("SPECULA_NOTES", "on")
+        self.set_env("SPECULAR_NOTES", "on")
 
     def prompt(self, key: str, extra: list[str], filename: str) -> str:
         spec = BY_KEY[key]
@@ -863,7 +863,7 @@ class TestArgErrors(PhaseCase):
                 rc, out = self.run_phase(spec["key"], ["--help"])
                 self.assertEqual(rc, 0)
                 self.assertIn("Usage:", out)
-                self.assertIn(f"specula {PUBLIC_COMMANDS[spec['key']]}", out)
+                self.assertIn(f"specular {PUBLIC_COMMANDS[spec['key']]}", out)
                 self.assertNotIn("bash scripts/", out)
                 self.assertNotIn("launch_", out)
                 self.assertIn("--model=NAME", out)
@@ -876,7 +876,7 @@ class TestArgErrors(PhaseCase):
 class TestRulePinning(PhaseCase):
     """The pinned rules lead every prompt the generic launchers write (fresh,
     replayed, and continuation) and reach the adapter as --system-prompt-file on
-    every invocation when SPECULA_RULES=on; off (the default) keeps the exact
+    every invocation when SPECULAR_RULES=on; off (the default) keeps the exact
     pre-rules prompts and adapter argv."""
 
     RECORDING_ADAPTER = (
@@ -902,8 +902,8 @@ class TestRulePinning(PhaseCase):
         self.patch_attr(phaselib.Phase, "_acceptance", lambda _self, _ws, _names: None)
         self.patch_attr(phaselib.Phase, "progress_config", ProgressConfig(poll_seconds=0.005))
         self.patch_attr(phaselib, "_transient_resume_delay", lambda _attempt: 0.0)
-        self.set_env("SPECULA_PROGRESS", "off")
-        self.set_env("SPECULA_RULES", "on")
+        self.set_env("SPECULAR_PROGRESS", "off")
+        self.set_env("SPECULAR_RULES", "on")
         self.adapter = adapters / "fake.sh"
         self.captures = self.tmp()
         self.set_env("CAPTURE_DIR", str(self.captures))
@@ -927,7 +927,7 @@ class TestRulePinning(PhaseCase):
         """Fresh code_analysis turn that fails transiently once, then resumes."""
         self.write_adapter(
             'if [ "$attempt" -eq 1 ]; then printf "session-1\\n" > "$resume"; exit 74; fi\n'
-            'printf "brief\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
+            'printf "brief\\n" > "$SPECULAR_WORK_DIR/modeling-brief.md"\n'
         )
         return self.run_phase(
             "code_analysis",
@@ -955,7 +955,7 @@ class TestRulePinning(PhaseCase):
                 self.assertEqual(prompt.count(RULES_TITLE), 1)
                 if reason == "policy" and not resumable:
                     self.assertEqual(prompt.count(note), 1)
-        self.set_env("SPECULA_RULES", "off")
+        self.set_env("SPECULAR_RULES", "off")
         for reason, resumable, extra, legacy in cases:
             with self.subTest(reason=reason, resumable=resumable, rules="off"):
                 self.assertEqual(
@@ -992,7 +992,7 @@ class TestRulePinning(PhaseCase):
         for capture in self.captures.iterdir():
             capture.unlink()
         (self.work_dir() / ".prompt.system.md").unlink()
-        self.set_env("SPECULA_RULES", "off")
+        self.set_env("SPECULAR_RULES", "off")
         rc, out = self.run_transient_analysis()
 
         self.assertEqual(rc, 0, out)
@@ -1017,14 +1017,14 @@ class TestRulePinning(PhaseCase):
             if spec["key"] == "bug_confirmation":
                 extra.append("--legacy-confirm")
             with self.subTest(phase=spec["key"]):
-                self.set_env("SPECULA_RULES", "on")
+                self.set_env("SPECULAR_RULES", "on")
                 rc, pinned_out = self.dry_run(spec, extra=extra)
                 self.assertEqual(rc, 0, pinned_out)
                 prompt = self.work_dir() / spec["prompt"]
                 pinned_prompt = prompt.read_text()
                 block = rules_block()
 
-                self.set_env("SPECULA_RULES", "off")
+                self.set_env("SPECULAR_RULES", "off")
                 rc, legacy_out = self.dry_run(spec, extra=extra)
                 self.assertEqual(rc, 0, legacy_out)
                 self.assertEqual(normalize(pinned_out), normalize(legacy_out))
@@ -1060,7 +1060,7 @@ class TestRulePinning(PhaseCase):
                 self.assertEqual(self.captured("system", attempt), rules_block())
 
     def test_blocking_turn_without_rules_keeps_legacy_argv(self) -> None:
-        self.set_env("SPECULA_RULES", "off")
+        self.set_env("SPECULAR_RULES", "off")
         self.write_adapter('printf "answer\\n" > "$log"\n')
         prompt_file = self.captures / "turn.prompt.md"
 
@@ -1093,7 +1093,7 @@ class TestRulePinning(PhaseCase):
             "inline=\n"
             'for arg do case "$arg" in --prompt=*) inline=${arg#*=} ;; esac; done\n'
             'printf "%s" "$inline" > "$CAPTURE_DIR/inline-$attempt.md"\n'
-            'printf "review\\n" > "$SPECULA_WORK_DIR/review-analysis.md"\n'
+            'printf "review\\n" > "$SPECULAR_WORK_DIR/review-analysis.md"\n'
         )
 
         rc, out = self.run_phase("review", ["analysis", f"--agent={self.adapter.stem}", NAME])
@@ -1114,7 +1114,7 @@ class TestReactiveRateLimitWait(unittest.TestCase):
         with (
             contextlib.redirect_stdout(out),
             mock.patch.object(quota, "wait_for_quota") as wait_for_quota,
-            mock.patch("specula.phaselib.time.sleep") as sleep,
+            mock.patch("specular.phaselib.time.sleep") as sleep,
         ):
             phase._wait_for_rate_limit()
 
@@ -1128,7 +1128,7 @@ class TestReactiveRateLimitWait(unittest.TestCase):
 
         with (
             mock.patch.object(quota, "wait_for_quota") as wait_for_quota,
-            mock.patch("specula.phaselib.time.sleep") as sleep,
+            mock.patch("specular.phaselib.time.sleep") as sleep,
         ):
             phase._wait_for_rate_limit()
 
@@ -1139,7 +1139,7 @@ class TestReactiveRateLimitWait(unittest.TestCase):
 
 class TestBugConfirmationAlternate(PhaseCase):
     def _patch_confirmation(self, codes: list[int]) -> list[tuple[int, str]]:
-        from specula import confirmlib
+        from specular import confirmlib
 
         calls: list[tuple[int, str]] = []
 
@@ -1186,8 +1186,8 @@ class TestBugConfirmationAlternate(PhaseCase):
         )
         self.patch_attr(phaselib, "_RESOURCE_RECORDER", recorder)
         self.patch_attr(phaselib.Phase, "_wait_for_rate_limit", lambda _self: waits.append(1))
-        self.set_env("SPECULA_RATE_LIMIT_REACTIVE", "1")
-        self.set_env("SPECULA_RATE_LIMIT_RETRIES", "1")
+        self.set_env("SPECULAR_RATE_LIMIT_REACTIVE", "1")
+        self.set_env("SPECULAR_RATE_LIMIT_RETRIES", "1")
         clock = mock.Mock()
         clock.monotonic.side_effect = [0.0, 1.0, 100.0, 104.0]
         with mock.patch.object(resource_summary, "time", clock):
@@ -1203,15 +1203,15 @@ class TestBugConfirmationAlternate(PhaseCase):
         calls = self._patch_confirmation([quota.RATE_LIMIT_RC])
         waits: list[int] = []
         self.patch_attr(phaselib.Phase, "_wait_for_rate_limit", lambda _self: waits.append(1))
-        self.set_env("SPECULA_RATE_LIMIT_REACTIVE", "1")
-        self.set_env("SPECULA_RATE_LIMIT_RETRIES", "1")
+        self.set_env("SPECULAR_RATE_LIMIT_REACTIVE", "1")
+        self.set_env("SPECULAR_RATE_LIMIT_RETRIES", "1")
         rc, out = self.dry_run(BY_KEY["bug_confirmation"])
         self.assertEqual(rc, quota.RATE_LIMIT_RC, out)
         self.assertEqual(len(calls), 2)
         self.assertEqual(waits, [1])
 
     def test_confirmation_arms_runtime_lease_only_for_an_actual_outer_retry(self) -> None:
-        from specula import confirmlib
+        from specular import confirmlib
 
         retained: list[bool] = []
 
@@ -1225,8 +1225,8 @@ class TestBugConfirmationAlternate(PhaseCase):
 
         self.patch_attr(confirmlib, "run_parallel_confirmation", fake_confirmation)
         self.patch_attr(phaselib.Phase, "_wait_for_rate_limit", lambda _self: None)
-        self.set_env("SPECULA_RATE_LIMIT_REACTIVE", "1")
-        self.set_env("SPECULA_RATE_LIMIT_RETRIES", "1")
+        self.set_env("SPECULAR_RATE_LIMIT_REACTIVE", "1")
+        self.set_env("SPECULAR_RATE_LIMIT_RETRIES", "1")
 
         rc, out = self.dry_run(BY_KEY["bug_confirmation"])
 
@@ -1234,7 +1234,7 @@ class TestBugConfirmationAlternate(PhaseCase):
         self.assertEqual(retained, [True, False])
 
     def test_confirmation_does_not_arm_runtime_lease_without_reactive_retry(self) -> None:
-        from specula import confirmlib
+        from specular import confirmlib
 
         retained: list[bool] = []
 
@@ -1254,7 +1254,7 @@ class TestBugConfirmationAlternate(PhaseCase):
         self.assertEqual(retained, [False])
 
     def test_confirmation_clears_retained_runtime_when_quota_wait_aborts(self) -> None:
-        from specula import confirmlib
+        from specular import confirmlib
 
         def fake_confirmation(
             _cfg: confirmlib.ConfirmConfig,
@@ -1269,8 +1269,8 @@ class TestBugConfirmationAlternate(PhaseCase):
 
         self.patch_attr(confirmlib, "run_parallel_confirmation", fake_confirmation)
         self.patch_attr(phaselib.Phase, "_wait_for_rate_limit", abort_wait)
-        self.set_env("SPECULA_RATE_LIMIT_REACTIVE", "1")
-        self.set_env("SPECULA_RATE_LIMIT_RETRIES", "1")
+        self.set_env("SPECULAR_RATE_LIMIT_REACTIVE", "1")
+        self.set_env("SPECULAR_RATE_LIMIT_RETRIES", "1")
 
         with (
             mock.patch.object(confirmlib.ConfirmConfig, "clear_retry_runtime", autospec=True) as clear,
@@ -1281,7 +1281,7 @@ class TestBugConfirmationAlternate(PhaseCase):
         clear.assert_called_once()
 
     def test_policy_retry_budget_reaches_parallel_confirmation(self) -> None:
-        from specula import confirmlib
+        from specular import confirmlib
 
         seen: list[int] = []
 
@@ -1296,7 +1296,7 @@ class TestBugConfirmationAlternate(PhaseCase):
         self.assertEqual(seen, [100])
 
     def test_successful_live_confirmation_requires_classification_prerequisites(self) -> None:
-        from specula import confirmlib
+        from specular import confirmlib
 
         self.seed(BY_KEY["bug_confirmation"]["inputs"])
         self.patch_attr(phaselib.Phase, "_acceptance", lambda _self, _ws, _names: None)
@@ -1312,7 +1312,7 @@ class TestBugConfirmationAlternate(PhaseCase):
         self.assertIn("Handoff validation failures:", out)
 
     def test_successful_live_confirmation_hands_nonempty_report_to_classification(self) -> None:
-        from specula import confirmlib
+        from specular import confirmlib
 
         self.seed(BY_KEY["bug_confirmation"]["inputs"])
         self.patch_attr(phaselib.Phase, "_acceptance", lambda _self, _ws, _names: None)
@@ -1340,7 +1340,7 @@ class TestHandoffGate(PhaseCase):
         self.patch_attr(phaselib, "LAUNCH_DIR", adapters.parent)
         self.patch_attr(phaselib.Phase, "_acceptance", lambda _self, _ws, _names: None)
         self.patch_attr(phaselib.Phase, "progress_config", ProgressConfig(poll_seconds=0.005))
-        self.set_env("SPECULA_PROGRESS", "off")
+        self.set_env("SPECULAR_PROGRESS", "off")
         self.adapter = adapters / "fake.sh"
 
     def write_adapter(self, body: str) -> None:
@@ -1370,8 +1370,8 @@ class TestHandoffGate(PhaseCase):
     def test_live_analysis_refreshes_human_index_after_success(self) -> None:
         (self.run_dir / "pipeline.log").write_text("pipeline\n")
         self.write_adapter(
-            'printf "brief\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
-            'printf "analysis\\n" > "$SPECULA_WORK_DIR/analysis-report.md"\n'
+            'printf "brief\\n" > "$SPECULAR_WORK_DIR/modeling-brief.md"\n'
+            'printf "analysis\\n" > "$SPECULAR_WORK_DIR/analysis-report.md"\n'
         )
 
         rc, out = self.run_analysis()
@@ -1383,7 +1383,7 @@ class TestHandoffGate(PhaseCase):
         self.assertIn("[pipeline.log](../../pipeline.log)", index)
 
     def test_resume_completion_failure_keeps_completed_resource_record(self) -> None:
-        self.write_adapter('printf "brief\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n')
+        self.write_adapter('printf "brief\\n" > "$SPECULAR_WORK_DIR/modeling-brief.md"\n')
         invocation_id = "d" * 32
         recorder = resource_summary.ResourceInvocationRecorder(
             self.run_dir,
@@ -1407,7 +1407,7 @@ class TestHandoffGate(PhaseCase):
         self.assertGreaterEqual(record["elapsed_seconds"], 0.0)
 
     def test_live_analysis_failure_keeps_partial_results_browsable(self) -> None:
-        self.write_adapter('printf "analysis\\n" > "$SPECULA_WORK_DIR/analysis-report.md"\nexit 9\n')
+        self.write_adapter('printf "analysis\\n" > "$SPECULAR_WORK_DIR/analysis-report.md"\nexit 9\n')
 
         rc, out = self.run_analysis()
 
@@ -1439,7 +1439,7 @@ class TestHandoffGate(PhaseCase):
             return True
 
         self.patch_attr(phaselib.SpecGenerationPhase, "check", check)
-        self.write_adapter('name=$(basename "$(dirname "$SPECULA_WORK_DIR")")\n[ "$name" != failed ] || exit 9\n')
+        self.write_adapter('name=$(basename "$(dirname "$SPECULAR_WORK_DIR")")\n[ "$name" != failed ] || exit 9\n')
 
         rc, out = self.run_analysis(["failed|g|Go|r", "passed|g|Go|r"])
 
@@ -1448,8 +1448,8 @@ class TestHandoffGate(PhaseCase):
 
     def test_handoff_failures_are_attributed_per_target(self) -> None:
         self.write_adapter(
-            'name=$(basename "$(dirname "$SPECULA_WORK_DIR")")\n'
-            '[ "$name" != passed ] || printf "brief\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
+            'name=$(basename "$(dirname "$SPECULAR_WORK_DIR")")\n'
+            '[ "$name" != passed ] || printf "brief\\n" > "$SPECULAR_WORK_DIR/modeling-brief.md"\n'
         )
 
         rc, out = self.run_analysis(["missing|g|Go|r", "passed|g|Go|r"])
@@ -1470,7 +1470,7 @@ class TestHandoffGate(PhaseCase):
         self.set_env("COUNT_FILE", str(count))
         self.write_adapter(
             'printf x >> "$COUNT_FILE"\n'
-            'printf "brief\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
+            'printf "brief\\n" > "$SPECULAR_WORK_DIR/modeling-brief.md"\n'
             '[ "$(wc -c < "$COUNT_FILE")" -ne 1 ] || exit 76\n'
         )
 
@@ -1504,9 +1504,9 @@ class TestHandoffGate(PhaseCase):
             'attempt=$(wc -c < "$COUNT_FILE")\n'
             'for arg do case "$arg" in --prompt-file=*) prompt=${arg#*=} ;; esac; done\n'
             'cp "$prompt" "$CAPTURE_DIR/prompt-$attempt.md"\n'
-            'printf "%s\\n" "$SPECULA_WORK_DIR" >> "$CAPTURE_DIR/workspaces"\n'
+            'printf "%s\\n" "$SPECULAR_WORK_DIR" >> "$CAPTURE_DIR/workspaces"\n'
             '[ "$attempt" -ne 1 ] || exit 76\n'
-            'printf "brief\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
+            'printf "brief\\n" > "$SPECULAR_WORK_DIR/modeling-brief.md"\n'
         )
 
         rc, out = self.run_analysis()
@@ -1568,7 +1568,7 @@ class TestHandoffGate(PhaseCase):
             "fi\n"
             '[ "$(cat "$resume")" = "session-exact-123" ]\n'
             'printf "continued in session-exact-123\\n" > "$log"\n'
-            'printf "brief\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
+            'printf "brief\\n" > "$SPECULAR_WORK_DIR/modeling-brief.md"\n'
         )
 
         rc, out = self.run_analysis(options=["--transient-resumes=1"])
@@ -1616,7 +1616,7 @@ class TestHandoffGate(PhaseCase):
             "fi\n"
             '[ "$(cat "$resume")" = "session-manual-123" ]\n'
             'printf "continued\\n" > "$log"\n'
-            'printf "brief\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
+            'printf "brief\\n" > "$SPECULAR_WORK_DIR/modeling-brief.md"\n'
         )
 
         first_rc, first_out = self.run_analysis(options=["--transient-resumes=0"])
@@ -1661,27 +1661,27 @@ class TestHandoffGate(PhaseCase):
             "  exit 9\n"
             "fi\n"
             'test "$(cat "$resume")" = "$RESUME_CASE-session"\n'
-            'case "$SPECULA_PHASE" in\n'
-            '  code_analysis) printf "brief\n" > "$SPECULA_WORK_DIR/modeling-brief.md" ;;\n'
+            'case "$SPECULAR_PHASE" in\n'
+            '  code_analysis) printf "brief\n" > "$SPECULAR_WORK_DIR/modeling-brief.md" ;;\n'
             "  spec_generation)\n"
-            '    mkdir -p "$SPECULA_WORK_DIR/spec"\n'
+            '    mkdir -p "$SPECULAR_WORK_DIR/spec"\n'
             "    for file in base.tla MC.tla Trace.tla instrumentation-spec.md; do\n"
-            '      printf "output\n" > "$SPECULA_WORK_DIR/spec/$file"\n'
+            '      printf "output\n" > "$SPECULAR_WORK_DIR/spec/$file"\n'
             "    done\n"
             "    ;;\n"
             "  harness_generation)\n"
-            '    mkdir -p "$SPECULA_WORK_DIR/harness" "$SPECULA_WORK_DIR/traces"\n'
-            '    printf "#!/bin/sh\n" > "$SPECULA_WORK_DIR/harness/run.sh"\n'
-            '    printf "guide\n" > "$SPECULA_WORK_DIR/harness/INSTRUMENTATION.md"\n'
-            '    printf "{}\n" > "$SPECULA_WORK_DIR/traces/one.ndjson"\n'
+            '    mkdir -p "$SPECULAR_WORK_DIR/harness" "$SPECULAR_WORK_DIR/traces"\n'
+            '    printf "#!/bin/sh\n" > "$SPECULAR_WORK_DIR/harness/run.sh"\n'
+            '    printf "guide\n" > "$SPECULAR_WORK_DIR/harness/INSTRUMENTATION.md"\n'
+            '    printf "{}\n" > "$SPECULAR_WORK_DIR/traces/one.ndjson"\n'
             "    ;;\n"
-            '  spec_validation) printf "bug report\n" > "$SPECULA_WORK_DIR/spec/bug-report.md" ;;\n'
-            '  bug_confirmation) printf "confirmed\n" > "$SPECULA_WORK_DIR/confirmed-bugs.md" ;;\n'
+            '  spec_validation) printf "bug report\n" > "$SPECULAR_WORK_DIR/spec/bug-report.md" ;;\n'
+            '  bug_confirmation) printf "confirmed\n" > "$SPECULAR_WORK_DIR/confirmed-bugs.md" ;;\n'
             "  bug_classification)\n"
             '    printf "# Severity Classification\\n\\n## Summary\\n\\n## Per-entry classification\\n" '
-            '> "$SPECULA_WORK_DIR/bug-severity.md"\n'
+            '> "$SPECULAR_WORK_DIR/bug-severity.md"\n'
             '    printf "No impact-bearing findings were recorded.\\n\\n## Findings\\n\\n- Other dispositions: 0.\\n\\n## Validation limits\\n\\nNo finding-specific validation limits were recorded.\\n" '
-            '> "$SPECULA_WORK_DIR/.summary-findings.md"\n'
+            '> "$SPECULAR_WORK_DIR/.summary-findings.md"\n'
             "    ;;\n"
             "esac\n"
             'printf "continued\n" > "$log"\n'
@@ -1694,7 +1694,7 @@ class TestHandoffGate(PhaseCase):
         for spec, extra_args, prompt_rel, case_name in cases:
             with self.subTest(phase=case_name):
                 self.run_dir = self.tmp()
-                self.set_env("SPECULA_RUN_DIR", str(self.run_dir))
+                self.set_env("SPECULAR_RUN_DIR", str(self.run_dir))
                 self.set_env("RESUME_CASE", case_name)
                 self.set_env(resumelib.INVOCATION_ENV, f"{case_name}-invocation-1")
                 self.set_env(resumelib.MANUAL_ENV, None)
@@ -1737,7 +1737,7 @@ class TestHandoffGate(PhaseCase):
         resumelib.save_configuration(self.run_dir, {"agent": self.adapter.stem})
         self.set_env(resumelib.INVOCATION_ENV, "invocation-1")
         self.write_adapter(
-            'name=$(basename "$(dirname "$SPECULA_WORK_DIR")")\n'
+            'name=$(basename "$(dirname "$SPECULAR_WORK_DIR")")\n'
             'printf x >> "$CAPTURE_DIR/$name-count"\n'
             'attempt=$(wc -c < "$CAPTURE_DIR/$name-count")\n'
             'for arg do case "$arg" in '
@@ -1750,7 +1750,7 @@ class TestHandoffGate(PhaseCase):
             "  exit 75\n"
             "fi\n"
             'if [ "$name" = active ]; then test "$(cat "$resume")" = active-session; fi\n'
-            'printf "brief\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
+            'printf "brief\\n" > "$SPECULAR_WORK_DIR/modeling-brief.md"\n'
             'printf "done\\n" > "$log"\n'
         )
         targets = ["accepted|g|Go|r", "active|g|Go|r", "pending|g|Go|r"]
@@ -1843,7 +1843,7 @@ class TestHandoffGate(PhaseCase):
             "  exit 72\n"
             "fi\n"
             '[ "$(cat "$resume")" = "session-auth-1" ]\n'
-            'printf "brief\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
+            'printf "brief\\n" > "$SPECULAR_WORK_DIR/modeling-brief.md"\n'
         )
 
         rc, out = self.run_analysis()
@@ -1909,12 +1909,12 @@ class TestHandoffGate(PhaseCase):
             '[ "$attempt" -ne 1 ] || exit 76\n'
             '[ "$attempt" -ne 2 ] || exit 75\n'
             '[ "$attempt" -ne 3 ] || exit 76\n'
-            'printf "brief\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
+            'printf "brief\\n" > "$SPECULAR_WORK_DIR/modeling-brief.md"\n'
         )
         waits: list[int] = []
         self.patch_attr(phaselib.Phase, "_wait_for_rate_limit", lambda _self: waits.append(1))
-        self.set_env("SPECULA_RATE_LIMIT_REACTIVE", "1")
-        self.set_env("SPECULA_RATE_LIMIT_RETRIES", "1")
+        self.set_env("SPECULAR_RATE_LIMIT_REACTIVE", "1")
+        self.set_env("SPECULAR_RATE_LIMIT_RETRIES", "1")
 
         rc, out = self.run_analysis(options=["--policy-retries=2"])
 
@@ -1931,12 +1931,12 @@ class TestHandoffGate(PhaseCase):
             '[ "$attempt" -ne 1 ] || exit 75\n'
             '[ "$attempt" -ne 2 ] || exit 76\n'
             '[ "$attempt" -ne 3 ] || exit 75\n'
-            'printf "brief\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
+            'printf "brief\\n" > "$SPECULAR_WORK_DIR/modeling-brief.md"\n'
         )
         waits: list[int] = []
         self.patch_attr(phaselib.Phase, "_wait_for_rate_limit", lambda _self: waits.append(1))
-        self.set_env("SPECULA_RATE_LIMIT_REACTIVE", "1")
-        self.set_env("SPECULA_RATE_LIMIT_RETRIES", "1")
+        self.set_env("SPECULAR_RATE_LIMIT_REACTIVE", "1")
+        self.set_env("SPECULAR_RATE_LIMIT_RETRIES", "1")
 
         rc, out = self.run_analysis()
 
@@ -1948,12 +1948,12 @@ class TestHandoffGate(PhaseCase):
         counts = self.tmp()
         self.set_env("COUNT_DIR", str(counts))
         self.write_adapter(
-            'name=$(basename "$(dirname "$SPECULA_WORK_DIR")")\n'
+            'name=$(basename "$(dirname "$SPECULAR_WORK_DIR")")\n'
             'printf x >> "$COUNT_DIR/$name"\n'
             'attempt=$(wc -c < "$COUNT_DIR/$name")\n'
             'if [ "$name" = a ] && [ "$attempt" -le 2 ]; then exit 76; fi\n'
             'if [ "$name" = b ] && [ "$attempt" -le 1 ]; then exit 76; fi\n'
-            'printf "brief\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
+            'printf "brief\\n" > "$SPECULAR_WORK_DIR/modeling-brief.md"\n'
         )
 
         rc, out = self.run_phase(
@@ -2015,7 +2015,7 @@ class TestBugClassificationOutputs(PhaseCase):
         self.patch_attr(phaselib, "LAUNCH_DIR", adapters.parent)
         self.patch_attr(phaselib.Phase, "_acceptance", lambda _self, _ws, _names: None)
         self.patch_attr(phaselib.Phase, "progress_config", ProgressConfig(poll_seconds=0.005))
-        self.set_env("SPECULA_PROGRESS", "off")
+        self.set_env("SPECULAR_PROGRESS", "off")
         self.adapter = adapters / "fake.sh"
         self.seed(BY_KEY["bug_classification"]["inputs"])
         (self.work_dir() / "confirmed-bugs.md").write_text(self.CONFIRMED)
@@ -2026,7 +2026,7 @@ class TestBugClassificationOutputs(PhaseCase):
 
     @staticmethod
     def write_output(filename: str, content: str) -> str:
-        return f'printf %s {shlex.quote(content)} > "$SPECULA_WORK_DIR/{filename}"\n'
+        return f'printf %s {shlex.quote(content)} > "$SPECULAR_WORK_DIR/{filename}"\n'
 
     def run_classification(self, options: list[str] | None = None) -> tuple[int, str]:
         return self.run_phase(
@@ -2132,7 +2132,7 @@ class TestBugClassificationOutputs(PhaseCase):
             "NEW FINDINGS",
         )
         self.write_adapter(
-            'test ! -e "$SPECULA_WORK_DIR/summary.md"\n'
+            'test ! -e "$SPECULAR_WORK_DIR/summary.md"\n'
             + self.write_output("bug-severity.md", self.SEVERITY)
             + self.write_output(".summary-findings.md", new_findings)
         )
@@ -2169,7 +2169,7 @@ class TestBugClassificationOutputs(PhaseCase):
 
     def test_standalone_failure_leaves_old_summary_unavailable(self) -> None:
         self.seed_complete_summary()
-        self.write_adapter('test ! -e "$SPECULA_WORK_DIR/summary.md"\nexit 9\n')
+        self.write_adapter('test ! -e "$SPECULAR_WORK_DIR/summary.md"\nexit 9\n')
 
         rc, out = self.run_classification()
 
@@ -2177,7 +2177,7 @@ class TestBugClassificationOutputs(PhaseCase):
         self.assertFalse((self.work_dir() / "summary.md").exists())
 
     def test_failed_adapter_cannot_publish_its_own_summary(self) -> None:
-        self.write_adapter('printf "FORGED_AFTER_START\\n" > "$SPECULA_WORK_DIR/summary.md"\nexit 9\n')
+        self.write_adapter('printf "FORGED_AFTER_START\\n" > "$SPECULAR_WORK_DIR/summary.md"\nexit 9\n')
 
         rc, out = self.run_classification()
 
@@ -2303,7 +2303,7 @@ class TestBugClassificationOutputs(PhaseCase):
         (wd / "bug-severity.md").write_text(self.SEVERITY)
         (wd / ".summary-findings.md").write_text(self.FINDINGS)
         self.write_adapter(
-            'test ! -e "$SPECULA_WORK_DIR/bug-severity.md"\ntest ! -e "$SPECULA_WORK_DIR/.summary-findings.md"\n'
+            'test ! -e "$SPECULAR_WORK_DIR/bug-severity.md"\ntest ! -e "$SPECULAR_WORK_DIR/.summary-findings.md"\n'
         )
 
         rc, out = self.run_classification()
@@ -2319,7 +2319,7 @@ class TestBugClassificationOutputs(PhaseCase):
         external.write_text(self.SEVERITY)
         self.set_env("EXTERNAL_OUTPUT", str(external))
         self.write_adapter(
-            'ln -s "$EXTERNAL_OUTPUT" "$SPECULA_WORK_DIR/bug-severity.md"\n'
+            'ln -s "$EXTERNAL_OUTPUT" "$SPECULAR_WORK_DIR/bug-severity.md"\n'
             + self.write_output(".summary-findings.md", self.FINDINGS)
         )
 
@@ -2375,7 +2375,7 @@ class TestBugClassificationOutputs(PhaseCase):
         self.write_adapter(
             self.write_output("bug-severity.md", self.SEVERITY)
             + 'printf "Result.\\n\\n## Findings\\n\\n\\377\\n\\n## Validation limits\\n\\nNone.\\n" '
-            '> "$SPECULA_WORK_DIR/.summary-findings.md"\n'
+            '> "$SPECULAR_WORK_DIR/.summary-findings.md"\n'
         )
 
         rc, out = self.run_classification()
@@ -2393,7 +2393,7 @@ class TestBugClassificationOutputs(PhaseCase):
             + self.write_output("bug-severity.md", self.SEVERITY)
             + "  exit 76\n"
             + "fi\n"
-            + 'test -s "$SPECULA_WORK_DIR/bug-severity.md"\n'
+            + 'test -s "$SPECULAR_WORK_DIR/bug-severity.md"\n'
             + self.write_output(".summary-findings.md", self.FINDINGS)
         )
 
@@ -2418,7 +2418,7 @@ class TestBugClassificationOutputs(PhaseCase):
             + '  printf "classify-session\\n" > "$resume"\n'
             + "  exit 9\n"
             + "fi\n"
-            + 'test -s "$SPECULA_WORK_DIR/bug-severity.md"\n'
+            + 'test -s "$SPECULAR_WORK_DIR/bug-severity.md"\n'
             + self.write_output(".summary-findings.md", self.FINDINGS)
         )
 
@@ -2452,11 +2452,11 @@ class TestLegacyRepairIdentityFinalization(PhaseCase):
         self.adapter.write_text(
             "#!/usr/bin/env sh\n"
             "set -eu\n"
-            'cp "$LEGACY_REPORT_FIXTURE" "$SPECULA_WORK_DIR/confirmed-bugs.md"\n'
+            'cp "$LEGACY_REPORT_FIXTURE" "$SPECULAR_WORK_DIR/confirmed-bugs.md"\n'
             'if [ "${LEGACY_NO_RR:-0}" != 1 ]; then\n'
-            '  mkdir -p "$SPECULA_WORK_DIR/spec/repair-requests"\n'
-            '  if [ "${LEGACY_DELETE_RR:-0}" = 1 ]; then rm -f "$SPECULA_WORK_DIR/spec/repair-requests/RR-001.md"; fi\n'
-            '  cp "$LEGACY_RR_FIXTURE" "$SPECULA_WORK_DIR/spec/repair-requests/${LEGACY_RR_NAME:-RR-001.md}"\n'
+            '  mkdir -p "$SPECULAR_WORK_DIR/spec/repair-requests"\n'
+            '  if [ "${LEGACY_DELETE_RR:-0}" = 1 ]; then rm -f "$SPECULAR_WORK_DIR/spec/repair-requests/RR-001.md"; fi\n'
+            '  cp "$LEGACY_RR_FIXTURE" "$SPECULAR_WORK_DIR/spec/repair-requests/${LEGACY_RR_NAME:-RR-001.md}"\n'
             "fi\n"
             'exit "${LEGACY_ADAPTER_RC:-0}"\n'
         )
@@ -2470,7 +2470,7 @@ class TestLegacyRepairIdentityFinalization(PhaseCase):
         emitted_finding_id: str | None = None,
         emitted_rid: str = "RR-001",
     ) -> Path:
-        from specula import confirmlib
+        from specular import confirmlib
 
         rr = confirmlib._merge_rr(
             emitted_rid,
@@ -2511,7 +2511,7 @@ class TestLegacyRepairIdentityFinalization(PhaseCase):
         )
 
     def _seed_consumed_audit(self) -> tuple[Path, bytes]:
-        from specula import confirmlib
+        from specular import confirmlib
 
         rr_dir = self.work_dir() / "spec" / "repair-requests"
         rr_dir.mkdir(parents=True, exist_ok=True)
@@ -2644,7 +2644,7 @@ class TestLegacyRepairIdentityFinalization(PhaseCase):
         self.assertFalse((self.work_dir() / "spec" / "repair-requests").exists())
 
     def test_legacy_preflight_migrates_old_rr_before_zero_pending_report_overwrite(self) -> None:
-        from specula import confirmlib
+        from specular import confirmlib
 
         work_spec = self.work_dir() / "spec"
         (work_spec.parent / "confirmed-bugs.md").write_text(
@@ -2858,7 +2858,7 @@ class TestRunAgentBlocking(PhaseCase):
         recorder.start_target(NAME, work_dir)
         self.patch_attr(phaselib, "_RESOURCE_RECORDER", recorder)
 
-        with mock.patch("specula.phaselib.time.sleep"):
+        with mock.patch("specular.phaselib.time.sleep"):
             rc, text = phaselib.run_agent_blocking(
                 adapter,
                 "prompt body",
@@ -2890,7 +2890,7 @@ class TestRunAgentBlocking(PhaseCase):
         before = config.read_bytes()
         target = outer / "runs" / "run-1" / "demo"
         source = target / "source"
-        work_dir = target / ".specula-output"
+        work_dir = target / ".specular-output"
         trusted_cwd = work_dir / "confirmation" / "MC-1" / ".agent-cwd"
         source.mkdir(parents=True)
         trusted_cwd.mkdir(parents=True)
@@ -2900,14 +2900,14 @@ class TestRunAgentBlocking(PhaseCase):
             "#!/bin/sh\n"
             'for arg do case "$arg" in --log=*) log=${arg#*=} ;; esac; done\n'
             'cd "$PRIVATE_SOURCE"\n'
-            "git config --local specula.private-probe touched >/dev/null 2>&1\n"
+            "git config --local specular.private-probe touched >/dev/null 2>&1\n"
             "probe_rc=$?\n"
             f'printf "%s\\n%s\\n%s\\n%s\\n" "$probe_rc" "${{GIT_DIR-unset}}" '
             f'"$GIT_SSH_COMMAND" "$GIT_CEILING_DIRECTORIES" > "{capture}"\n'
             'printf "done\\n" > "$log"\n'
         )
         adapter.chmod(0o755)
-        self.set_env("SPECULA_SOURCE_SNAPSHOT", "1")
+        self.set_env("SPECULAR_SOURCE_SNAPSHOT", "1")
         self.set_env("GIT_DIR", str(outer / ".git"))
         self.set_env("GIT_WORK_TREE", str(outer))
         self.set_env("GIT_SSH_COMMAND", "ssh -i private-key")
@@ -3070,7 +3070,7 @@ class TestRunAgentBlocking(PhaseCase):
         prompt_file = captures / "prompt.md"
         log_file = captures / "turn.log"
 
-        with mock.patch("specula.phaselib.time.sleep") as sleep:
+        with mock.patch("specular.phaselib.time.sleep") as sleep:
             rc, text = phaselib.run_agent_blocking(
                 adapter,
                 "original blocking prompt with detailed evidence",
@@ -3122,7 +3122,7 @@ class TestRunAgentBlocking(PhaseCase):
             with self.subTest(codes=codes):
                 count.unlink(missing_ok=True)
                 self.set_env("ADAPTER_CODES", codes)
-                with mock.patch("specula.phaselib.time.sleep"):
+                with mock.patch("specular.phaselib.time.sleep"):
                     rc, text = phaselib.run_agent_blocking(
                         adapter,
                         "prompt body",
@@ -3169,7 +3169,7 @@ class TestRunAgentBlocking(PhaseCase):
         state = phaselib.PolicyRetryState()
         prompt_file = captures / "prompt.md"
         log_file = captures / "turn.log"
-        with mock.patch("specula.phaselib.time.sleep") as sleep:
+        with mock.patch("specular.phaselib.time.sleep") as sleep:
             first_rc, first_text = phaselib.run_agent_blocking(
                 adapter,
                 "original prompt",
@@ -3240,7 +3240,7 @@ class TestRunAgentBlocking(PhaseCase):
         run_dir = self.tmp()
         resumelib.initialize_run(run_dir)
         resumelib.save_configuration(run_dir, {"agent": adapter.stem})
-        self.set_env("SPECULA_RUN_DIR", str(run_dir))
+        self.set_env("SPECULAR_RUN_DIR", str(run_dir))
         self.set_env(resumelib.INVOCATION_ENV, "invocation-1")
         self.set_env("COUNT_FILE", str(count))
         self.set_env("CAPTURE_DIR", str(captures))
@@ -3248,7 +3248,7 @@ class TestRunAgentBlocking(PhaseCase):
         log_file = captures / "turn.log"
         logical = ("confirm", NAME, "finding", "MC-1", "1", "A")
 
-        with mock.patch("specula.phaselib.time.sleep"):
+        with mock.patch("specular.phaselib.time.sleep"):
             first_rc, _ = phaselib.run_agent_blocking(
                 adapter,
                 "original prompt",
@@ -3304,9 +3304,9 @@ class TestRunAgentBlocking(PhaseCase):
         capture = self.tmp() / "capture.txt"
         adapter.write_text(
             "#!/bin/sh\n"
-            'printf \'%s\\n\' "$SPECULA_PHASE" "${SPECULA_STOP_GATE-unset}" '
-            '"$SPECULA_WORK_DIR" "$SPECULA_STOP_GATE_WORK_DIR" "$PWD" '
-            '"${SPECULA_SANDBOX_CONFIG-unset}" "$@" > "$CAPTURE_FILE"\n'
+            'printf \'%s\\n\' "$SPECULAR_PHASE" "${SPECULAR_STOP_GATE-unset}" '
+            '"$SPECULAR_WORK_DIR" "$SPECULAR_STOP_GATE_WORK_DIR" "$PWD" '
+            '"${SPECULAR_SANDBOX_CONFIG-unset}" "$@" > "$CAPTURE_FILE"\n'
             "exit 9\n"
         )
         adapter.chmod(0o755)
@@ -3318,12 +3318,12 @@ class TestRunAgentBlocking(PhaseCase):
         gate_work_dir = self.tmp() / "finding"
         gate_work_dir.mkdir()
         agent_cwd = self.tmp()
-        malicious_config = agent_cwd / ".specula" / "sandbox.json"
+        malicious_config = agent_cwd / ".specular" / "sandbox.json"
         malicious_config.parent.mkdir()
         malicious_config.write_text('{"enabled": false}\n')
         self.set_env("CAPTURE_FILE", str(capture))
-        self.set_env("SPECULA_STOP_GATE", "on")
-        self.set_env("SPECULA_SANDBOX", "on")
+        self.set_env("SPECULAR_STOP_GATE", "on")
+        self.set_env("SPECULAR_SANDBOX", "on")
 
         rc, text = phaselib.run_agent_blocking(
             adapter,
@@ -3358,7 +3358,7 @@ class TestRunAgentBlocking(PhaseCase):
         capture = base / "capture.txt"
         adapter.write_text(
             "#!/bin/sh\n"
-            'printf \'%s\\n\' "$PWD" "$SPECULA_WORK_DIR" "$SPECULA_STOP_GATE_WORK_DIR" "$@" > "$CAPTURE_FILE"\n'
+            'printf \'%s\\n\' "$PWD" "$SPECULAR_WORK_DIR" "$SPECULAR_STOP_GATE_WORK_DIR" "$@" > "$CAPTURE_FILE"\n'
         )
         adapter.chmod(0o755)
         for directory in ("target", "gate", "agent"):
@@ -3435,7 +3435,7 @@ class TestRunAgentBlocking(PhaseCase):
             log_file.with_suffix(".last-message.txt").write_text("VERDICT: REPRODUCED\n")
             return _Result()
 
-        with mock.patch("specula.phaselib.subprocess.run", fake_run):
+        with mock.patch("specular.phaselib.subprocess.run", fake_run):
             rc, text = phaselib.run_agent_blocking(
                 adapter,
                 "prompt body",
@@ -3464,7 +3464,7 @@ class TestRunAgentBlocking(PhaseCase):
             log_file.write_text("successful CLI transcript without a final-message sidecar\n")
             return _Result()
 
-        with mock.patch("specula.phaselib.subprocess.run", fake_run):
+        with mock.patch("specular.phaselib.subprocess.run", fake_run):
             rc, text = phaselib.run_agent_blocking(
                 adapter,
                 "prompt body",
@@ -3495,7 +3495,7 @@ class TestRunAgentBlocking(PhaseCase):
             last_message_file.write_text("final answer\n")
             return _Result()
 
-        with mock.patch("specula.phaselib.subprocess.run", fake_run):
+        with mock.patch("specular.phaselib.subprocess.run", fake_run):
             rc, text = phaselib.run_agent_blocking(
                 adapter,
                 "prompt body",
@@ -3567,7 +3567,7 @@ class TestProgressReporting(PhaseCase):
         )
 
     def test_reports_agent_created_workspace_files(self) -> None:
-        self.write_adapter('printf "draft\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\nsleep 0.04\n')
+        self.write_adapter('printf "draft\\n" > "$SPECULAR_WORK_DIR/modeling-brief.md"\nsleep 0.04\n')
         rc, out = self.run_fake()
         self.assertEqual(rc, 0, out)
         self.assertIn(f"{NAME}: created modeling-brief.md", out)
@@ -3582,7 +3582,7 @@ class TestProgressReporting(PhaseCase):
         )
         self.write_adapter(
             'for arg do case "$arg" in --log=*) log=${arg#*=} ;; esac; done\n'
-            'printf "draft\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
+            'printf "draft\\n" > "$SPECULAR_WORK_DIR/modeling-brief.md"\n'
             "usage=${log%.log}.usage.json\n"
             'test ! -e "$usage"\n'
             "printf '%s\\n' "
@@ -3619,7 +3619,7 @@ class TestProgressReporting(PhaseCase):
     def test_usage_cleanup_failure_does_not_block_agent(self) -> None:
         self.write_adapter(
             'for arg do case "$arg" in --log=*) log=${arg#*=} ;; esac; done\n'
-            'printf "draft\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
+            'printf "draft\\n" > "$SPECULAR_WORK_DIR/modeling-brief.md"\n'
             "usage=${log%.log}.usage.json\n"
             "printf '%s\\n' "
             '\'{"agent":"fake","total_cost_usd":1,"usage":{"total_tokens":100,'
@@ -3676,11 +3676,11 @@ class TestProgressReporting(PhaseCase):
     def test_direct_multi_target_command_shares_one_tlc_scope(self) -> None:
         launch_dir = self.tmp()
         capture_dir = self.tmp()
-        self.set_env("SPECULA_RUN_DIR", None)
-        self.set_env("SPECULA_TLC_SCOPE", None)
+        self.set_env("SPECULAR_RUN_DIR", None)
+        self.set_env("SPECULAR_TLC_SCOPE", None)
         self.write_adapter(
-            'name=$(basename "$(dirname "$SPECULA_WORK_DIR")")\n'
-            f'printf "%s\\n" "$SPECULA_TLC_SCOPE" > "{capture_dir}/$name"\n'
+            'name=$(basename "$(dirname "$SPECULAR_WORK_DIR")")\n'
+            f'printf "%s\\n" "$SPECULAR_TLC_SCOPE" > "{capture_dir}/$name"\n'
         )
         previous = Path.cwd()
         os.chdir(launch_dir)
@@ -3701,7 +3701,7 @@ class TestProgressReporting(PhaseCase):
         (self.run_dir / "tlc-resources.json").write_text(
             '{"version": 1, "memory_limit": "64G", "worker_limit": "12"}\n'
         )
-        self.write_adapter(f'printf "%s\\n" "$SPECULA_TLC_MEMORY_LIMIT" "$SPECULA_TLC_WORKER_LIMIT" > "{capture}"\n')
+        self.write_adapter(f'printf "%s\\n" "$SPECULAR_TLC_MEMORY_LIMIT" "$SPECULAR_TLC_WORKER_LIMIT" > "{capture}"\n')
 
         rc, out = self.run_fake()
 
@@ -3711,9 +3711,9 @@ class TestProgressReporting(PhaseCase):
     def test_changes_during_cooldown_are_flushed_on_completion(self) -> None:
         self.patch_attr(phaselib.Phase, "progress_config", replace(self.config, change_report_seconds=10.0))
         self.write_adapter(
-            'printf "first\\n" > "$SPECULA_WORK_DIR/first.md"\n'
+            'printf "first\\n" > "$SPECULAR_WORK_DIR/first.md"\n'
             "sleep 0.03\n"
-            'printf "second\\n" > "$SPECULA_WORK_DIR/second.md"\n'
+            'printf "second\\n" > "$SPECULAR_WORK_DIR/second.md"\n'
             "sleep 0.03\n"
         )
         rc, out = self.run_fake()
@@ -3723,9 +3723,9 @@ class TestProgressReporting(PhaseCase):
 
     def test_sustained_agent_output_gets_sparse_status(self) -> None:
         self.write_adapter(
-            'printf "starting\\n" > "$SPECULA_WORK_DIR/agent.log"\n'
+            'printf "starting\\n" > "$SPECULAR_WORK_DIR/agent.log"\n'
             "sleep 0.02\n"
-            'printf "working\\n" >> "$SPECULA_WORK_DIR/agent.log"\n'
+            'printf "working\\n" >> "$SPECULAR_WORK_DIR/agent.log"\n'
             "sleep 0.02\n"
         )
         rc, out = self.run_fake()
@@ -3754,7 +3754,7 @@ class TestProgressReporting(PhaseCase):
         ]
         self.write_adapter(
             f"printf '%s\\n' {' '.join(shlex.quote(event) for event in events)} "
-            '> "$SPECULA_ACTIVITY_LOG"\n'
+            '> "$SPECULAR_ACTIVITY_LOG"\n'
             "sleep 0.04\n"
         )
         rc, out = self.run_fake()
@@ -3775,7 +3775,7 @@ class TestProgressReporting(PhaseCase):
                 },
             }
         )
-        self.write_adapter(f"printf '%s\\n' {shlex.quote(event)} > \"$SPECULA_ACTIVITY_LOG\"\nsleep 0.04\n")
+        self.write_adapter(f"printf '%s\\n' {shlex.quote(event)} > \"$SPECULAR_ACTIVITY_LOG\"\nsleep 0.04\n")
         rc, out = self.run_fake()
         self.assertEqual(rc, 0, out)
         self.assertIn(f"{NAME}: Inspecting editor state.", out)
@@ -3794,7 +3794,7 @@ class TestProgressReporting(PhaseCase):
         ]
         self.write_adapter(
             f"printf '%s\\n' {' '.join(shlex.quote(event) for event in events)} "
-            '> "$SPECULA_ACTIVITY_LOG"\n'
+            '> "$SPECULAR_ACTIVITY_LOG"\n'
             "sleep 0.04\n"
         )
         rc, out = self.run_fake()
@@ -3805,7 +3805,7 @@ class TestProgressReporting(PhaseCase):
     def test_structured_adapter_errors_are_shown_in_cli_output(self) -> None:
         self.adapter = self.adapter.with_name("copilot-cli.sh")
         event = json.dumps({"type": "session.error", "data": {"message": "BYOK providers require an explicit model."}})
-        self.write_adapter(f"printf '%s\\n' {shlex.quote(event)} > \"$SPECULA_ACTIVITY_LOG\"\nexit 1\n")
+        self.write_adapter(f"printf '%s\\n' {shlex.quote(event)} > \"$SPECULAR_ACTIVITY_LOG\"\nexit 1\n")
         rc, out = self.run_fake()
         self.assertEqual(rc, 1, out)
         self.assertIn(f"{NAME}: adapter error: BYOK providers require an explicit model.", out)
@@ -3819,7 +3819,7 @@ class TestProgressReporting(PhaseCase):
         self.assertNotIn(f"{NAME}: quiet for", out)
         self.assertIn(f"{NAME}: completed (exit 0)", out)
 
-        self.set_env("SPECULA_PROGRESS", "off")
+        self.set_env("SPECULAR_PROGRESS", "off")
         rc, out = self.run_fake()
         self.assertEqual(rc, 0, out)
         self.assertNotIn(f"{NAME}: no observable activity", out)
@@ -3831,22 +3831,22 @@ class TestProgressReporting(PhaseCase):
         # they stay on --output-format json. It is the only escape hatch for a CLI
         # that predates the streaming flags, and adapter failures now abort the run.
         seen = self.work_dir() / "seen-env"
-        self.write_adapter(f'printf "%s\\n" "${{SPECULA_ACTIVITY_LOG:-<unset>}}" > "{seen}"\n')
+        self.write_adapter(f'printf "%s\\n" "${{SPECULAR_ACTIVITY_LOG:-<unset>}}" > "{seen}"\n')
 
         rc, out = self.run_fake()
         self.assertEqual(rc, 0, out)
         self.assertTrue(seen.read_text().strip().endswith(".activity.jsonl"), seen.read_text())
 
-        self.set_env("SPECULA_PROGRESS", "off")
+        self.set_env("SPECULAR_PROGRESS", "off")
         rc, out = self.run_fake()
         self.assertEqual(rc, 0, out)
         self.assertEqual(seen.read_text().strip(), "<unset>")
 
     def test_progress_off_ignores_an_inherited_activity_log(self) -> None:
         seen = self.work_dir() / "seen-env"
-        self.set_env("SPECULA_PROGRESS", "off")
-        self.set_env("SPECULA_ACTIVITY_LOG", "/tmp/leaked.jsonl")
-        self.write_adapter(f'printf "%s\\n" "${{SPECULA_ACTIVITY_LOG:-<unset>}}" > "{seen}"\n')
+        self.set_env("SPECULAR_PROGRESS", "off")
+        self.set_env("SPECULAR_ACTIVITY_LOG", "/tmp/leaked.jsonl")
+        self.write_adapter(f'printf "%s\\n" "${{SPECULAR_ACTIVITY_LOG:-<unset>}}" > "{seen}"\n')
         rc, out = self.run_fake()
         self.assertEqual(rc, 0, out)
         self.assertEqual(seen.read_text().strip(), "<unset>")
@@ -4082,14 +4082,14 @@ class TestProgressReporting(PhaseCase):
         )
         self.patch_attr(phaselib, "_RESOURCE_RECORDER", recorder)
         self.write_adapter(
-            'name=$(basename "$(dirname "$SPECULA_WORK_DIR")")\n'
+            'name=$(basename "$(dirname "$SPECULAR_WORK_DIR")")\n'
             f'printf x >> "{counts}/$name"\n'
             f'if [ "$name" = b ] && [ ! -e "{marker}" ]; then touch "{marker}"; exit 75; fi\n'
         )
         waits: list[int] = []
         self.patch_attr(phaselib.Phase, "_wait_for_rate_limit", lambda _self: waits.append(1))
-        self.set_env("SPECULA_RATE_LIMIT_REACTIVE", "1")
-        self.set_env("SPECULA_RATE_LIMIT_RETRIES", "2")
+        self.set_env("SPECULAR_RATE_LIMIT_REACTIVE", "1")
+        self.set_env("SPECULAR_RATE_LIMIT_RETRIES", "2")
         clock = mock.Mock()
         clock.monotonic.side_effect = [0.0, 1.0, 10.0, 11.0, 100.0, 104.0]
         with mock.patch.object(resource_summary, "time", clock):
@@ -4126,8 +4126,8 @@ class TestProgressReporting(PhaseCase):
         )
         self.patch_attr(phaselib, "_RESOURCE_RECORDER", recorder)
         self.set_env("COUNT_FILE", str(count))
-        self.set_env("SPECULA_RATE_LIMIT_REACTIVE", "1")
-        self.set_env("SPECULA_RATE_LIMIT_RETRIES", "1")
+        self.set_env("SPECULAR_RATE_LIMIT_REACTIVE", "1")
+        self.set_env("SPECULAR_RATE_LIMIT_RETRIES", "1")
         self.patch_attr(phaselib.Phase, "_wait_for_rate_limit", lambda _self: None)
         self.write_adapter(
             'printf x >> "$COUNT_FILE"\n'
@@ -4150,7 +4150,7 @@ class TestProgressReporting(PhaseCase):
             '\'{"session_id":"claude-retry","total_cost_usd":0.00143,'
             '"usage":{"input_tokens":100,"cache_creation_input_tokens":50,'
             '"cache_read_input_tokens":70,"output_tokens":30},"model_usage":{}}\' > "$usage"\n'
-            'printf "brief\\n" > "$SPECULA_WORK_DIR/modeling-brief.md"\n'
+            'printf "brief\\n" > "$SPECULAR_WORK_DIR/modeling-brief.md"\n'
         )
 
         rc, out = self.run_fake()
@@ -4178,7 +4178,7 @@ class TestProgressReporting(PhaseCase):
     def test_rate_limit_stops_launching_unstarted_targets_without_reactive_retry(self) -> None:
         counts = self.tmp()
         self.write_adapter(
-            'name=$(basename "$(dirname "$SPECULA_WORK_DIR")")\n'
+            'name=$(basename "$(dirname "$SPECULAR_WORK_DIR")")\n'
             f'printf x >> "{counts}/$name"\n'
             '[ "$name" != a ] || exit 75\n'
         )
@@ -4197,8 +4197,8 @@ class TestProgressReporting(PhaseCase):
         self.write_adapter(f'printf x >> "{count}"\nexit 75\n')
         waits: list[int] = []
         self.patch_attr(phaselib.Phase, "_wait_for_rate_limit", lambda _self: waits.append(1))
-        self.set_env("SPECULA_RATE_LIMIT_REACTIVE", "1")
-        self.set_env("SPECULA_RATE_LIMIT_RETRIES", "1")
+        self.set_env("SPECULAR_RATE_LIMIT_REACTIVE", "1")
+        self.set_env("SPECULAR_RATE_LIMIT_RETRIES", "1")
         rc, out = self.run_fake()
         self.assertEqual(rc, quota.RATE_LIMIT_RC, out)
         self.assertEqual(count.read_text(), "xx")
@@ -4207,14 +4207,14 @@ class TestProgressReporting(PhaseCase):
     def test_exhausted_rate_limit_reports_unstarted_targets(self) -> None:
         counts = self.tmp()
         self.write_adapter(
-            'name=$(basename "$(dirname "$SPECULA_WORK_DIR")")\n'
+            'name=$(basename "$(dirname "$SPECULAR_WORK_DIR")")\n'
             f'printf x >> "{counts}/$name"\n'
             '[ "$name" != a ] || exit 75\n'
         )
         waits: list[int] = []
         self.patch_attr(phaselib.Phase, "_wait_for_rate_limit", lambda _self: waits.append(1))
-        self.set_env("SPECULA_RATE_LIMIT_REACTIVE", "1")
-        self.set_env("SPECULA_RATE_LIMIT_RETRIES", "1")
+        self.set_env("SPECULAR_RATE_LIMIT_REACTIVE", "1")
+        self.set_env("SPECULAR_RATE_LIMIT_RETRIES", "1")
         rc, out = self.run_phase(
             "code_analysis",
             ["--max-parallel=1", f"--agent={self.adapter.stem}", self.artifact_flag(), "a|g|Go|r", "b|g|Go|r"],
@@ -4226,10 +4226,10 @@ class TestProgressReporting(PhaseCase):
         self.assertIn("skipping 1 unstarted target(s): b", out)
 
     def test_concurrent_permanent_failure_prevents_rate_limit_retry(self) -> None:
-        self.write_adapter('name=$(basename "$(dirname "$SPECULA_WORK_DIR")")\n[ "$name" = a ] && exit 75\nexit 9\n')
+        self.write_adapter('name=$(basename "$(dirname "$SPECULAR_WORK_DIR")")\n[ "$name" = a ] && exit 75\nexit 9\n')
         waits: list[int] = []
         self.patch_attr(phaselib.Phase, "_wait_for_rate_limit", lambda _self: waits.append(1))
-        self.set_env("SPECULA_RATE_LIMIT_REACTIVE", "1")
+        self.set_env("SPECULAR_RATE_LIMIT_REACTIVE", "1")
         rc, out = self.run_phase(
             "code_analysis",
             ["--max-parallel=2", f"--agent={self.adapter.stem}", self.artifact_flag(), "a|g|Go|r", "b|g|Go|r"],
@@ -4240,7 +4240,7 @@ class TestProgressReporting(PhaseCase):
     def test_permanent_failure_does_not_skip_independent_pending_targets(self) -> None:
         counts = self.tmp()
         self.write_adapter(
-            'name=$(basename "$(dirname "$SPECULA_WORK_DIR")")\n'
+            'name=$(basename "$(dirname "$SPECULAR_WORK_DIR")")\n'
             f'printf x >> "{counts}/$name"\n'
             '[ "$name" != a ] || exit 9\n'
         )
@@ -4392,7 +4392,7 @@ class TestModelEffortLiveLaunch(PhaseCase):
         self.patch_attr(phaselib, "LAUNCH_DIR", self.adapters.parent)
         self.patch_attr(phaselib.Phase, "_acceptance", lambda _self, _ws, _names: None)
         self.patch_attr(phaselib.SpecGenerationPhase, "check", lambda _self, _ws, _names: True)
-        self.set_env("SPECULA_PROGRESS", "off")
+        self.set_env("SPECULAR_PROGRESS", "off")
 
     def launch(self, adapter_name: str, extra: list[str] | None = None) -> list[str]:
         record = self.tmp() / "argv"
@@ -4417,9 +4417,9 @@ class TestModelEffortLiveLaunch(PhaseCase):
                 argv = self.launch(adapter)
                 self.assertFalse(any(a.startswith("--effort=") for a in argv))
 
-    def test_specula_env_and_explicit_empty_precedence(self) -> None:
-        self.set_env("SPECULA_MODEL", "env-model")
-        self.set_env("SPECULA_EFFORT", "high")
+    def test_specular_env_and_explicit_empty_precedence(self) -> None:
+        self.set_env("SPECULAR_MODEL", "env-model")
+        self.set_env("SPECULAR_EFFORT", "high")
         argv = self.launch("codex")
         self.assertIn("--model=env-model", argv)
         self.assertIn("--effort=high", argv)
@@ -4449,7 +4449,7 @@ class TestModelEffortLiveLaunch(PhaseCase):
 
     def test_snapshot_agent_runs_from_private_source(self) -> None:
         launch_cwd = self.tmp()
-        launch_config = launch_cwd / ".specula" / "sandbox.json"
+        launch_config = launch_cwd / ".specular" / "sandbox.json"
         launch_config.parent.mkdir()
         launch_config.write_text('{"enabled": true}\n')
         run_dir = launch_cwd / "relative-run"
@@ -4458,7 +4458,7 @@ class TestModelEffortLiveLaunch(PhaseCase):
         original.mkdir()
         (original / "tracked.txt").write_text("original\n")
         private = snapshotlib.prepare_sources(run_dir, {NAME: original})[NAME].source
-        private_config = private / ".specula" / "sandbox.json"
+        private_config = private / ".specular" / "sandbox.json"
         private_config.parent.mkdir()
         private_config.write_text('{"enabled": false}\n')
         record = self.tmp() / "cwd"
@@ -4468,8 +4468,8 @@ class TestModelEffortLiveLaunch(PhaseCase):
             "for arg do\n"
             '  case "$arg" in --prompt-file=*) [ -f "${arg#*=}" ] || exit 42 ;; esac\n'
             "done\n"
-            f'printf "%s\\n%s\\n%s\\n%s\\n%s\\n" "$(pwd -P)" "$PWD" "$SPECULA_TARGET_REPO_DIR" '
-            f'"$SPECULA_SANDBOX_CONFIG" "$SPECULA_SANDBOX_EXTRA_WRITE" > "{record}"\n'
+            f'printf "%s\\n%s\\n%s\\n%s\\n%s\\n" "$(pwd -P)" "$PWD" "$SPECULAR_TARGET_REPO_DIR" '
+            f'"$SPECULAR_SANDBOX_CONFIG" "$SPECULAR_SANDBOX_EXTRA_WRITE" > "{record}"\n'
             'printf "agent change\\n" > agent-relative.txt\n'
         )
         adapter.chmod(0o755)
@@ -4477,9 +4477,9 @@ class TestModelEffortLiveLaunch(PhaseCase):
         os.chdir(launch_cwd)
         self.addCleanup(os.chdir, old_cwd)
         self.set_env("PWD", str(launch_cwd))
-        self.set_env("SPECULA_RUN_DIR", "relative-run")
-        self.set_env("SPECULA_SANDBOX", "on")
-        self.set_env("SPECULA_SANDBOX_EXTRA_WRITE", "/cache")
+        self.set_env("SPECULAR_RUN_DIR", "relative-run")
+        self.set_env("SPECULAR_SANDBOX", "on")
+        self.set_env("SPECULAR_SANDBOX_EXTRA_WRITE", "/cache")
 
         rc, out = self.run_phase("code_analysis", ["--agent=fake", NAME])
 
@@ -4533,14 +4533,14 @@ class TestModelEffortLiveLaunch(PhaseCase):
         adapter = self.adapters / "fake.sh"
         adapter.write_text(
             "#!/usr/bin/env sh\n"
-            "git config --local specula.private-probe touched >/dev/null 2>&1\n"
+            "git config --local specular.private-probe touched >/dev/null 2>&1\n"
             "probe_rc=$?\n"
             f'printf "%s\\n%s\\n%s\\n%s\\n%s\\n%s\\n%s\\n" "$GIT_CEILING_DIRECTORIES" "$probe_rc" '
             f'"${{GIT_DIR-unset}}" "${{GIT_EXTERNAL_DIFF-unset}}" "$GIT_SSH_COMMAND" "$GIT_ASKPASS" '
-            f'"$SPECULA_SOURCE_SNAPSHOT" > "{record}"\n'
+            f'"$SPECULAR_SOURCE_SNAPSHOT" > "{record}"\n'
         )
         adapter.chmod(0o755)
-        self.set_env("SPECULA_RUN_DIR", str(run_dir))
+        self.set_env("SPECULAR_RUN_DIR", str(run_dir))
         self.set_env("GIT_DIR", str(outer / ".git"))
         self.set_env("GIT_WORK_TREE", str(outer))
         self.set_env("GIT_CEILING_DIRECTORIES", "/untrusted")
@@ -4639,14 +4639,14 @@ class TestReviewPhase(PhaseCase):
                 rc, out = self.run_phase("review", argv)
                 self.assertEqual(rc, 0)
                 self.assertIn("Run a review agent", out)
-                self.assertIn("specula review <phase>", out)
+                self.assertIn("specular review <phase>", out)
                 self.assertIn("--model=NAME", out)
                 self.assertIn("--effort=LEVEL", out)
                 self.assertIn("--policy-retries=N", out)
                 self.assertIn("default: 20", out)
-                self.assertIn(".specula-output/review-analysis.md", out)
-                self.assertIn(".specula-output/spec/review-specgen.md", out)
-                self.assertIn(".specula-output/spec/review-validation.md", out)
+                self.assertIn(".specular-output/review-analysis.md", out)
+                self.assertIn(".specular-output/spec/review-specgen.md", out)
+                self.assertIn(".specular-output/spec/review-validation.md", out)
 
     def test_review_rejects_invalid_policy_retry_values(self) -> None:
         for value in ("", "-1", "1.5", "bad", "+1"):
@@ -4679,7 +4679,7 @@ class TestReviewPhase(PhaseCase):
             "fake",
             "log=\n"
             'for arg do case "$arg" in --log=*) log=${arg#*=} ;; esac; done\n'
-            'printf "review\\n" > "$SPECULA_WORK_DIR/review-analysis.md"\n'
+            'printf "review\\n" > "$SPECULAR_WORK_DIR/review-analysis.md"\n'
             'printf "done\\n" > "$log"\n',
         )
         invocation_id = "a" * 32
@@ -4705,7 +4705,7 @@ class TestReviewPhase(PhaseCase):
     def test_manual_resume_reaches_exact_session_for_each_review_phase(self) -> None:
         captures = self.tmp()
         self.set_env("CAPTURE_DIR", str(captures))
-        self.set_env("SPECULA_PROGRESS", "off")
+        self.set_env("SPECULAR_PROGRESS", "off")
         self.install_adapter(
             "fake",
             "log= resume=\n"
@@ -4724,9 +4724,9 @@ class TestReviewPhase(PhaseCase):
             "fi\n"
             'test "$(cat "$resume")" = "$stem-session"\n'
             'case "$stem" in\n'
-            '  review-analysis) output="$SPECULA_WORK_DIR/review-analysis.md" ;;\n'
-            '  review-specgen) output="$SPECULA_WORK_DIR/spec/review-specgen.md" ;;\n'
-            '  review-validation) output="$SPECULA_WORK_DIR/spec/review-validation.md" ;;\n'
+            '  review-analysis) output="$SPECULAR_WORK_DIR/review-analysis.md" ;;\n'
+            '  review-specgen) output="$SPECULAR_WORK_DIR/spec/review-specgen.md" ;;\n'
+            '  review-validation) output="$SPECULAR_WORK_DIR/spec/review-validation.md" ;;\n'
             "esac\n"
             'mkdir -p "$(dirname "$output")"\n'
             'printf "review\n" > "$output"\n'
@@ -4741,7 +4741,7 @@ class TestReviewPhase(PhaseCase):
         for phase, prompt_rel in cases:
             with self.subTest(phase=phase):
                 self.run_dir = self.tmp()
-                self.set_env("SPECULA_RUN_DIR", str(self.run_dir))
+                self.set_env("SPECULAR_RUN_DIR", str(self.run_dir))
                 self.set_env(resumelib.INVOCATION_ENV, f"review-{phase}-invocation-1")
                 self.set_env(resumelib.MANUAL_ENV, None)
                 resumelib.initialize_run(self.run_dir)
@@ -4766,10 +4766,10 @@ class TestReviewPhase(PhaseCase):
     def test_manual_resume_does_not_record_reused_review_target(self) -> None:
         captures = self.tmp()
         self.set_env("CAPTURE_DIR", str(captures))
-        self.set_env("SPECULA_PROGRESS", "off")
+        self.set_env("SPECULAR_PROGRESS", "off")
         self.install_adapter(
             "fake",
-            'name=$(basename "$(dirname "$SPECULA_WORK_DIR")")\n'
+            'name=$(basename "$(dirname "$SPECULAR_WORK_DIR")")\n'
             'printf x >> "$CAPTURE_DIR/$name-count"\n'
             'attempt=$(wc -c < "$CAPTURE_DIR/$name-count")\n'
             "log= resume=\n"
@@ -4783,7 +4783,7 @@ class TestReviewPhase(PhaseCase):
             "  exit 75\n"
             "fi\n"
             'if [ "$name" = pending ]; then test "$(cat "$resume")" = pending-session; fi\n'
-            'printf "review\\n" > "$SPECULA_WORK_DIR/review-analysis.md"\n'
+            'printf "review\\n" > "$SPECULAR_WORK_DIR/review-analysis.md"\n'
             'printf "done\\n" > "$log"\n',
         )
         resumelib.initialize_run(self.run_dir)
@@ -4830,7 +4830,7 @@ class TestReviewPhase(PhaseCase):
 
     def test_review_streams_activity_through_shared_monitor(self) -> None:
         event = json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": "reviewing"}})
-        self.install_adapter("codex", f"printf '%s\\n' {shlex.quote(event)} > \"$SPECULA_ACTIVITY_LOG\"\n")
+        self.install_adapter("codex", f"printf '%s\\n' {shlex.quote(event)} > \"$SPECULAR_ACTIVITY_LOG\"\n")
         self.patch_attr(
             phaselib.Phase,
             "progress_config",
@@ -4845,8 +4845,8 @@ class TestReviewPhase(PhaseCase):
 
     def test_review_progress_off_restores_legacy_adapter_contract(self) -> None:
         seen = self.tmp() / "seen"
-        self.install_adapter("fake", f'printf "%s\\n" "${{SPECULA_ACTIVITY_LOG:-<unset>}}" > "{seen}"\n')
-        self.set_env("SPECULA_PROGRESS", "off")
+        self.install_adapter("fake", f'printf "%s\\n" "${{SPECULAR_ACTIVITY_LOG:-<unset>}}" > "{seen}"\n')
+        self.set_env("SPECULAR_PROGRESS", "off")
         rc, out = self.run_phase("review", ["analysis", "--agent=fake", NAME])
         self.assertEqual(rc, 0, out)
         self.assertEqual(seen.read_text().strip(), "<unset>")
@@ -4857,7 +4857,7 @@ class TestReviewPhase(PhaseCase):
         modeling_brief.parent.mkdir(parents=True)
         modeling_brief.write_text("brief\n")
         self.install_adapter("fake", "exit 9\n")
-        self.set_env("SPECULA_PROGRESS", "off")
+        self.set_env("SPECULAR_PROGRESS", "off")
 
         rc, out = self.run_phase("review", ["analysis", "--agent=fake", NAME])
 
@@ -4869,8 +4869,8 @@ class TestReviewPhase(PhaseCase):
 
     def test_review_exports_external_workspace_to_adapter(self) -> None:
         seen = self.tmp() / "work-dir"
-        self.install_adapter("fake", f'printf "%s\\n" "$SPECULA_WORK_DIR" > "{seen}"\n')
-        self.set_env("SPECULA_PROGRESS", "off")
+        self.install_adapter("fake", f'printf "%s\\n" "$SPECULAR_WORK_DIR" > "{seen}"\n')
+        self.set_env("SPECULAR_PROGRESS", "off")
         rc, out = self.run_phase("review", ["analysis", "--agent=fake", NAME])
         self.assertEqual(rc, 0, out)
         self.assertEqual(seen.read_text().strip(), str(self.work_dir()))
@@ -4883,11 +4883,11 @@ class TestReviewPhase(PhaseCase):
         self.install_adapter(
             "fake",
             f'printf "%s\\n%s\\n%s\\n%s\\n%s\\n%s\\n%s\\n" "$(pwd -P)" "$PWD" '
-            f'"$SPECULA_TARGET_REPO_DIR" "${{GIT_DIR-unset}}" "$GIT_SSH_COMMAND" '
-            f'"$SPECULA_SANDBOX_CONFIG" "$SPECULA_SANDBOX_EXTRA_WRITE" > "{seen}"\n'
+            f'"$SPECULAR_TARGET_REPO_DIR" "${{GIT_DIR-unset}}" "$GIT_SSH_COMMAND" '
+            f'"$SPECULAR_SANDBOX_CONFIG" "$SPECULAR_SANDBOX_EXTRA_WRITE" > "{seen}"\n'
             'printf "review change\\n" > review-relative.txt\n',
         )
-        self.set_env("SPECULA_PROGRESS", "off")
+        self.set_env("SPECULAR_PROGRESS", "off")
         launch_cwd = self.tmp()
         old_cwd = Path.cwd()
         os.chdir(launch_cwd)
@@ -4895,9 +4895,9 @@ class TestReviewPhase(PhaseCase):
         self.set_env("PWD", str(launch_cwd))
         relative_config = launch_cwd / "review-sandbox.json"
         relative_config.write_text('{"enabled": true}\n')
-        self.set_env("SPECULA_SANDBOX", "on")
-        self.set_env("SPECULA_SANDBOX_CONFIG", relative_config.name)
-        self.set_env("SPECULA_SANDBOX_EXTRA_WRITE", "/cache")
+        self.set_env("SPECULAR_SANDBOX", "on")
+        self.set_env("SPECULAR_SANDBOX_CONFIG", relative_config.name)
+        self.set_env("SPECULAR_SANDBOX_EXTRA_WRITE", "/cache")
         self.set_env("GIT_DIR", str(original / ".git"))
         self.set_env("GIT_SSH_COMMAND", "ssh -i private-key")
 
@@ -4922,7 +4922,7 @@ class TestReviewPhase(PhaseCase):
         (self.run_dir / "run.json").write_text('{"source_mode": "snapshot"}\n')
         marker = self.tmp() / "launched"
         self.install_adapter("fake", f'touch "{marker}"\nprintf x > review-relative.txt\n')
-        self.set_env("SPECULA_PROGRESS", "off")
+        self.set_env("SPECULAR_PROGRESS", "off")
         old_cwd = Path.cwd()
         os.chdir(original)
         self.addCleanup(os.chdir, old_cwd)
@@ -4939,18 +4939,18 @@ class TestReviewPhase(PhaseCase):
     def test_review_claude_default_max_blocks_ambient_downgrade(self) -> None:
         seen = self.tmp() / "argv"
         self.install_adapter("claude-code", f'printf "%s\\n" "$@" > "{seen}"\n')
-        self.set_env("SPECULA_PROGRESS", "off")
+        self.set_env("SPECULAR_PROGRESS", "off")
         self.set_env("CLAUDE_EFFORT", "low")
         rc, out = self.run_phase("review", ["analysis", NAME])
         self.assertEqual(rc, 0, out)
         self.assertIn("--effort=max", seen.read_text().splitlines())
 
-    def test_review_explicit_empty_clears_specula_env(self) -> None:
+    def test_review_explicit_empty_clears_specular_env(self) -> None:
         seen = self.tmp() / "argv"
         self.install_adapter("claude-code", f'printf "%s\\n" "$@" > "{seen}"\n')
-        self.set_env("SPECULA_PROGRESS", "off")
-        self.set_env("SPECULA_MODEL", "env-model")
-        self.set_env("SPECULA_EFFORT", "high")
+        self.set_env("SPECULAR_PROGRESS", "off")
+        self.set_env("SPECULAR_MODEL", "env-model")
+        self.set_env("SPECULAR_EFFORT", "high")
         rc, out = self.run_phase("review", ["analysis", "--model=", "--effort=", NAME])
         self.assertEqual(rc, 0, out)
         argv = seen.read_text().splitlines()
@@ -4968,8 +4968,8 @@ class TestReviewPhase(PhaseCase):
         )
         waits: list[int] = []
         self.patch_attr(phaselib.Phase, "_wait_for_rate_limit", lambda _self: waits.append(1))
-        self.set_env("SPECULA_RATE_LIMIT_REACTIVE", "1")
-        self.set_env("SPECULA_RATE_LIMIT_RETRIES", "2")
+        self.set_env("SPECULAR_RATE_LIMIT_REACTIVE", "1")
+        self.set_env("SPECULAR_RATE_LIMIT_RETRIES", "2")
         rc, out = self.run_phase("review", ["analysis", "--agent=fake", NAME])
         self.assertEqual(rc, 0, out)
         self.assertEqual(count.read_text(), "xx")
@@ -4988,7 +4988,7 @@ class TestReviewPhase(PhaseCase):
         )
         self.set_env("COUNT_FILE", str(count))
         self.set_env("PROMPT_DIR", str(prompts))
-        self.set_env("SPECULA_PROGRESS", "off")
+        self.set_env("SPECULAR_PROGRESS", "off")
 
         rc, out = self.run_phase(
             "review",
@@ -5016,7 +5016,7 @@ class TestReviewPhase(PhaseCase):
         count = self.tmp() / "count"
         self.install_adapter("fake", 'printf x >> "$COUNT_FILE"\nexit 76\n')
         self.set_env("COUNT_FILE", str(count))
-        self.set_env("SPECULA_PROGRESS", "off")
+        self.set_env("SPECULAR_PROGRESS", "off")
 
         rc, out = self.run_phase(
             "review",
@@ -5041,7 +5041,7 @@ class TestReviewPhase(PhaseCase):
         resumelib.save_configuration(self.run_dir, {"agent": "fake"})
         self.set_env(resumelib.INVOCATION_ENV, "invocation-1")
         self.set_env("COUNT_FILE", str(count))
-        self.set_env("SPECULA_PROGRESS", "off")
+        self.set_env("SPECULAR_PROGRESS", "off")
 
         first_rc, first_out = self.run_phase(
             "review",
@@ -5063,7 +5063,7 @@ class TestReviewPhase(PhaseCase):
         count = self.tmp() / "count"
         self.install_adapter("fake", 'printf x >> "$COUNT_FILE"\nexit 76\n')
         self.set_env("COUNT_FILE", str(count))
-        self.set_env("SPECULA_PROGRESS", "off")
+        self.set_env("SPECULAR_PROGRESS", "off")
 
         rc, out = self.run_phase(
             "review",
@@ -5087,9 +5087,9 @@ class TestReviewPhase(PhaseCase):
         waits: list[int] = []
         self.patch_attr(phaselib.Phase, "_wait_for_rate_limit", lambda _self: waits.append(1))
         self.set_env("COUNT_FILE", str(count))
-        self.set_env("SPECULA_PROGRESS", "off")
-        self.set_env("SPECULA_RATE_LIMIT_REACTIVE", "1")
-        self.set_env("SPECULA_RATE_LIMIT_RETRIES", "1")
+        self.set_env("SPECULAR_PROGRESS", "off")
+        self.set_env("SPECULAR_RATE_LIMIT_REACTIVE", "1")
+        self.set_env("SPECULAR_RATE_LIMIT_RETRIES", "1")
 
         rc, out = self.run_phase("review", ["analysis", "--agent=fake", NAME])
 
@@ -5099,7 +5099,7 @@ class TestReviewPhase(PhaseCase):
 
     def test_review_normalizes_signal_exit_status(self) -> None:
         self.install_adapter("fake", "kill -TERM $$\n")
-        self.set_env("SPECULA_PROGRESS", "off")
+        self.set_env("SPECULAR_PROGRESS", "off")
         rc, out = self.run_phase("review", ["analysis", "--agent=fake", NAME])
         self.assertEqual(rc, 128 + signal.SIGTERM, out)
 
@@ -5168,7 +5168,7 @@ class TestModelEffortForwarding(unittest.TestCase):
             captured.append(kwargs)
             return resumelib.ResumeClaim(attempt=1, manual=False, resumable=False)
 
-        with mock.patch("specula.phaselib.resumelib.prepare_turn", fake_prepare):
+        with mock.patch("specular.phaselib.resumelib.prepare_turn", fake_prepare):
             cmd = self._blocking_cmd(model="glm-5.3", codex_profile="glm", resume_logical=("finding", "F1"))
         self.assertIn("--codex-profile=glm", cmd)
         self.assertEqual(captured[0]["codex_profile"], "glm")
@@ -5192,7 +5192,7 @@ class TestModelEffortForwarding(unittest.TestCase):
             captured.append(cmd)
             return _Result()
 
-        with tempfile.TemporaryDirectory() as d, mock.patch("specula.phaselib.subprocess.run", fake_run):
+        with tempfile.TemporaryDirectory() as d, mock.patch("specular.phaselib.subprocess.run", fake_run):
             dp = Path(d)
             phaselib.run_agent_blocking(
                 Path(f"/x/{adapter_name}.sh"),
@@ -5234,8 +5234,8 @@ class TestModelEffortForwarding(unittest.TestCase):
 
         with (
             tempfile.TemporaryDirectory() as d,
-            mock.patch("specula.phaselib.subprocess.run", return_value=_Result()),
-            mock.patch("specula.skill_refs._codex_plugin_enabled", return_value=True),
+            mock.patch("specular.phaselib.subprocess.run", return_value=_Result()),
+            mock.patch("specular.skill_refs._codex_plugin_enabled", return_value=True),
         ):
             root = Path(d)
             prompt_file = root / "prompt.md"
@@ -5252,7 +5252,7 @@ class TestModelEffortForwarding(unittest.TestCase):
             prompt = prompt_file.read_text()
             self.assertIn(f"${CODEX_PLUGIN_NAME}:bug-confirmation", prompt)
             self.assertNotIn("$bug-confirmation", prompt)
-            self.assertNotIn("<!-- specula-skill:", prompt)
+            self.assertNotIn("<!-- specular-skill:", prompt)
 
 
 if __name__ == "__main__":

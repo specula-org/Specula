@@ -55,9 +55,9 @@ class SpecValidationHandler(BaseHandler):
         # Determine JAR path
         if not tla_jar:
             # Use default path (same logic as DebugSession)
-            specula_root = os.environ.get("SPECULA_ROOT")
-            if specula_root:
-                tla_jar = os.path.join(specula_root, "lib", "tla2tools.jar")
+            specular_root = os.environ.get("SPECULAR_ROOT")
+            if specular_root:
+                tla_jar = os.path.join(specular_root, "lib", "tla2tools.jar")
             else:
                 # Calculate relative to this file
                 this_file = os.path.abspath(__file__)
@@ -66,8 +66,8 @@ class SpecValidationHandler(BaseHandler):
                 src_dir = os.path.dirname(tla_mcp_dir)
                 tool_dir = os.path.dirname(src_dir)
                 tools_dir = os.path.dirname(tool_dir)
-                specula_root = os.path.dirname(tools_dir)
-                tla_jar = os.path.join(specula_root, "lib", "tla2tools.jar")
+                specular_root = os.path.dirname(tools_dir)
+                tla_jar = os.path.join(specular_root, "lib", "tla2tools.jar")
 
         # Check if JAR exists
         if not os.path.exists(tla_jar):

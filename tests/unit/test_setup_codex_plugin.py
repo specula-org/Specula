@@ -13,9 +13,9 @@ from pathlib import Path
 from typing import cast
 from unittest import mock
 
-from specula import cli, phaselib, skill_install
-from specula import confirmlib as confirmation
-from specula.skill_refs import CODEX_PLUGIN_NAME, materialize_skill_refs
+from specular import cli, phaselib, skill_install
+from specular import confirmlib as confirmation
+from specular.skill_refs import CODEX_PLUGIN_NAME, materialize_skill_refs
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SETUP_SCRIPT = REPO_ROOT / "scripts" / "infra" / "setup_codex_plugin.py"
@@ -58,7 +58,7 @@ class TestCodexPluginSkillContract(unittest.TestCase):
         return plugin_dir, manifest
 
     def production_prompts(self) -> dict[str, tuple[str, tuple[str, ...]]]:
-        with mock.patch.dict(os.environ, {"SPECULA_RUN_DIR": ""}):
+        with mock.patch.dict(os.environ, {"SPECULAR_RUN_DIR": ""}):
             ws = phaselib.Workspace(["T"], artifact="/repo", cwd=self.root)
             repair_ws = phaselib.Workspace(["T"], artifact="/repo", cwd=self.root, opts={"repair": True})
             prompts: dict[str, tuple[str, tuple[str, ...]]] = {
@@ -160,7 +160,7 @@ class TestCodexPluginSkillContract(unittest.TestCase):
                     )
                     self.assertIn(f"${namespaced}", plugin_prompt)
                     self.assertNotIn(f"${skill}", plugin_prompt)
-                    self.assertNotIn("<!-- specula-skill:", plugin_prompt)
+                    self.assertNotIn("<!-- specular-skill:", plugin_prompt)
 
                     standalone_prompt = materialize_skill_refs(
                         prompt,
@@ -169,7 +169,7 @@ class TestCodexPluginSkillContract(unittest.TestCase):
                     )
                     self.assertIn(f"${skill}", standalone_prompt)
                     self.assertNotIn(f"${namespaced}", standalone_prompt)
-                    self.assertNotIn("<!-- specula-skill:", standalone_prompt)
+                    self.assertNotIn("<!-- specular-skill:", standalone_prompt)
 
     def test_release_versions_stay_in_sync(self) -> None:
         _, manifest = self.generate_plugin()
@@ -178,7 +178,7 @@ class TestCodexPluginSkillContract(unittest.TestCase):
             (REPO_ROOT / "pyproject.toml").read_text(),
         )
         lock_version = extract_version(
-            r'^\[\[package\]\]\nname = "specula"\nversion = "([^"]+)"$',
+            r'^\[\[package\]\]\nname = "specular"\nversion = "([^"]+)"$',
             (REPO_ROOT / "uv.lock").read_text(),
         )
 
@@ -195,3 +195,27 @@ class TestCodexPluginSkillContract(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestCodexPluginInstall(unittest.TestCase):
+    def test_install_replaces_the_pre_rename_plugin(self) -> None:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("setup_codex_plugin", SETUP_SCRIPT)
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        commands: list[list[str]] = []
+
+        def record(command: list[str], *, check: bool = True, quiet: bool = False) -> None:
+            commands.append(command)
+
+        with (
+            mock.patch.object(module, "run", side_effect=record),
+            mock.patch.object(module.shutil, "which", return_value="/usr/bin/codex"),
+        ):
+            module.install_plugin(Path("/plugin"))
+
+        self.assertEqual(commands[0], ["codex", "plugin", "remove", "specula-codex@specula"])
+        self.assertEqual(commands[1], ["codex", "plugin", "marketplace", "remove", "specula"])
+        self.assertEqual(commands[-1], ["codex", "plugin", "add", "specular-codex@specular"])

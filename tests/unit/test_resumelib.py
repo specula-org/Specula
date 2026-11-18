@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from specula import resumelib
+from specular import resumelib
 
 
 @dataclass(frozen=True)
@@ -27,14 +27,14 @@ def _enable_resume(
 ) -> None:
     resumelib.initialize_run(run_dir)
     resumelib.save_configuration(run_dir, {"agent": "codex"})
-    monkeypatch.setenv("SPECULA_RUN_DIR", str(run_dir))
+    monkeypatch.setenv("SPECULAR_RUN_DIR", str(run_dir))
     monkeypatch.setenv(resumelib.INVOCATION_ENV, invocation)
     monkeypatch.delenv(resumelib.MANUAL_ENV, raising=False)
     monkeypatch.delenv(resumelib.FRESH_ENV, raising=False)
 
 
 def _turn_files(run_dir: Path) -> TurnFiles:
-    work_dir = run_dir / "target" / ".specula-output"
+    work_dir = run_dir / "target" / ".specular-output"
     work_dir.mkdir(parents=True)
     return TurnFiles(
         cwd=run_dir / "source",

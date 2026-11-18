@@ -67,7 +67,7 @@ Priority questions are a coverage floor, not an exploration ceiling. Agents shou
 2. If the user supplies source locations or requests help finding them, verify enough source to cite real paths, lines, or symbols. Research incidents when requested or needed to ground user-provided context; do not mine either as a substitute for missing intent.
 3. Draft guidance using the template and hard rules, with enough detail for the requested scope.
 4. Show the draft to the user before writing it, including any sections intentionally omitted.
-5. Write the approved text to a user-chosen path and show the corresponding `specula run --guidance=/absolute/path/to/file ...` command.
+5. Write the approved text to a user-chosen path and show the corresponding `specular run --guidance=/absolute/path/to/file ...` command.
 
 ## Anti-patterns
 

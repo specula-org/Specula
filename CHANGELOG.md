@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Renamed the project from Specula to Specular: the command is now `specular`, environment variables use the `SPECULAR_` prefix, and run outputs go to `.specular-output/`. Existing installs must switch once; see [Switching from Specula](docs/Usage.md#switching-from-specula).
+
 ## [1.2.0] - 2026-09-16
 
 ### Added

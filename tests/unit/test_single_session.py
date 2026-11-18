@@ -14,22 +14,22 @@ from pathlib import Path
 
 import pytest
 
-from specula import context_control as control
-from specula import context_runner as runner
-from specula import delegation, output_contract, resumelib, rules, single_session, stop_gate
-from specula import pipelinelib as pl
-from specula.agent_config import AgentConfigError, AgentSelection, load_agent_routing
-from specula.notes import NOTES_ENV, notes_section
-from specula.phaselib import Workspace, _retry_prompt
-from specula.resource_summary import PhaseState, RunDetails, TargetState, render_summary
+from specular import context_control as control
+from specular import context_runner as runner
+from specular import delegation, output_contract, resumelib, rules, single_session, stop_gate
+from specular import pipelinelib as pl
+from specular.agent_config import AgentConfigError, AgentSelection, load_agent_routing
+from specular.notes import NOTES_ENV, notes_section
+from specular.phaselib import Workspace, _retry_prompt
+from specular.resource_summary import PhaseState, RunDetails, TargetState, render_summary
 
 
 @pytest.fixture(autouse=True)
 def _clean_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     for key in (
-        "SPECULA_RUN_DIR",
-        "SPECULA_PHASE",
-        "SPECULA_WORK_DIR",
+        "SPECULAR_RUN_DIR",
+        "SPECULAR_PHASE",
+        "SPECULAR_WORK_DIR",
         resumelib.INVOCATION_ENV,
         resumelib.MANUAL_ENV,
         resumelib.FRESH_ENV,
@@ -192,7 +192,7 @@ def test_agent_config_conflict_stays_phased_or_rejects_single_session(tmp_path: 
 
 
 def test_incremental_keeps_its_own_path() -> None:
-    from specula.ci_workflow import CIPipeline
+    from specular.ci_workflow import CIPipeline
 
     pipeline = CIPipeline()
     pipeline.incremental = True
@@ -289,7 +289,7 @@ def test_strict_outputs_are_stored_for_single_session_runs_and_restored_on_attac
     attach._restore_resume_configuration(document)
     assert os.environ[output_contract.STRICT_ENV] == "on" and output_contract.strict()
     assert attach.resume_notices == [
-        "SPECULA_STRICT_OUTPUTS: this run was created with strict outputs on; keeping that instead of the "
+        "SPECULAR_STRICT_OUTPUTS: this run was created with strict outputs on; keeping that instead of the "
         "current off so its main session keeps the same instructions"
     ]
     relaxed, _, _ = parse(["--run-id=x"])
@@ -320,7 +320,7 @@ def test_delegation_is_stored_for_single_session_runs_and_restored_on_attach(mon
     attach._restore_resume_configuration(document)
     assert os.environ[delegation.DELEGATION_ENV] == "on" and delegation.enabled()
     assert attach.resume_notices == [
-        "SPECULA_DELEGATION: this run was created with delegation guidance on; keeping that instead of the "
+        "SPECULAR_DELEGATION: this run was created with delegation guidance on; keeping that instead of the "
         "current off so its main session keeps the same instructions"
     ]
     older, _, _ = parse(["--run-id=x"])
@@ -403,7 +403,7 @@ def run_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[t
     resumelib.initialize_run(run)
     source = tmp_path / "source"
     source.mkdir()
-    monkeypatch.setenv("SPECULA_RUN_DIR", str(run))
+    monkeypatch.setenv("SPECULAR_RUN_DIR", str(run))
     monkeypatch.setenv(resumelib.INVOCATION_ENV, "a" * 32)
     single_session.apply_prompt_defaults()  # as a single-session run's pipeline does
     ws = Workspace(["t|org/t|Go|Raft"], artifact=str(source), run_dir=run)
@@ -528,7 +528,7 @@ def test_main_prompt_from_existing_analysis_starts_at_spec_generation(run_worksp
         lines = text.splitlines()
         return "\n".join(line for line in lines[3:] if not line.startswith("1. **Code analysis**"))
 
-    marker = re.compile(r"specula-skill:[0-9a-f]+")
+    marker = re.compile(r"specular-skill:[0-9a-f]+")
     assert marker.sub("", outside(prompt)) == marker.sub("", outside(default))
 
 
@@ -661,8 +661,8 @@ def test_a_main_session_that_simply_succeeds_is_not_accepted(run_workspace: tupl
 def configure_request(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, phase: str = "main") -> Path:
     work = tmp_path / "work"
     (work / "spec").mkdir(parents=True)
-    monkeypatch.setenv("SPECULA_PHASE", phase)
-    monkeypatch.setenv("SPECULA_WORK_DIR", str(work))
+    monkeypatch.setenv("SPECULAR_PHASE", phase)
+    monkeypatch.setenv("SPECULAR_WORK_DIR", str(work))
     monkeypatch.setenv(control.REQUEST_ENV, str(tmp_path / "request.json"))
     monkeypatch.setenv(control.TOKEN_ENV, "token")
     return work
@@ -692,7 +692,7 @@ def test_main_confirmation_request_requires_consumed_repairs(monkeypatch: pytest
     rr = work / "spec/repair-requests/RR-001.md"
     rr.write_text(rr.read_text().replace("OPEN", "CONSUMED"))
     assert control.request_confirmation()["status"] == "requested"
-    monkeypatch.setenv("SPECULA_PHASE", "spec_validation")
+    monkeypatch.setenv("SPECULAR_PHASE", "spec_validation")
     with pytest.raises(ValueError, match="single-session Specula main session"):
         control.request_confirmation()
 
@@ -749,14 +749,14 @@ def test_strict_outputs_reach_the_precheck_and_its_mcp_server(monkeypatch: pytes
     with pytest.raises(ValueError, match="`analysis-report.md` is missing"):
         control.request_confirmation()
     config = control.mcp_config(Path("python"), Path("server.py"), dict(os.environ))
-    assert config["mcpServers"]["specula_context"]["env"][output_contract.STRICT_ENV] == "on"
-    monkeypatch.setenv("SPECULA_PHASE", "incremental")  # the incremental CI server never reads it
+    assert config["mcpServers"]["specular_context"]["env"][output_contract.STRICT_ENV] == "on"
+    monkeypatch.setenv("SPECULAR_PHASE", "incremental")  # the incremental CI server never reads it
     config = control.mcp_config(Path("python"), Path("server.py"), dict(os.environ))
-    assert output_contract.STRICT_ENV not in config["mcpServers"]["specula_context"]["env"]
-    monkeypatch.setenv("SPECULA_PHASE", "main")
+    assert output_contract.STRICT_ENV not in config["mcpServers"]["specular_context"]["env"]
+    monkeypatch.setenv("SPECULAR_PHASE", "main")
     monkeypatch.delenv(output_contract.STRICT_ENV)
     config = control.mcp_config(Path("python"), Path("server.py"), dict(os.environ))
-    assert output_contract.STRICT_ENV not in config["mcpServers"]["specula_context"]["env"]
+    assert output_contract.STRICT_ENV not in config["mcpServers"]["specular_context"]["env"]
 
 
 def test_request_script_keeps_the_incremental_failure_output(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -787,8 +787,8 @@ def test_request_script_reports_a_refusal_without_requesting(monkeypatch: pytest
 
 def test_stop_gate_main_contract_pauses_only_for_compaction(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     work = configure_request(monkeypatch, tmp_path)
-    monkeypatch.setenv("SPECULA_CONTEXT_REQUEST", str(tmp_path / "request.json"))
-    monkeypatch.setenv("SPECULA_CONTEXT_TOKEN", "token")
+    monkeypatch.setenv("SPECULAR_CONTEXT_REQUEST", str(tmp_path / "request.json"))
+    monkeypatch.setenv("SPECULAR_CONTEXT_TOKEN", "token")
     assert stop_gate.CONTRACTS["main"] == "spec/bug-report.md"
     allowed, reason = stop_gate.decide("main", work)
     assert not allowed and "spec/bug-report.md" in reason
@@ -799,7 +799,7 @@ def test_stop_gate_main_contract_pauses_only_for_compaction(monkeypatch: pytest.
     (tmp_path / "request.json").write_text(json.dumps({"token": "token", "handoff_path": "h.md"}))
     assert stop_gate.decide("main", work)[0]
     # Only the yield itself pauses: a turn that kept working past its request meets the contract.
-    assert stop_gate.decide("main", work, last_message="Saved.\nSPECULA_CONTEXT_YIELD token\n")[0]
+    assert stop_gate.decide("main", work, last_message="Saved.\nSPECULAR_CONTEXT_YIELD token\n")[0]
     allowed, reason = stop_gate.decide("main", work, last_message="Kept working; all done.")
     assert not allowed and "spec/bug-report.md" in reason
     hook = subprocess.run(
@@ -807,7 +807,7 @@ def test_stop_gate_main_contract_pauses_only_for_compaction(monkeypatch: pytest.
         input=json.dumps({"stop_hook_active": False, "last_assistant_message": "Kept working; all done."}),
         capture_output=True,
         text=True,
-        env={**os.environ, "SPECULA_PHASE": "main", "SPECULA_WORK_DIR": str(work)},
+        env={**os.environ, "SPECULAR_PHASE": "main", "SPECULAR_WORK_DIR": str(work)},
     )
     assert json.loads(hook.stdout)["decision"] == "block"
     (tmp_path / "request.json").unlink()
@@ -822,9 +822,9 @@ def fake_adapter(tmp_path: Path, name: str, body: str) -> Path:
         f"#!{sys.executable}\n"
         "import json,os,sys\nfrom pathlib import Path\n"
         f"sys.path.insert(0,{str(real_src)!r})\n"
-        "from specula.context_control import request_compaction, request_confirmation\n"
+        "from specular.context_control import request_compaction, request_confirmation\n"
         "opts=dict(x[2:].split('=',1) for x in sys.argv[1:] if x.startswith('--') and '=' in x)\n"
-        "work=Path(os.environ['SPECULA_WORK_DIR']); log=Path(opts['log']); resume=Path(opts['resume-state'])\n"
+        "work=Path(os.environ['SPECULAR_WORK_DIR']); log=Path(opts['log']); resume=Path(opts['resume-state'])\n"
         "prompt=Path(opts['prompt-file']).read_text()\n"
         "def respond(text):\n"
         " log.write_text(text+'\\n'); log.with_suffix('.last-message.txt').write_text(text+'\\n')\n" + body
@@ -920,7 +920,7 @@ def test_runner_compacts_main_then_records_explicit_confirmation(
         "else:\n"
         " (work/'handoff.md').write_text('Stage 2 done; next: harness.')\n"
         " request_compaction('handoff.md')\n"
-        "respond('SPECULA_CONTEXT_YIELD '+os.environ['SPECULA_CONTEXT_TOKEN'])\n",
+        "respond('SPECULAR_CONTEXT_YIELD '+os.environ['SPECULAR_CONTEXT_TOKEN'])\n",
     )
     assert runner.run(adapter, runner_args(work)) == control.CONFIRMATION_YIELD_RC
     request = json.loads((work / control.CONFIRMATION_REQUEST).read_text())
@@ -937,7 +937,7 @@ def test_runner_compacts_main_then_records_explicit_confirmation(
 def test_incremental_ordinary_ending_is_still_not_a_handoff(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     work = configure_request(monkeypatch, tmp_path, phase="incremental")
     monkeypatch.setattr(runner, "ROOT", tmp_path)
-    adapter = fake_adapter(tmp_path, "codex", "respond('SPECULA_INCREMENTAL_COMPLETE run')\n")
+    adapter = fake_adapter(tmp_path, "codex", "respond('SPECULAR_INCREMENTAL_COMPLETE run')\n")
     assert runner.run(adapter, runner_args(work)) == 0
     assert not (work / control.CONFIRMATION_REQUEST).exists()
 
@@ -1040,8 +1040,8 @@ def test_adapters_expose_context_tools_to_single_session_phases(tmp_path: Path, 
     directory = tmp_path / "control"
     directory.mkdir()
     env = runner.tool_environment(directory, work, Path(sys.executable), agent)
-    env = {key: env[key] for key in env if key.startswith("SPECULA_CONTEXT")}
-    env.update({"SPECULA_PHASE": phase, "SPECULA_WORK_DIR": str(work), "SPECULA_STOP_GATE": "off"})
+    env = {key: env[key] for key in env if key.startswith("SPECULAR_CONTEXT")}
+    env.update({"SPECULAR_PHASE": phase, "SPECULAR_WORK_DIR": str(work), "SPECULAR_STOP_GATE": "off"})
     env["COPILOT_HELP_TEXT"] = "--autopilot --additional-mcp-config"
     fake = {"claude-code": "claude", "copilot-cli": "copilot"}.get(agent, agent)
     fixture = json.dumps(adapters.CLAUDE_JSON) if agent == "claude-code" else ""
@@ -1070,12 +1070,12 @@ def test_adapters_expose_context_tools_to_single_session_phases(tmp_path: Path, 
     if agent == "claude-code":
         assert ("--mcp-config" in argv and argv[argv.index("--mcp-config") + 1] == env[control.MCP_ENV]) is wired
     elif agent == "codex":
-        assert ("mcp_servers.specula_context=" + env["SPECULA_CONTEXT_CODEX_CONFIG"] in argv) is wired
+        assert ("mcp_servers.specular_context=" + env["SPECULAR_CONTEXT_CODEX_CONFIG"] in argv) is wired
     elif agent == "copilot-cli":
         assert ("--additional-mcp-config" in argv) is wired
     elif agent == "opencode":
         config = json.loads(observed["opencode_config"] or "{}")
-        assert ("specula_context" in config.get("mcp", {})) is wired
+        assert ("specular_context" in config.get("mcp", {})) is wired
     else:
         extension = str(Path(runner.ROOT) / "tools/context_control/pi-extension.js")
         assert (extension in argv) is wired

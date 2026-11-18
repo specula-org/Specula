@@ -14,7 +14,7 @@ posture cannot be expressed in srt's settings-file schema.
 
 - `backend.mjs` — the shim. Reads `sandbox.json`, translates it to an srt runtime
   config, runs the command inside the sandbox.
-- `sandbox.default.json` — the default config, copied to `~/.specula/sandbox.json`
+- `sandbox.default.json` — the default config, copied to `~/.specular/sandbox.json`
   on first run.
 
 ## Requirements
@@ -30,8 +30,8 @@ backend.mjs --workspace DIR [--config PATH] -- CMD [ARGS...]
 ```
 
 `--workspace` is the writable run directory (`${WORKSPACE}` in the config).
-Config is resolved in order: `--config PATH` → `<cwd>/.specula/sandbox.json` →
-`~/.specula/sandbox.json` (written from the default on first run).
+Config is resolved in order: `--config PATH` → `<cwd>/.specular/sandbox.json` →
+`~/.specular/sandbox.json` (written from the default on first run).
 
 ## Config (`sandbox.json`)
 
@@ -86,11 +86,11 @@ instruments and patches, and per-language build caches (`target/`, `~/.cargo`,
 will fail until you grant them.
 
 Grant them without hand-editing the config by exporting
-`SPECULA_SANDBOX_EXTRA_WRITE` (a `:`-separated path list the launcher can set per
+`SPECULAR_SANDBOX_EXTRA_WRITE` (a `:`-separated path list the launcher can set per
 run):
 
 ```bash
-export SPECULA_SANDBOX_EXTRA_WRITE="/path/to/artifact:$HOME/.cargo:$HOME/.cache"
+export SPECULAR_SANDBOX_EXTRA_WRITE="/path/to/artifact:$HOME/.cargo:$HOME/.cache"
 ```
 
 or add the same paths to `write.allow` in `sandbox.json`.

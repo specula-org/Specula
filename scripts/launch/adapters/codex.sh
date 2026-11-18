@@ -46,10 +46,10 @@ system_prompt_file_set=false
 # empty flag can still win and clear them.
 EFFORT="${CODEX_EFFORT:-}"
 MODEL="${CODEX_MODEL:-}"
-POLICY_BLOCKED_RC=76  # Keep in sync with src/specula/adapters/utils/policy.py.
+POLICY_BLOCKED_RC=76  # Keep in sync with src/specular/adapters/utils/policy.py.
 PLAIN_POLICY_DIAGNOSTIC_RC=77  # Internal event-stream candidate; never returned to the runner.
-TRANSIENT_FAILURE_RC=74  # Keep in sync with src/specula/adapters/utils/transient.py.
-AUTH_REFRESH_FAILURE_RC=72  # Keep in sync with src/specula/adapters/utils/transient.py.
+TRANSIENT_FAILURE_RC=74  # Keep in sync with src/specular/adapters/utils/transient.py.
+AUTH_REFRESH_FAILURE_RC=72  # Keep in sync with src/specular/adapters/utils/transient.py.
 PLAIN_TRANSIENT_DIAGNOSTIC_RC=78  # Internal event-stream candidate; never returned to the runner.
 RESUME_STATE_FAILURE_RC=79  # Internal event-stream integrity failure; never returned to the runner.
 
@@ -78,7 +78,7 @@ done
 # fallback variables into Codex itself: an explicit `--model=` / `--effort=`
 # must genuinely return to config.toml defaults.
 unset CODEX_MODEL CODEX_EFFORT
-unset SPECULA_RESUME_STATE SPECULA_RESUME_MODEL SPECULA_RESUME_EFFORT
+unset SPECULAR_RESUME_STATE SPECULAR_RESUME_MODEL SPECULAR_RESUME_EFFORT
 
 # ── Validate arguments ──
 
@@ -147,14 +147,14 @@ if [[ -n "$PROMPT_FILE" ]]; then
 fi
 
 ADAPTER_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SPECULA_SRC="$ADAPTER_DIR/../../../src"
+SPECULAR_SRC="$ADAPTER_DIR/../../../src"
 RESUME_CWD="$(pwd -P)"
 RESUME_SESSION_ID=""
 
 read_resume_session_id() {
   local -a profile_arg=()
   [[ -n "$CODEX_PROFILE" ]] && profile_arg=("$CODEX_PROFILE")
-  python3 -I "$SPECULA_SRC/specula/adapters/utils/resume.py" read \
+  python3 -I "$SPECULAR_SRC/specular/adapters/utils/resume.py" read \
     "$RESUME_STATE" codex "$RESUME_CWD" "$MODEL" "$EFFORT" ${profile_arg[@]+"${profile_arg[@]}"}
 }
 
@@ -432,27 +432,27 @@ PY
 run_codex() {
   local log_file="$1"
   local last_message_file="${log_file%.log}.last-message.txt"
-  local activity_log="${SPECULA_ACTIVITY_LOG:-/dev/null}"
+  local activity_log="${SPECULAR_ACTIVITY_LOG:-/dev/null}"
   local session_id_file=""
   local adapter_dir
-  local specula_src
+  local specular_src
   adapter_dir="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  specula_src="$adapter_dir/../../../src"
+  specular_src="$adapter_dir/../../../src"
   # ── Optional outer srt sandbox (M1.3) ──
-  # Opt-in via SPECULA_SANDBOX=on; additive — off/unset leaves the codex argv
+  # Opt-in via SPECULAR_SANDBOX=on; additive — off/unset leaves the codex argv
   # byte-for-byte. One outer layer wraps codex and every descendant (TLC/MCP/
   # build); the inner --dangerously-bypass-approvals-and-sandbox stays (YOLO,
   # no nested second sandbox). Backend path repo-relative, overridable.
   local -a cmd=()
-  if [[ "${SPECULA_SANDBOX:-}" == "on" ]]; then
+  if [[ "${SPECULAR_SANDBOX:-}" == "on" ]]; then
     local backend
-    backend="${SPECULA_SANDBOX_BACKEND:-$adapter_dir/../sandbox/backend.mjs}"
-    cmd+=(node "$backend" --workspace "${SPECULA_WORK_DIR:-$PWD}")
-    [[ -n "${SPECULA_SANDBOX_CONFIG:-}" ]] && cmd+=(--config "$SPECULA_SANDBOX_CONFIG")
+    backend="${SPECULAR_SANDBOX_BACKEND:-$adapter_dir/../sandbox/backend.mjs}"
+    cmd+=(node "$backend" --workspace "${SPECULAR_WORK_DIR:-$PWD}")
+    [[ -n "${SPECULAR_SANDBOX_CONFIG:-}" ]] && cmd+=(--config "$SPECULAR_SANDBOX_CONFIG")
     cmd+=(--)
   fi
   local code_mode_enabled=""
-  if [[ -n "${SPECULA_TLC_TOOL_CODEX:-}" ]]; then
+  if [[ -n "${SPECULAR_TLC_TOOL_CODEX:-}" ]]; then
     # A nested override replaces boolean code_mode=true with a table. Preserve
     # Codex's resolved feature state in the same environment as the session.
     # cmd is empty unless sandboxed; bash < 4.4 (macOS /bin/bash) treats an
@@ -467,7 +467,7 @@ run_codex() {
     esac
   fi
   if [[ -z "$RESUME_STATE" ]]; then
-    if ! session_id_file="$(mktemp "${TMPDIR:-/tmp}/specula-codex-session-XXXXXX.id")"; then
+    if ! session_id_file="$(mktemp "${TMPDIR:-/tmp}/specular-codex-session-XXXXXX.id")"; then
       session_id_file=""
       echo "codex adapter: usage unavailable: unable to create session ID file" >&2
     fi
@@ -479,14 +479,14 @@ run_codex() {
   cmd+=(codex exec --dangerously-bypass-approvals-and-sandbox --output-last-message "$last_message_file")
   # Keep one large tool result from jumping past Codex's auto-compaction point.
   cmd+=(-c "tool_output_token_limit=10000")
-  # Context-control phases (specula.context_control.CONTEXT_CONTROL_PHASES) get the context tools.
-  if [[ ( "${SPECULA_PHASE:-}" == "incremental" || "${SPECULA_PHASE:-}" == "main" ) && -n "${SPECULA_CONTEXT_CODEX_CONFIG:-}" ]]; then
-    cmd+=(-c "mcp_servers.specula_context=$SPECULA_CONTEXT_CODEX_CONFIG")
+  # Context-control phases (specular.context_control.CONTEXT_CONTROL_PHASES) get the context tools.
+  if [[ ( "${SPECULAR_PHASE:-}" == "incremental" || "${SPECULAR_PHASE:-}" == "main" ) && -n "${SPECULAR_CONTEXT_CODEX_CONFIG:-}" ]]; then
+    cmd+=(-c "mcp_servers.specular_context=$SPECULAR_CONTEXT_CODEX_CONFIG")
   fi
-  if [[ -n "${SPECULA_TLC_TOOL_CODEX:-}" ]]; then
-    cmd+=(-c "mcp_servers.specula_tlc=$SPECULA_TLC_TOOL_CODEX")
+  if [[ -n "${SPECULAR_TLC_TOOL_CODEX:-}" ]]; then
+    cmd+=(-c "mcp_servers.specular_tlc=$SPECULAR_TLC_TOOL_CODEX")
     # Keep a blocking TLC wait out of Code Mode's yielding exec/wait loop.
-    cmd+=(-c 'features.code_mode.direct_only_tool_namespaces=["mcp__specula_tlc"]')
+    cmd+=(-c 'features.code_mode.direct_only_tool_namespaces=["mcp__specular_tlc"]')
     cmd+=(-c "features.code_mode.enabled=$code_mode_enabled")
   fi
   # Model / reasoning effort (additive — empty leaves codex config.toml default).
@@ -537,8 +537,8 @@ sys.stdout.write(json.dumps(text, ensure_ascii=False).replace("\x7f", "\\u007f")
     stream_args+=("$session_id_file")
   fi
   printf '%s' "$PROMPT" | "${cmd[@]}" --json - 2>&1 | python3 -I -c \
-    'import sys; sys.path.insert(0, sys.argv.pop(1)); from specula.adapters.utils.event_stream import main; raise SystemExit(main(sys.argv[1:]))' \
-    "$specula_src" "${stream_args[@]}"
+    'import sys; sys.path.insert(0, sys.argv.pop(1)); from specular.adapters.utils.event_stream import main; raise SystemExit(main(sys.argv[1:]))' \
+    "$specular_src" "${stream_args[@]}"
   pipeline_status=("${PIPESTATUS[@]}")
   codex_rc="${pipeline_status[1]}"
   stream_rc="${pipeline_status[2]}"
@@ -596,9 +596,9 @@ sys.stdout.write(json.dumps(text, ensure_ascii=False).replace("\x7f", "\\u007f")
 }
 
 # ── Stop gate (execution layer) ──
-# Generic gate interface: the phase launcher exports SPECULA_PHASE +
-# SPECULA_WORK_DIR (see src/specula/stop_gate.py). Parallel workers may narrow
-# gate state/PID scanning with SPECULA_STOP_GATE_WORK_DIR. Codex discovers
+# Generic gate interface: the phase launcher exports SPECULAR_PHASE +
+# SPECULAR_WORK_DIR (see src/specular/stop_gate.py). Parallel workers may narrow
+# gate state/PID scanning with SPECULAR_STOP_GATE_WORK_DIR. Codex discovers
 # hooks from the project layer (<git toplevel of cwd>/.codex/hooks.json), so arm
 # the gate by writing a Stop hook there; per-run specifics travel via env, so the file
 # content is identical for every run. A hooks.json THIS run created is removed
@@ -611,12 +611,12 @@ sys.stdout.write(json.dumps(text, ensure_ascii=False).replace("\x7f", "\\u007f")
 # The whole block is fail-open: under this script's `set -e`, any setup
 # failure (no python3, read-only fs) must disarm the gate with a warning,
 # never kill the adapter before codex even starts.
-GATE_WORK_DIR="${SPECULA_STOP_GATE_WORK_DIR:-${SPECULA_WORK_DIR:-}}"
-if [[ -n "${SPECULA_PHASE:-}" && -n "${SPECULA_WORK_DIR:-}" \
-      && "${SPECULA_STOP_GATE:-on}" != "off" && -d "${SPECULA_WORK_DIR:-}" \
+GATE_WORK_DIR="${SPECULAR_STOP_GATE_WORK_DIR:-${SPECULAR_WORK_DIR:-}}"
+if [[ -n "${SPECULAR_PHASE:-}" && -n "${SPECULAR_WORK_DIR:-}" \
+      && "${SPECULAR_STOP_GATE:-on}" != "off" && -d "${SPECULAR_WORK_DIR:-}" \
       && -d "$GATE_WORK_DIR" ]]; then
   ADAPTER_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  GATE_PY="$ADAPTER_DIR/../../../src/specula/stop_gate.py"
+  GATE_PY="$ADAPTER_DIR/../../../src/specular/stop_gate.py"
   HOOKS_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
   HOOKS_FILE="$HOOKS_ROOT/.codex/hooks.json"
   HOOKS_PREEXISTED=false

@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from specula import output_index as oi
+from specular import output_index as oi
 
 
 class OutputIndexCase(unittest.TestCase):
@@ -29,8 +29,8 @@ class OutputIndexCase(unittest.TestCase):
 class TestRunIndex(OutputIndexCase):
     def test_minimal_deterministic_status_and_noop_refresh(self) -> None:
         run_root = self.root / "run"
-        beta = run_root / "beta" / ".specula-output"
-        alpha = run_root / "alpha" / ".specula-output"
+        beta = run_root / "beta" / ".specular-output"
+        alpha = run_root / "alpha" / ".specular-output"
         for work_dir in (beta, alpha):
             self.write(work_dir, "confirmed-bugs.md")
             self.write(work_dir, "bug-severity.md")
@@ -55,8 +55,8 @@ class TestRunIndex(OutputIndexCase):
 
             | Target | Results | Confirmation | Severity |
             |---|---|---|---|
-            | beta | [Open results](beta/.specula-output/index.md) | [Open report](beta/.specula-output/confirmed-bugs.md) | [Open report](beta/.specula-output/bug-severity.md) |
-            | alpha | [Open results](alpha/.specula-output/index.md) | [Open report](alpha/.specula-output/confirmed-bugs.md) | [Open report](alpha/.specula-output/bug-severity.md) |
+            | beta | [Open results](beta/.specular-output/index.md) | [Open report](beta/.specular-output/confirmed-bugs.md) | [Open report](beta/.specular-output/bug-severity.md) |
+            | alpha | [Open results](alpha/.specular-output/index.md) | [Open report](alpha/.specular-output/confirmed-bugs.md) | [Open report](alpha/.specular-output/bug-severity.md) |
 
             ## Run Status
 
@@ -87,7 +87,7 @@ class TestRunIndex(OutputIndexCase):
 
 class TestTargetIndex(OutputIndexCase):
     def test_final_reports_lead_supporting_analysis_without_reviews_or_machine_files(self) -> None:
-        work_dir = self.root / ".specula-output"
+        work_dir = self.root / ".specular-output"
         for relative in (
             "summary.md",
             "modeling-brief.md",
@@ -156,7 +156,7 @@ class TestTargetIndex(OutputIndexCase):
             self.assertNotIn(hidden_from_humans, rendered)
 
     def test_optional_sections_only_show_available_human_documents(self) -> None:
-        work_dir = self.root / "run" / "demo" / ".specula-output"
+        work_dir = self.root / "run" / "demo" / ".specular-output"
         self.write(work_dir, "spec/findings.json")
         self.write(work_dir, "spec/candidates.json")
         self.write(work_dir, "confirmation/MC-1/verdict.json")
@@ -185,7 +185,7 @@ class TestTargetIndex(OutputIndexCase):
             self.assertNotIn(machine_file, rendered)
 
     def test_single_session_targets_omit_absent_advisory_documents(self) -> None:
-        work_dir = self.root / "run" / "demo" / ".specula-output"
+        work_dir = self.root / "run" / "demo" / ".specular-output"
         for relative in ("modeling-brief.md", "spec/bug-report.md", "spec/instrumentation-spec.md"):
             self.write(work_dir, relative)
         phased = oi.render_target_index("demo", work_dir)
@@ -193,7 +193,7 @@ class TestTargetIndex(OutputIndexCase):
         self.assertIn("Validation changelog: Not available", phased)
 
         self.write(work_dir, ".context-control/main-state.json", "{}\n")
-        with mock.patch.dict(os.environ, {"SPECULA_STRICT_OUTPUTS": ""}):
+        with mock.patch.dict(os.environ, {"SPECULAR_STRICT_OUTPUTS": ""}):
             tolerant = oi.render_target_index("demo", work_dir)
         table = tolerant.split("|---:|---|---|\n", 1)[1].split("\n\n", 1)[0]
         self.assertEqual(
@@ -204,24 +204,24 @@ class TestTargetIndex(OutputIndexCase):
         )
         self.assertNotIn("Not available", table)
         (work_dir / "spec/bug-report.md").unlink()  # a missing required document is still shown as missing
-        with mock.patch.dict(os.environ, {"SPECULA_STRICT_OUTPUTS": ""}):
+        with mock.patch.dict(os.environ, {"SPECULAR_STRICT_OUTPUTS": ""}):
             self.assertIn("| 3 | Model-checking report: Not available |", oi.render_target_index("demo", work_dir))
-        with mock.patch.dict(os.environ, {"SPECULA_STRICT_OUTPUTS": "on"}):
+        with mock.patch.dict(os.environ, {"SPECULAR_STRICT_OUTPUTS": "on"}):
             self.assertIn("| 2 | Analysis report: Not available |", oi.render_target_index("demo", work_dir))
 
     def test_working_notes_index_is_listed_under_technical_details_only_when_present(self) -> None:
-        work_dir = self.root / ".specula-output"
+        work_dir = self.root / ".specular-output"
         self.write(work_dir, "notes/build-recipe.md")
-        with mock.patch.dict(os.environ, {"SPECULA_NOTES": "on"}):
+        with mock.patch.dict(os.environ, {"SPECULAR_NOTES": "on"}):
             without_index = oi.render_target_index("demo", work_dir)
         self.assertNotIn("## Technical Details", without_index)
         self.assertNotIn("notes/", without_index)
 
         self.write(work_dir, "notes/INDEX.md", "- build-recipe.md — how to build\n")
         self.write(work_dir, "spec/repair-ledger.md")
-        with mock.patch.dict(os.environ, {"SPECULA_NOTES": ""}):
+        with mock.patch.dict(os.environ, {"SPECULAR_NOTES": ""}):
             self.assertNotIn("Working notes", oi.render_target_index("demo", work_dir))  # notes off: as before
-        with mock.patch.dict(os.environ, {"SPECULA_NOTES": "on"}):
+        with mock.patch.dict(os.environ, {"SPECULAR_NOTES": "on"}):
             rendered = oi.render_target_index("demo", work_dir)
         technical = rendered.split("## Technical Details", 1)[1]
         self.assertIn("- Working notes: [INDEX.md](notes/INDEX.md)", technical)
@@ -232,20 +232,20 @@ class TestTargetIndex(OutputIndexCase):
     def test_symlinked_working_notes_are_not_listed(self) -> None:
         outside = self.root / "outside"
         self.write(outside, "INDEX.md")
-        linked_file = self.root / "file" / ".specula-output"
+        linked_file = self.root / "file" / ".specular-output"
         (linked_file / "notes").mkdir(parents=True)
         (linked_file / "notes" / "INDEX.md").symlink_to(outside / "INDEX.md")
-        linked_dir = self.root / "dir" / ".specula-output"
+        linked_dir = self.root / "dir" / ".specular-output"
         linked_dir.mkdir(parents=True)
         (linked_dir / "notes").symlink_to(outside, target_is_directory=True)
         for work_dir in (linked_file, linked_dir):
-            with self.subTest(work_dir=work_dir), mock.patch.dict(os.environ, {"SPECULA_NOTES": "on"}):
+            with self.subTest(work_dir=work_dir), mock.patch.dict(os.environ, {"SPECULAR_NOTES": "on"}):
                 rendered = oi.render_target_index("demo", work_dir)
                 self.assertNotIn("Working notes", rendered)
                 self.assertNotIn("## Technical Details", rendered)
 
     def test_confirmation_rows_are_sorted_partial_and_match_reproductions_by_finding(self) -> None:
-        work_dir = self.root / ".specula-output"
+        work_dir = self.root / ".specular-output"
         self.write(work_dir, "confirmation/MC-2/investigation.md")
         self.write(work_dir, "confirmation/MC-1/debate.md")
         self.write(work_dir, "confirmation/MC-3/verdict.json")
@@ -275,7 +275,7 @@ class TestTargetIndex(OutputIndexCase):
 
 class TestIndexSafety(OutputIndexCase):
     def test_symlinked_inputs_and_unlisted_trees_are_never_followed(self) -> None:
-        work_dir = self.root / ".specula-output"
+        work_dir = self.root / ".specular-output"
         work_dir.mkdir()
         outside = self.root / "outside"
         self.write(outside, "document.md")
@@ -296,7 +296,7 @@ class TestIndexSafety(OutputIndexCase):
         self.assertNotIn("## Technical Details", rendered)
         self.assertNotIn("unlisted.md", rendered)
 
-        parent_symlink = self.root / "parent-symlink" / ".specula-output"
+        parent_symlink = self.root / "parent-symlink" / ".specular-output"
         parent_symlink.mkdir(parents=True)
         self.write(outside, "base.tla")
         (parent_symlink / "spec").symlink_to(outside, target_is_directory=True)
@@ -304,7 +304,7 @@ class TestIndexSafety(OutputIndexCase):
         self.assertNotIn("[base.tla]", parent_rendered)
         self.assertNotIn("## Technical Details", parent_rendered)
 
-        safe_confirmation = self.root / "safe" / ".specula-output"
+        safe_confirmation = self.root / "safe" / ".specular-output"
         self.write(safe_confirmation, "confirmation/MC-1/debate.md")
         repro_dir = safe_confirmation / "repro"
         repro_dir.mkdir()
@@ -318,7 +318,7 @@ class TestIndexSafety(OutputIndexCase):
 
     def test_markdown_text_and_relative_urls_are_safe(self) -> None:
         run_root = self.root / "run"
-        work_dir = run_root / "two words [x] #1 (v1)" / ".specula-output"
+        work_dir = run_root / "two words [x] #1 (v1)" / ".specular-output"
         oi.write_target_index("target", work_dir, output_root=run_root)
         target_name = "bad|<script>[x]\nnext"
 
@@ -331,7 +331,7 @@ class TestIndexSafety(OutputIndexCase):
 
         self.assertIn("| bad\\|&lt;script&gt;\\[x\\] next |", rendered)
         self.assertIn(
-            "[Open results](two%20words%20%5Bx%5D%20%231%20%28v1%29/.specula-output/index.md)",
+            "[Open results](two%20words%20%5Bx%5D%20%231%20%28v1%29/.specular-output/index.md)",
             rendered,
         )
         self.assertNotIn("<script>", rendered)
@@ -339,7 +339,7 @@ class TestIndexSafety(OutputIndexCase):
         self.assertTrue(target_rendered.startswith("# bad\\|&lt;script&gt;\\[x\\] next Results\n"))
 
     def test_writing_replaces_an_index_symlink_without_touching_its_target(self) -> None:
-        work_dir = self.root / ".specula-output"
+        work_dir = self.root / ".specular-output"
         work_dir.mkdir()
         outside = self.root / "outside-index.md"
         outside.write_text("outside stays unchanged\n")
@@ -359,14 +359,14 @@ class TestIndexSafety(OutputIndexCase):
         run_root.mkdir()
         outside.mkdir()
         (run_root / "target").symlink_to(outside, target_is_directory=True)
-        work_dir = run_root / "target" / ".specula-output"
+        work_dir = run_root / "target" / ".specular-output"
 
         with self.assertRaisesRegex(OSError, "crosses a symlink"):
             oi.write_target_index("target", work_dir, output_root=run_root)
 
-        self.assertFalse((outside / ".specula-output").exists())
+        self.assertFalse((outside / ".specular-output").exists())
 
-        self.write(outside, ".specula-output/index.md")
+        self.write(outside, ".specular-output/index.md")
         rendered = oi.render_run_index(
             run_root,
             [oi.TargetOutput("target", work_dir, run_root)],
@@ -397,7 +397,7 @@ class TestIndexSafety(OutputIndexCase):
 
     @unittest.skipUnless(os.name == "posix", "invalid-byte filenames are a POSIX behavior")
     def test_invalid_utf8_filename_does_not_block_index(self) -> None:
-        work_dir = self.root / ".specula-output"
+        work_dir = self.root / ".specular-output"
         self.write(work_dir, "confirmation/MC-1/investigation.md")
         repro = work_dir / "repro"
         repro.mkdir()
@@ -424,7 +424,7 @@ class TestAtomicIndexWrite(OutputIndexCase):
             observed.append((source, destination))
             real_replace(source, destination)
 
-        with mock.patch("specula.output_index.os.replace", side_effect=observe_replace):
+        with mock.patch("specular.output_index.os.replace", side_effect=observe_replace):
             self.assertTrue(oi._atomic_write_if_changed(index, "new complete index\n"))
 
         self.assertEqual(len(observed), 1)
@@ -433,7 +433,7 @@ class TestAtomicIndexWrite(OutputIndexCase):
         self.assertEqual(list(self.root.glob(".index.md.*.tmp")), [])
 
         with (
-            mock.patch("specula.output_index.os.replace", side_effect=OSError("injected replace failure")),
+            mock.patch("specular.output_index.os.replace", side_effect=OSError("injected replace failure")),
             self.assertRaisesRegex(OSError, "injected replace failure"),
         ):
             oi._atomic_write_if_changed(index, "unpublished index\n")
@@ -446,7 +446,7 @@ class TestAtomicIndexWrite(OutputIndexCase):
         index.write_text("same bytes\n")
         modified_before = index.stat().st_mtime_ns
 
-        with mock.patch("specula.output_index.os.replace") as replace:
+        with mock.patch("specular.output_index.os.replace") as replace:
             self.assertFalse(oi._atomic_write_if_changed(index, "same bytes\n"))
 
         replace.assert_not_called()

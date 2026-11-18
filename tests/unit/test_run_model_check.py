@@ -20,7 +20,7 @@ import time
 import unittest
 from pathlib import Path
 
-from specula import stop_gate as sg
+from specular import stop_gate as sg
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -33,7 +33,7 @@ class RunModelCheckTests(unittest.TestCase):
         self.work = self.root / "work"
         self.bin = self.root / "bin"
         self.tmp = self.root / "tmp"
-        for directory in (self.work, self.bin, self.tmp, self.root / "lib", self.root / "src/specula"):
+        for directory in (self.work, self.bin, self.tmp, self.root / "lib", self.root / "src/specular"):
             directory.mkdir(parents=True, exist_ok=True)
 
         for relative in (
@@ -45,7 +45,7 @@ class RunModelCheckTests(unittest.TestCase):
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(REPO_ROOT / relative, destination)
         (self.root / "scripts/infra/run_model_check.sh").symlink_to("../tlc/run_model_check.sh")
-        shutil.copy2(REPO_ROOT / "src/specula/tlc_resources.py", self.root / "src/specula/tlc_resources.py")
+        shutil.copy2(REPO_ROOT / "src/specular/tlc_resources.py", self.root / "src/specular/tlc_resources.py")
 
         # The wrapper only checks that the jar exists; fake java never reads it.
         (self.root / "lib/tla2tools.jar").touch()
@@ -76,28 +76,28 @@ class RunModelCheckTests(unittest.TestCase):
     def env(self, **updates: str) -> dict[str, str]:
         env = os.environ.copy()
         for name in (
-            "SPECULA_RUN_DIR",
-            "SPECULA_WORK_DIR",
-            "SPECULA_STOP_GATE_WORK_DIR",
-            "SPECULA_TLC_ADMISSION_STATUS",
-            "SPECULA_TLC_MEMORY_LIMIT",
-            "SPECULA_TLC_WORKER_LIMIT",
-            "SPECULA_TLC_RESOURCE_DIR",
-            "SPECULA_TLC_SCOPE",
+            "SPECULAR_RUN_DIR",
+            "SPECULAR_WORK_DIR",
+            "SPECULAR_STOP_GATE_WORK_DIR",
+            "SPECULAR_TLC_ADMISSION_STATUS",
+            "SPECULAR_TLC_MEMORY_LIMIT",
+            "SPECULAR_TLC_WORKER_LIMIT",
+            "SPECULAR_TLC_RESOURCE_DIR",
+            "SPECULAR_TLC_SCOPE",
             "TLC_STATE_DIR",
             "FAKE_JAVA_HOLD",
             "FAKE_JAVA_EXIT",
             "FAKE_JAVA_PID",
-            "SPECULA_TLC_AUTO_WORKERS",
+            "SPECULAR_TLC_AUTO_WORKERS",
         ):
             env.pop(name, None)
         env.update(
             {
                 "PATH": f"{self.bin}{os.pathsep}{env['PATH']}",
-                "SPECULA_ROOT": str(self.root),
-                "SPECULA_TLC_MEMORY_LIMIT": "4G",
-                "SPECULA_TLC_RESOURCE_DIR": str(self.root / "resources"),
-                "SPECULA_TLC_SCOPE": str(self.root / "run"),
+                "SPECULAR_ROOT": str(self.root),
+                "SPECULAR_TLC_MEMORY_LIMIT": "4G",
+                "SPECULAR_TLC_RESOURCE_DIR": str(self.root / "resources"),
+                "SPECULAR_TLC_SCOPE": str(self.root / "run"),
                 "TMPDIR": str(self.tmp),
                 "FAKE_JAVA_LOG": str(self.java_log),
             }
@@ -132,11 +132,11 @@ class RunModelCheckTests(unittest.TestCase):
             text=True,
             timeout=10,
             check=False,
-            pass_fds=(int(env["SPECULA_TLC_TOOL_LIFELINE_FD"]),) if "SPECULA_TLC_TOOL_LIFELINE_FD" in env else (),
+            pass_fds=(int(env["SPECULAR_TLC_TOOL_LIFELINE_FD"]),) if "SPECULAR_TLC_TOOL_LIFELINE_FD" in env else (),
         )
 
     def test_explicit_worker_budget_rejects_before_java_starts(self) -> None:
-        result = self.run_wrapper(self.env(SPECULA_TLC_WORKER_LIMIT="4"), "rejected.log")
+        result = self.run_wrapper(self.env(SPECULAR_TLC_WORKER_LIMIT="4"), "rejected.log")
 
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
         self.assertIn("worker limit: 4", result.stdout)
@@ -159,7 +159,7 @@ class RunModelCheckTests(unittest.TestCase):
         self.assertEqual(argv[argv.index("-workers") + 1], "auto")
         self.assertEqual(argv[argv.index("-cp") + 1], str(self.root / "lib/tla2tools.jar"))
 
-    def test_specula_root_relocation_uses_one_runtime_root(self) -> None:
+    def test_specular_root_relocation_uses_one_runtime_root(self) -> None:
         relocated_wrapper = self.root / "relocated/scripts/tlc/run_model_check.sh"
         relocated_wrapper.parent.mkdir(parents=True)
         relocated_wrapper.symlink_to(self.root / "scripts/tlc/run_model_check.sh")
@@ -190,8 +190,8 @@ class RunModelCheckTests(unittest.TestCase):
         gate_dir.mkdir()
         env = self.env(
             FAKE_JAVA_HOLD="1",
-            SPECULA_TLC_MEMORY_LIMIT="3G",
-            SPECULA_WORK_DIR=str(gate_dir),
+            SPECULAR_TLC_MEMORY_LIMIT="3G",
+            SPECULAR_WORK_DIR=str(gate_dir),
         )
         wrapper = subprocess.Popen(
             [str(self.root / "scripts/tlc/run_model_check.sh"), *self.wrapper_args("killed-wrapper.log")],
@@ -332,7 +332,7 @@ class RunModelCheckTests(unittest.TestCase):
         return result, Path(f"{log}.pid")
 
     def test_background_rejection_returns_nonzero_without_pid_file(self) -> None:
-        result, pid_file = self.run_background(self.env(SPECULA_TLC_WORKER_LIMIT="4"), "background-rejected.log")
+        result, pid_file = self.run_background(self.env(SPECULAR_TLC_WORKER_LIMIT="4"), "background-rejected.log")
 
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
         self.assertIn("result: rejected", result.stdout)
@@ -342,7 +342,7 @@ class RunModelCheckTests(unittest.TestCase):
 
     def test_background_auto_worker_probe_uses_tlc_script_path(self) -> None:
         result, pid_file = self.run_background(
-            self.env(SPECULA_TLC_AUTO_WORKERS="", SPECULA_TLC_WORKER_LIMIT="4"),
+            self.env(SPECULAR_TLC_AUTO_WORKERS="", SPECULAR_TLC_WORKER_LIMIT="4"),
             "background-probe-rejected.log",
         )
 
@@ -370,7 +370,7 @@ class RunModelCheckTests(unittest.TestCase):
         gate_dir = self.root / "gate"
         gate_dir.mkdir()
         result, pid_file = self.run_background(
-            self.env(FAKE_JAVA_HOLD="1", SPECULA_WORK_DIR=str(gate_dir)),
+            self.env(FAKE_JAVA_HOLD="1", SPECULAR_WORK_DIR=str(gate_dir)),
             "background-owner-registry.log",
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

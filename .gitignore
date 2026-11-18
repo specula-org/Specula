@@ -5,6 +5,7 @@
 .vscode/
 .idea/
 .env
+.specular
 .specula
 
 # Runtime logs
@@ -66,7 +67,7 @@ generation_summary.json
 # (an unanchored `specula` pattern lived here — a rename artifact from the
 # `specula+` era that ignored the CLI entrypoint and the src/ package, and would
 # silently swallow any future path component named `specula`; nothing generates
-# bare `specula` paths — pipeline output goes to .specula-output/)
+# bare `specula` paths — pipeline output goes to .specular-output/)
 models/
 
 # claude
@@ -100,6 +101,7 @@ tools/cfa/tests
 .claude/skills
 .agents/skills
 .github/skills
+.specular-codex/
 .specula-codex/
 .codex/
 src/skills/.system
@@ -136,6 +138,9 @@ experiments/
 # RQ2 baseline target lists: machine-specific paths; libspdm one is confidential
 scripts/exp/ablation/targets_rq2*.txt
 # Generated output / caches
+.specular-output/
+.specular-lite/
+# Left behind by runs from before the Specula -> Specular rename.
 .specula-output/
 .specula-lite/
 # Per-run isolated workspaces (launch_pipeline.sh --isolate); experiment

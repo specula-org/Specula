@@ -11,6 +11,6 @@ PHASE_PROMPTS=(
   "no-trace-validation-p2.md"  # Phase 2: Spec Gen (no Trace.tla needed)
 )
 
-SPECULA_SKILLS=("code_analysis" "spec_generation")
+SPECULAR_SKILLS=("code_analysis" "spec_generation")
 TLAPLUS_SKILLS=()
 MCP_TOOLS=true

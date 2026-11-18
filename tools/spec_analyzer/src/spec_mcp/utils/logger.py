@@ -12,7 +12,7 @@ import os
 import sys
 
 # Default log directory
-DEFAULT_LOG_DIR = os.path.join(os.path.expanduser("~"), ".specula", "logs", "spec_analyzer")
+DEFAULT_LOG_DIR = os.path.join(os.path.expanduser("~"), ".specular", "logs", "spec_analyzer")
 
 
 def setup_logging(

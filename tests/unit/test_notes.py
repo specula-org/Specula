@@ -1,4 +1,4 @@
-"""Unit tests for the free working-notes prompt sections (src/specula/notes.py)."""
+"""Unit tests for the free working-notes prompt sections (src/specular/notes.py)."""
 
 from __future__ import annotations
 
@@ -8,10 +8,10 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from specula import notes
-from specula.prompts import PROMPTS_DIR
+from specular import notes
+from specular.prompts import PROMPTS_DIR
 
-WORK = Path("/runs/demo/target/.specula-output")
+WORK = Path("/runs/demo/target/.specular-output")
 FINDING = WORK / "confirmation" / "MC-1"
 
 

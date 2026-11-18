@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from specula import skill_install
+from specular import skill_install
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -37,16 +37,22 @@ class SkillInstallCase(unittest.TestCase):
         (path / "SKILL.md").write_text(f"---\n{name_line}\ndescription: test\n---\n\nInstructions.\n")
         return path
 
-    def checkout(self, folder: str) -> Path:
+    def checkout(self, folder: str, *, package: str = "specular", title: str = "Specular") -> Path:
         checkout = self.root / folder
         (checkout / "scripts" / "infra").mkdir(parents=True)
-        (checkout / "src" / "specula").mkdir(parents=True)
+        (checkout / "src" / package).mkdir(parents=True)
         (checkout / "skills").mkdir()
-        (checkout / "pyproject.toml").write_text('[project]\nname = "specula"\n')
-        (checkout / "README.md").write_text("# Specula: test checkout\n")
+        (checkout / "pyproject.toml").write_text(f'[project]\nname = "{package}"\n')
+        (checkout / "README.md").write_text(f"# {title}: test checkout\n")
         (checkout / "scripts" / "infra" / "setup.sh").write_text('SKILLS_SOURCE="$PROJECT_ROOT/skills"\n')
-        (checkout / "src" / "specula" / "__init__.py").write_text("")
+        (checkout / "src" / package / "__init__.py").write_text("")
         return checkout
+
+    def test_checkouts_from_before_and_after_the_rename_are_recognized(self) -> None:
+        for package, title in (("specular", "Specular"), ("specula", "Specula")):
+            with self.subTest(package=package):
+                checkout = self.checkout(f"checkout-{package}", package=package, title=title)
+                self.assertTrue(skill_install._is_specular_skills_root(checkout / "skills"))
 
     def legacy_checkout(self, folder: str) -> Path:
         checkout = self.root / folder
@@ -89,7 +95,7 @@ class TestInstallSkills(SkillInstallCase):
                 "harness-generation",
                 "incremental-modeling",
                 "spec-generation",
-                "specula-lite",
+                "specular-lite",
                 "tla-checking-workflow",
                 "tla-trace-workflow",
                 "validation-workflow",
@@ -362,7 +368,7 @@ class TestInstallSkills(SkillInstallCase):
         self.assertTrue(result.migrated_legacy_root)
         self.assertTrue((self.target / "code-analysis").is_symlink())
 
-    def test_unrelated_project_named_specula_is_not_treated_as_owned(self) -> None:
+    def test_unrelated_project_named_specular_is_not_treated_as_owned(self) -> None:
         for folder, name in (
             ("code_analysis", "code-analysis"),
             ("spec_generation", "spec-generation"),
@@ -371,12 +377,12 @@ class TestInstallSkills(SkillInstallCase):
             self.skill(folder, name)
         lookalike = self.root / "lookalike"
         (lookalike / "scripts" / "infra").mkdir(parents=True)
-        (lookalike / "src" / "specula").mkdir(parents=True)
+        (lookalike / "src" / "specular").mkdir(parents=True)
         (lookalike / "skills").mkdir()
-        (lookalike / "pyproject.toml").write_text('[project]\nname = "specula"\n')
+        (lookalike / "pyproject.toml").write_text('[project]\nname = "specular"\n')
         (lookalike / "README.md").write_text("# A different project\n")
         (lookalike / "scripts" / "infra" / "setup.sh").write_text("#!/bin/sh\n")
-        (lookalike / "src" / "specula" / "__init__.py").write_text("")
+        (lookalike / "src" / "specular" / "__init__.py").write_text("")
         for folder, name in (
             ("code_analysis", "code-analysis"),
             ("spec_generation", "spec-generation"),
@@ -393,7 +399,7 @@ class TestInstallSkills(SkillInstallCase):
 
     def test_current_checkout_without_readme_title_is_recognized(self) -> None:
         # The README no longer opens with a "# Specula:" title.
-        self.assertTrue(skill_install._is_specula_skills_root(REPO_ROOT / "skills"))
+        self.assertTrue(skill_install._is_specular_skills_root(REPO_ROOT / "skills"))
         current = self.skill("code_analysis", "code-analysis")
         old_checkout = self.checkout("checkout-current")
         (old_checkout / "README.md").write_text('<p align="center">\n')
@@ -411,18 +417,18 @@ class TestInstallSkills(SkillInstallCase):
             (
                 ("pyproject.toml", '[project]\nname = "other"\n'),
                 ("scripts/infra/setup.sh", "#!/bin/sh\n"),
-                ("src/specula/__init__.py", None),
+                ("src/specular/__init__.py", None),
             )
         ):
             with self.subTest(marker=marker):
                 checkout = self.checkout(f"checkout-{index}")
                 (checkout / "README.md").write_text('<p align="center">\n')
-                self.assertTrue(skill_install._is_specula_skills_root(checkout / "skills"))
+                self.assertTrue(skill_install._is_specular_skills_root(checkout / "skills"))
                 if content is None:
                     (checkout / marker).unlink()
                 else:
                     (checkout / marker).write_text(content)
-                self.assertFalse(skill_install._is_specula_skills_root(checkout / "skills"))
+                self.assertFalse(skill_install._is_specular_skills_root(checkout / "skills"))
 
     def test_live_old_checkout_with_third_party_skill_is_preserved(self) -> None:
         self.skill("code_analysis", "code-analysis")

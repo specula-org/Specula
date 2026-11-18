@@ -149,7 +149,7 @@ class TestCopilotMcpSetup(unittest.TestCase):
                             "type": "local",
                             "command": first_python,
                             "args": [first_server],
-                            "env": {"SPECULA_ROOT": str(project_root)},
+                            "env": {"SPECULAR_ROOT": str(project_root)},
                         },
                         "mcpServers": {},
                     }
@@ -172,13 +172,13 @@ class TestCopilotMcpSetup(unittest.TestCase):
                 "command": command,
                 "args": [server],
                 "env": {
-                    "SPECULA_ROOT": configured_project,
+                    "SPECULAR_ROOT": configured_project,
                     "USER_SETTING": "preserved",
                 },
             }
             if existing == "invalid_schema":
                 server_config["env"] = {
-                    "SPECULA_ROOT": str(project_root),
+                    "SPECULAR_ROOT": str(project_root),
                     "BAD": 123,
                 }
             if existing != "omitted_tools":
@@ -284,7 +284,7 @@ class TestCopilotMcpSetup(unittest.TestCase):
                         "add",
                         name,
                         "--env",
-                        f"SPECULA_ROOT={project_root}",
+                        f"SPECULAR_ROOT={project_root}",
                         "--",
                         python_path,
                         server_path,

@@ -25,7 +25,7 @@ from pathlib import Path
 
 import pytest
 
-from specula import quota
+from specular import quota
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 USAGE_SH = REPO_ROOT / "scripts" / "exp" / "usage.sh"

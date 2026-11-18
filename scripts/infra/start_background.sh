@@ -66,9 +66,9 @@ echo "Arguments:         ${PASSTHROUGH_ARGS[*]}"
 # the log after reporting a false-successful launch.
 # We cd to WORK_DIR so relative paths for spec/config work.
 cd "$WORK_DIR"
-ADMISSION_DIR="$(mktemp -d "${TMPDIR:-/tmp}/specula-tlc-admission-XXXXXX")"
+ADMISSION_DIR="$(mktemp -d "${TMPDIR:-/tmp}/specular-tlc-admission-XXXXXX")"
 ADMISSION_FILE="$ADMISSION_DIR/status"
-SPECULA_TLC_ADMISSION_STATUS="$ADMISSION_FILE" \
+SPECULAR_TLC_ADMISSION_STATUS="$ADMISSION_FILE" \
     nohup "$RUN_SCRIPT" "${PASSTHROUGH_ARGS[@]}" > "$LOG_PATH" 2>&1 &
 PID=$!
 PID_FILE=""
@@ -161,7 +161,7 @@ echo "$PID" > "$PID_FILE"
 # so an absolute/out-of-scope log path or a pruned TLC directory cannot hide a
 # live process from the gate. Outside a Specula agent run the env var is absent
 # and this helper keeps its historical standalone behaviour.
-GATE_WORK_DIR="${SPECULA_STOP_GATE_WORK_DIR:-${SPECULA_WORK_DIR:-}}"
+GATE_WORK_DIR="${SPECULAR_STOP_GATE_WORK_DIR:-${SPECULAR_WORK_DIR:-}}"
 if [[ -n "$GATE_WORK_DIR" ]]; then
     REGISTRY_DIR="$GATE_WORK_DIR/.stop-gate/background-pids"
     REGISTRY_TMP="$REGISTRY_DIR/.${PID}.$$.tmp"

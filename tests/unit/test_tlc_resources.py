@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import contextlib
 import fcntl
+import io
 import json
 import multiprocessing
 import os
@@ -24,7 +25,7 @@ from pathlib import Path
 from typing import Any, cast
 from unittest import mock
 
-from specula import tlc_resources as tr
+from specular import tlc_resources as tr
 
 
 def _wait_for_file(path: Path, timeout: float = 5.0) -> str:
@@ -171,6 +172,21 @@ class ResourceCase(unittest.TestCase):
         if not isinstance(value, dict):
             raise AssertionError("ledger must contain a JSON object")
         return cast(dict[str, Any], value)
+
+
+class TestPreRenameEnvironment(unittest.TestCase):
+    def test_owner_refuses_pre_rename_budget_variables(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            files = {name: root / name for name in ("lease", "status", "report", "start", "stop")}
+            argv = ["owner", "--heap=1G", "--offheap=1G", "--workers=1", "--workers-label=1"]
+            argv += [f"--{name}-file={path}" for name, path in files.items()]
+            argv += [f"--parent-pid={os.getpid()}", "--", "true"]
+            err = io.StringIO()
+            with mock.patch.dict(os.environ, {"SPECULA_TLC_MEMORY_LIMIT": "200G"}), contextlib.redirect_stderr(err):
+                rc = tr.main(argv)
+        self.assertEqual(rc, 2)
+        self.assertIn("SPECULA_TLC_MEMORY_LIMIT -> SPECULAR_TLC_MEMORY_LIMIT", err.getvalue())
 
 
 class TestParsing(unittest.TestCase):

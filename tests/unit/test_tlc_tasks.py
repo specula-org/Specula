@@ -22,10 +22,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import test_adapters as adapters
 import test_run_model_check as wrappers
 
-from specula import context_runner, phaselib
-from specula import tlc_resources as resources
-from specula import tlc_tasks as tasks
-from specula.adapters.utils.resume import capture_session_id
+from specular import context_runner, phaselib
+from specular import tlc_resources as resources
+from specular import tlc_tasks as tasks
+from specular.adapters.utils.resume import capture_session_id
 
 
 @pytest.fixture(autouse=True)
@@ -41,12 +41,12 @@ def runtime(monkeypatch: pytest.MonkeyPatch) -> Iterator[wrappers.RunModelCheckT
     fixture = wrappers.RunModelCheckTests()
     fixture.setUp()
     for key in list(os.environ):
-        if key.startswith("SPECULA_TLC_TOOL_"):
+        if key.startswith("SPECULAR_TLC_TOOL_"):
             monkeypatch.delenv(key)
     for key, value in fixture.env().items():
         monkeypatch.setenv(key, value)
-    monkeypatch.setenv("SPECULA_WORK_DIR", str(fixture.work))
-    monkeypatch.setenv("SPECULA_TLC_TOOL_OWNER", str(fixture.work / "agent.log"))
+    monkeypatch.setenv("SPECULAR_WORK_DIR", str(fixture.work))
+    monkeypatch.setenv("SPECULAR_TLC_TOOL_OWNER", str(fixture.work / "agent.log"))
     java = fixture.bin / "java"
     java.write_text(
         '#!/bin/sh\nprintf \'TLC fixture output\\n\'\nsleep "${FAKE_JAVA_SECONDS:-0.3}"\nexit "${FAKE_JAVA_EXIT:-0}"\n'
@@ -121,7 +121,7 @@ def managed_job(
         )
     owner = runtime.work / "agent.log"
     parent_lock = tasks._launcher_lock(runtime.work, owner)
-    monkeypatch.setenv("SPECULA_TLC_TOOL_PARENT_LOCK", str(parent_lock))
+    monkeypatch.setenv("SPECULAR_TLC_TOOL_PARENT_LOCK", str(parent_lock))
     args = start_args(runtime)
     args["options"] = ["-m", "64M", "-M", "64M", "-w", "1", "-k", "0", "-t", deadline]
     started = asyncio.run(tasks.start_tlc(**args))
@@ -130,8 +130,8 @@ def managed_job(
     process: resources._ManagedProcess | None = None
     worker_pid = 0
     try:
-        wait_until(lambda: bool(list(runtime.tmp.glob("specula-tlc-control-*/owner-identity.json"))))
-        identity_file = next(runtime.tmp.glob("specula-tlc-control-*/owner-identity.json"))
+        wait_until(lambda: bool(list(runtime.tmp.glob("specular-tlc-control-*/owner-identity.json"))))
+        identity_file = next(runtime.tmp.glob("specular-tlc-control-*/owner-identity.json"))
         value = json.loads(identity_file.read_text())
         # The fixture can force a portable identity in its guard. Observe the
         # same PID using this test process's own identity format instead.
@@ -254,10 +254,10 @@ def managed_wrapper(
         f"touch '{runtime.work / 'java-started'}'\nexec sleep 60\n"
     )
     env = runtime.env(
-        SPECULA_TLC_TOOL_WORKER_LOCK=str(worker),
-        SPECULA_TLC_TOOL_STOP_FILE=str(stop),
-        SPECULA_TLC_TOOL_PARENT_LOCK=str(parent),
-        SPECULA_TLC_TOOL_LIFELINE_FD=str(lifeline_read),
+        SPECULAR_TLC_TOOL_WORKER_LOCK=str(worker),
+        SPECULAR_TLC_TOOL_STOP_FILE=str(stop),
+        SPECULAR_TLC_TOOL_PARENT_LOCK=str(parent),
+        SPECULAR_TLC_TOOL_LIFELINE_FD=str(lifeline_read),
     )
     try:
         yield env, stop, worker
@@ -313,7 +313,7 @@ def test_managed_startup_cancellation_never_starts_java(
             stderr=subprocess.PIPE,
             text=True,
             start_new_session=True,
-            pass_fds=(int(env["SPECULA_TLC_TOOL_LIFELINE_FD"]),),
+            pass_fds=(int(env["SPECULAR_TLC_TOOL_LIFELINE_FD"]),),
         )
         try:
             wait_until(barrier.exists)
@@ -322,7 +322,7 @@ def test_managed_startup_cancellation_never_starts_java(
             else:
                 # Simulate lost ownership by removing the observed path. The
                 # original test owner keeps its descriptor for safe teardown.
-                (worker if cancellation == "worker-lost" else Path(env["SPECULA_TLC_TOOL_PARENT_LOCK"])).unlink()
+                (worker if cancellation == "worker-lost" else Path(env["SPECULAR_TLC_TOOL_PARENT_LOCK"])).unlink()
             proceed.touch()
             stdout, stderr = process.communicate(timeout=10)
             assert process.returncode != 0, stdout + stderr
@@ -349,7 +349,7 @@ def test_managed_deadline_keeps_timeout_exit_code(runtime: wrappers.RunModelChec
             capture_output=True,
             text=True,
             timeout=10,
-            pass_fds=(int(env["SPECULA_TLC_TOOL_LIFELINE_FD"]),),
+            pass_fds=(int(env["SPECULAR_TLC_TOOL_LIFELINE_FD"]),),
         )
     assert result.returncode == 124, result.stdout + result.stderr
     assert (runtime.work / "java-started").exists()
@@ -359,7 +359,7 @@ def test_managed_deadline_keeps_timeout_exit_code(runtime: wrappers.RunModelChec
 def test_deadline_waits_for_a_watchdog_that_already_fired(runtime: wrappers.RunModelCheckTests, managed: bool) -> None:
     wrapper = runtime.root / "scripts/tlc/run_model_check.sh"
     wrapper.write_text(wrapper.read_text().replace("TIMEOUT_MINUTES * 60", "TIMEOUT_MINUTES * 1"))
-    guard = runtime.root / "src/specula/tlc_resources.py"
+    guard = runtime.root / "src/specular/tlc_resources.py"
     fired = "timed_out = enforce_timeout(args.pid, args.seconds, args.status_file)"
     source = guard.read_text()
     assert fired in source
@@ -367,14 +367,14 @@ def test_deadline_waits_for_a_watchdog_that_already_fired(runtime: wrappers.RunM
     guard.write_text(source.replace(fired, f"{fired}\n            time.sleep(0.5)"))
     with managed_wrapper(runtime) as (env, _stop, _worker):
         if not managed:
-            env = {key: value for key, value in env.items() if not key.startswith("SPECULA_TLC_TOOL_")}
+            env = {key: value for key, value in env.items() if not key.startswith("SPECULAR_TLC_TOOL_")}
         result = subprocess.run(
             [str(wrapper), *runtime.wrapper_args("slow-watchdog.log"), "-t", "1"],
             env=env,
             capture_output=True,
             text=True,
             timeout=10,
-            pass_fds=(int(env["SPECULA_TLC_TOOL_LIFELINE_FD"]),) if managed else (),
+            pass_fds=(int(env["SPECULAR_TLC_TOOL_LIFELINE_FD"]),) if managed else (),
         )
     assert result.returncode == 124, result.stdout + result.stderr
 
@@ -387,10 +387,10 @@ def test_idle_managed_job_does_not_spawn_ps(
     # Spawn the worker from the fixture too, so an installed TLC jar cannot
     # make it bypass the modified guard below.
     for filename in ("__init__.py", "context_control.py", "tlc_tasks.py"):
-        shutil.copy2(tasks.ROOT / "src/specula" / filename, runtime.root / "src/specula" / filename)
-    monkeypatch.setattr(tasks, "__file__", str(runtime.root / "src/specula/tlc_tasks.py"))
+        shutil.copy2(tasks.ROOT / "src/specular" / filename, runtime.root / "src/specular" / filename)
+    monkeypatch.setattr(tasks, "__file__", str(runtime.root / "src/specular/tlc_tasks.py"))
     if portable:
-        guard = runtime.root / "src/specula/tlc_resources.py"
+        guard = runtime.root / "src/specular/tlc_resources.py"
         source = guard.read_text().replace('Path(f"/proc/{pid}/stat")', 'Path(f"/absent-proc/{pid}/stat")')
         source = source.replace('Path(f"/proc/{self.pid}/stat")', 'Path(f"/absent-proc/{self.pid}/stat")')
         guard.write_text(source.replace('hasattr(os, "pidfd_open")', "False"))
@@ -536,7 +536,7 @@ async def test_disappeared_launcher_stops_tlc(
     runtime: wrappers.RunModelCheckTests, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("FAKE_JAVA_SECONDS", "30")
-    monkeypatch.setenv("SPECULA_TLC_TOOL_PARENT_LOCK", str(runtime.work / "absent-parent.lock"))
+    monkeypatch.setenv("SPECULAR_TLC_TOOL_PARENT_LOCK", str(runtime.work / "absent-parent.lock"))
     started = await tasks.start_tlc(**start_args(runtime))
     result = await tasks.wait_tlc([started["task_id"]], timeout_seconds=10)
     assert result["tasks"][0]["status"] == "interrupted"
@@ -574,21 +574,21 @@ def test_runtime_registration_is_local_and_preserves_budgets(tmp_path: Path) -> 
     tool.mkdir(parents=True)
     (tool / "python").symlink_to(sys.executable)
     env = {
-        "SPECULA_WORK_DIR": str(tmp_path / "work"),
-        "SPECULA_PHASE": "spec_validation",
-        "SPECULA_TLC_MEMORY_LIMIT": "8G",
-        "SPECULA_TLC_WORKER_LIMIT": "4",
+        "SPECULAR_WORK_DIR": str(tmp_path / "work"),
+        "SPECULAR_PHASE": "spec_validation",
+        "SPECULAR_TLC_MEMORY_LIMIT": "8G",
+        "SPECULAR_TLC_WORKER_LIMIT": "4",
         "SECRET": "never copy me",
     }
     tasks.prepare_environment(env, tmp_path / "agent.log", tmp_path)
-    saved = json.loads(Path(env["SPECULA_TLC_TOOL_CONFIG"]).read_text())["mcpServers"]["specula_tlc"]
-    assert saved["env"]["SPECULA_TLC_MEMORY_LIMIT"] == "8G"
-    assert saved["env"]["SPECULA_TLC_WORKER_LIMIT"] == "4"
+    saved = json.loads(Path(env["SPECULAR_TLC_TOOL_CONFIG"]).read_text())["mcpServers"]["specular_tlc"]
+    assert saved["env"]["SPECULAR_TLC_MEMORY_LIMIT"] == "8G"
+    assert saved["env"]["SPECULAR_TLC_WORKER_LIMIT"] == "4"
     assert "SECRET" not in saved["env"]
-    assert "SPECULA_TLC_TOOL_PARENT" not in saved["env"]
-    assert tasks._lock_is_held(Path(saved["env"]["SPECULA_TLC_TOOL_PARENT_LOCK"]))
-    assert "tool_timeout_sec=3720" in env["SPECULA_TLC_TOOL_CODEX"]
-    assert json.loads(env["SPECULA_TLC_TOOL_JSON"])["mcpServers"]["specula_tlc"]["timeout"] == 3720000
+    assert "SPECULAR_TLC_TOOL_PARENT" not in saved["env"]
+    assert tasks._lock_is_held(Path(saved["env"]["SPECULAR_TLC_TOOL_PARENT_LOCK"]))
+    assert "tool_timeout_sec=3720" in env["SPECULAR_TLC_TOOL_CODEX"]
+    assert json.loads(env["SPECULAR_TLC_TOOL_JSON"])["mcpServers"]["specular_tlc"]["timeout"] == 3720000
     assert not (tmp_path / ".codex/config.toml").exists()
 
 
@@ -599,17 +599,17 @@ def test_incremental_compaction_and_tlc_tools_coexist(
     tool = tmp_path / "tools/tlc_tools/.venv/bin"
     tool.mkdir(parents=True)
     (tool / "python").symlink_to(sys.executable)
-    env = {"SPECULA_WORK_DIR": str(tmp_path / "work"), "SPECULA_PHASE": "incremental"}
+    env = {"SPECULAR_WORK_DIR": str(tmp_path / "work"), "SPECULAR_PHASE": "incremental"}
     tasks.prepare_environment(env, tmp_path / "agent.log", tmp_path)
     for key, value in env.items():
         monkeypatch.setenv(key, value)
     directory = tmp_path / "context"
     directory.mkdir()
     combined = context_runner.tool_environment(directory, tmp_path / "work", Path(sys.executable), agent)
-    servers = json.loads(combined["SPECULA_CONTEXT_MCP_JSON"])["mcpServers"]
-    assert set(servers) == {"specula_context", "specula_tlc"}
+    servers = json.loads(combined["SPECULAR_CONTEXT_MCP_JSON"])["mcpServers"]
+    assert set(servers) == {"specular_context", "specular_tlc"}
     if agent == "copilot-cli":
-        assert servers["specula_tlc"]["timeout"] == tasks.CLIENT_TIMEOUT_MS
+        assert servers["specular_tlc"]["timeout"] == tasks.CLIENT_TIMEOUT_MS
 
 
 @pytest.mark.parametrize("retry", [False, True])
@@ -621,7 +621,7 @@ def test_blocking_phase_registers_tools_automatically(
     tool = tmp_path / "tools/tlc_tools/.venv/bin"
     tool.mkdir(parents=True)
     (tool / "python").symlink_to(sys.executable)
-    monkeypatch.setattr(phaselib, "SPECULA_ROOT", tmp_path)
+    monkeypatch.setattr(phaselib, "SPECULAR_ROOT", tmp_path)
     monkeypatch.setattr(phaselib, "_transient_resume_delay", lambda _attempt: 0)
     adapter = tmp_path / "fake.sh"
     log = tmp_path / "agent.log"
@@ -629,10 +629,10 @@ def test_blocking_phase_registers_tools_automatically(
         f"#!{sys.executable}\n"
         "import json,os,sys\nfrom pathlib import Path\n"
         f"sys.path.insert(0,{str(tasks.ROOT / 'src')!r})\n"
-        "from specula.tlc_tasks import _lock_is_held\n"
-        "config=json.loads(Path(os.environ['SPECULA_TLC_TOOL_CONFIG']).read_text())\n"
-        "assert 'specula_tlc' in config['mcpServers']\n"
-        "lock=Path(config['mcpServers']['specula_tlc']['env']['SPECULA_TLC_TOOL_PARENT_LOCK'])\n"
+        "from specular.tlc_tasks import _lock_is_held\n"
+        "config=json.loads(Path(os.environ['SPECULAR_TLC_TOOL_CONFIG']).read_text())\n"
+        "assert 'specular_tlc' in config['mcpServers']\n"
+        "lock=Path(config['mcpServers']['specular_tlc']['env']['SPECULAR_TLC_TOOL_PARENT_LOCK'])\n"
         "assert _lock_is_held(lock)\n"
         f"previous=Path({str(tmp_path / 'previous-lock')!r})\n"
         "if previous.exists():\n"
@@ -765,7 +765,7 @@ def test_launcher_liveness_across_pid_namespace(
     monkeypatch.setenv("FAKE_JAVA_SECONDS", "1")
     env = prepare_task_environment(runtime)
     code = (
-        "import asyncio,json\nfrom specula import tlc_tasks as t\n"
+        "import asyncio,json\nfrom specular import tlc_tasks as t\n"
         "async def run():\n"
         f" s=await t.start_tlc(**{start_args(runtime)!r})\n"
         " print(json.dumps(await t.wait_tlc([s['task_id']],timeout_seconds=10)))\n"
@@ -794,7 +794,7 @@ def sandbox_job(
 ) -> Iterator[subprocess.Popen[str]]:
     ready = runtime.work / "sandbox-ready.json"
     code = (
-        "import asyncio,contextlib,json,time\nfrom pathlib import Path\nfrom specula import tlc_tasks as t\n"
+        "import asyncio,contextlib,json,time\nfrom pathlib import Path\nfrom specular import tlc_tasks as t\n"
         "async def run():\n"
         f" s=await t.start_tlc(**{start_args(runtime)!r})\n"
         " log=Path(s['log_path']); deadline=time.monotonic()+8\n"
@@ -882,10 +882,10 @@ def test_real_launcher_exit_releases_lock_across_namespace(
     monkeypatch.setenv("FAKE_JAVA_SECONDS", "30")
     env = prepare_task_environment(runtime)
     code = (
-        "import json,os,sys\nfrom pathlib import Path\nfrom specula import tlc_tasks as t\n"
+        "import json,os,sys\nfrom pathlib import Path\nfrom specular import tlc_tasks as t\n"
         "env=dict(os.environ)\n"
         f"t.prepare_environment(env,Path({str(runtime.work / 'agent.log')!r}),Path({str(runtime.root)!r}))\n"
-        "print(json.dumps({k:v for k,v in env.items() if k.startswith('SPECULA_TLC_TOOL_')}),flush=True)\n"
+        "print(json.dumps({k:v for k,v in env.items() if k.startswith('SPECULAR_TLC_TOOL_')}),flush=True)\n"
         "sys.stdin.read()\n"
     )
     launcher = subprocess.Popen(
@@ -898,7 +898,7 @@ def test_real_launcher_exit_releases_lock_across_namespace(
     try:
         assert launcher.stdout is not None and launcher.stdin is not None
         env.update(json.loads(launcher.stdout.readline()))
-        lock = Path(env["SPECULA_TLC_TOOL_PARENT_LOCK"])
+        lock = Path(env["SPECULAR_TLC_TOOL_PARENT_LOCK"])
         assert tasks._lock_is_held(lock)
         with sandbox_job(runtime, bubblewrap, env) as process:
             if crash:
@@ -930,7 +930,7 @@ def test_all_adapters_receive_tools_without_skill_changes(tmp_path: Path, phase:
     tool = tmp_path / "tools/tlc_tools/.venv/bin"
     tool.mkdir(parents=True)
     (tool / "python").symlink_to(sys.executable)
-    env = {"SPECULA_WORK_DIR": str(tmp_path / "work"), "SPECULA_PHASE": phase, "SPECULA_STOP_GATE": "off"}
+    env = {"SPECULAR_WORK_DIR": str(tmp_path / "work"), "SPECULAR_PHASE": phase, "SPECULAR_STOP_GATE": "off"}
     tasks.prepare_environment(env, tmp_path / "agent.log", tmp_path)
     env["COPILOT_HELP_TEXT"] = "--autopilot --additional-mcp-config"
     fake = {"claude-code": "claude", "copilot-cli": "copilot"}.get(agent, agent)
@@ -966,18 +966,18 @@ def test_all_adapters_receive_tools_without_skill_changes(tmp_path: Path, phase:
         assert observed["returncode"] == 0, observed["stderr"]
         argv = observed["argv"]
         if agent == "codex":
-            assert "mcp_servers.specula_tlc=" + env["SPECULA_TLC_TOOL_CODEX"] in argv
-            assert 'features.code_mode.direct_only_tool_namespaces=["mcp__specula_tlc"]' in argv
+            assert "mcp_servers.specular_tlc=" + env["SPECULAR_TLC_TOOL_CODEX"] in argv
+            assert 'features.code_mode.direct_only_tool_namespaces=["mcp__specular_tlc"]' in argv
             assert "features.code_mode.enabled=false" in argv
             assert ("resume" in argv) is resume
         elif agent == "claude-code":
-            assert argv[argv.index("--mcp-config") + 1] == env["SPECULA_TLC_TOOL_CONFIG"]
+            assert argv[argv.index("--mcp-config") + 1] == env["SPECULAR_TLC_TOOL_CONFIG"]
         elif agent == "copilot-cli":
-            assert argv[argv.index("--additional-mcp-config") + 1] == env["SPECULA_TLC_TOOL_JSON"]
+            assert argv[argv.index("--additional-mcp-config") + 1] == env["SPECULAR_TLC_TOOL_JSON"]
         elif agent == "opencode":
             config = json.loads(observed["opencode_config"])
-            assert config["mcp"]["specula_tlc"]["timeout"] == tasks.CLIENT_TIMEOUT_MS
+            assert config["mcp"]["specular_tlc"]["timeout"] == tasks.CLIENT_TIMEOUT_MS
         else:
-            assert argv[argv.index("--extension") + 1] == env["SPECULA_TLC_TOOL_EXTENSION"]
+            assert argv[argv.index("--extension") + 1] == env["SPECULAR_TLC_TOOL_EXTENSION"]
     finally:
         case.doCleanups()

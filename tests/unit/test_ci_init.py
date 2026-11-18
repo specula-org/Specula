@@ -13,9 +13,9 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from specula import ci_init, resumelib
-from specula import pipelinelib as pl
-from specula.ci_workflow import CIPipeline
+from specular import ci_init, resumelib
+from specular import pipelinelib as pl
+from specular.ci_workflow import CIPipeline
 
 
 class TestCIInit(unittest.TestCase):
@@ -24,7 +24,7 @@ class TestCIInit(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
         self.run_dir = self.root / "run"
-        self.work = self.run_dir / "project" / ".specula-output"
+        self.work = self.run_dir / "project" / ".specular-output"
         self.work.mkdir(parents=True)
 
     def artifact(self, name: str, text: str = "retained input\n") -> Path:
@@ -253,7 +253,7 @@ class TestCIInit(unittest.TestCase):
         commits = {original: "a" * 40, private: "b" * 40}
         with (
             mock.patch.object(pl, "_git_source_commit", side_effect=lambda path: commits[path]),
-            mock.patch("specula.pipelinelib.subprocess.run", return_value=subprocess.CompletedProcess([], 0, "", "")),
+            mock.patch("specular.pipelinelib.subprocess.run", return_value=subprocess.CompletedProcess([], 0, "", "")),
         ):
             state = pipeline._ci_source_state("project")
         self.assertEqual(state["commit"], "b" * 40)
@@ -270,7 +270,7 @@ class TestCIInit(unittest.TestCase):
         pipeline.run_dir = self.run_dir
         with self.assertRaises(ci_init.CIInitError):
             pipeline.stage_guidance(["project"])
-        self.assertFalse((outside / ".specula-output/.prompt-extra.md").exists())
+        self.assertFalse((outside / ".specular-output/.prompt-extra.md").exists())
 
     def test_ci_default_guidance_never_prompts(self) -> None:
         pipeline = pl.Pipeline()

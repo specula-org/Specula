@@ -514,9 +514,9 @@ Document each fix in `fix_log.md`:
 
 2. **Verify TLA+ JAR Files:**
    ```bash
-   # Default location: specula/lib/
-   ls $SPECULA_ROOT/lib/tla2tools.jar
-   ls $SPECULA_ROOT/lib/CommunityModules-deps.jar
+   # Default location: specular/lib/
+   ls $SPECULAR_ROOT/lib/tla2tools.jar
+   ls $SPECULAR_ROOT/lib/CommunityModules-deps.jar
    ```
 
    If not present, download from:
@@ -525,7 +525,7 @@ Document each fix in `fix_log.md`:
 
 3. **Set Environment Variable (Optional):**
    ```bash
-   export SPECULA_ROOT=/path/to/specula
+   export SPECULAR_ROOT=/path/to/specular
    ```
 
 ## Quick Start

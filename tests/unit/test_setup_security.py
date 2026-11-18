@@ -13,10 +13,10 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SETUP_SCRIPT = REPO_ROOT / "scripts" / "infra" / "setup.sh"
 COPILOT_MCP_HELPER = REPO_ROOT / "scripts" / "infra" / "copilot_mcp.sh"
-SKILL_INSTALLER = REPO_ROOT / "src" / "specula" / "skill_install.py"
+SKILL_INSTALLER = REPO_ROOT / "src" / "specular" / "skill_install.py"
 SETUP_HELP = """\
 Usage:
-  specula setup
+  specular setup
 
 Install Specula's TLA+ tools, Python environments, agent skills, and MCP integrations.
 
@@ -31,8 +31,9 @@ Options:
 class TestSetupHelp(unittest.TestCase):
     def make_checkout(self, root: Path) -> tuple[Path, Path, dict[str, str], Path]:
         for relative in (
-            Path("specula"),
-            Path("src/specula/cli.py"),
+            Path("specular"),
+            Path("src/specular/cli.py"),
+            Path("src/specular/rename_check.py"),
             Path("scripts/infra/setup.sh"),
         ):
             destination = root / relative
@@ -54,7 +55,7 @@ class TestSetupHelp(unittest.TestCase):
         env["HOME"] = str(home)
         env["PATH"] = f"{bin_dir}:{env['PATH']}"
         env["SETUP_SENTINEL"] = str(sentinel)
-        return root / "specula", root / "scripts/infra/setup.sh", env, sentinel
+        return root / "specular", root / "scripts/infra/setup.sh", env, sentinel
 
     def assert_no_setup_side_effects(self, root: Path, env: dict[str, str], sentinel: Path) -> None:
         self.assertFalse(sentinel.exists())
@@ -65,7 +66,7 @@ class TestSetupHelp(unittest.TestCase):
             root / "tools/spec_analyzer/.venv",
             root / "tools/inv_checking_tool/.venv",
             root / "tools/cfa/target",
-            root / ".specula-codex",
+            root / ".specular-codex",
             root / ".claude",
             root / ".agents",
             root / ".github",
@@ -108,7 +109,7 @@ class TestSetupHelp(unittest.TestCase):
                 (["-h", "extra"], "extra"),
                 (["", "--hlep"], ""),
             ):
-                expected_error = f"specula setup: unexpected argument '{unexpected}'\n\n" + SETUP_HELP
+                expected_error = f"specular setup: unexpected argument '{unexpected}'\n\n" + SETUP_HELP
                 for command in (
                     ["bash", str(setup), *arguments],
                     ["bash", str(launcher), "setup", *arguments],
@@ -272,7 +273,7 @@ printf '\\n' >> "$FAKE_COMMAND_LOG"
             self.assertNotIn(self.AGENT_PROMPTS[agent], result.stdout + result.stderr)
             self.assertIn(self.AGENT_MISSING_MESSAGES[agent], result.stdout)
             self.assertNotIn(self.AGENT_USER_SKIP_MESSAGES[agent], result.stdout)
-        self.assertNotIn("src/specula/skill_install.py", commands)
+        self.assertNotIn("src/specular/skill_install.py", commands)
         self.assertNotIn("setup_codex_plugin.py", commands)
         self.assertNotIn("claude\tmcp", commands)
         self.assertNotIn("codex\tmcp", commands)
@@ -285,7 +286,7 @@ printf '\\n' >> "$FAKE_COMMAND_LOG"
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertIn("tools/context_control/requirements.txt", commands)
                 self.assertIn("tools/tlc_tools/requirements.txt", commands)
-                self.assertIn("src/specula/skill_install.py", commands)
+                self.assertIn("src/specular/skill_install.py", commands)
                 self.assertIn(destination, commands)
                 self.assertIn("registered automatically for incremental runs", result.stdout)
 
@@ -309,10 +310,10 @@ printf '\\n' >> "$FAKE_COMMAND_LOG"
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("y: install skills and register MCP servers separately.", result.stderr)
-        self.assertIn("plugin: bundle skills and MCP tools as specula-codex@specula", result.stderr)
-        self.assertIn("Rerun specula setup and choose plugin again to update it.", result.stderr)
+        self.assertIn("plugin: bundle skills and MCP tools as specular-codex@specular", result.stderr)
+        self.assertIn("Rerun specular setup and choose plugin again to update it.", result.stderr)
         self.assertNotIn("legacy", result.stderr.lower())
-        self.assertIn("src/specula/skill_install.py", commands)
+        self.assertIn("src/specular/skill_install.py", commands)
         self.assertNotIn("setup_codex_plugin.py", commands)
         self.assertEqual(commands.count("codex\tmcp\tadd"), 3)
 
@@ -336,10 +337,10 @@ printf '\\n' >> "$FAKE_COMMAND_LOG"
         self.assertIn("Codex does not currently support project-scoped plugin installation.", result.stdout)
         self.assertIn('ask_yn "Continue with profile-wide Codex plugin installation?"', SETUP_SCRIPT.read_text())
         self.assertIn("setup_codex_plugin.py", commands)
-        self.assertNotIn("src/specula/skill_install.py", commands)
+        self.assertNotIn("src/specular/skill_install.py", commands)
         self.assertNotIn("codex\tmcp\tadd", commands)
-        self.assertIn("Codex plugin configured: specula-codex@specula", result.stdout)
-        self.assertIn("Rerun specula setup and choose 'plugin' again", result.stdout)
+        self.assertIn("Codex plugin configured: specular-codex@specular", result.stdout)
+        self.assertIn("Rerun specular setup and choose 'plugin' again", result.stdout)
 
     def test_codex_plugin_can_be_declined_without_profile_changes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -350,7 +351,7 @@ printf '\\n' >> "$FAKE_COMMAND_LOG"
         self.assertIn("Skipped Codex plugin installation.", result.stdout)
         self.assertIn("choose 'y', then choose 'local'", result.stdout)
         self.assertNotIn("setup_codex_plugin.py", commands)
-        self.assertNotIn("src/specula/skill_install.py", commands)
+        self.assertNotIn("src/specular/skill_install.py", commands)
         self.assertNotIn("codex\tmcp", commands)
 
 
@@ -361,7 +362,7 @@ class TestSetupPythonIsolation(unittest.TestCase):
 
         self.assertIn('cd "$PROJECT_ROOT"', setup)
         self.assertIn('source "$SCRIPT_DIR/copilot_mcp.sh"', setup)
-        self.assertIn('python3 -I "$PROJECT_ROOT/src/specula/skill_install.py"', setup)
+        self.assertIn('python3 -I "$PROJECT_ROOT/src/specular/skill_install.py"', setup)
         self.assertIn('python3 -I "$SCRIPT_DIR/setup_codex_plugin.py"', setup)
         self.assertIn('python3 -I -m venv "$venv_dir"', setup)
         self.assertIn('"$python_path" -I -m pip', setup)
@@ -376,7 +377,7 @@ class TestSetupPythonIsolation(unittest.TestCase):
         self.assertIn('local config_file="$config_dir/mcp-config.json"', copilot_mcp)
         self.assertIn("python3 -I -c", copilot_mcp)
         self.assertNotIn("copilot mcp remove", copilot_mcp)
-        self.assertNotIn("python3 -m specula.skill_install", setup)
+        self.assertNotIn("python3 -m specular.skill_install", setup)
 
     def test_skill_installer_ignores_hostile_cwd_and_pythonpath(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -385,8 +386,10 @@ class TestSetupPythonIsolation(unittest.TestCase):
             source = root / "source"
             target = root / "target"
             marker = root / "hijacked"
-            attacker_package = attacker / "specula"
-            attacker_package.mkdir(parents=True)
+            # Both the current and the pre-rename package names must stay unreachable.
+            attacker_packages = [attacker / "specular", attacker / "specula"]
+            for attacker_package in attacker_packages:
+                attacker_package.mkdir(parents=True)
             source_skill = source / "code_analysis"
             source_skill.mkdir(parents=True)
             (source_skill / "SKILL.md").write_text(
@@ -395,10 +398,11 @@ class TestSetupPythonIsolation(unittest.TestCase):
             (attacker / "pathlib.py").write_text(
                 f"with open({str(marker)!r}, 'w') as stream:\n    stream.write('pathlib')\n"
             )
-            (attacker_package / "__init__.py").write_text("")
-            (attacker_package / "skill_install.py").write_text(
-                f"with open({str(marker)!r}, 'w') as stream:\n    stream.write('specula')\n"
-            )
+            for attacker_package in attacker_packages:
+                (attacker_package / "__init__.py").write_text("")
+                (attacker_package / "skill_install.py").write_text(
+                    f"with open({str(marker)!r}, 'w') as stream:\n    stream.write({attacker_package.name!r})\n"
+                )
 
             env = os.environ.copy()
             env["PYTHONPATH"] = str(attacker)

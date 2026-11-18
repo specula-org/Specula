@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from specula import output_contract as oc
-from specula.prompts import render
+from specular import output_contract as oc
+from specular.prompts import render
 
 FAKE_SANY = Path(__file__).resolve().parents[1] / "e2e/fixtures/fake_sany.py"
 
@@ -18,13 +18,13 @@ FAKE_SANY = Path(__file__).resolve().parents[1] / "e2e/fixtures/fake_sany.py"
 @pytest.fixture(autouse=True)
 def _clean_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(oc.STRICT_ENV, raising=False)
-    monkeypatch.delenv("SPECULA_ROOT", raising=False)
+    monkeypatch.delenv("SPECULAR_ROOT", raising=False)
 
 
 @pytest.fixture
 def sany(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """A fake SANY: a placeholder jar in this tree's lib/ and a fake java first on PATH; returns its call log."""
-    root = tmp_path / "specula-root"
+    root = tmp_path / "specular-root"
     (root / "lib").mkdir(parents=True)
     (root / "lib/tla2tools.jar").write_bytes(b"")
     bindir = tmp_path / "bin"
@@ -203,11 +203,11 @@ def test_sany_unavailable_is_an_error_not_a_pass(tmp_path: Path, monkeypatch: py
     monkeypatch.setattr(oc, "_ROOT", tmp_path / "no-root")
     with pytest.raises(oc.SanyUnavailable, match=r"tla2tools\.jar not found in .*no-root/lib"):
         oc.handoff_problems(work, strict=False)
-    # Like run_model_check.sh, $SPECULA_ROOT supplies the jars when this tree has none.
+    # Like run_model_check.sh, $SPECULAR_ROOT supplies the jars when this tree has none.
     (tmp_path / "other/lib").mkdir(parents=True)
     (tmp_path / "other/lib/tla2tools.jar").write_bytes(b"")
     (tmp_path / "other/lib/CommunityModules-deps.jar").write_bytes(b"")
-    monkeypatch.setenv("SPECULA_ROOT", str(tmp_path / "other"))
+    monkeypatch.setenv("SPECULAR_ROOT", str(tmp_path / "other"))
     monkeypatch.setenv("PATH", str(tmp_path / "empty-bin"))
     with pytest.raises(oc.SanyUnavailable, match="java was not found on PATH"):
         oc.handoff_problems(work, strict=False)
@@ -223,7 +223,7 @@ def _real_sany() -> tuple[str, list[Path]] | None:
         return None
 
 
-REAL_SANY = _real_sany()  # resolved before the fixtures clear SPECULA_ROOT
+REAL_SANY = _real_sany()  # resolved before the fixtures clear SPECULAR_ROOT
 
 
 @pytest.mark.skipif(REAL_SANY is None, reason="no TLA+ tools in this environment")

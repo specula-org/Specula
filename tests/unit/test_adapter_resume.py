@@ -14,9 +14,9 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
 
-from specula.adapters.utils.event_stream import stream_events
-from specula.adapters.utils.resume import ResumeStateError, capture_session_id, read_session_id
-from specula.adapters.utils.transient import (
+from specular.adapters.utils.event_stream import stream_events
+from specular.adapters.utils.resume import ResumeStateError, capture_session_id, read_session_id
+from specular.adapters.utils.transient import (
     failed_log_has_transient_failure,
     final_diagnostic_has_auth_refresh_failure,
     final_diagnostic_has_transient_failure,
@@ -61,7 +61,7 @@ class TestResumeState(unittest.TestCase):
             state = root / "turn.resume.json"
 
             with (
-                patch("specula.adapters.utils.resume.os.link", side_effect=OSError("disk full")),
+                patch("specular.adapters.utils.resume.os.link", side_effect=OSError("disk full")),
                 self.assertRaisesRegex(ResumeStateError, "cannot write"),
             ):
                 capture_session_id(
@@ -203,7 +203,7 @@ class TestResumeState(unittest.TestCase):
                 return None
 
             with (
-                patch("specula.adapters.utils.resume.os.link", side_effect=racing_link),
+                patch("specular.adapters.utils.resume.os.link", side_effect=racing_link),
                 ThreadPoolExecutor(max_workers=2) as executor,
             ):
                 outcomes = list(executor.map(capture, ("thread-one", "thread-two")))
@@ -294,9 +294,9 @@ class TestEventStreamSessionCapture(unittest.TestCase):
             with patch.dict(
                 os.environ,
                 {
-                    "SPECULA_RESUME_STATE": str(state),
-                    "SPECULA_RESUME_MODEL": "ambient-model",
-                    "SPECULA_RESUME_EFFORT": "ambient-effort",
+                    "SPECULAR_RESUME_STATE": str(state),
+                    "SPECULAR_RESUME_MODEL": "ambient-model",
+                    "SPECULAR_RESUME_EFFORT": "ambient-effort",
                 },
                 clear=False,
             ):

@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "specula"
+name = "specular"
 version = "1.2.0"
-description = "Specula: a framework for finding deep bugs in system code using TLA+."
+description = "Specular: a framework for finding deep bugs in system code using TLA+."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
@@ -20,29 +20,29 @@ dev = [
     "mypy",
 ]
 
-# The repo-root `specula` launcher is a shim to the same dispatcher.
+# The repo-root `specular` launcher is a shim to the same dispatcher.
 [project.scripts]
-specula = "specula.cli:main"
+specular = "specular.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["specula*"]
+include = ["specular*"]
 
 # Ship the externalized agent-prompt templates (markdown) inside the wheel.
 [tool.setuptools.package-data]
-"specula.prompts" = ["**/*.md"]
+"specular.prompts" = ["**/*.md"]
 
 # mypy gates only the typed migration code; the rest of the repo is untyped.
 [tool.mypy]
 python_version = "3.10"
 strict = true
 files = [
-    "src/specula",
+    "src/specular",
     "tests",
 ]
 mypy_path = "src"
 
-# Ruff config for the Specula main repo (code-cleanliness gate; see .github/workflows/ci.yml).
+# Ruff config for the Specular main repo (code-cleanliness gate; see .github/workflows/ci.yml).
 # Submodules (case-studies, tools/tlaplus*, tools/SysMoBench) and experiment/vendor
 # dirs are excluded so they are linted in their own repos, not here.
 [tool.ruff]
@@ -59,7 +59,7 @@ extend-exclude = [
     "logs",
     "_build",
     "lib",
-    ".specula-output",
+    ".specular-output",
 ]
 
 [tool.ruff.lint]
@@ -82,7 +82,7 @@ ignore = [
 "**/tests/**/*.py" = ["E402"]
 # Dual-mode entry: a sys.path bootstrap must run before the package import
 # so the file also works invoked by path (launch_pipeline.sh shim).
-"src/specula/pipelinelib.py" = ["E402"]
+"src/specular/pipelinelib.py" = ["E402"]
 
 [tool.ruff.format]
 quote-style = "double"

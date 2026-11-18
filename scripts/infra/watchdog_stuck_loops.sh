@@ -3,7 +3,7 @@
 # Watchdog: kill stuck `until grep ... ; sleep` wait-loops left by claude
 # agents after TLC dies silently.
 #
-# Detection: a case's .specula-output/ has no file write in N minutes,
+# Detection: a case's .specular-output/ has no file write in N minutes,
 #            AND there are sleeping bash subshells under claude that match
 #            the wait-loop cmdline pattern.
 # Action:    SIGTERM the matching bash subshells (NOT claude itself).
@@ -21,8 +21,8 @@ THRESHOLD_MIN=60        # idle minutes before considered stuck
 INTERVAL_SEC=600        # check every N seconds
 CASE_PATTERN="_2"       # only watch cases matching this glob suffix (case-studies/ and runs/)
 # Repo root, derived from this script's location (scripts/infra/). Override with
-# $SPECULA_ROOT if the script is run from a copy outside the tree.
-SPECULA_ROOT="${SPECULA_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+# $SPECULAR_ROOT if the script is run from a copy outside the tree.
+SPECULAR_ROOT="${SPECULAR_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -60,7 +60,7 @@ check_case() {
     local case_dir="$1"
     local case_name
     case_name=$(basename "$case_dir")
-    local outdir="$case_dir/.specula-output"
+    local outdir="$case_dir/.specular-output"
 
     [[ -d "$outdir" ]] || return
     [[ -f "$outdir/pipeline-summary.md" ]] && return       # done (legacy layout)
@@ -111,13 +111,13 @@ check_case() {
 log "Watchdog started: threshold=${THRESHOLD_MIN}min, interval=${INTERVAL_SEC}s, pattern=*${CASE_PATTERN}"
 
 while true; do
-    # legacy layout: case-studies/<name>/.specula-output
-    for case_dir in "$SPECULA_ROOT"/case-studies/*${CASE_PATTERN}/; do
+    # legacy layout: case-studies/<name>/.specular-output
+    for case_dir in "$SPECULAR_ROOT"/case-studies/*${CASE_PATTERN}/; do
         [[ -d "$case_dir" ]] || continue
         check_case "$case_dir"
     done
-    # isolated layout (now the default): runs/<run-id>/<name>/.specula-output
-    for case_dir in "$SPECULA_ROOT"/runs/*/*${CASE_PATTERN}/; do
+    # isolated layout (now the default): runs/<run-id>/<name>/.specular-output
+    for case_dir in "$SPECULAR_ROOT"/runs/*/*${CASE_PATTERN}/; do
         [[ -d "$case_dir" ]] || continue
         [[ "$case_dir" == */runs/latest/* ]] && continue   # symlink to newest run — skip the duplicate
         check_case "$case_dir"

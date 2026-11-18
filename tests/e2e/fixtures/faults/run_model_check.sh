@@ -2,7 +2,7 @@
 # Fixture model check behind the real start_background.sh: performs the
 # resource-admission handshake, then runs until the test creates release-job.
 set -euo pipefail
-status="${SPECULA_TLC_ADMISSION_STATUS:?}"
+status="${SPECULAR_TLC_ADMISSION_STATUS:?}"
 log=nohup.out
 while [ $# -gt 0 ]; do
     case "$1" in

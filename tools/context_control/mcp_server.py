@@ -8,9 +8,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 from mcp.server.fastmcp import FastMCP
 
-from specula.context_control import CONFIRMATION_DESCRIPTION, TOOL_DESCRIPTION, request_compaction, request_confirmation
+from specular.context_control import (
+    CONFIRMATION_DESCRIPTION,
+    TOOL_DESCRIPTION,
+    request_compaction,
+    request_confirmation,
+)
 
-server = FastMCP("specula_context")
+server = FastMCP("specular_context")
 
 
 @server.tool(description=TOOL_DESCRIPTION)

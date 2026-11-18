@@ -42,9 +42,9 @@ usage() {
     echo "  -h         Show this help"
     echo ""
     echo "Run Resource Budget:"
-    echo "  SPECULA_TLC_MEMORY_LIMIT=SIZE  Aggregate heap + off-heap bound"
+    echo "  SPECULAR_TLC_MEMORY_LIMIT=SIZE  Aggregate heap + off-heap bound"
     echo "                                  (default: auto, 80% available at first TLC start)"
-    echo "  SPECULA_TLC_WORKER_LIMIT=NUM   Optional aggregate worker bound"
+    echo "  SPECULAR_TLC_WORKER_LIMIT=NUM   Optional aggregate worker bound"
     echo ""
     echo "Model Checking Options:"
     echo "  -d NUM     Max depth (default: 0, no limit)"
@@ -112,16 +112,16 @@ if [ -z "$LOG_FILE" ]; then
 fi
 
 # Resolve one runtime root for every bundled TLC dependency. A relocated
-# wrapper may be reached through a symlink, while SPECULA_ROOT points at the
+# wrapper may be reached through a symlink, while SPECULAR_ROOT points at the
 # installed Specula tree that owns the jars, guard, and worker probe.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 RUNTIME_ROOT="$PROJECT_ROOT"
 if [ ! -f "$RUNTIME_ROOT/lib/tla2tools.jar" ] \
-    && [ -n "${SPECULA_ROOT:-}" ] \
-    && [ -f "$SPECULA_ROOT/lib/tla2tools.jar" ]; then
-    RUNTIME_ROOT="$(cd "$SPECULA_ROOT" && pwd)" || {
-        echo "Error: cannot resolve SPECULA_ROOT: $SPECULA_ROOT"
+    && [ -n "${SPECULAR_ROOT:-}" ] \
+    && [ -f "$SPECULAR_ROOT/lib/tla2tools.jar" ]; then
+    RUNTIME_ROOT="$(cd "$SPECULAR_ROOT" && pwd)" || {
+        echo "Error: cannot resolve SPECULAR_ROOT: $SPECULAR_ROOT"
         exit 1
     }
 fi
@@ -133,15 +133,15 @@ if [ ! -f "$JAR_PATH" ]; then
     exit 1
 fi
 
-RESOURCE_GUARD="$RUNTIME_ROOT/src/specula/tlc_resources.py"
+RESOURCE_GUARD="$RUNTIME_ROOT/src/specular/tlc_resources.py"
 if [ ! -f "$RESOURCE_GUARD" ]; then
     echo "Error: TLC resource guard not found at $RESOURCE_GUARD"
     exit 1
 fi
 
-MANAGED_WORKER_LOCK="${SPECULA_TLC_TOOL_WORKER_LOCK:-}"
-MANAGED_STOP_FILE="${SPECULA_TLC_TOOL_STOP_FILE:-}"
-MANAGED_LIFELINE_FD="${SPECULA_TLC_TOOL_LIFELINE_FD:-}"
+MANAGED_WORKER_LOCK="${SPECULAR_TLC_TOOL_WORKER_LOCK:-}"
+MANAGED_STOP_FILE="${SPECULAR_TLC_TOOL_STOP_FILE:-}"
+MANAGED_LIFELINE_FD="${SPECULAR_TLC_TOOL_LIFELINE_FD:-}"
 if { [ -n "$MANAGED_WORKER_LOCK" ] && [ -z "$MANAGED_STOP_FILE" ]; } \
     || { [ -z "$MANAGED_WORKER_LOCK" ] && [ -n "$MANAGED_STOP_FILE" ]; }; then
     echo "Error: managed TLC requires both a worker lock and a stop file."
@@ -307,7 +307,7 @@ _TLC_TMP_BASE="${TLC_STATE_DIR:-${TMPDIR:-/tmp}}"
 METADIR="$(mktemp -d "${_TLC_TMP_BASE%/}/tlc-states-XXXXXX")"
 TLC_CMD+=(-metadir "$METADIR")
 
-CONTROL_DIR="$(mktemp -d "${TMPDIR:-/tmp}/specula-tlc-control-XXXXXX")"
+CONTROL_DIR="$(mktemp -d "${TMPDIR:-/tmp}/specular-tlc-control-XXXXXX")"
 LEASE_FILE="$CONTROL_DIR/lease.json"
 START_FILE="$CONTROL_DIR/start"
 STOP_FILE="$CONTROL_DIR/stop"
@@ -361,7 +361,7 @@ publish_admission() {
     local status="$1"
     local owner_pid="$2"
     local output="$3"
-    local status_file="${SPECULA_TLC_ADMISSION_STATUS:-}"
+    local status_file="${SPECULAR_TLC_ADMISSION_STATUS:-}"
     [ -n "$status_file" ] || return 0
     local tmp="${status_file}.$$.tmp"
     {
@@ -433,7 +433,7 @@ managed_child_exit() {
 }
 
 register_owner_with_stop_gate() {
-    local gate_work_dir="${SPECULA_STOP_GATE_WORK_DIR:-${SPECULA_WORK_DIR:-}}"
+    local gate_work_dir="${SPECULAR_STOP_GATE_WORK_DIR:-${SPECULAR_WORK_DIR:-}}"
     [ -n "$gate_work_dir" ] || return 0
     local registry_dir="$gate_work_dir/.stop-gate/background-pids"
     local registry_file="$registry_dir/${TLC_PID}.pid"

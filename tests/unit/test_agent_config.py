@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from specula.agent_config import AgentConfigError, AgentSelection, load_agent_routing
+from specular.agent_config import AgentConfigError, AgentSelection, load_agent_routing
 
 
 def _valid_config() -> dict[str, object]:

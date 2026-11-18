@@ -24,7 +24,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from specula import schedulerlib as sl
+from specular import schedulerlib as sl
 
 
 class Sched(sl.Scheduler):
@@ -426,14 +426,14 @@ class TestTransientGrep(Base):
 
 # ── setup / worker ───────────────────────────────────────────────────────────
 class WorkerBase(Base):
-    """A patched SPECULA_ROOT tree with a scriptable fake launch_pipeline.sh."""
+    """A patched SPECULAR_ROOT tree with a scriptable fake launch_pipeline.sh."""
 
     def root(self, pipeline_body: str = "#!/usr/bin/env bash\nexit 0\n") -> Path:
         root = self.tmp()
         (root / "scripts" / "launch").mkdir(parents=True)
         (root / "scripts" / "launch" / "launch_pipeline.sh").write_text(pipeline_body)
         (root / "case-studies").mkdir()
-        self.patch_mod("SPECULA_ROOT", root)
+        self.patch_mod("SPECULAR_ROOT", root)
         return root
 
     def seed_repo(self, root: Path, name: str, repo: str) -> None:
@@ -639,7 +639,7 @@ class TestRunTask(WorkerBase):
 
     def test_agentlog_probe_reads_isolated_run_dir(self) -> None:
         # cutover fix: the probe reads the isolated run's real phase-1 agent log
-        # (runs/<task-run-id>/<name>/.specula-output/agent.log); the bash probed
+        # (runs/<task-run-id>/<name>/.specular-output/agent.log); the bash probed
         # case-studies/<name>/agent.log, which the pipeline never wrote
         root = self.root("#!/usr/bin/env bash\nexit 1\n")  # silent failure
         self.seed_repo(root, "footest", "bar")
@@ -650,7 +650,7 @@ class TestRunTask(WorkerBase):
         (root / "case-studies" / "footest" / "agent.log").write_text("API Error: 529\n")
         s.run_task(0)
         self.assertEqual(s.sleeps, [])  # the bash's stale location is ignored now
-        rundir = root / "runs" / s.task_run_id(0) / "footest" / ".specula-output"
+        rundir = root / "runs" / s.task_run_id(0) / "footest" / ".specular-output"
         rundir.mkdir(parents=True)
         (rundir / "agent.log").write_text("API Error: 529\n")
         s.lines.clear()
@@ -743,7 +743,7 @@ class TestSummary(Base):
 class TestRun(Base):
     def test_quota_env_export_and_run_layout(self) -> None:
         root = self.tmp()
-        self.patch_mod("SPECULA_ROOT", root)
+        self.patch_mod("SPECULAR_ROOT", root)
         qf = root / "tasks.queue"
         qf.write_text("# empty\n")
         s = Sched()
@@ -757,7 +757,7 @@ class TestRun(Base):
 
     def test_relative_prompt_resolved_against_cwd(self) -> None:
         root = self.tmp()
-        self.patch_mod("SPECULA_ROOT", root)
+        self.patch_mod("SPECULAR_ROOT", root)
         qf = root / "tasks.queue"
         qf.write_text("# empty\n")
         old_cwd = os.getcwd()
@@ -772,7 +772,7 @@ class TestRun(Base):
 
     def test_missing_prompt_fails_before_log_dir_creation(self) -> None:
         root = self.tmp()
-        self.patch_mod("SPECULA_ROOT", root)
+        self.patch_mod("SPECULAR_ROOT", root)
         s = Sched()
         err = io.StringIO()
         with contextlib.redirect_stderr(err):
@@ -783,7 +783,7 @@ class TestRun(Base):
 
     def test_parse_error_short_circuits_before_log_dir(self) -> None:
         root = self.tmp()
-        self.patch_mod("SPECULA_ROOT", root)
+        self.patch_mod("SPECULAR_ROOT", root)
         s = Sched()
         with contextlib.redirect_stderr(io.StringIO()):
             rc = s.run(["--bogus"])

@@ -91,7 +91,7 @@ function main() {
   }
 
   // 2) write — a canary OUTSIDE the allowed set must not be writable.
-  const canary = path.join(os.homedir(), '.specula-leakprobe-canary');
+  const canary = path.join(os.homedir(), '.specular-leakprobe-canary');
   lines.push(`if touch ${shq(canary)} 2>/dev/null; then echo "LEAK write: ${canary}"; rm -f ${shq(canary)}; else echo "ok write-blocked: ${canary}"; fi`);
 
   // 3) network allowlist — a reachable domain NOT covered by the allowlist must be blocked.
@@ -112,7 +112,7 @@ function main() {
   // script inside the workspace (always writable + readable) so a tightened
   // read.deny can't hide the probe itself.
   fs.mkdirSync(workspace, { recursive: true });
-  const probePath = path.join(workspace, '.specula-leakprobe.sh');
+  const probePath = path.join(workspace, '.specular-leakprobe.sh');
   fs.writeFileSync(probePath, lines.join('\n') + '\n');
   const r = spawnSync('node', [BACKEND, '--workspace', workspace, '--config', source, '--', 'bash', probePath],
     { encoding: 'utf8' });
