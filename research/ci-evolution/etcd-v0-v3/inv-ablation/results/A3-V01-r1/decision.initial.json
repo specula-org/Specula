@@ -1,0 +1,173 @@
+{
+  "phase": "initial (frozen, written before any command execution)",
+  "overall_decision": "modify",
+  "overall_reason": "The update replaces raft.applyConfChange with the confchange.Changer (simple + joint consensus, ConfChangeV2, AutoLeave, LearnersNext) and refactors RawNode Ready/Advance. For the V1 conf-change workload the spec already models, three requirement changes are test-backed: AddLearner on an existing voter now DEMOTES (old: ignored), removing an unknown peer is a no-op (old: panic), and any change leaving zero incoming voters is refused by panic (old: allowed, voters={}). These invalidate EffectContract and the shared ConfigAfter/ConfigOf helper (which silently changes the meaning of ConfigurationOrigin, ConfigurationTransitionSafety, SnapshotBacking, ReadBasis). Joint consensus adds a two-majority quorum obligation that flat-voter observers (QuorumAccounting, ReadBasis, DurableObligations) cannot express, and auto-leave makes Advance append a log entry, which AckPreservation forbids. Most other properties are kept unchanged; several suspected implementation defects (V2 entries ignored by numOfPendingConf, duplicate auto-leave proposals, joint ConfState dropped by restore/newRaft, Config.Clone drops AutoLeave) must stay detectable, not be absorbed by property edits.",
+  "entries": [
+    {
+      "property": "RequestCorrelatedConfigurationEffects (EffectContract, EffectObservation)",
+      "decision": "modify",
+      "change_kind": "semantic requirement change + observer migration (add fatal field)",
+      "evidence": [
+        "new/source/raft_test.go:3098-3137 TestAddLearner: 'Demote r.' asserts AddLearner on voter 1 makes it a learner",
+        "new/source/confchange/testdata/simple_promote_demote.txt: 'Can demote a voter' (l2 -> voters=(1 3) learners=(2))",
+        "new/source/raft_test.go:3183,3207: 'Removing the remaining voter will panic.'",
+        "new/source/confchange/testdata/simple_safety.txt: 'r1 r2 -> removed all voters', 'r1 -> removed all voters'",
+        "old/source/raft_test.go:3151 (old requirement: removing all nodes leaves VoterNodes()=[]) - superseded",
+        "old/source/raft.go:1415 (old behavior: ignore addLearner of a voter) - superseded"
+      ],
+      "proposed_predicate": "learnerAdd == ~cancel /\\ kind=AddLearner /\\ target \\notin b.learners (demotion allowed); vs/ls computed with demotion (voters \\ {t}, learners \\cup {t}); IF vs={} THEN o.fatal # \"\" /\\ o.after=b ELSE o.after=[b EXCEPT !.voters=vs, !.learners=ls] (plus unchanged commit/correlation clauses)",
+      "disagreement_state": "ApplyEntry of AddLearner(s3) at leader with config voters {s1,s2,s3}, learners {}; new code yields voters {s1,s2}, learners {s3}. Old EffectContract requires after = before (FALSE on new behaviour); proposed TRUE. Second: Remove(s1) with voters {s1}: new code panics (after=before, fatal set); old contract requires voters={} (FALSE), proposed TRUE."
+    },
+    {
+      "property": "ConfigAfter / ConfigOf (helper used by ConfigurationOrigin, ConfigurationTransitionSafety, SnapshotBacking/SnapshotValid, ReadBasis, ProtocolInvoke guard, application.config)",
+      "decision": "modify",
+      "change_kind": "semantic helper migration (identical predicate text of users, different meaning)",
+      "evidence": [
+        "new/source/confchange/confchange.go:213-237 makeLearner (demotes voter, keeps Progress)",
+        "new/source/confchange/confchange.go:240-253 remove (no-op when unknown)",
+        "new/source/raft_test.go:3120-3128; confchange/testdata/simple_promote_demote.txt; simple_idempotency.txt (r4 on unknown is a no-op)"
+      ],
+      "proposed_predicate": "AddLearner: IF t \\in cfg.learners THEN cfg ELSE [cfg EXCEPT !.voters=@\\{t}, !.learners=@\\cup{t}] (joint: learnersNext when t \\in outgoing); AddVoter/Remove unchanged for V1; add EnterJoint/LeaveJoint for V2 entries",
+      "disagreement_state": "Node s1 alive with cfgHist = BootLog o <<AddLearner(s3) committed>>, config {voters {s1,s2}, learners {s3}} (what new code produces). ConfigurationOrigin with old helper: FALSE; with migrated helper: TRUE."
+    },
+    {
+      "property": "ConfigurationOrigin",
+      "decision": "keep",
+      "change_kind": "unchanged requirement (text kept; meaning migrates with ConfigAfter)",
+      "evidence": ["new/source/doc.go:177-182 (membership takes effect when applied)", "new/source/raftpb/raft.proto ConfState comments (nodes_joint, learners_next, auto_leave)"],
+      "proposed_predicate": "unchanged text over migrated ConfigOf",
+      "disagreement_state": "Same demotion state as above (old helper rejects, migrated helper accepts). Also the kept property must reject a node whose restored config drops the outgoing half of a joint snapshot ConfState (suspected defect raft.go:1418-1423)."
+    },
+    {
+      "property": "ConfigurationTransitionSafety",
+      "decision": "modify",
+      "change_kind": "representation migration (compare joint quorum config <<incoming,outgoing>> carried by a new commitUses.config field); requirement unchanged",
+      "evidence": ["new/source/doc.go:177-188 (entry committed under old membership; never commit two membership changes at once)", "new/source/raft.go:1496-1500 (maybeCommit after every conf change)"],
+      "proposed_predicate": "\\A c \\in commitUses: \\A k \\in (c.oldCommit+1)..Len(c.hist): (c.hist[k].kind \\in ConfKinds' /\\ c.hist[k].id#0) => QCfg(c.config) = QCfg(ConfigOf(Prefix(c.hist,k-1)))",
+      "disagreement_state": "Leader with 4 voters demotes s4 (applied), then MaybeCommit commits a later conf entry under voters {s1,s2,s3}: old helper computes predecessor voters {s1..s4} -> FALSE; migrated -> TRUE. Must still reject two leave-joint entries committed together."
+    },
+    {
+      "property": "QuorumAccounting",
+      "decision": "modify",
+      "change_kind": "semantic strengthening for joint configs + observer migration (wins/commitUses carry config)",
+      "evidence": ["new/source/raftpb/raft.proto:156 ('quorum requires a majority of both the pre-changes and post-changes configuration')", "new/source/quorum/testdata/joint_commit.txt", "new/source/quorum/joint.go"],
+      "proposed_predicate": "\\A w \\in wins: AllVoters(w.config)#{} /\\ CfgWon(w.config,w.yes); \\A c \\in commitUses: AllVoters(c.config)#{} /\\ c.matches \\subseteq AllVoters(c.config) /\\ CfgWon(c.config,c.matches), CfgWon(cfg,S)==Won(cfg.voters,S)/\\Won(cfg.outgoing,S)",
+      "disagreement_state": "commitUse with joint config incoming {s1,s2,s3}, outgoing {s1}, matches {s2,s3}: flat Won accepts, CfgWon rejects."
+    },
+    {
+      "property": "AckPreservation",
+      "decision": "modify",
+      "change_kind": "semantic relaxation (Advance may append exactly one auto-leave entry) + observer migration; must not accept a duplicate leave entry",
+      "evidence": ["new/source/rawnode_test.go:322-357 (after Advance exactly one empty EntryConfChangeV2 appears when AutoLeave)", "new/source/raftpb/raft.proto:85-91 (JointImplicit leaves automatically by proposing a zero config change)", "new/source/node.go:137-139 and doc.go:184-188 (no second unapplied membership change)"],
+      "proposed_predicate": "a.before=a.after \\/ (AutoLeaveOK(a) /\\ a.after = a.before \\o <<leave entry>>), AutoLeaveOK == role=Leader /\\ config joint /\\ autoLeave /\\ cursor >= pendingConf /\\ no conf entry in before beyond the applied cursor",
+      "disagreement_state": "Advance at an auto-leave joint leader appends one LeaveJoint entry: old FALSE, proposed TRUE. Control: a second LeaveJoint appended while the first is still unapplied: proposed must be FALSE (suspected defect raft.go:572-580 never bumps pendingConfIndex on success)."
+    },
+    {
+      "property": "ConfKinds (helper used by StepHup, RewriteConf, CampaignContract, ProposalContract, ProtocolApplyEntry)",
+      "decision": "modify",
+      "change_kind": "representation migration (V2 entries EnterJoint/LeaveJoint are configuration changes)",
+      "evidence": ["new/source/raftpb/raft.proto:13-14 (EntryConfChangeV2 corresponds to ConfChangeV2)", "new/source/node.go:135-145,170-176 (ProposeConfChange/ApplyConfChange accept V2; must apply every config change)", "new/source/raft.go:1016 (leader rewrites V2 proposals like V1)"],
+      "proposed_predicate": "ConfKinds' == {AddVoter, AddLearner, Remove, Update, EnterJoint, LeaveJoint}",
+      "disagreement_state": "Proposal containing a V2 EnterJoint entry while pendingConf>applied: ProposalContract with old ConfKinds expects it appended verbatim, with migrated ConfKinds expects a rewritten no-op (what raft.go:1016 does)."
+    },
+    {
+      "property": "CampaignDecisionEligibility (CampaignContract)",
+      "decision": "unresolved",
+      "change_kind": "representation via ConfKinds; requirement for the V2 case unknown",
+      "evidence": ["new/source/raft.go:903-910,1580-1588 numOfPendingConf counts only EntryConfChange (implementation, not requirement)", "no test/doc found that states the Hup pending-conf guard"],
+      "proposed_predicate": "unchanged text over ConfKinds'",
+      "disagreement_state": "Follower with committed-but-unapplied EnterJoint entry campaigns (new code does). Old ConfKinds: contract accepts; ConfKinds': contract rejects. Suspected defect recorded; do not weaken."
+    },
+    {
+      "property": "ProposalConfigurationDecisions (ProposalContract)",
+      "decision": "keep",
+      "change_kind": "unchanged requirement; ConfKinds/Members representation migration only",
+      "evidence": ["new/source/node.go:135-139", "new/source/raft.go:1016-1024"],
+      "proposed_predicate": "unchanged text",
+      "disagreement_state": "See ConfKinds entry."
+    },
+    {
+      "property": "VoteRecovery",
+      "decision": "keep",
+      "change_kind": "unchanged requirement; update fixes a pre-existing implementation defect (old RawNode reset term to 1 on empty log)",
+      "evidence": ["old/source/rawnode.go:89-90 (becomeFollower(1, None) when lastIndex==0)", "new/source/rawnode.go NewRawNode no longer bootstraps", "README/doc: HardState must be persisted before sending (durable vote)"],
+      "proposed_predicate": "unchanged",
+      "disagreement_state": "RawNode restart with persisted HardState{term 3, vote s1} and empty log: old code/model -> term 1 vote 0 (VoteRecovery FALSE); new code -> term 3 vote s1 (TRUE)."
+    },
+    {
+      "property": "LearnerEligibility",
+      "decision": "keep",
+      "change_kind": "unchanged requirement; demotion now reachable",
+      "evidence": ["new/source/raft.go:1476 (isLearner updated on apply)", "new/source/raft_test.go TestLearnerCampaign"],
+      "proposed_predicate": "unchanged",
+      "disagreement_state": "After demotion of s3, s3 must not record a campaign or grant; kept property gives the right verdict on the new state."
+    },
+    {
+      "property": "NoUnexpectedFatal",
+      "decision": "keep",
+      "change_kind": "unchanged text; model fatal reasons change (no 'remove unknown peer'; new 'removed all voters')",
+      "evidence": ["new/source/raft.go:1454-1457 (panic on Changer error)", "confchange/testdata/simple_idempotency.txt"],
+      "proposed_predicate": "unchanged",
+      "disagreement_state": "Remove of an unknown peer with CancelUnknownRemovals=FALSE: old model fatal (property FALSE), migrated model no fatal (TRUE)."
+    },
+    {
+      "property": "ReadyAccounting",
+      "decision": "keep",
+      "change_kind": "unchanged; caller contract strengthened for RawNode (model needs guard: no state-altering call between Ready and Advance)",
+      "evidence": ["new/source/rawnode.go:122-129 (Ready read-only; illegal to Step between Ready and Advance)"],
+      "proposed_predicate": "unchanged",
+      "disagreement_state": "RawNode Ready with reads then Advance: lostReads={} (TRUE). A Step between Ready and Advance (now illegal) would lose reads and the property rejects it."
+    },
+    {
+      "property": "QuotaIntegrity",
+      "decision": "keep",
+      "change_kind": "unchanged; quota now reduced at Advance (raft.go:583) instead of Ready",
+      "evidence": ["new/source/raft.go:554-583"],
+      "proposed_predicate": "unchanged",
+      "disagreement_state": "Leader after Ready but before Advance retains quota = weight of committed unapplied entries; property TRUE."
+    },
+    {
+      "property": "ReadBasis, DurableObligations (observer), StepLeaderReadIndex singleton test",
+      "decision": "modify",
+      "change_kind": "representation migration to joint quorum (CfgWon, leader in AllVoters, singleton = |incoming|=1 /\\ outgoing={})",
+      "evidence": ["new/source/tracker/tracker.go:144-148 IsSingleton", "new/source/raftpb/raft.proto:156"],
+      "proposed_predicate": "Won(confirmConfig.voters, acks) -> CfgWon(confirmConfig, acks)",
+      "disagreement_state": "Same pattern as QuorumAccounting (lower priority; not separately executed unless needed)."
+    },
+    {
+      "property": "ElectionSafety, LogMatching, LeaderCompleteness, CommittedHistory, AppliedAgreement, RecoveryBacking, PromiseBacking, ReplicationEvidence, SnapshotBacking, OutcomeSoundness, ReadApplication, ReadCorrelation, VoteDecisionEligibility, TransferDecisionEligibility, TypeOK, LogStructure",
+      "decision": "keep",
+      "change_kind": "unchanged requirements (safety controls); SnapshotBacking/TypeOK pick up config representation migration only",
+      "evidence": ["update does not change log, election or vote rules"],
+      "proposed_predicate": "unchanged",
+      "disagreement_state": "none expected; used as unaffected controls"
+    }
+  ],
+  "model_migrations_required_not_property_edits": [
+    "ApplyConfCore: demotion; remove of unknown peer is a no-op; a result with zero incoming voters is Fatal('removed all voters') even for canceled/Update entries; MaybeCommit after every applied change at a non-removed, non-demoted leader (raft.go:1496); active=TRUE only for newly created progress (confchange.go:262-276)",
+    "ProtocolApplyEntry: proposal blocking only when the node was a member before and is not after (node.go:356-375)",
+    "RestartCore: remove RawNode 'fresh' term-1 reset; prevHS = HS for RawNodes (rawnode.go NewRawNode)",
+    "ProtocolReady/AdvanceCore for RawNodes: Ready is read-only (out/quota cleared at Advance); caller guard: no core action on n in RawNodes while ready[n].active; Node: quota reduced at Advance",
+    "V2/joint actions are not modeled at all (EnterJoint/LeaveJoint/auto-leave) - coverage gap"
+  ],
+  "covered_updated_behaviors": [
+    {"behavior": "RawNode restart no longer resets term/vote to 1/0 on an empty log", "property": "VoteRecovery: recovery.term >= savedTerm and vote preserved; flags old, accepts new"},
+    {"behavior": "promotion (AddVoter on learner) keeps progress", "property": "EffectContract voterAdd clause and ConfigAfter AddVoter (unchanged)"},
+    {"behavior": "leader rewrites V2 conf proposals while a change is pending", "property": "ProposalContract rewrite clause, once ConfKinds includes V2 kinds"},
+    {"behavior": "learners cannot campaign or grant (now also demoted voters)", "property": "LearnerEligibility via campaigns/grants observers"}
+  ],
+  "suspected_defects": [
+    "numOfPendingConf ignores EntryConfChangeV2 (raft.go:1580-1588): a node can campaign with an unapplied V2 change, inconsistent with the V1 behavior and with stepLeader (raft.go:1016)",
+    "advance() auto-leave does not bump pendingConfIndex when the append succeeds (raft.go:572-580): duplicate leave-joint entries; the second LeaveJoint panics ('can't leave a non-joint config')",
+    "restore() and newRaft() rebuild config only from ConfState.Nodes/Learners (raft.go:1418-1423, 330-341): NodesJoint/LearnersNext/AutoLeave lost",
+    "tracker.Config.Clone omits AutoLeave (tracker.go:95-111): Status.Config misreports joint auto-leave configs",
+    "Changer.Simple swallows a checkInvariants error and returns an empty config with nil error (confchange.go:148-150); believed unreachable from valid configs",
+    "applyConfChange comment claims demotions are prevented (raft.go:1478-1489) but Simple now permits demoting the leader or a candidate"
+  ],
+  "unresolved_obligations": [
+    "Joint configs are not generated by the model; joint properties can only be checked on constructed states until V2 actions are modeled",
+    "Requirement for blocking campaign on a pending V2 change is not stated in tests/docs",
+    "Behavior of a leader/candidate that is demoted (stays leader / may win) has no stated requirement",
+    "Environment assumption needed for removing the last voter (now a panic) if NoUnexpectedFatal is to be used as a hunt target"
+  ]
+}

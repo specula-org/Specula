@@ -1,0 +1,14 @@
+{
+  "note": "Supplementary runs made before the one-run-per-input rule. Only the V03 autoleave_effect_and_progress obligation is scored, because it is the cell where r1 split A0 and A1. Scorer: coordinator (Claude), not blind to arm.",
+  "A0": {
+    "r1": {"score": "incorrect_change", "evidence": "AutoLeaveEligible requires a.oldApplied < a.pendingBefore; the ELSE branch forbids any append"},
+    "r2": {"score": "incorrect_change", "evidence": "trig requires a.appliedBefore < a.pendingBefore; the ELSE branch requires afterHist = beforeHist"},
+    "r3": {"score": "detected", "evidence": "AutoLeaveDue uses the level condition a.applied >= a.pendingBefore with no pending conf entry"}
+  },
+  "A1": {
+    "r1": {"score": "detected", "evidence": "NeedsLeave is level-based: cursor >= pendingBefore and no pending leave; explicitly 'not weakened to the source's edge trigger'"},
+    "r2": {"score": "detected", "evidence": "due == cursor >= pendingBefore requires a pending leave after Advance"},
+    "r3": {"score": "detected", "evidence": "eligible uses newApplied >= pendingBefore with no unapplied conf entry"}
+  },
+  "summary": "Crossing guard copied into the requirement: A0 2/3 runs, A1 0/3 runs. All 6 runs named bug B among suspected defects."
+}

@@ -1,0 +1,15 @@
+{
+  "scorer": "coordinator (Claude), not blind to arm",
+  "gold": "gold.json V01",
+  "obligations": {
+    "advance_append": {"score": "missed", "note": "AckPreservation was kept unchanged ('joint meaning comes through the migrated helpers'). Its first conjunct is a.before = a.after (old/spec/base.tla:1185), so every legitimate auto-leave append in Advance (new raft.go advance) violates it. No evidence record checks AckPreservation. The same run did study the auto-leave append (D2 duplicate leave, new PendingConfigurationDiscipline), but never connected it to AckPreservation. A 'keep' without an executed check: the failure mode A3's keep-evidence rule targets."},
+    "joint_quorum": {"score": "detected", "note": "QuorumAccounting requires Won on both voters and outgoing; DurableObligations and ReadBasis migrated the same way."},
+    "campaign_v2": {"score": "detected", "note": "CampaignContract pending scan includes V2 ('ConfKinds (V2 included)'); bug A confirmed by execution."},
+    "unchanged_safety": {"score": "correct_retention", "note": "ElectionSafety, LogMatching, LeaderCompleteness, CommittedHistory and AppliedAgreement kept; VoteRecovery kept in the grouped keep entry."}
+  },
+  "bug_A": "named and confirmed by execution (D1, EV-E7b): Go node with a committed unapplied EntryConfChangeV2 becomes StateCandidate and sends MsgVote; V1 counterpart blocked.",
+  "extra_findings_confirmed_in_code": ["D2 auto-leave does not bump pendingConfIndex after a successful append; a later Advance appends a second leave; apply panics", "D3 restore/newRaft drop NodesJoint, LearnersNext and AutoLeave from ConfState"],
+  "format_notes": ["decision.json evidence is prose; 0 packet path:line citations parsed (same pattern as other A2 runs)", "proposed definitions are in evidence/tla/Proposed.tla"],
+  "evidence_stats": {"records": 39, "tlc_truth_values": 36, "claim_mismatches": 0, "code_observations": 11},
+  "summary": "2 detected + 1 correct retention + 1 missed (AckPreservation kept without evidence); bug A confirmed in code"
+}

@@ -1,0 +1,1765 @@
+[
+ {
+  "id": "EV-AL-D1-OLDCODE",
+  "property": "AutoLeaveAdvance (UpdateAutoLeaveAdvance)",
+  "kind": "strengthening",
+  "state": {
+   "witness": "D1: leader s1 term 1, config (s1 s2)&&(s1 s2) learners {s3} autoLeave, log [1 Normal, 2 V2 JointImplicit AddLearner s3, 3 Normal \"foo\", 4 auto-leave], applied 2, commit 3, pendingConf 2 (old code does not bump), Ready commits entry 3 (cursor 3).",
+   "tlc_post_state": "last |-> 5, lastKind |-> <<\"V2\", 0, \"Auto\", \"w\", 2>>, applied |-> 3, commit |-> 3, pending |-> 2, quota |-> 4, transfer |-> 0, fatal |-> \"\", decision |-> \"\", joint |-> TRUE, autoLeave |-> TRUE",
+   "observation_counts": "\"autoLeaveChecks\", 1, \"proposals\", 0, \"outcomes\", 0, \"effects\", 0",
+   "population": "Pre-state hand-mapped field by field from the Go [*:pre-advance] log line (term, applied, commit, lastIndex, pendingConfIndex, uncommittedSize->quota, config, log entries with payload sizes as weights; cfgHist = log prefix through the last applied conf entry). The autoLeaveChecks record is produced by the real ProtocolAdvance observer on one TLC step of the chosen implementation model; the TLC post-state matches the Go post-advance line."
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_with_unmigrated_base_observer": true
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "old": "c2 Advance appends a SECOND leave (last 4->5); applying both later panics \"can't leave a non-joint config\"",
+   "new": "pendingConf was bumped to 4 at c1; c2 Advance appends nothing; final apply leaves the joint config without panic",
+   "test_file": "evidence/go/zz_evidence_test.go",
+   "test": "TestEvAutoLeaveDuplicate",
+   "command": "cp evidence/go/zz_evidence_test.go evidence/{old,new}tree/ && (cd evidence/<tree> && go test -vet=off -count=1 -v -run TestEvAutoLeaveDuplicate .)",
+   "result": "PASS (observational test; values printed as RESULT lines)",
+   "logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  },
+  "requirement_evidence": "raft.go advance (new): `oldApplied < pendingConfIndex && newApplied >= pendingConfIndex`, Data=nil, panic(\"refused un-refusable auto-leaving ConfChangeV2\"), pendingConfIndex = lastIndex(); increaseUncommittedSize s>0 comment; TestUncommittedEntryLimit \"we can always append an entry with no Data ... auto-transitioning out of joint config\"; testdata/confchange_v2_add_double_auto.txt \"a bug in which these proposals would prompt the leader to transition out of the same joint state multiple times, which would cause a panic\"; rawnode_test pendingConfIndex == auto-leave index; raft.proto ConfState.auto_leave \"Raft will automatically transition into the final config\"; node.go Advance doc and README step 4 allow Advance before applying.",
+  "verdict": "accepted",
+  "note": "The old property REQUIRES the duplicate append that crashes the old code; the proposed property forbids it.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/EvWitness.tla",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)"
+   ],
+   "cfg": [
+    "evidence/cfg/D1_proposed_old_pre-old.cfg",
+    "evidence/cfg/D1_base_old_pre-old.cfg"
+   ],
+   "tlc_logs": [
+    "evidence/logs/tlc_D1_proposed_old_pre-old.log",
+    "evidence/logs/tlc_D1_base_old_pre-old.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go"
+   ],
+   "go_logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  }
+ },
+ {
+  "id": "EV-AL-D1-NEWCODE",
+  "property": "AutoLeaveAdvance (UpdateAutoLeaveAdvance)",
+  "kind": "control",
+  "state": {
+   "witness": "D1 pre-state as produced by the new code: same log with nil-Data leave at 4, pendingConf 4, quota 3.",
+   "tlc_post_state": "last |-> 4, lastKind |-> <<\"V2\", 0, \"Auto\", \"w\", 0>>, applied |-> 3, commit |-> 3, pending |-> 4, quota |-> 0, transfer |-> 0, fatal |-> \"\", decision |-> \"\", joint |-> TRUE, autoLeave |-> TRUE",
+   "observation_counts": "\"autoLeaveChecks\", 1, \"proposals\", 0, \"outcomes\", 0, \"effects\", 0",
+   "population": "Pre-state hand-mapped field by field from the Go [*:pre-advance] log line (term, applied, commit, lastIndex, pendingConfIndex, uncommittedSize->quota, config, log entries with payload sizes as weights; cfgHist = log prefix through the last applied conf entry). The autoLeaveChecks record is produced by the real ProtocolAdvance observer on one TLC step of the chosen implementation model; the TLC post-state matches the Go post-advance line."
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "old": "n/a (see EV-AL-D1-OLDCODE)",
+   "new": "no append, pendingConf 4, no panic",
+   "test_file": "evidence/go/zz_evidence_test.go",
+   "test": "TestEvAutoLeaveDuplicate",
+   "command": "cp evidence/go/zz_evidence_test.go evidence/{old,new}tree/ && (cd evidence/<tree> && go test -vet=off -count=1 -v -run TestEvAutoLeaveDuplicate .)",
+   "result": "PASS (observational test; values printed as RESULT lines)",
+   "logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  },
+  "requirement_evidence": "raft.go advance (new): `oldApplied < pendingConfIndex && newApplied >= pendingConfIndex`, Data=nil, panic(\"refused un-refusable auto-leaving ConfChangeV2\"), pendingConfIndex = lastIndex(); increaseUncommittedSize s>0 comment; TestUncommittedEntryLimit \"we can always append an entry with no Data ... auto-transitioning out of joint config\"; testdata/confchange_v2_add_double_auto.txt \"a bug in which these proposals would prompt the leader to transition out of the same joint state multiple times, which would cause a panic\"; rawnode_test pendingConfIndex == auto-leave index; raft.proto ConfState.auto_leave \"Raft will automatically transition into the final config\"; node.go Advance doc and README step 4 allow Advance before applying.",
+  "verdict": "accepted",
+  "note": "Legitimate new behavior is accepted by both; the update fixes the duplicate under the ordinary schedule.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/EvWitness.tla",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)"
+   ],
+   "cfg": [
+    "evidence/cfg/D1_proposed_new_pre-new.cfg"
+   ],
+   "tlc_logs": [
+    "evidence/logs/tlc_D1_proposed_new_pre-new.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go"
+   ],
+   "go_logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  }
+ },
+ {
+  "id": "EV-AL-D1-FIXED",
+  "property": "AutoLeaveAdvance (UpdateAutoLeaveAdvance)",
+  "kind": "relaxation",
+  "state": {
+   "witness": "D1 old-code pre-state (leave pending at 4, pendingConf 2) stepped with the corrected reference behavior (ImplModel=\"fixed\": append only if due and no leave is pending).",
+   "tlc_post_state": "last |-> 4, lastKind |-> <<\"V2\", 0, \"Auto\", \"w\", 2>>, applied |-> 3, commit |-> 3, pending |-> 2, quota |-> 2, transfer |-> 0, fatal |-> \"\", decision |-> \"\", joint |-> TRUE, autoLeave |-> TRUE",
+   "observation_counts": "\"autoLeaveChecks\", 1, \"proposals\", 0, \"outcomes\", 0, \"effects\", 0",
+   "population": "Pre-state hand-mapped field by field from the Go [*:pre-advance] log line (term, applied, commit, lastIndex, pendingConfIndex, uncommittedSize->quota, config, log entries with payload sizes as weights; cfgHist = log prefix through the last applied conf entry). The autoLeaveChecks record is produced by the real ProtocolAdvance observer on one TLC step of the chosen implementation model; the TLC post-state matches the Go post-advance line."
+  },
+  "old_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "old": "not_representable (no code version implements the corrected behavior from this pre-state)",
+   "new": "not_representable",
+   "test_file": "evidence/go/zz_evidence_test.go",
+   "command": "n/a",
+   "result": "n/a"
+  },
+  "requirement_evidence": "raft.go advance (new): `oldApplied < pendingConfIndex && newApplied >= pendingConfIndex`, Data=nil, panic(\"refused un-refusable auto-leaving ConfChangeV2\"), pendingConfIndex = lastIndex(); increaseUncommittedSize s>0 comment; TestUncommittedEntryLimit \"we can always append an entry with no Data ... auto-transitioning out of joint config\"; testdata/confchange_v2_add_double_auto.txt \"a bug in which these proposals would prompt the leader to transition out of the same joint state multiple times, which would cause a panic\"; rawnode_test pendingConfIndex == auto-leave index; raft.proto ConfState.auto_leave \"Raft will automatically transition into the final config\"; node.go Advance doc and README step 4 allow Advance before applying.",
+  "verdict": "accepted",
+  "note": "Relaxation evidence: the old property rejects the correct non-duplicating behavior (it demands an append); the proposed property accepts it.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/EvWitness.tla",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)"
+   ],
+   "cfg": [
+    "evidence/cfg/D1_proposed_fixed_pre-old.cfg"
+   ],
+   "tlc_logs": [
+    "evidence/logs/tlc_D1_proposed_fixed_pre-old.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go"
+   ],
+   "go_logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  }
+ },
+ {
+  "id": "EV-AL-E-NEWCODE",
+  "property": "AutoLeaveAdvance (UpdateAutoLeaveAdvance)",
+  "kind": "semantic",
+  "state": {
+   "witness": "E (early Advance): single-voter leader, config (s1)&&(s1) learners {s3} autoLeave, log [1 Normal, 2 JointImplicit AddLearner s3, 3 auto-leave], applied 2, commit 3, pendingConf 3 (new code), Ready commits the leave (cursor 3); the application has NOT yet applied entry 3 (EarlyAdvance=TRUE, job queued).",
+   "tlc_post_state": "last |-> 4, lastKind |-> <<\"V2\", 0, \"Auto\", \"w\", 0>>, applied |-> 3, commit |-> 4, pending |-> 4, quota |-> 0, transfer |-> 0, fatal |-> \"\", decision |-> \"\", joint |-> TRUE, autoLeave |-> TRUE",
+   "observation_counts": "\"autoLeaveChecks\", 1, \"proposals\", 0, \"outcomes\", 0, \"effects\", 0",
+   "population": "Pre-state hand-mapped field by field from the Go [*:pre-advance] log line (term, applied, commit, lastIndex, pendingConfIndex, uncommittedSize->quota, config, log entries with payload sizes as weights; cfgHist = log prefix through the last applied conf entry). The autoLeaveChecks record is produced by the real ProtocolAdvance observer on one TLC step of the chosen implementation model; the TLC post-state matches the Go post-advance line."
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "old": "appends a duplicate leave at 4; applying it panics \"can't leave a non-joint config\"",
+   "new": "oldApplied 2 < pendingConf 3 <= newApplied 3 -> appends a duplicate leave at 4; applying it panics \"can't leave a non-joint config\"",
+   "test_file": "evidence/go/zz_evidence_test.go",
+   "test": "TestEvAutoLeaveEarlyAdvance",
+   "command": "cp evidence/go/zz_evidence_test.go evidence/{old,new}tree/ && (cd evidence/<tree> && go test -vet=off -count=1 -v -run TestEvAutoLeaveEarlyAdvance .)",
+   "result": "PASS (observational test; values printed as RESULT lines)",
+   "logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  },
+  "requirement_evidence": "raft.go advance (new): `oldApplied < pendingConfIndex && newApplied >= pendingConfIndex`, Data=nil, panic(\"refused un-refusable auto-leaving ConfChangeV2\"), pendingConfIndex = lastIndex(); increaseUncommittedSize s>0 comment; TestUncommittedEntryLimit \"we can always append an entry with no Data ... auto-transitioning out of joint config\"; testdata/confchange_v2_add_double_auto.txt \"a bug in which these proposals would prompt the leader to transition out of the same joint state multiple times, which would cause a panic\"; rawnode_test pendingConfIndex == auto-leave index; raft.proto ConfState.auto_leave \"Raft will automatically transition into the final config\"; node.go Advance doc and README step 4 allow Advance before applying.",
+  "verdict": "accepted",
+  "note": "New-code defect under a caller schedule allowed by node.go/README (Advance before ApplyConfChange). The old property accepts it; the proposed property flags it. It is reported as an implementation defect and must not be hidden.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/EvWitness.tla",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)"
+   ],
+   "cfg": [
+    "evidence/cfg/E_proposed_new_pre-new.cfg"
+   ],
+   "tlc_logs": [
+    "evidence/logs/tlc_E_proposed_new_pre-new.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go"
+   ],
+   "go_logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  }
+ },
+ {
+  "id": "EV-AL-E-OLDCODE",
+  "property": "AutoLeaveAdvance (UpdateAutoLeaveAdvance)",
+  "kind": "strengthening",
+  "state": {
+   "witness": "E pre-state as produced by the old code (pendingConf 2, leave payload 2, quota 2).",
+   "tlc_post_state": "last |-> 4, lastKind |-> <<\"V2\", 0, \"Auto\", \"w\", 2>>, applied |-> 3, commit |-> 4, pending |-> 2, quota |-> 2, transfer |-> 0, fatal |-> \"\", decision |-> \"\", joint |-> TRUE, autoLeave |-> TRUE",
+   "observation_counts": "\"autoLeaveChecks\", 1, \"proposals\", 0, \"outcomes\", 0, \"effects\", 0",
+   "population": "Pre-state hand-mapped field by field from the Go [*:pre-advance] log line (term, applied, commit, lastIndex, pendingConfIndex, uncommittedSize->quota, config, log entries with payload sizes as weights; cfgHist = log prefix through the last applied conf entry). The autoLeaveChecks record is produced by the real ProtocolAdvance observer on one TLC step of the chosen implementation model; the TLC post-state matches the Go post-advance line."
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_with_unmigrated_base_observer": true
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "old": "duplicate leave at 4, later panic",
+   "new": "see EV-AL-E-NEWCODE",
+   "test_file": "evidence/go/zz_evidence_test.go",
+   "test": "TestEvAutoLeaveEarlyAdvance",
+   "command": "cp evidence/go/zz_evidence_test.go evidence/{old,new}tree/ && (cd evidence/<tree> && go test -vet=off -count=1 -v -run TestEvAutoLeaveEarlyAdvance .)",
+   "result": "PASS (observational test; values printed as RESULT lines)",
+   "logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  },
+  "requirement_evidence": "raft.go advance (new): `oldApplied < pendingConfIndex && newApplied >= pendingConfIndex`, Data=nil, panic(\"refused un-refusable auto-leaving ConfChangeV2\"), pendingConfIndex = lastIndex(); increaseUncommittedSize s>0 comment; TestUncommittedEntryLimit \"we can always append an entry with no Data ... auto-transitioning out of joint config\"; testdata/confchange_v2_add_double_auto.txt \"a bug in which these proposals would prompt the leader to transition out of the same joint state multiple times, which would cause a panic\"; rawnode_test pendingConfIndex == auto-leave index; raft.proto ConfState.auto_leave \"Raft will automatically transition into the final config\"; node.go Advance doc and README step 4 allow Advance before applying.",
+  "verdict": "accepted",
+  "note": "Same verdicts as the new code: the update does not fix the early-Advance duplicate.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/EvWitness.tla",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)"
+   ],
+   "cfg": [
+    "evidence/cfg/E_proposed_old_pre-old.cfg",
+    "evidence/cfg/E_base_old_pre-old.cfg"
+   ],
+   "tlc_logs": [
+    "evidence/logs/tlc_E_proposed_old_pre-old.log",
+    "evidence/logs/tlc_E_base_old_pre-old.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go"
+   ],
+   "go_logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  }
+ },
+ {
+  "id": "EV-AL-E-FIXED",
+  "property": "AutoLeaveAdvance (UpdateAutoLeaveAdvance)",
+  "kind": "relaxation",
+  "state": {
+   "witness": "E new-code pre-state stepped with the corrected behavior: no append because the leave at 3 is pending.",
+   "tlc_post_state": "last |-> 3, lastKind |-> <<\"V2\", 0, \"Auto\", \"w\", 0>>, applied |-> 3, commit |-> 3, pending |-> 3, quota |-> 0, transfer |-> 0, fatal |-> \"\", decision |-> \"\", joint |-> TRUE, autoLeave |-> TRUE",
+   "observation_counts": "\"autoLeaveChecks\", 1, \"proposals\", 0, \"outcomes\", 0, \"effects\", 0",
+   "population": "Pre-state hand-mapped field by field from the Go [*:pre-advance] log line (term, applied, commit, lastIndex, pendingConfIndex, uncommittedSize->quota, config, log entries with payload sizes as weights; cfgHist = log prefix through the last applied conf entry). The autoLeaveChecks record is produced by the real ProtocolAdvance observer on one TLC step of the chosen implementation model; the TLC post-state matches the Go post-advance line."
+  },
+  "old_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "old": "not_representable",
+   "new": "not_representable",
+   "test_file": "evidence/go/zz_evidence_test.go",
+   "command": "n/a",
+   "result": "n/a"
+  },
+  "requirement_evidence": "raft.go advance (new): `oldApplied < pendingConfIndex && newApplied >= pendingConfIndex`, Data=nil, panic(\"refused un-refusable auto-leaving ConfChangeV2\"), pendingConfIndex = lastIndex(); increaseUncommittedSize s>0 comment; TestUncommittedEntryLimit \"we can always append an entry with no Data ... auto-transitioning out of joint config\"; testdata/confchange_v2_add_double_auto.txt \"a bug in which these proposals would prompt the leader to transition out of the same joint state multiple times, which would cause a panic\"; rawnode_test pendingConfIndex == auto-leave index; raft.proto ConfState.auto_leave \"Raft will automatically transition into the final config\"; node.go Advance doc and README step 4 allow Advance before applying.",
+  "verdict": "accepted",
+  "note": "The old property rejects the only crash-free behavior here; the proposed property accepts it.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/EvWitness.tla",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)"
+   ],
+   "cfg": [
+    "evidence/cfg/E_proposed_fixed_pre-new.cfg"
+   ],
+   "tlc_logs": [
+    "evidence/logs/tlc_E_proposed_fixed_pre-new.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go"
+   ],
+   "go_logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  }
+ },
+ {
+  "id": "EV-AL-D2-OLDCODE",
+  "property": "AutoLeaveAdvance (UpdateAutoLeaveAdvance)",
+  "kind": "strengthening",
+  "state": {
+   "witness": "D2 (quota): leader, config (s1 s2)&&(s1 s2) learners {s3} autoLeave just applied, log [1 Normal, 2 JointImplicit (payload 8)], applied 1, commit 2, pendingConf 2, quota 8, MaxUncommitted 9, Ready commits entry 2.",
+   "tlc_post_state": "last |-> 2, lastKind |-> <<\"V2\", 1, \"JointImplicit\", \"w\", 8>>, applied |-> 2, commit |-> 2, pending |-> 2, quota |-> 0, transfer |-> 0, fatal |-> \"\", decision |-> \"DropQuota\", joint |-> TRUE, autoLeave |-> TRUE",
+   "observation_counts": "\"autoLeaveChecks\", 1, \"proposals\", 0, \"outcomes\", 0, \"effects\", 0",
+   "population": "Pre-state hand-mapped field by field from the Go [*:pre-advance] log line (term, applied, commit, lastIndex, pendingConfIndex, uncommittedSize->quota, config, log entries with payload sizes as weights; cfgHist = log prefix through the last applied conf entry). The autoLeaveChecks record is produced by the real ProtocolAdvance observer on one TLC step of the chosen implementation model; the TLC post-state matches the Go post-advance line."
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_with_unmigrated_base_observer": true
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "old": "auto-leave refused by quota (8+2>9): nothing appended, pendingConf stays 2, decision DropQuota",
+   "new": "quota reduced first and the leave has payload 0: leave appended at 3, pendingConf 3",
+   "test_file": "evidence/go/zz_evidence_test.go",
+   "test": "TestEvAutoLeaveQuota (MaxUncommittedEntriesSize=9)",
+   "command": "cp evidence/go/zz_evidence_test.go evidence/{old,new}tree/ && (cd evidence/<tree> && go test -vet=off -count=1 -v -run TestEvAutoLeaveQuota (MaxUncommittedEntriesSize=9) .)",
+   "result": "PASS (observational test; values printed as RESULT lines)",
+   "logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  },
+  "requirement_evidence": "raft.go advance (new): `oldApplied < pendingConfIndex && newApplied >= pendingConfIndex`, Data=nil, panic(\"refused un-refusable auto-leaving ConfChangeV2\"), pendingConfIndex = lastIndex(); increaseUncommittedSize s>0 comment; TestUncommittedEntryLimit \"we can always append an entry with no Data ... auto-transitioning out of joint config\"; testdata/confchange_v2_add_double_auto.txt \"a bug in which these proposals would prompt the leader to transition out of the same joint state multiple times, which would cause a panic\"; rawnode_test pendingConfIndex == auto-leave index; raft.proto ConfState.auto_leave \"Raft will automatically transition into the final config\"; node.go Advance doc and README step 4 allow Advance before applying.",
+  "verdict": "accepted",
+  "note": "The old DropQuota escape is removed: the update makes auto-leave un-refusable (refusal now panics).",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/EvWitness.tla",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)"
+   ],
+   "cfg": [
+    "evidence/cfg/D2_proposed_old_pre-old.cfg",
+    "evidence/cfg/D2_base_old_pre-old.cfg"
+   ],
+   "tlc_logs": [
+    "evidence/logs/tlc_D2_proposed_old_pre-old.log",
+    "evidence/logs/tlc_D2_base_old_pre-old.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go"
+   ],
+   "go_logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  }
+ },
+ {
+  "id": "EV-AL-D2-NEWCODE",
+  "property": "AutoLeaveAdvance (UpdateAutoLeaveAdvance)",
+  "kind": "control",
+  "state": {
+   "witness": "D2 pre-state stepped with the new model.",
+   "tlc_post_state": "last |-> 3, lastKind |-> <<\"V2\", 0, \"Auto\", \"w\", 0>>, applied |-> 2, commit |-> 2, pending |-> 3, quota |-> 0, transfer |-> 0, fatal |-> \"\", decision |-> \"\", joint |-> TRUE, autoLeave |-> TRUE",
+   "observation_counts": "\"autoLeaveChecks\", 1, \"proposals\", 0, \"outcomes\", 0, \"effects\", 0",
+   "population": "Pre-state hand-mapped field by field from the Go [*:pre-advance] log line (term, applied, commit, lastIndex, pendingConfIndex, uncommittedSize->quota, config, log entries with payload sizes as weights; cfgHist = log prefix through the last applied conf entry). The autoLeaveChecks record is produced by the real ProtocolAdvance observer on one TLC step of the chosen implementation model; the TLC post-state matches the Go post-advance line."
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "old": "see EV-AL-D2-OLDCODE",
+   "new": "leave appended at 3, pendingConf 3",
+   "test_file": "evidence/go/zz_evidence_test.go",
+   "test": "TestEvAutoLeaveQuota",
+   "command": "cp evidence/go/zz_evidence_test.go evidence/{old,new}tree/ && (cd evidence/<tree> && go test -vet=off -count=1 -v -run TestEvAutoLeaveQuota .)",
+   "result": "PASS (observational test; values printed as RESULT lines)",
+   "logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  },
+  "requirement_evidence": "raft.go advance (new): `oldApplied < pendingConfIndex && newApplied >= pendingConfIndex`, Data=nil, panic(\"refused un-refusable auto-leaving ConfChangeV2\"), pendingConfIndex = lastIndex(); increaseUncommittedSize s>0 comment; TestUncommittedEntryLimit \"we can always append an entry with no Data ... auto-transitioning out of joint config\"; testdata/confchange_v2_add_double_auto.txt \"a bug in which these proposals would prompt the leader to transition out of the same joint state multiple times, which would cause a panic\"; rawnode_test pendingConfIndex == auto-leave index; raft.proto ConfState.auto_leave \"Raft will automatically transition into the final config\"; node.go Advance doc and README step 4 allow Advance before applying.",
+  "verdict": "accepted",
+  "note": "Legitimate allowed behavior accepted by both.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/EvWitness.tla",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)"
+   ],
+   "cfg": [
+    "evidence/cfg/D2_proposed_new_pre-new.cfg"
+   ],
+   "tlc_logs": [
+    "evidence/logs/tlc_D2_proposed_new_pre-new.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go"
+   ],
+   "go_logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  }
+ },
+ {
+  "id": "EV-AL-D3-NEWCODE",
+  "property": "AutoLeaveAdvance (UpdateAutoLeaveAdvance)",
+  "kind": "control",
+  "state": {
+   "witness": "D3: node restored from a snapshot (index 4) with ConfState voters (1 2)&&(1) autoLeave, elected leader in term 2 (applied 4 == pendingConf 4 == lastIndex at election), empty entry 5 committed; Ready commits entry 5 (cursor 5).",
+   "tlc_post_state": "last |-> 5, lastKind |-> <<\"Normal\", \"w\", 0>>, applied |-> 5, commit |-> 5, pending |-> 4, quota |-> 0, transfer |-> 0, fatal |-> \"\", decision |-> \"\", joint |-> TRUE, autoLeave |-> TRUE",
+   "observation_counts": "\"autoLeaveChecks\", 1, \"proposals\", 0, \"outcomes\", 0, \"effects\", 0",
+   "population": "Pre-state hand-mapped field by field from the Go [*:pre-advance] log line (term, applied, commit, lastIndex, pendingConfIndex, uncommittedSize->quota, config, log entries with payload sizes as weights; cfgHist = log prefix through the last applied conf entry). The autoLeaveChecks record is produced by the real ProtocolAdvance observer on one TLC step of the chosen implementation model; the TLC post-state matches the Go post-advance line."
+  },
+  "old_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "old": "auto-leave appended at 6 and the group leaves the joint config",
+   "new": "NOTHING appended (oldApplied 4 < pendingConf 4 is false); after 3 more propose/commit rounds the config is still voters=(1 2)&&(1) autoleave",
+   "test_file": "evidence/go/zz_evidence_test.go",
+   "test": "TestEvAutoLeaveAfterElection",
+   "command": "cp evidence/go/zz_evidence_test.go evidence/{old,new}tree/ && (cd evidence/<tree> && go test -vet=off -count=1 -v -run TestEvAutoLeaveAfterElection .)",
+   "result": "PASS (observational test; values printed as RESULT lines)",
+   "logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  },
+  "requirement_evidence": "raft.go advance (new): `oldApplied < pendingConfIndex && newApplied >= pendingConfIndex`, Data=nil, panic(\"refused un-refusable auto-leaving ConfChangeV2\"), pendingConfIndex = lastIndex(); increaseUncommittedSize s>0 comment; TestUncommittedEntryLimit \"we can always append an entry with no Data ... auto-transitioning out of joint config\"; testdata/confchange_v2_add_double_auto.txt \"a bug in which these proposals would prompt the leader to transition out of the same joint state multiple times, which would cause a panic\"; rawnode_test pendingConfIndex == auto-leave index; raft.proto ConfState.auto_leave \"Raft will automatically transition into the final config\"; node.go Advance doc and README step 4 allow Advance before applying.",
+  "verdict": "accepted",
+  "note": "New-code defect (edge-triggered auto-leave never fires for this leader; contradicts raft.proto auto_leave). Both properties reject it, so the edit does not hide it.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/EvWitness.tla",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)"
+   ],
+   "cfg": [
+    "evidence/cfg/D3_proposed_new_pre-new.cfg"
+   ],
+   "tlc_logs": [
+    "evidence/logs/tlc_D3_proposed_new_pre-new.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go"
+   ],
+   "go_logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  }
+ },
+ {
+  "id": "EV-AL-D3-OLDCODE",
+  "property": "AutoLeaveAdvance (UpdateAutoLeaveAdvance)",
+  "kind": "strengthening",
+  "state": {
+   "witness": "D3 pre-state stepped with the old model.",
+   "tlc_post_state": "last |-> 6, lastKind |-> <<\"V2\", 0, \"Auto\", \"w\", 2>>, applied |-> 5, commit |-> 5, pending |-> 4, quota |-> 2, transfer |-> 0, fatal |-> \"\", decision |-> \"\", joint |-> TRUE, autoLeave |-> TRUE",
+   "observation_counts": "\"autoLeaveChecks\", 1, \"proposals\", 0, \"outcomes\", 0, \"effects\", 0",
+   "population": "Pre-state hand-mapped field by field from the Go [*:pre-advance] log line (term, applied, commit, lastIndex, pendingConfIndex, uncommittedSize->quota, config, log entries with payload sizes as weights; cfgHist = log prefix through the last applied conf entry). The autoLeaveChecks record is produced by the real ProtocolAdvance observer on one TLC step of the chosen implementation model; the TLC post-state matches the Go post-advance line."
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_with_unmigrated_base_observer": true
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "old": "leave appended at 6, pendingConf stays 4",
+   "new": "see EV-AL-D3-NEWCODE",
+   "test_file": "evidence/go/zz_evidence_test.go",
+   "test": "TestEvAutoLeaveAfterElection",
+   "command": "cp evidence/go/zz_evidence_test.go evidence/{old,new}tree/ && (cd evidence/<tree> && go test -vet=off -count=1 -v -run TestEvAutoLeaveAfterElection .)",
+   "result": "PASS (observational test; values printed as RESULT lines)",
+   "logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  },
+  "requirement_evidence": "raft.go advance (new): `oldApplied < pendingConfIndex && newApplied >= pendingConfIndex`, Data=nil, panic(\"refused un-refusable auto-leaving ConfChangeV2\"), pendingConfIndex = lastIndex(); increaseUncommittedSize s>0 comment; TestUncommittedEntryLimit \"we can always append an entry with no Data ... auto-transitioning out of joint config\"; testdata/confchange_v2_add_double_auto.txt \"a bug in which these proposals would prompt the leader to transition out of the same joint state multiple times, which would cause a panic\"; rawnode_test pendingConfIndex == auto-leave index; raft.proto ConfState.auto_leave \"Raft will automatically transition into the final config\"; node.go Advance doc and README step 4 allow Advance before applying.",
+  "verdict": "accepted",
+  "note": "The old code appends but does not cover the leave with pendingConf. The proposed property requires the bump (rawnode_test expects pendingConfIndex = auto-leave index); without it a user leave or a later Advance can duplicate the leave (EV-AL-D1-OLDCODE).",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/EvWitness.tla",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)"
+   ],
+   "cfg": [
+    "evidence/cfg/D3_proposed_old_pre-old.cfg",
+    "evidence/cfg/D3_base_old_pre-old.cfg"
+   ],
+   "tlc_logs": [
+    "evidence/logs/tlc_D3_proposed_old_pre-old.log",
+    "evidence/logs/tlc_D3_base_old_pre-old.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go"
+   ],
+   "go_logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  }
+ },
+ {
+  "id": "EV-AL-D3-FIXED",
+  "property": "AutoLeaveAdvance (UpdateAutoLeaveAdvance)",
+  "kind": "control",
+  "state": {
+   "witness": "D3 pre-state stepped with the corrected behavior (append leave at 6, pendingConf 6).",
+   "tlc_post_state": "last |-> 6, lastKind |-> <<\"V2\", 0, \"Auto\", \"w\", 0>>, applied |-> 5, commit |-> 5, pending |-> 6, quota |-> 0, transfer |-> 0, fatal |-> \"\", decision |-> \"\", joint |-> TRUE, autoLeave |-> TRUE",
+   "observation_counts": "\"autoLeaveChecks\", 1, \"proposals\", 0, \"outcomes\", 0, \"effects\", 0",
+   "population": "Pre-state hand-mapped field by field from the Go [*:pre-advance] log line (term, applied, commit, lastIndex, pendingConfIndex, uncommittedSize->quota, config, log entries with payload sizes as weights; cfgHist = log prefix through the last applied conf entry). The autoLeaveChecks record is produced by the real ProtocolAdvance observer on one TLC step of the chosen implementation model; the TLC post-state matches the Go post-advance line."
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "old": "not_representable",
+   "new": "not_representable",
+   "test_file": "evidence/go/zz_evidence_test.go",
+   "command": "n/a",
+   "result": "n/a"
+  },
+  "requirement_evidence": "raft.go advance (new): `oldApplied < pendingConfIndex && newApplied >= pendingConfIndex`, Data=nil, panic(\"refused un-refusable auto-leaving ConfChangeV2\"), pendingConfIndex = lastIndex(); increaseUncommittedSize s>0 comment; TestUncommittedEntryLimit \"we can always append an entry with no Data ... auto-transitioning out of joint config\"; testdata/confchange_v2_add_double_auto.txt \"a bug in which these proposals would prompt the leader to transition out of the same joint state multiple times, which would cause a panic\"; rawnode_test pendingConfIndex == auto-leave index; raft.proto ConfState.auto_leave \"Raft will automatically transition into the final config\"; node.go Advance doc and README step 4 allow Advance before applying.",
+  "verdict": "accepted",
+  "note": "The proposed property is satisfiable in the defect scenario by a correct implementation.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/EvWitness.tla",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)"
+   ],
+   "cfg": [
+    "evidence/cfg/D3_proposed_fixed_pre-new.cfg"
+   ],
+   "tlc_logs": [
+    "evidence/logs/tlc_D3_proposed_fixed_pre-new.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go"
+   ],
+   "go_logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  }
+ },
+ {
+  "id": "EV-AL-OBSERVER",
+  "property": "history.autoLeaveChecks observer migration",
+  "kind": "observer",
+  "state": {
+   "witness": "D1/E/D2/D3 old-code transitions",
+   "population": "Same TLC step run with base (unmigrated observer) and with Proposed ImplModel=\"old\" (migrated observer)"
+  },
+  "old_property": {
+   "claimed": "old AutoLeaveAdvance value identical under both observers",
+   "tlc": {
+    "D1": [
+     true,
+     true
+    ],
+    "E": [
+     true,
+     true
+    ],
+    "D2": [
+     true,
+     true
+    ],
+    "D3": [
+     true,
+     true
+    ]
+   }
+  },
+  "proposed_property": {
+   "claimed": "n/a",
+   "tlc": "n/a"
+  },
+  "code_observation": {
+   "old": "n/a",
+   "new": "n/a",
+   "result": "not_representable (observer-only check)"
+  },
+  "requirement_evidence": "Added fields cursor, cfgLen, appliedOK, oldApplied, oldPending, afterFatal; old fields are unchanged so the old property keeps its meaning on migrated records.",
+  "verdict": "accepted",
+  "note": "Every witness produced exactly one autoLeaveChecks record (non-vacuous).",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/EvWitness.tla",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)"
+   ],
+   "cfg": [
+    "evidence/cfg/D1_base_old_pre-old.cfg",
+    "evidence/cfg/E_base_old_pre-old.cfg",
+    "evidence/cfg/D2_base_old_pre-old.cfg",
+    "evidence/cfg/D3_base_old_pre-old.cfg",
+    "evidence/cfg/D1_proposed_old_pre-old.cfg",
+    "evidence/cfg/E_proposed_old_pre-old.cfg",
+    "evidence/cfg/D2_proposed_old_pre-old.cfg",
+    "evidence/cfg/D3_proposed_old_pre-old.cfg"
+   ],
+   "tlc_logs": [
+    "evidence/logs/tlc_D1_base_old_pre-old.log",
+    "evidence/logs/tlc_E_base_old_pre-old.log",
+    "evidence/logs/tlc_D2_base_old_pre-old.log",
+    "evidence/logs/tlc_D3_base_old_pre-old.log",
+    "evidence/logs/tlc_D1_proposed_old_pre-old.log",
+    "evidence/logs/tlc_E_proposed_old_pre-old.log",
+    "evidence/logs/tlc_D2_proposed_old_pre-old.log",
+    "evidence/logs/tlc_D3_proposed_old_pre-old.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go"
+   ],
+   "go_logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  }
+ },
+ {
+  "id": "EV-PC-P1-OLDCODE",
+  "property": "ProposalConfigurationDecisions / ProposalContract",
+  "kind": "semantic",
+  "state": {
+   "witness": "P1: joint config, nothing pending, propose V2 Auto <<AddVoter s4>>; old model admits it.",
+   "tlc_post_state": "last |-> 2, lastKind |-> <<\"V2\", 1, \"Auto\", \"w\", 8>>, applied |-> 1, commit |-> 1, pending |-> 2, quota |-> 8, transfer |-> 0, fatal |-> \"\", decision |-> \"Accepted\", joint |-> TRUE, autoLeave |-> FALSE",
+   "observation_counts": "\"autoLeaveChecks\", 0, \"proposals\", 1, \"outcomes\", 1, \"effects\", 0",
+   "population": "Pre-state mapped from the Go [*:pre] line of TestEvAdmission/TestEvQuotaZeroWeight (leader term 1, applied 1, commit 1, pendingConf 0, voters (1 2), joint variant (1 2)&&(1 2) learners (3)); requests[1] holds the invoked proposal; one TLC Propose step of the chosen model produces quality.proposals and history.outcomes via the real observers."
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_unmigrated_base_run": true
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "old": "admitted as EntryConfChangeV2; applying it panics \"can't apply simple config change in joint config\"",
+   "new": "rewritten to EntryNormal; no panic",
+   "test_file": "evidence/go/zz_evidence_test.go",
+   "test": "TestEvAdmission (P1-joint-simple-add)",
+   "command": "cp evidence/go/zz_evidence_test.go evidence/{old,new}tree/ && (cd evidence/<tree> && go test -vet=off -count=1 -v -run TestEvAdmission (P1-joint-simple-add) .)",
+   "result": "PASS (observational test; values printed as RESULT lines)",
+   "logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  },
+  "requirement_evidence": "raft.go stepLeader (new): refuse if alreadyPending; \"must transition out of joint config first\"; \"not in joint state; refusing empty conf change\"; refused entries become EntryNormal; raft.proto ConfChangeV2: leaving = ConfChangeV2 with only (optionally) Context; confchange: Simple in joint -> error, LeaveJoint outside joint -> error, applyConfChange panics on error.",
+  "verdict": "accepted",
+  "note": "Old contract requires admitting a change that crashes the node at apply; the proposed contract forbids it.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/EvWitness.tla",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)"
+   ],
+   "cfg": [
+    "evidence/cfg/P1_proposed_old_pre-old.cfg",
+    "evidence/cfg/P1_base_old_pre-old.cfg"
+   ],
+   "tlc_logs": [
+    "evidence/logs/tlc_P1_proposed_old_pre-old.log",
+    "evidence/logs/tlc_P1_base_old_pre-old.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go"
+   ],
+   "go_logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  }
+ },
+ {
+  "id": "EV-PC-P1-NEWCODE",
+  "property": "ProposalConfigurationDecisions / ProposalContract",
+  "kind": "semantic",
+  "state": {
+   "witness": "P1 stepped with the new model (rewritten to a Normal no-op, pendingConf unchanged).",
+   "tlc_post_state": "last |-> 2, lastKind |-> <<\"Normal\", \"w\", 0>>, applied |-> 1, commit |-> 1, pending |-> 0, quota |-> 0, transfer |-> 0, fatal |-> \"\", decision |-> \"Accepted\", joint |-> TRUE, autoLeave |-> FALSE",
+   "observation_counts": "\"autoLeaveChecks\", 0, \"proposals\", 1, \"outcomes\", 1, \"effects\", 0",
+   "population": "Pre-state mapped from the Go [*:pre] line of TestEvAdmission/TestEvQuotaZeroWeight (leader term 1, applied 1, commit 1, pendingConf 0, voters (1 2), joint variant (1 2)&&(1 2) learners (3)); requests[1] holds the invoked proposal; one TLC Propose step of the chosen model produces quality.proposals and history.outcomes via the real observers."
+  },
+  "old_property": {
+   "claimed": false,
+   "tlc": false,
+   "tlc_unmigrated_base_run": true
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "old": "see EV-PC-P1-OLDCODE",
+   "new": "EntryNormal, pendingConf 0",
+   "test_file": "evidence/go/zz_evidence_test.go",
+   "test": "TestEvAdmission (P1-joint-simple-add)",
+   "command": "cp evidence/go/zz_evidence_test.go evidence/{old,new}tree/ && (cd evidence/<tree> && go test -vet=off -count=1 -v -run TestEvAdmission (P1-joint-simple-add) .)",
+   "result": "PASS (observational test; values printed as RESULT lines)",
+   "logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  },
+  "requirement_evidence": "raft.go stepLeader (new): refuse if alreadyPending; \"must transition out of joint config first\"; \"not in joint state; refusing empty conf change\"; refused entries become EntryNormal; raft.proto ConfChangeV2: leaving = ConfChangeV2 with only (optionally) Context; confchange: Simple in joint -> error, LeaveJoint outside joint -> error, applyConfChange panics on error.",
+  "verdict": "accepted",
+  "note": "Old contract rejects the legitimate refusal.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/EvWitness.tla",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)"
+   ],
+   "cfg": [
+    "evidence/cfg/P1_proposed_new_pre-new.cfg",
+    "evidence/cfg/P1_base_old_pre-old.cfg"
+   ],
+   "tlc_logs": [
+    "evidence/logs/tlc_P1_proposed_new_pre-new.log",
+    "evidence/logs/tlc_P1_base_old_pre-old.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go"
+   ],
+   "go_logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  }
+ },
+ {
+  "id": "EV-PC-P2-OLDCODE",
+  "property": "ProposalConfigurationDecisions / ProposalContract",
+  "kind": "semantic",
+  "state": {
+   "witness": "P2: non-joint config, propose V2 Auto <<>> (leave).",
+   "tlc_post_state": "last |-> 2, lastKind |-> <<\"V2\", 0, \"Auto\", \"w\", 2>>, applied |-> 1, commit |-> 1, pending |-> 2, quota |-> 2, transfer |-> 0, fatal |-> \"\", decision |-> \"Accepted\", joint |-> FALSE, autoLeave |-> FALSE",
+   "observation_counts": "\"autoLeaveChecks\", 0, \"proposals\", 1, \"outcomes\", 1, \"effects\", 0",
+   "population": "Pre-state mapped from the Go [*:pre] line of TestEvAdmission/TestEvQuotaZeroWeight (leader term 1, applied 1, commit 1, pendingConf 0, voters (1 2), joint variant (1 2)&&(1 2) learners (3)); requests[1] holds the invoked proposal; one TLC Propose step of the chosen model produces quality.proposals and history.outcomes via the real observers."
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_unmigrated_base_run": true
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "old": "admitted; applying panics \"can't leave a non-joint config\"",
+   "new": "refused (EntryNormal)",
+   "test_file": "evidence/go/zz_evidence_test.go",
+   "test": "TestEvAdmission (P2-nonjoint-leave)",
+   "command": "cp evidence/go/zz_evidence_test.go evidence/{old,new}tree/ && (cd evidence/<tree> && go test -vet=off -count=1 -v -run TestEvAdmission (P2-nonjoint-leave) .)",
+   "result": "PASS (observational test; values printed as RESULT lines)",
+   "logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  },
+  "requirement_evidence": "raft.go stepLeader (new): refuse if alreadyPending; \"must transition out of joint config first\"; \"not in joint state; refusing empty conf change\"; refused entries become EntryNormal; raft.proto ConfChangeV2: leaving = ConfChangeV2 with only (optionally) Context; confchange: Simple in joint -> error, LeaveJoint outside joint -> error, applyConfChange panics on error.",
+  "verdict": "accepted",
+  "note": "Same pattern as P1.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/EvWitness.tla",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)"
+   ],
+   "cfg": [
+    "evidence/cfg/P2_proposed_old_pre-old.cfg",
+    "evidence/cfg/P2_base_old_pre-old.cfg"
+   ],
+   "tlc_logs": [
+    "evidence/logs/tlc_P2_proposed_old_pre-old.log",
+    "evidence/logs/tlc_P2_base_old_pre-old.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go"
+   ],
+   "go_logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  }
+ },
+ {
+  "id": "EV-PC-P2-NEWCODE",
+  "property": "ProposalConfigurationDecisions / ProposalContract",
+  "kind": "semantic",
+  "state": {
+   "witness": "P2 stepped with the new model.",
+   "tlc_post_state": "last |-> 2, lastKind |-> <<\"Normal\", \"w\", 0>>, applied |-> 1, commit |-> 1, pending |-> 0, quota |-> 0, transfer |-> 0, fatal |-> \"\", decision |-> \"Accepted\", joint |-> FALSE, autoLeave |-> FALSE",
+   "observation_counts": "\"autoLeaveChecks\", 0, \"proposals\", 1, \"outcomes\", 1, \"effects\", 0",
+   "population": "Pre-state mapped from the Go [*:pre] line of TestEvAdmission/TestEvQuotaZeroWeight (leader term 1, applied 1, commit 1, pendingConf 0, voters (1 2), joint variant (1 2)&&(1 2) learners (3)); requests[1] holds the invoked proposal; one TLC Propose step of the chosen model produces quality.proposals and history.outcomes via the real observers."
+  },
+  "old_property": {
+   "claimed": false,
+   "tlc": false,
+   "tlc_unmigrated_base_run": true
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "old": "see EV-PC-P2-OLDCODE",
+   "new": "refused (EntryNormal)",
+   "test_file": "evidence/go/zz_evidence_test.go",
+   "test": "TestEvAdmission (P2-nonjoint-leave)",
+   "command": "cp evidence/go/zz_evidence_test.go evidence/{old,new}tree/ && (cd evidence/<tree> && go test -vet=off -count=1 -v -run TestEvAdmission (P2-nonjoint-leave) .)",
+   "result": "PASS (observational test; values printed as RESULT lines)",
+   "logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  },
+  "requirement_evidence": "raft.go stepLeader (new): refuse if alreadyPending; \"must transition out of joint config first\"; \"not in joint state; refusing empty conf change\"; refused entries become EntryNormal; raft.proto ConfChangeV2: leaving = ConfChangeV2 with only (optionally) Context; confchange: Simple in joint -> error, LeaveJoint outside joint -> error, applyConfChange panics on error.",
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/EvWitness.tla",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)"
+   ],
+   "cfg": [
+    "evidence/cfg/P2_proposed_new_pre-new.cfg",
+    "evidence/cfg/P2_base_old_pre-old.cfg"
+   ],
+   "tlc_logs": [
+    "evidence/logs/tlc_P2_proposed_new_pre-new.log",
+    "evidence/logs/tlc_P2_base_old_pre-old.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go"
+   ],
+   "go_logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  }
+ },
+ {
+  "id": "EV-PC-C1",
+  "property": "ProposalConfigurationDecisions / ProposalContract",
+  "kind": "control",
+  "state": {
+   "witness": "C1: joint config, propose a leave (V2 Auto <<>>): legitimate, admitted by both models.",
+   "tlc_post_state": "last |-> 2, lastKind |-> <<\"V2\", 0, \"Auto\", \"w\", 2>>, applied |-> 1, commit |-> 1, pending |-> 2, quota |-> 2, transfer |-> 0, fatal |-> \"\", decision |-> \"Accepted\", joint |-> TRUE, autoLeave |-> FALSE",
+   "observation_counts": "\"autoLeaveChecks\", 0, \"proposals\", 1, \"outcomes\", 1, \"effects\", 0",
+   "population": "Pre-state mapped from the Go [*:pre] line of TestEvAdmission/TestEvQuotaZeroWeight (leader term 1, applied 1, commit 1, pendingConf 0, voters (1 2), joint variant (1 2)&&(1 2) learners (3)); requests[1] holds the invoked proposal; one TLC Propose step of the chosen model produces quality.proposals and history.outcomes via the real observers."
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_unmigrated_base_run": true
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "old": "admitted; applies cleanly",
+   "new": "admitted; applies cleanly",
+   "test_file": "evidence/go/zz_evidence_test.go",
+   "test": "TestEvAdmission (C1-joint-leave)",
+   "command": "cp evidence/go/zz_evidence_test.go evidence/{old,new}tree/ && (cd evidence/<tree> && go test -vet=off -count=1 -v -run TestEvAdmission (C1-joint-leave) .)",
+   "result": "PASS (observational test; values printed as RESULT lines)",
+   "logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  },
+  "requirement_evidence": "raft.go stepLeader (new): refuse if alreadyPending; \"must transition out of joint config first\"; \"not in joint state; refusing empty conf change\"; refused entries become EntryNormal; raft.proto ConfChangeV2: leaving = ConfChangeV2 with only (optionally) Context; confchange: Simple in joint -> error, LeaveJoint outside joint -> error, applyConfChange panics on error.",
+  "verdict": "accepted",
+  "note": "Allowed control: TRUE under old and new contracts for old and new models (see also C1_proposed_old_pre-old, C1_base_old_pre-old).",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/EvWitness.tla",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)"
+   ],
+   "cfg": [
+    "evidence/cfg/C1_proposed_new_pre-new.cfg",
+    "evidence/cfg/C1_base_old_pre-old.cfg"
+   ],
+   "tlc_logs": [
+    "evidence/logs/tlc_C1_proposed_new_pre-new.log",
+    "evidence/logs/tlc_C1_base_old_pre-old.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go"
+   ],
+   "go_logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  }
+ },
+ {
+  "id": "EV-PC-C2",
+  "property": "ProposalConfigurationDecisions / ProposalContract",
+  "kind": "control",
+  "state": {
+   "witness": "C2: non-joint config, propose V2 Auto <<AddVoter s4>>: legitimate, admitted.",
+   "tlc_post_state": "last |-> 2, lastKind |-> <<\"V2\", 1, \"Auto\", \"w\", 8>>, applied |-> 1, commit |-> 1, pending |-> 2, quota |-> 8, transfer |-> 0, fatal |-> \"\", decision |-> \"Accepted\", joint |-> FALSE, autoLeave |-> FALSE",
+   "observation_counts": "\"autoLeaveChecks\", 0, \"proposals\", 1, \"outcomes\", 1, \"effects\", 0",
+   "population": "Pre-state mapped from the Go [*:pre] line of TestEvAdmission/TestEvQuotaZeroWeight (leader term 1, applied 1, commit 1, pendingConf 0, voters (1 2), joint variant (1 2)&&(1 2) learners (3)); requests[1] holds the invoked proposal; one TLC Propose step of the chosen model produces quality.proposals and history.outcomes via the real observers."
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_unmigrated_base_run": true
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "old": "admitted; voters (1 2 4)",
+   "new": "admitted; voters (1 2 4)",
+   "test_file": "evidence/go/zz_evidence_test.go",
+   "test": "TestEvAdmission (C2-nonjoint-simple-add)",
+   "command": "cp evidence/go/zz_evidence_test.go evidence/{old,new}tree/ && (cd evidence/<tree> && go test -vet=off -count=1 -v -run TestEvAdmission (C2-nonjoint-simple-add) .)",
+   "result": "PASS (observational test; values printed as RESULT lines)",
+   "logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  },
+  "requirement_evidence": "raft.go stepLeader (new): refuse if alreadyPending; \"must transition out of joint config first\"; \"not in joint state; refusing empty conf change\"; refused entries become EntryNormal; raft.proto ConfChangeV2: leaving = ConfChangeV2 with only (optionally) Context; confchange: Simple in joint -> error, LeaveJoint outside joint -> error, applyConfChange panics on error.",
+  "verdict": "accepted",
+  "note": "Allowed control.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/EvWitness.tla",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)"
+   ],
+   "cfg": [
+    "evidence/cfg/C2_proposed_new_pre-new.cfg",
+    "evidence/cfg/C2_base_old_pre-old.cfg"
+   ],
+   "tlc_logs": [
+    "evidence/logs/tlc_C2_proposed_new_pre-new.log",
+    "evidence/logs/tlc_C2_base_old_pre-old.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go"
+   ],
+   "go_logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  }
+ },
+ {
+  "id": "EV-PC-P5-NEWCODE",
+  "property": "ProposalConfigurationDecisions / ProposalContract",
+  "kind": "strengthening",
+  "state": {
+   "witness": "P5: joint config, propose V2 JointExplicit <<>> (empty but not a leave per raft.proto); the new model admits it (len(Changes)==0).",
+   "tlc_post_state": "last |-> 2, lastKind |-> <<\"V2\", 0, \"JointExplicit\", \"w\", 2>>, applied |-> 1, commit |-> 1, pending |-> 2, quota |-> 2, transfer |-> 0, fatal |-> \"\", decision |-> \"Accepted\", joint |-> TRUE, autoLeave |-> FALSE",
+   "observation_counts": "\"autoLeaveChecks\", 0, \"proposals\", 1, \"outcomes\", 1, \"effects\", 0",
+   "population": "Pre-state mapped from the Go [*:pre] line of TestEvAdmission/TestEvQuotaZeroWeight (leader term 1, applied 1, commit 1, pendingConf 0, voters (1 2), joint variant (1 2)&&(1 2) learners (3)); requests[1] holds the invoked proposal; one TLC Propose step of the chosen model produces quality.proposals and history.outcomes via the real observers."
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_unmigrated_base_run": true
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "old": "admitted; applying panics \"config is already joint\"",
+   "new": "admitted; applying panics \"config is already joint\"",
+   "test_file": "evidence/go/zz_evidence_test.go",
+   "test": "TestEvAdmission (P5-joint-empty-explicit)",
+   "command": "cp evidence/go/zz_evidence_test.go evidence/{old,new}tree/ && (cd evidence/<tree> && go test -vet=off -count=1 -v -run TestEvAdmission (P5-joint-empty-explicit) .)",
+   "result": "PASS (observational test; values printed as RESULT lines)",
+   "logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  },
+  "requirement_evidence": "raft.go stepLeader (new): refuse if alreadyPending; \"must transition out of joint config first\"; \"not in joint state; refusing empty conf change\"; refused entries become EntryNormal; raft.proto ConfChangeV2: leaving = ConfChangeV2 with only (optionally) Context; confchange: Simple in joint -> error, LeaveJoint outside joint -> error, applyConfChange panics on error.",
+  "verdict": "accepted",
+  "note": "The proposed contract (only IsLeave admissible in joint) flags a remaining implementation defect in BOTH versions. The property is not weakened to match the code.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/EvWitness.tla",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)"
+   ],
+   "cfg": [
+    "evidence/cfg/P5_proposed_new_pre-new.cfg",
+    "evidence/cfg/P5_base_old_pre-old.cfg"
+   ],
+   "tlc_logs": [
+    "evidence/logs/tlc_P5_proposed_new_pre-new.log",
+    "evidence/logs/tlc_P5_base_old_pre-old.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go"
+   ],
+   "go_logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  }
+ },
+ {
+  "id": "EV-PC-P6-OLDCODE",
+  "property": "ProposalConfigurationDecisions / ProposalContract",
+  "kind": "semantic",
+  "state": {
+   "witness": "P6: non-joint config, propose V2 JointExplicit <<>>; old model admits (valid: enters (1 2)&&(1 2)).",
+   "tlc_post_state": "last |-> 2, lastKind |-> <<\"V2\", 0, \"JointExplicit\", \"w\", 2>>, applied |-> 1, commit |-> 1, pending |-> 2, quota |-> 2, transfer |-> 0, fatal |-> \"\", decision |-> \"Accepted\", joint |-> FALSE, autoLeave |-> FALSE",
+   "observation_counts": "\"autoLeaveChecks\", 0, \"proposals\", 1, \"outcomes\", 1, \"effects\", 0",
+   "population": "Pre-state mapped from the Go [*:pre] line of TestEvAdmission/TestEvQuotaZeroWeight (leader term 1, applied 1, commit 1, pendingConf 0, voters (1 2), joint variant (1 2)&&(1 2) learners (3)); requests[1] holds the invoked proposal; one TLC Propose step of the chosen model produces quality.proposals and history.outcomes via the real observers."
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_unmigrated_base_run": true
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "old": "admitted; applies to voters=(1 2)&&(1 2)",
+   "new": "refused (EntryNormal)",
+   "test_file": "evidence/go/zz_evidence_test.go",
+   "test": "TestEvAdmission (P6-nonjoint-empty-explicit)",
+   "command": "cp evidence/go/zz_evidence_test.go evidence/{old,new}tree/ && (cd evidence/<tree> && go test -vet=off -count=1 -v -run TestEvAdmission (P6-nonjoint-empty-explicit) .)",
+   "result": "PASS (observational test; values printed as RESULT lines)",
+   "logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  },
+  "requirement_evidence": "raft.go stepLeader (new): refuse if alreadyPending; \"must transition out of joint config first\"; \"not in joint state; refusing empty conf change\"; refused entries become EntryNormal; raft.proto ConfChangeV2: leaving = ConfChangeV2 with only (optionally) Context; confchange: Simple in joint -> error, LeaveJoint outside joint -> error, applyConfChange panics on error.",
+  "verdict": "accepted",
+  "note": "Requirement change adopted from the update's explicit design (\"not in joint state; refusing empty conf change\"). The old behavior was valid but pointless; the new rule is conservative.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/EvWitness.tla",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)"
+   ],
+   "cfg": [
+    "evidence/cfg/P6_proposed_old_pre-old.cfg",
+    "evidence/cfg/P6_base_old_pre-old.cfg"
+   ],
+   "tlc_logs": [
+    "evidence/logs/tlc_P6_proposed_old_pre-old.log",
+    "evidence/logs/tlc_P6_base_old_pre-old.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go"
+   ],
+   "go_logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  }
+ },
+ {
+  "id": "EV-PC-P6-NEWCODE",
+  "property": "ProposalConfigurationDecisions / ProposalContract",
+  "kind": "semantic",
+  "state": {
+   "witness": "P6 stepped with the new model.",
+   "tlc_post_state": "last |-> 2, lastKind |-> <<\"Normal\", \"w\", 0>>, applied |-> 1, commit |-> 1, pending |-> 0, quota |-> 0, transfer |-> 0, fatal |-> \"\", decision |-> \"Accepted\", joint |-> FALSE, autoLeave |-> FALSE",
+   "observation_counts": "\"autoLeaveChecks\", 0, \"proposals\", 1, \"outcomes\", 1, \"effects\", 0",
+   "population": "Pre-state mapped from the Go [*:pre] line of TestEvAdmission/TestEvQuotaZeroWeight (leader term 1, applied 1, commit 1, pendingConf 0, voters (1 2), joint variant (1 2)&&(1 2) learners (3)); requests[1] holds the invoked proposal; one TLC Propose step of the chosen model produces quality.proposals and history.outcomes via the real observers."
+  },
+  "old_property": {
+   "claimed": false,
+   "tlc": false,
+   "tlc_unmigrated_base_run": true
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "old": "see EV-PC-P6-OLDCODE",
+   "new": "refused",
+   "test_file": "evidence/go/zz_evidence_test.go",
+   "test": "TestEvAdmission (P6-nonjoint-empty-explicit)",
+   "command": "cp evidence/go/zz_evidence_test.go evidence/{old,new}tree/ && (cd evidence/<tree> && go test -vet=off -count=1 -v -run TestEvAdmission (P6-nonjoint-empty-explicit) .)",
+   "result": "PASS (observational test; values printed as RESULT lines)",
+   "logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  },
+  "requirement_evidence": "raft.go stepLeader (new): refuse if alreadyPending; \"must transition out of joint config first\"; \"not in joint state; refusing empty conf change\"; refused entries become EntryNormal; raft.proto ConfChangeV2: leaving = ConfChangeV2 with only (optionally) Context; confchange: Simple in joint -> error, LeaveJoint outside joint -> error, applyConfChange panics on error.",
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/EvWitness.tla",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)"
+   ],
+   "cfg": [
+    "evidence/cfg/P6_proposed_new_pre-new.cfg",
+    "evidence/cfg/P6_base_old_pre-old.cfg"
+   ],
+   "tlc_logs": [
+    "evidence/logs/tlc_P6_proposed_new_pre-new.log",
+    "evidence/logs/tlc_P6_base_old_pre-old.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go"
+   ],
+   "go_logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  }
+ },
+ {
+  "id": "EV-PC-P4-OLDCODE",
+  "property": "ProposalConfigurationDecisions / ProposalContract + OutcomeSoundness",
+  "kind": "relaxation",
+  "state": {
+   "witness": "P4: non-joint leader with quota 3 > MaxUncommitted 2 (an oversized \"xxx\" entry admitted at quota 0), propose a Normal entry with empty Data (weight 0).",
+   "tlc_post_state": "last |-> 2, lastKind |-> <<\"Normal\", \"w\", 3>>, applied |-> 1, commit |-> 1, pending |-> 0, quota |-> 3, transfer |-> 0, fatal |-> \"\", decision |-> \"DropQuota\", joint |-> FALSE, autoLeave |-> FALSE",
+   "observation_counts": "\"autoLeaveChecks\", 0, \"proposals\", 1, \"outcomes\", 1, \"effects\", 0",
+   "population": "Pre-state mapped from the Go [*:pre] line of TestEvAdmission/TestEvQuotaZeroWeight (leader term 1, applied 1, commit 1, pendingConf 0, voters (1 2), joint variant (1 2)&&(1 2) learners (3)); requests[1] holds the invoked proposal; one TLC Propose step of the chosen model produces quality.proposals and history.outcomes via the real observers."
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_unmigrated_base_run": true,
+   "OutcomeSoundness": {
+    "claimed": true,
+    "tlc": true
+   }
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false,
+   "OutcomeSoundness": {
+    "claimed": false,
+    "tlc": false
+   }
+  },
+  "code_observation": {
+   "old": "ErrProposalDropped (DropQuota)",
+   "new": "accepted (appended)",
+   "test_file": "evidence/go/zz_evidence_test.go",
+   "test": "TestEvQuotaZeroWeight",
+   "command": "cp evidence/go/zz_evidence_test.go evidence/{old,new}tree/ && (cd evidence/<tree> && go test -vet=off -count=1 -v -run TestEvQuotaZeroWeight .)",
+   "result": "PASS (observational test; values printed as RESULT lines)",
+   "logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  },
+  "requirement_evidence": "raft.go increaseUncommittedSize (new): `uncommittedSize > 0 && s > 0 && ...`; comment \"appending single empty entries to the log always succeeds\"; raft_test.go TestUncommittedEntryLimit new assertion that an empty-Data proposal is accepted at the limit.",
+  "verdict": "accepted",
+  "note": "The old behavior (drop) is now forbidden by the proposed contracts; ExpectedDecision changes identically.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/EvWitness.tla",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)"
+   ],
+   "cfg": [
+    "evidence/cfg/P4_proposed_old_pre-old.cfg",
+    "evidence/cfg/P4_base_old_pre-old.cfg"
+   ],
+   "tlc_logs": [
+    "evidence/logs/tlc_P4_proposed_old_pre-old.log",
+    "evidence/logs/tlc_P4_base_old_pre-old.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go"
+   ],
+   "go_logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  }
+ },
+ {
+  "id": "EV-PC-P4-NEWCODE",
+  "property": "ProposalConfigurationDecisions / ProposalContract + OutcomeSoundness",
+  "kind": "relaxation",
+  "state": {
+   "witness": "P4 stepped with the new model (accepted).",
+   "tlc_post_state": "last |-> 3, lastKind |-> <<\"Normal\", \"w\", 0>>, applied |-> 1, commit |-> 1, pending |-> 0, quota |-> 3, transfer |-> 0, fatal |-> \"\", decision |-> \"Accepted\", joint |-> FALSE, autoLeave |-> FALSE",
+   "observation_counts": "\"autoLeaveChecks\", 0, \"proposals\", 1, \"outcomes\", 1, \"effects\", 0",
+   "population": "Pre-state mapped from the Go [*:pre] line of TestEvAdmission/TestEvQuotaZeroWeight (leader term 1, applied 1, commit 1, pendingConf 0, voters (1 2), joint variant (1 2)&&(1 2) learners (3)); requests[1] holds the invoked proposal; one TLC Propose step of the chosen model produces quality.proposals and history.outcomes via the real observers."
+  },
+  "old_property": {
+   "claimed": false,
+   "tlc": false,
+   "tlc_unmigrated_base_run": true,
+   "OutcomeSoundness": {
+    "claimed": false,
+    "tlc": false
+   }
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true,
+   "OutcomeSoundness": {
+    "claimed": true,
+    "tlc": true
+   }
+  },
+  "code_observation": {
+   "old": "see EV-PC-P4-OLDCODE",
+   "new": "accepted",
+   "test_file": "evidence/go/zz_evidence_test.go",
+   "test": "TestEvQuotaZeroWeight",
+   "command": "cp evidence/go/zz_evidence_test.go evidence/{old,new}tree/ && (cd evidence/<tree> && go test -vet=off -count=1 -v -run TestEvQuotaZeroWeight .)",
+   "result": "PASS (observational test; values printed as RESULT lines)",
+   "logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  },
+  "requirement_evidence": "raft.go increaseUncommittedSize (new): `uncommittedSize > 0 && s > 0 && ...`; comment \"appending single empty entries to the log always succeeds\"; raft_test.go TestUncommittedEntryLimit new assertion that an empty-Data proposal is accepted at the limit.",
+  "verdict": "accepted",
+  "note": "Old ProposalContract and OutcomeSoundness reject the new zero-payload acceptance; proposed accept it.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/EvWitness.tla",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)"
+   ],
+   "cfg": [
+    "evidence/cfg/P4_proposed_new_pre-new.cfg",
+    "evidence/cfg/P4_base_old_pre-old.cfg"
+   ],
+   "tlc_logs": [
+    "evidence/logs/tlc_P4_proposed_new_pre-new.log",
+    "evidence/logs/tlc_P4_base_old_pre-old.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go"
+   ],
+   "go_logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  }
+ },
+ {
+  "id": "EV-PC-Q1",
+  "property": "ProposalConfigurationDecisions / ProposalContract + OutcomeSoundness",
+  "kind": "control",
+  "state": {
+   "witness": "Q1: same pre-state, propose weight 1: must still be dropped.",
+   "tlc_post_state": "last |-> 2, lastKind |-> <<\"Normal\", \"w\", 3>>, applied |-> 1, commit |-> 1, pending |-> 0, quota |-> 3, transfer |-> 0, fatal |-> \"\", decision |-> \"DropQuota\", joint |-> FALSE, autoLeave |-> FALSE",
+   "observation_counts": "\"autoLeaveChecks\", 0, \"proposals\", 1, \"outcomes\", 1, \"effects\", 0",
+   "population": "Pre-state mapped from the Go [*:pre] line of TestEvAdmission/TestEvQuotaZeroWeight (leader term 1, applied 1, commit 1, pendingConf 0, voters (1 2), joint variant (1 2)&&(1 2) learners (3)); requests[1] holds the invoked proposal; one TLC Propose step of the chosen model produces quality.proposals and history.outcomes via the real observers."
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_unmigrated_base_run": true,
+   "OutcomeSoundness": {
+    "claimed": true,
+    "tlc": true
+   }
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true,
+   "OutcomeSoundness": {
+    "claimed": true,
+    "tlc": true
+   }
+  },
+  "code_observation": {
+   "old": "ErrProposalDropped",
+   "new": "ErrProposalDropped",
+   "test_file": "evidence/go/zz_evidence_test.go",
+   "test": "TestEvQuotaZeroWeight",
+   "command": "cp evidence/go/zz_evidence_test.go evidence/{old,new}tree/ && (cd evidence/<tree> && go test -vet=off -count=1 -v -run TestEvQuotaZeroWeight .)",
+   "result": "PASS (observational test; values printed as RESULT lines)",
+   "logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  },
+  "requirement_evidence": "raft.go increaseUncommittedSize (new): `uncommittedSize > 0 && s > 0 && ...`; comment \"appending single empty entries to the log always succeeds\"; raft_test.go TestUncommittedEntryLimit new assertion that an empty-Data proposal is accepted at the limit.",
+  "verdict": "accepted",
+  "note": "Relaxation is limited to zero-payload batches.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/EvWitness.tla",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)"
+   ],
+   "cfg": [
+    "evidence/cfg/Q1_proposed_new_pre-new.cfg",
+    "evidence/cfg/Q1_base_old_pre-old.cfg"
+   ],
+   "tlc_logs": [
+    "evidence/logs/tlc_Q1_proposed_new_pre-new.log",
+    "evidence/logs/tlc_Q1_base_old_pre-old.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go"
+   ],
+   "go_logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  }
+ },
+ {
+  "id": "EV-PC-FORBIDDEN",
+  "property": "ProposalContract + ExpectedDecision (OutcomeSoundness)",
+  "kind": "control",
+  "state": {
+   "witness": "Hypothetical acceptance at the QR pre-state (quota 3 > MaxUncommitted 2) of a weight-1 proposal (forbidden) and of a weight-0 proposal (allowed).",
+   "population": "Records built by the actual ProposalObservation operator (old and migrated) and the ProtocolPropose outcome-record expression applied to the hypothetical post-state; evaluated in ASSUMEs."
+  },
+  "old_property": {
+   "claimed": {
+    "w1_accepted": false,
+    "w0_accepted": false
+   },
+   "tlc": {
+    "w1_accepted": {
+     "ProposalContract": false,
+     "ExpectedDecision=Accepted": false
+    },
+    "w0_accepted": {
+     "ProposalContract": false,
+     "ExpectedDecision=Accepted": false
+    }
+   }
+  },
+  "proposed_property": {
+   "claimed": {
+    "w1_accepted": false,
+    "w0_accepted": true
+   },
+   "tlc": {
+    "w1_accepted": {
+     "ProposalContract": false,
+     "ExpectedDecision=Accepted": false
+    },
+    "w0_accepted": {
+     "ProposalContract": true,
+     "ExpectedDecision=Accepted": true
+    }
+   }
+  },
+  "code_observation": {
+   "old": "weight 1 dropped; weight 0 dropped",
+   "new": "weight 1 dropped; weight 0 accepted",
+   "test_file": "evidence/go/zz_evidence_test.go",
+   "test": "TestEvQuotaZeroWeight",
+   "command": "cp evidence/go/zz_evidence_test.go evidence/{old,new}tree/ && (cd evidence/<tree> && go test -vet=off -count=1 -v -run TestEvQuotaZeroWeight .)",
+   "result": "PASS (observational test; values printed as RESULT lines)",
+   "logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  },
+  "requirement_evidence": "raft.go increaseUncommittedSize (new): `uncommittedSize > 0 && s > 0 && ...`; comment \"appending single empty entries to the log always succeeds\"; raft_test.go TestUncommittedEntryLimit new assertion that an empty-Data proposal is accepted at the limit.",
+  "verdict": "accepted",
+  "note": "Nearby forbidden observation stays rejected after the relaxation.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/EvWitness.tla",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)",
+    "evidence/EvForbidden.tla"
+   ],
+   "cfg": [
+    "evidence/cfg/EvForbidden.cfg"
+   ],
+   "tlc_logs": [
+    "evidence/logs/tlc_forbidden.log"
+   ]
+  }
+ },
+ {
+  "id": "EV-TT-OLDCODE",
+  "property": "TransferTargetVoter (new)",
+  "kind": "strengthening",
+  "state": {
+   "witness": "T: leader s1 term 1 with leadTransferee s3; config (s1 s2)&&(s1 s2 s3) learnersNext {s3} autoLeave after applying V2 Auto <<Remove s3, AddLearner s3>>; the leave entry (index 3) is then applied (ApplyEntry step).",
+   "tlc_post_state": "last |-> 3, lastKind |-> <<\"V2\", 0, \"Auto\", \"w\", 0>>, applied |-> 2, commit |-> 3, pending |-> 3, quota |-> 0, transfer |-> s3, fatal |-> \"\", decision |-> \"\", joint |-> FALSE, autoLeave |-> FALSE",
+   "observation_counts": "\"autoLeaveChecks\", 0, \"proposals\", 0, \"outcomes\", 0, \"effects\", 1",
+   "population": "Mapped from the Go T-joint/T-left lines (TestEvTransferDemote, logic of the new TestLeaderTransferDemoteNode); the transition is the real ApplyEntry/ApplyConfCore of the chosen model."
+  },
+  "old_property": {
+   "claimed": "absent (no old property constrains the transferee)",
+   "tlc": "absent-in-old-suite"
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false,
+   "pre_state_tlc": true
+  },
+  "code_observation": {
+   "old": "after leaving joint: transferee=3 while 3 is a learner (leader keeps refusing proposals with DropTransfer)",
+   "new": "transferee=0",
+   "test_file": "evidence/go/zz_evidence_test.go",
+   "test": "TestEvTransferDemote",
+   "command": "cp evidence/go/zz_evidence_test.go evidence/{old,new}tree/ && (cd evidence/<tree> && go test -vet=off -count=1 -v -run TestEvTransferDemote .)",
+   "result": "PASS (observational test; values printed as RESULT lines)",
+   "logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  },
+  "requirement_evidence": "raft.go switchToConfig (new): \"If the leadTransferee was removed or demoted, abort the leadership transfer\" (Voters.IDs()); raft_test.go TestLeaderTransferDemoteNode; StepLeaderTransfer already ignores learner targets.",
+  "verdict": "accepted",
+  "note": "Old ApplyConfCore keeps a demoted transferee (s3 now a learner). The old suite has no property for this, so it was accepted; the new property rejects it.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/EvWitness.tla",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)"
+   ],
+   "cfg": [
+    "evidence/cfg/T_proposed_old_pre-old.cfg",
+    "evidence/cfg/T_base_old_pre-old.cfg"
+   ],
+   "tlc_logs": [
+    "evidence/logs/tlc_T_proposed_old_pre-old.log",
+    "evidence/logs/tlc_T_base_old_pre-old.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go"
+   ],
+   "go_logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  }
+ },
+ {
+  "id": "EV-TT-NEWCODE",
+  "property": "TransferTargetVoter (new)",
+  "kind": "control",
+  "state": {
+   "witness": "T: leader s1 term 1 with leadTransferee s3; config (s1 s2)&&(s1 s2 s3) learnersNext {s3} autoLeave after applying V2 Auto <<Remove s3, AddLearner s3>>; the leave entry (index 3) is then applied (ApplyEntry step).",
+   "tlc_post_state": "last |-> 3, lastKind |-> <<\"V2\", 0, \"Auto\", \"w\", 0>>, applied |-> 2, commit |-> 3, pending |-> 3, quota |-> 0, transfer |-> 0, fatal |-> \"\", decision |-> \"\", joint |-> FALSE, autoLeave |-> FALSE",
+   "observation_counts": "\"autoLeaveChecks\", 0, \"proposals\", 0, \"outcomes\", 0, \"effects\", 1",
+   "population": "Mapped from the Go T-joint/T-left lines (TestEvTransferDemote, logic of the new TestLeaderTransferDemoteNode); the transition is the real ApplyEntry/ApplyConfCore of the chosen model."
+  },
+  "old_property": {
+   "claimed": "absent (no old property constrains the transferee)",
+   "tlc": "absent-in-old-suite"
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true,
+   "pre_state_tlc": true
+  },
+  "code_observation": {
+   "old": "after leaving joint: transferee=3 while 3 is a learner (leader keeps refusing proposals with DropTransfer)",
+   "new": "transferee=0",
+   "test_file": "evidence/go/zz_evidence_test.go",
+   "test": "TestEvTransferDemote",
+   "command": "cp evidence/go/zz_evidence_test.go evidence/{old,new}tree/ && (cd evidence/<tree> && go test -vet=off -count=1 -v -run TestEvTransferDemote .)",
+   "result": "PASS (observational test; values printed as RESULT lines)",
+   "logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  },
+  "requirement_evidence": "raft.go switchToConfig (new): \"If the leadTransferee was removed or demoted, abort the leadership transfer\" (Voters.IDs()); raft_test.go TestLeaderTransferDemoteNode; StepLeaderTransfer already ignores learner targets.",
+  "verdict": "accepted",
+  "note": "New behavior (transfer aborted) is accepted.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/EvWitness.tla",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)"
+   ],
+   "cfg": [
+    "evidence/cfg/T_proposed_new_pre-new.cfg",
+    "evidence/cfg/T_base_old_pre-old.cfg"
+   ],
+   "tlc_logs": [
+    "evidence/logs/tlc_T_proposed_new_pre-new.log",
+    "evidence/logs/tlc_T_base_old_pre-old.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go"
+   ],
+   "go_logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  }
+ },
+ {
+  "id": "EV-TT-CONTROLS",
+  "property": "TransferTargetVoter (new)",
+  "kind": "control",
+  "state": {
+   "witness": "Leader TR with transfer target varied over the post-leave config voters {s1,s2} learners {s3}, plus the pre-leave joint config.",
+   "population": "Constant instance of Proposed (NC(R)) over Go-mapped raft records; ASSUME evaluation."
+  },
+  "old_property": {
+   "claimed": "absent",
+   "tlc": "absent"
+  },
+  "proposed_property": {
+   "claimed": {
+    "joint, s3 outgoing": true,
+    "s3 learner": false,
+    "s2 voter": true,
+    "s4 non-member": false,
+    "no transfer": true
+   },
+   "tlc": {
+    "joint, s3 outgoing": true,
+    "s3 learner": false,
+    "s2 voter": true,
+    "s4 non-member": false,
+    "no transfer": true
+   }
+  },
+  "code_observation": {
+   "old": "n/a",
+   "new": "n/a",
+   "result": "not_representable (pure state predicate controls)"
+  },
+  "requirement_evidence": "raft.go switchToConfig (new): \"If the leadTransferee was removed or demoted, abort the leadership transfer\" (Voters.IDs()); raft_test.go TestLeaderTransferDemoteNode; StepLeaderTransfer already ignores learner targets.",
+  "verdict": "accepted",
+  "note": "Allowed: a voter, including an outgoing-only voter during joint. Forbidden: a learner or a non-member.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/EvWitness.tla",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)",
+    "evidence/EvForbidden.tla"
+   ],
+   "cfg": [
+    "evidence/cfg/EvForbidden.cfg"
+   ],
+   "tlc_logs": [
+    "evidence/logs/tlc_forbidden.log"
+   ]
+  }
+ },
+ {
+  "id": "EV-CTRL-UNCHANGED",
+  "property": "AckPreservation, QuotaIntegrity, LogStructure, ReadyAccounting, ReadyOwnership, RequestCorrelatedConfigurationEffects, TransferDecisionEligibility, ElectionSafety, LogMatching, CommittedHistory, AppliedAgreement, JointConfigurationShape, VoteDecisionEligibility, CampaignDecisionEligibility, NoUnexpectedFatal",
+  "kind": "control",
+  "state": {
+   "witness": "All 45 witness post-states (old, new and fixed models)",
+   "population": "Same TLC runs as above"
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "claimed": "identical to old (text unchanged in Proposed)",
+   "tlc": "identical on every post-state"
+  },
+  "code_observation": {
+   "old": "n/a",
+   "new": "n/a",
+   "result": "not_representable"
+  },
+  "requirement_evidence": "Unaffected requirements kept verbatim.",
+  "verdict": "accepted",
+  "note": "False-edit guard: unchanged properties evaluate identically through base and Proposed. AckPreservation also covers the auto-leave entry shape.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/EvWitness.tla",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)"
+   ],
+   "tlc_logs": [
+    "evidence/logs/tlc_summary.json"
+   ]
+  }
+ },
+ {
+  "id": "EV-NP-PROBE",
+  "property": "(none) new progress Next=lastIndex + probe on config switch",
+  "kind": "observer",
+  "state": {
+   "witness": "Leader (voters 1 2, lastIndex 1) applies V2 <<AddVoter 3>> directly.",
+   "population": "Go only"
+  },
+  "old_property": {
+   "claimed": "n/a",
+   "tlc": "not_representable"
+  },
+  "proposed_property": {
+   "claimed": "n/a",
+   "tlc": "not_representable"
+  },
+  "code_observation": {
+   "old": "progress[3] next=2 (lastIndex+1), no message to 3",
+   "new": "progress[3] next=1 (lastIndex), immediate MsgApp index 0 with 1 entry to 3",
+   "test_file": "evidence/go/zz_evidence_test.go",
+   "test": "TestEvNewPeerProbe",
+   "command": "cp evidence/go/zz_evidence_test.go evidence/{old,new}tree/ && (cd evidence/<tree> && go test -vet=off -count=1 -v -run TestEvNewPeerProbe .)",
+   "result": "PASS (observational test; values printed as RESULT lines)",
+   "logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  },
+  "requirement_evidence": "confchange initProgress comment (Next=LastIndex so the follower can be probed); switchToConfig \"still probe the newly added replicas\".",
+  "verdict": "unresolved",
+  "note": "This is a latency/liveness behavior with no safety property. The Proposed model is migrated (ChangeProgress, BroadcastProbe); no property is added.",
+  "files": {
+   "go": [
+    "evidence/go/zz_evidence_test.go"
+   ],
+   "go_logs": [
+    "evidence/logs/logs_go_oldtree.txt",
+    "evidence/logs/logs_go_newtree.txt"
+   ]
+  }
+ },
+ {
+  "id": "EV-NEW-TESTS",
+  "property": "contract evidence",
+  "kind": "control",
+  "state": {
+   "witness": "the update's own tests",
+   "population": "n/a"
+  },
+  "old_property": {
+   "claimed": "n/a",
+   "tlc": "n/a"
+  },
+  "proposed_property": {
+   "claimed": "n/a",
+   "tlc": "n/a"
+  },
+  "code_observation": {
+   "old": "n/a",
+   "new": "PASS",
+   "test_file": "interaction_test.go (testdata/*.txt), rawnode_test.go, raft_test.go, confchange/datadriven_test.go",
+   "command": "cd evidence/newtree && go test -vet=off -count=1 -run 'TestInteraction|TestRawNodeProposeAndConfChange|TestLeaderTransferDemoteNode|TestUncommittedEntryLimit|TestConfChangeDataDriven' ./...",
+   "result": "ok (see log)"
+  },
+  "requirement_evidence": "confirms the cited regression tests/expectations hold in the new tree",
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "go_logs": [
+    "evidence/logs/go_new_update_tests.txt"
+   ]
+  }
+ },
+ {
+  "id": "EV-HUNT-VACUOUS",
+  "property": "AutoLeaveAdvance, ProposalConfigurationDecisions, OutcomeSoundness, TransferTargetVoter (+controls) over reachable model states",
+  "kind": "control",
+  "state": {
+   "witness": "UpdateP (old Update.tla/MC.tla wrappers re-pointed at Proposed) with the old Update_hunt_autoleave cfg (3 servers) and a focused 2-server cfg, ImplModel in {new, fixed}, EarlyAdvance in {TRUE, FALSE}",
+   "population": "TLC BFS (aborted at depth 4 / 18.6M distinct states) and random simulation (3-server: about 1M states and 12k traces per run; focused: 23M states and 120k traces)."
+  },
+  "old_property": {
+   "claimed": "n/a",
+   "tlc": "n/a"
+  },
+  "proposed_property": {
+   "claimed": "fixed: no violation; new: violation reachable",
+   "tlc": "no violation found in any run"
+  },
+  "code_observation": {
+   "old": "n/a",
+   "new": "n/a",
+   "result": "not_representable"
+  },
+  "requirement_evidence": "reachability canary AutoLeaveNotAppended (old Update.tla) was never violated in either the BFS or the simulations, so no auto-leave entry was ever appended in the explored states",
+  "verdict": "unresolved",
+  "note": "VACUOUS: the explored state sets never reach an auto-leave append (canary held), so the absence of violations says nothing about the proposed properties on reachable states. They are not counted as support. A deeper scenario-directed run (a trace/scenario spec) is left as an obligation.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/MCP.tla",
+    "evidence/UpdateP.tla"
+   ],
+   "cfg": [
+    "evidence/cfg/hunt_autoleave_new_earlyTRUE.cfg",
+    "evidence/cfg/hunt_autoleave_new_earlyFALSE.cfg",
+    "evidence/cfg/hunt_autoleave_fixed_earlyTRUE.cfg",
+    "evidence/cfg/hunt_autoleave_fixed_earlyFALSE.cfg",
+    "evidence/cfg/canary_autoleave_new.cfg",
+    "evidence/cfg/focus_canary_new.cfg"
+   ],
+   "tlc_logs": [
+    "evidence/logs/bfs_aborted/",
+    "evidence/logs/sim_vacuous/",
+    "evidence/logs/tlc_sim_focus_canary_new.log"
+   ]
+  }
+ }
+]

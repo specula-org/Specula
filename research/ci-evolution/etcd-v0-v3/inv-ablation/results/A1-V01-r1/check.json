@@ -1,0 +1,47 @@
+{
+  "run": "A1-V01-r1",
+  "status": "ok",
+  "entries": 36,
+  "decisions": {
+    "keep": 19,
+    "modify": 13,
+    "add": 4
+  },
+  "edits_without_witness": [],
+  "edits_without_predicate": [
+    "ConfigurationOrigin",
+    "ConfigurationTransitionSafety",
+    "QuorumAccounting",
+    "SnapshotBacking",
+    "AckPreservation",
+    "ReadBasis",
+    "TypeOK",
+    "CampaignDecisionEligibility",
+    "RequestCorrelatedConfigurationEffects",
+    "ProposalConfigurationDecisions",
+    "PendingConfCoverage",
+    "JointConfigWellFormed",
+    "RaftGeneratedConfChangeApplicability",
+    "AutoLeaveInitiation",
+    "DurableObligations (observer for LeaderCompleteness/CommittedHistory)",
+    "Ghost/observation records (wins, commitUses, EffectObservation, ack records, Campaign/Transfer/Vote/Proposal observations, ReadRecord)",
+    "RewriteConf / outcome weight (observer used by OutcomeSoundness)"
+  ],
+  "entries_without_evidence": [],
+  "citations": 96,
+  "bad_citations": [
+    "new/source/bootstrap.go:67-84: file has 80 lines"
+  ],
+  "top_level_keys": [
+    "schema",
+    "phase",
+    "inputs",
+    "update_summary",
+    "overall",
+    "shared_definitions",
+    "entries",
+    "covered_updated_behaviors",
+    "suspected_defects",
+    "unresolved_obligations"
+  ]
+}

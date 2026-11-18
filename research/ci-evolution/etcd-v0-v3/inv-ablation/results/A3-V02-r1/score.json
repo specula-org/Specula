@@ -1,0 +1,39 @@
+{
+  "scorer": "coordinator (Claude), not blind to arm",
+  "gold": "gold.json V02",
+  "obligations": {
+    "learner_vote_campaign": {
+      "score": "detected",
+      "note": "VoteContract grant no longer excludes learners; LearnerEligibility restricted to campaigns; quorum accounting kept."
+    },
+    "ready_ownership": {
+      "score": "detected",
+      "note": "ReadyOwnership modified; the lostReads observer was also migrated (old observer reported false losses under the new code, E8)."
+    },
+    "post_ready_output": {
+      "score": "detected",
+      "note": "AdvanceRetention added (output and read states present before Advance are retained); revised after evidence (changed_from_initial)."
+    },
+    "joint_recovery": {
+      "score": "correct_retention",
+      "note": "JointSnapshotRecovery kept."
+    }
+  },
+  "bug_A": "not named. CampaignDecisionEligibility was kept, so a check that reached the state would catch it, but this run neither simulated nor examined pending V2 entries at campaign time.",
+  "extra_findings": [
+    "D1 restore() ignores a joint snapshot for an outgoing-only voter; bug-candidate cell; observed in Go (TestEvOutgoingMemberSnap) and in the model. A2-V02 found the same defect (E10).",
+    "D2 TestLearnerCanVote assertion cannot fail for a rejecting response"
+  ],
+  "format_notes": [
+    "36 path:line citations, none invalid",
+    "decision.initial.json written after Bash calls; to be classified read-only vs executing in the final audit"
+  ],
+  "evidence_stats": {
+    "records": 20,
+    "tlc_truth_values": 13,
+    "claim_mismatches": 0,
+    "code_observations": 17,
+    "implementation_cited_as_requirement": 0
+  },
+  "summary": "3 detected + 1 correct retention; bug A not named"
+}

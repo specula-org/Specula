@@ -1,0 +1,8 @@
+# Runs cut off by the account's usage limit: not results (see ITERATIONS.md 1a).
+results/invalid-*/
+# Raw evidence artifacts written by A2/A3 (TLC configs and logs, trace dumps, Go probes);
+# evidence.json and check.json summarize them. Full copies stay in $INV_ABLATION_WORK.
+results/*/evidence/
+# The agent's closing message; decision.md holds the same content in full.
+results/**/final.md
+__pycache__/

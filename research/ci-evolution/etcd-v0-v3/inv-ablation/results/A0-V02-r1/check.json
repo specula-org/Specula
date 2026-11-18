@@ -1,0 +1,44 @@
+{
+  "run": "A0-V02-r1",
+  "status": "ok",
+  "entries": 53,
+  "decisions": {
+    "keep": 37,
+    "modify": 4,
+    "remove": 1,
+    "add": 11
+  },
+  "edits_without_witness": [
+    "LearnerEligibility_new",
+    "VoteDecisionEligibility_new",
+    "ReadyOwnership_new (UpdateReadyOwnership == ReadyOwnership_new)",
+    "ReadyAccounting",
+    "JointRecoveryNotReached",
+    "AdvanceRetainsPostReadyOutput (UpdateAdvanceRetainsPostReadyOutput)",
+    "RestoreConfStateEquivalence (UpdateRestoreConfStateEquivalence)",
+    "LearnerVoteFreshness",
+    "SnapshotRecipientMembership",
+    "AutoLeaveProgress",
+    "LearnerVoteGrantNotReached",
+    "LearnerVoteWinNotReached",
+    "JointRestartRecoveryNotExercised",
+    "JointSnapshotRestoreNotExercised",
+    "OutgoingOnlySnapshotNotReached",
+    "PostReadyOutputNotReached"
+  ],
+  "edits_without_predicate": [],
+  "entries_without_evidence": [],
+  "citations": 78,
+  "bad_citations": [],
+  "top_level_keys": [
+    "scope",
+    "overall_decision",
+    "reason",
+    "source_change_summary",
+    "entries",
+    "cfg_enablement_changes",
+    "covered_updated_behaviors",
+    "suspected_defects",
+    "unresolved_obligations"
+  ]
+}

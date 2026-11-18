@@ -1,0 +1,563 @@
+{
+ "phase": "final",
+ "overall_decision": "modify",
+ "overall_reason": "Executed evidence (129 TLC checks over old/proposed definitions, 23 Go probes on old/new code (17 new, 6 old)) confirms the initial judgment with four corrections: (1) ConfigurationTransitionSafety must not exempt every id-0 entry, or raft-initiated duplicate LeaveJoint entries are hidden; (2) NoUnexpectedFatal must accept the test-required 'removed all voters' refusal; (3) EffectContract must also require that non-refused changes do not panic; (4) TypeOK needs joint well-formedness. V1 requirement changes (demotion, zero-voter refusal, idempotent removal) and joint-consensus obligations (two-majority quorums, single auto-leave) are encoded; bug candidates B1-B3 remain detectable by kept or strengthened properties; B4/B5 are unresolved for lack of requirement text.",
+ "entries": [
+  {
+   "property": "RequestCorrelatedConfigurationEffects (EffectContract, EffectObservation)",
+   "decision": "modify",
+   "change_kind": "semantic requirement change + observer migration (EffectObservation gains fatal)",
+   "evidence": [
+    "new/source/raft_test.go:3120-3128",
+    "new/source/confchange/testdata/simple_promote_demote.txt:34-41",
+    "new/source/raft_test.go:3183-3190,3207-3214",
+    "new/source/confchange/testdata/simple_safety.txt",
+    "new/source/confchange/testdata/simple_idempotency.txt:66-69",
+    "new/source/confchange/testdata/joint_idempotency.txt:1-2"
+   ],
+   "proposed_predicate": "learnerAdd == ~cancel /\\ kind=AddLearner /\\ t \\notin b.learners (demotes: voters\\{t}, learners\\cup{t}; learnersNext if t \\in outgoing); want == V1 effect (or ConfigAfter for V2 kinds); refused == want.voters={} \\/ illegal EnterJoint/LeaveJoint; IF refused THEN o.fatal#\"\" /\\ o.after=b ELSE o.fatal=\"\" /\\ o.after=want; commit clause unchanged; id=0 allowed for bootstrap AddVoter or raft-initiated LeaveJoint (evidence/Proposed.tla EffectContract)",
+   "disagreement_state": "AddLearner(s3) on voters {s1,s2,s3}: new code demotes; old contract FALSE, proposed TRUE (EV01). Remove of the last voter: new code refuses by panic; old FALSE, proposed TRUE (EV03). Old behaviours are now rejected (EV02, EV04, EV08).",
+   "evidence_ids": [
+    "EV01",
+    "EV02",
+    "EV03",
+    "EV04",
+    "EV08"
+   ],
+   "changed_from_initial": true,
+   "changed_from_initial_reason": "Added the o.fatal=\"\" clause for non-refused changes (EV08: the old 'remove unknown peer' panic was invisible to the old contract) and the id-0 LeaveJoint correlation exemption required for raft-initiated auto-leave entries."
+  },
+  {
+   "property": "ConfigAfter / ConfigOf / ApplySingle / ApplyChanges (shared helpers)",
+   "decision": "modify",
+   "change_kind": "semantic helper migration (demotion, unknown removal no-op, V2 EnterJoint/LeaveJoint with LearnersNext)",
+   "evidence": [
+    "new/source/confchange/confchange.go:49-253",
+    "new/source/raft_test.go:3120-3128",
+    "new/source/confchange/testdata/joint_learners_next.txt"
+   ],
+   "proposed_predicate": "see evidence/Proposed.tla ApplySingle/ApplyChanges/ConfigAfter",
+   "disagreement_state": "Demotion history: old ConfigOf gives voters {s1,s2,s3}, new gives {s1,s2}/{s3} (EV09 W3.helper.*).",
+   "evidence_ids": [
+    "EV09",
+    "EV11",
+    "EV12",
+    "EV13"
+   ],
+   "changed_from_initial": false
+  },
+  {
+   "property": "ConfigurationOrigin",
+   "decision": "keep",
+   "change_kind": "unchanged text; meaning migrates with ConfigOf",
+   "evidence": [
+    "new/source/doc.go:177-182",
+    "new/source/raftpb/raft.proto:99-114",
+    "new/source/node.go:173-174"
+   ],
+   "proposed_predicate": "unchanged",
+   "disagreement_state": "Demotion state: old FALSE / new TRUE (EV09); unbacked config rejected by both (EV10); joint snapshot restored without its outgoing half rejected (EV35, bug candidate).",
+   "evidence_ids": [
+    "EV09",
+    "EV10",
+    "EV35"
+   ],
+   "changed_from_initial": false
+  },
+  {
+   "property": "SnapshotBacking",
+   "decision": "keep",
+   "change_kind": "unchanged text; SnapshotValid uses migrated ConfigOf",
+   "evidence": [
+    "new/source/node.go:173-174"
+   ],
+   "proposed_predicate": "unchanged",
+   "disagreement_state": "Snapshot after demotion: old SnapshotValid FALSE, new TRUE (EV11).",
+   "evidence_ids": [
+    "EV11",
+    "EV35"
+   ],
+   "changed_from_initial": false
+  },
+  {
+   "property": "ConfigurationTransitionSafety",
+   "decision": "modify",
+   "change_kind": "representation migration (joint quorum config compared; commitUses carry config; only bootstrap entries exempt)",
+   "evidence": [
+    "new/source/doc.go:177-188",
+    "new/source/node.go:136-139",
+    "new/source/raft.go:1496-1500"
+   ],
+   "proposed_predicate": "IsBootstrapEntry(e) == e.id=0 /\\ e.kind=\"AddVoter\"; \\A c \\in commitUses: \\A k \\in (c.oldCommit+1)..Len(c.hist): (c.hist[k].kind \\in ConfKinds /\\ ~IsBootstrapEntry(c.hist[k])) => QCfg(c.config) = QCfg(ConfigOf(Prefix(c.hist,k-1)))",
+   "disagreement_state": "Conf entry committed after a demotion: old FALSE / new TRUE (EV12). Two raft-initiated LeaveJoint entries committed together: old TRUE (blind) / new FALSE (EV13, bug candidate); single leave accepted (EV14).",
+   "evidence_ids": [
+    "EV12",
+    "EV13",
+    "EV14"
+   ],
+   "changed_from_initial": true,
+   "changed_from_initial_reason": "The initial predicate kept the 'id#0' exemption; TLC shows it accepts the duplicate auto-leave state (W5i = TRUE) because raft-initiated LeaveJoint entries also have id 0. Final predicate exempts only bootstrap AddVoter entries."
+  },
+  {
+   "property": "QuorumAccounting",
+   "decision": "modify",
+   "change_kind": "semantic strengthening for joint configs + observer migration (wins/commitUses carry config)",
+   "evidence": [
+    "new/source/raftpb/raft.proto:153-157",
+    "new/source/quorum/testdata/joint_commit.txt:17-30"
+   ],
+   "proposed_predicate": "\\A w \\in wins: AllVoters(w.config)#{} /\\ CfgWon(w.config,w.yes); \\A c \\in commitUses: AllVoters(c.config)#{} /\\ c.matches \\subseteq AllVoters(c.config) /\\ CfgWon(c.config,c.matches); CfgWon(cfg,S) == Won(cfg.voters,S) /\\ Won(cfg.outgoing,S)",
+   "disagreement_state": "Joint (1 2 3)&&(1) commit/win by {2,3}: old TRUE / new FALSE (EV18, EV19); legitimate joint and V1 records TRUE in both (EV20).",
+   "evidence_ids": [
+    "EV18",
+    "EV19",
+    "EV20",
+    "EV29"
+   ],
+   "changed_from_initial": false
+  },
+  {
+   "property": "ReadBasis",
+   "decision": "modify",
+   "change_kind": "representation migration + strengthening (joint quorum for read confirmation)",
+   "evidence": [
+    "new/source/raftpb/raft.proto:153-157",
+    "new/source/tracker/tracker.go:144-148 (IsSingleton)"
+   ],
+   "proposed_predicate": "r.leader \\in AllVoters(r.confirmConfig) /\\ AllVoters(r.confirmConfig)#{} /\\ CfgWon(r.confirmConfig,r.confirmAcks) (rest unchanged)",
+   "disagreement_state": "Joint read acked by both majorities: old FALSE (cannot represent joint configs) / new TRUE (EV21); acked by incoming only: new FALSE while the old quorum clause alone accepts (EV22).",
+   "evidence_ids": [
+    "EV21",
+    "EV22"
+   ],
+   "changed_from_initial": false
+  },
+  {
+   "property": "Joint quorum helpers and observers (AllVoters, CfgWon, CfgLost, QuorumIndex, Members, Promotable, DurableObligations, CampaignObservation/ProposalObservation/TransferObservation voters)",
+   "decision": "modify",
+   "change_kind": "representation migration",
+   "evidence": [
+    "new/source/quorum/joint.go:49-75",
+    "new/source/raftpb/raft.proto:153-157"
+   ],
+   "proposed_predicate": "see evidence/Proposed.diff",
+   "disagreement_state": "DurableObligations records an obligation from an incoming-only durable quorum in the old observer, not in the new one (EV23).",
+   "evidence_ids": [
+    "EV23",
+    "EV18",
+    "EV39"
+   ],
+   "changed_from_initial": false
+  },
+  {
+   "property": "AckPreservation",
+   "decision": "modify",
+   "change_kind": "semantic relaxation (one raft-initiated LeaveJoint may be appended by Advance) + observer migration (role, config, pendingConf)",
+   "evidence": [
+    "new/source/rawnode_test.go:322-357",
+    "new/source/raftpb/raft.proto:85-96",
+    "new/source/node.go:136-139",
+    "new/source/doc.go:184-188"
+   ],
+   "proposed_predicate": "a.before=a.after \\/ (AutoLeaveAllowed(a) /\\ a.after = a.before \\o <<LeaveJoint, id 0>>); AutoLeaveAllowed == leader /\\ joint /\\ autoLeave /\\ cursor>0 /\\ no ConfKinds entry in before beyond the cursor",
+   "disagreement_state": "First auto-leave append: old FALSE / new TRUE (EV15). Duplicate leave while the first is unapplied: FALSE in both (EV16, bug candidate). Normal append / explicit joint: FALSE (EV17).",
+   "evidence_ids": [
+    "EV15",
+    "EV16",
+    "EV17"
+   ],
+   "changed_from_initial": false
+  },
+  {
+   "property": "ConfKinds (V1ConfKinds, V2ConfKinds, Kinds)",
+   "decision": "modify",
+   "change_kind": "representation migration: EntryConfChangeV2 entries are configuration changes",
+   "evidence": [
+    "new/source/raftpb/raft.proto:14-15",
+    "new/source/node.go:135-145,170-176",
+    "new/source/raft.go:1016"
+   ],
+   "proposed_predicate": "ConfKinds == {AddVoter,AddLearner,Remove,Update,EnterJoint,LeaveJoint}; Kinds (workload) stays V1 + Normal; model StepHup uses V1ConfKinds to follow raft.go:1580-1588",
+   "disagreement_state": "V2 proposal while a change is pending: old ProposalContract FALSE on the impl's rewrite, new TRUE (EV27); verbatim append accepted by old, rejected by new (EV28).",
+   "evidence_ids": [
+    "EV25",
+    "EV27",
+    "EV28"
+   ],
+   "changed_from_initial": false
+  },
+  {
+   "property": "CampaignDecisionEligibility (CampaignContract)",
+   "decision": "unresolved",
+   "change_kind": "text kept; ConfKinds migration makes it reject campaigning over a pending V2 change; requirement unknown",
+   "evidence": [
+    "new/source/raft.go:903-910,1580-1588 (implementation only)",
+    "no test/doc statement found"
+   ],
+   "proposed_predicate": "unchanged text over ConfKinds (V2 included) - deliberately NOT weakened toward the implementation",
+   "disagreement_state": "Follower with an unapplied committed EnterJoint campaigns (go N7): old TRUE, new FALSE (EV25); V1 pending blocked in both (EV26).",
+   "evidence_ids": [
+    "EV25",
+    "EV26"
+   ],
+   "changed_from_initial": false
+  },
+  {
+   "property": "ProposalConfigurationDecisions (ProposalContract)",
+   "decision": "keep",
+   "change_kind": "unchanged text; ConfKinds/Members representation migration",
+   "evidence": [
+    "new/source/node.go:136-139"
+   ],
+   "proposed_predicate": "unchanged",
+   "disagreement_state": "See ConfKinds entry (EV27, EV28).",
+   "evidence_ids": [
+    "EV27",
+    "EV28"
+   ],
+   "changed_from_initial": false
+  },
+  {
+   "property": "VoteRecovery",
+   "decision": "keep",
+   "change_kind": "unchanged requirement; update fixes a pre-existing implementation defect",
+   "evidence": [
+    "new/source/README.md:116-118",
+    "old/source/rawnode.go:89-90 (old reset)"
+   ],
+   "proposed_predicate": "unchanged",
+   "disagreement_state": "RawNode restart with HardState {3, s1} and empty log: old code term 1/vote 0 -> FALSE; new code term 3/vote s1 -> TRUE (EV24).",
+   "evidence_ids": [
+    "EV24"
+   ],
+   "changed_from_initial": false
+  },
+  {
+   "property": "LearnerEligibility",
+   "decision": "keep",
+   "change_kind": "unchanged; demotion now reachable",
+   "evidence": [
+    "new/source/raft_test.go:382-391",
+    "new/source/raft_test.go TestLearnerCampaign"
+   ],
+   "proposed_predicate": "unchanged",
+   "disagreement_state": "Demoted candidate: campaign record made as a voter, property TRUE; learner campaign record rejected (EV29).",
+   "evidence_ids": [
+    "EV29"
+   ],
+   "changed_from_initial": false
+  },
+  {
+   "property": "NoUnexpectedFatal",
+   "decision": "modify",
+   "change_kind": "relaxation: the test-required zero-voter refusal is an expected fatal",
+   "evidence": [
+    "new/source/raft_test.go:3183-3190,3207-3214",
+    "new/source/confchange/testdata/simple_idempotency.txt:66-69"
+   ],
+   "proposed_predicate": "ExpectedRefusals == {\"removed all voters\"}; \\A n \\in Server: raft[n].fatal \\in {\"\"} \\cup ExpectedRefusals",
+   "disagreement_state": "s1 fatal 'removed all voters': old FALSE / new TRUE (EV05); \"can't leave a non-joint config\" still rejected (EV06); unknown-removal panic disappears with the model migration (EV07).",
+   "evidence_ids": [
+    "EV05",
+    "EV06",
+    "EV07"
+   ],
+   "changed_from_initial": true,
+   "changed_from_initial_reason": "Initially 'keep'. Evidence: the strict text rejects a state the tests require (EV05: impl produces / requirement allowed). The relaxation is limited to that one reason string, which the model emits only from ConfRefusal, and EffectContract pins down when it may occur. EV06 shows other panics are still rejected."
+  },
+  {
+   "property": "ReadyAccounting",
+   "decision": "keep",
+   "change_kind": "unchanged; model environment gains the RawNode caller guard (RawIdle)",
+   "evidence": [
+    "new/source/rawnode.go:122-129"
+   ],
+   "proposed_predicate": "unchanged",
+   "disagreement_state": "Legal Ready/Advance: TRUE; a read issued between Ready and Advance (now illegal) is lost and rejected (EV34).",
+   "evidence_ids": [
+    "EV34"
+   ],
+   "changed_from_initial": false
+  },
+  {
+   "property": "QuotaIntegrity",
+   "decision": "keep",
+   "change_kind": "unchanged; quota released at Advance in the model",
+   "evidence": [
+    "new/source/raft.go:1570-1573",
+    "new/source/rawnode.go:120-129"
+   ],
+   "proposed_predicate": "unchanged",
+   "disagreement_state": "After Ready (quota still counts committed-unapplied entries) and after Advance: TRUE; over-quota control FALSE (EV33).",
+   "evidence_ids": [
+    "EV33"
+   ],
+   "changed_from_initial": false
+  },
+  {
+   "property": "VoteDecisionEligibility",
+   "decision": "keep",
+   "change_kind": "unchanged; demoted node behaves as learner",
+   "evidence": [
+    "new/source/raft_test.go:382-391"
+   ],
+   "proposed_predicate": "unchanged",
+   "disagreement_state": "Demoted node ignores MsgVote: TRUE in both; learner grant rejected (EV31).",
+   "evidence_ids": [
+    "EV31"
+   ],
+   "changed_from_initial": false
+  },
+  {
+   "property": "TransferDecisionEligibility",
+   "decision": "keep",
+   "change_kind": "unchanged; demoted target ignored",
+   "evidence": [
+    "new/source/raft_test.go:3939"
+   ],
+   "proposed_predicate": "unchanged",
+   "disagreement_state": "Transfer to a demoted target ignored: TRUE in both; accepting it rejected (EV32).",
+   "evidence_ids": [
+    "EV32"
+   ],
+   "changed_from_initial": false
+  },
+  {
+   "property": "OutcomeSoundness",
+   "decision": "keep",
+   "change_kind": "unchanged; demoted-leader proposals left as an open obligation",
+   "evidence": [
+    "new/source/raft.go:1478-1489 (comment)"
+   ],
+   "proposed_predicate": "unchanged",
+   "disagreement_state": "Self-demoted leader accepts proposals (go N15): TRUE in both (EV30); requirement unknown.",
+   "evidence_ids": [
+    "EV30"
+   ],
+   "changed_from_initial": false
+  },
+  {
+   "property": "TypeOK",
+   "decision": "modify",
+   "change_kind": "structural strengthening (joint config well-formedness from checkInvariants)",
+   "evidence": [
+    "new/source/confchange/confchange.go:300-301,311",
+    "new/source/tracker/tracker.go:28-32"
+   ],
+   "proposed_predicate": "adds outgoing \\subseteq Server, learnersNext \\subseteq outgoing, outgoing \\cap learners = {}, autoLeave => Joint",
+   "disagreement_state": "learnersNext outside outgoing / autoLeave without joint: FALSE; demotion and joint restore states TRUE (EV38).",
+   "evidence_ids": [
+    "EV38"
+   ],
+   "changed_from_initial": true,
+   "changed_from_initial_reason": "Initially listed as 'keep (representation only)'; the joint fields need the structural clauses that confchange.checkInvariants states, so TypeOK is modified."
+  },
+  {
+   "property": "WinnerIsVoter (candidate add)",
+   "decision": "unresolved",
+   "change_kind": "candidate strengthening, not adopted",
+   "evidence": [
+    "new/source/raft.go:1478-1489 (stale comment: 'We prevent demotions')"
+   ],
+   "proposed_predicate": "\\A w \\in wins: w.node \\in AllVoters(w.config) /\\ w.node \\notin w.config.learners",
+   "disagreement_state": "A candidate demoted mid-election wins as a learner (go N13): candidate FALSE, kept properties TRUE (EV29).",
+   "evidence_ids": [
+    "EV29"
+   ],
+   "changed_from_initial": true,
+   "changed_from_initial_reason": "New entry: Phase 2 found that demotion lets a learner complete an election; there is no requirement text to adopt or reject it."
+  },
+  {
+   "property": "Status / Config.Clone observer (no spec property)",
+   "decision": "unresolved",
+   "change_kind": "not representable: the spec has no Status observer",
+   "evidence": [
+    "new/source/tracker/tracker.go:94",
+    "new/source/status.go:24"
+   ],
+   "proposed_predicate": "none proposed (would need a Status/ConfState observer)",
+   "disagreement_state": "Joint auto-leave config: tracker AutoLeave=true, Status().Config.AutoLeave=false (go N9).",
+   "evidence_ids": [
+    "EV36"
+   ],
+   "changed_from_initial": true,
+   "changed_from_initial_reason": "New entry: Phase 2 Go probe confirmed the Clone defect suspected initially; it cannot be expressed with the existing observers."
+  },
+  {
+   "property": "ElectionSafety, LogMatching, LeaderCompleteness, CommittedHistory, AppliedAgreement, RecoveryBacking, PromiseBacking, ReplicationEvidence, ReadApplication, ReadCorrelation, LogStructure",
+   "decision": "keep",
+   "change_kind": "unchanged requirements (unaffected safety controls)",
+   "evidence": [
+    "update does not change log/vote/election rules"
+   ],
+   "proposed_predicate": "unchanged",
+   "disagreement_state": "Identical verdicts in old and new modules on violating and legitimate records (EV37); no violation in 8000 random traces of either model (EV39).",
+   "evidence_ids": [
+    "EV37",
+    "EV39",
+    "EV24"
+   ],
+   "changed_from_initial": false
+  }
+ ],
+ "model_migrations_required_not_property_edits": [
+  {
+   "change": "ApplyConfCore: Changer semantics; refusals via ConfRefusal; MaybeCommit after every change at a tracked non-learner leader; new Progress only for new peers",
+   "evidence": "W1/W2/W2u/W4/W5 model checks agree with go N1-N4, N6"
+  },
+  {
+   "change": "AdvanceCore: appliedTo, auto-leave append (reproducing raft.go:572-580), quota release, prevHS for all nodes, RawNode out cleared",
+   "evidence": "W6/W12 model checks agree with go N6, N11"
+  },
+  {
+   "change": "ProtocolReady: RawNode Ready read-only",
+   "evidence": "go N11/N12"
+  },
+  {
+   "change": "RawIdle caller guard on Tick/Campaign/TransferLeader/Propose/ReadIndex/Receive for RawNodes while a Ready is active",
+   "evidence": "EV34"
+  },
+  {
+   "change": "RestartCore: no RawNode 'fresh' term reset; prevHS=HS; DropJoint",
+   "evidence": "W8 agrees with go N5/O5"
+  },
+  {
+   "change": "Restore: DropJoint (models raft.go:1418-1423)",
+   "evidence": "W14 agrees with go N8"
+  },
+  {
+   "change": "StepHup counts only V1 pending entries (models raft.go:1580-1588)",
+   "evidence": "W9 agrees with go N7"
+  },
+  {
+   "change": "ProtocolApplyEntry: propc blocked only when the node was a member before and is not after (node.go:356-375)",
+   "evidence": "not executed (no property observes propcEnabled directly)"
+  },
+  {
+   "change": "V2 workload (EnterJoint/LeaveJoint proposals) NOT added: Kinds remains V1; joint states are not generated by MC",
+   "evidence": "coverage gap"
+  }
+ ],
+ "covered_updated_behaviors": [
+  {
+   "behavior": "RawNode restart keeps persisted term/vote",
+   "property": "VoteRecovery",
+   "evidence_ids": [
+    "EV24"
+   ]
+  },
+  {
+   "behavior": "Demoted nodes do not vote, campaign or receive transfers",
+   "property": "VoteDecisionEligibility, LearnerEligibility, TransferDecisionEligibility (via config.learners)",
+   "evidence_ids": [
+    "EV31",
+    "EV29",
+    "EV32"
+   ]
+  },
+  {
+   "behavior": "Quota released at Advance; RawNode Ready is read-only",
+   "property": "QuotaIntegrity, ReadyAccounting",
+   "evidence_ids": [
+    "EV33",
+    "EV34"
+   ]
+  },
+  {
+   "behavior": "Leader rewrites V2 proposals while a change is pending",
+   "property": "ProposalContract rewrite clause over migrated ConfKinds",
+   "evidence_ids": [
+    "EV27"
+   ]
+  },
+  {
+   "behavior": "Snapshot/restore configuration must match history",
+   "property": "ConfigurationOrigin (detects B2)",
+   "evidence_ids": [
+    "EV35"
+   ]
+  }
+ ],
+ "suspected_defects": [
+  {
+   "id": "B1",
+   "status": "bug candidate (impl produces / requirement forbids)",
+   "evidence_ids": [
+    "EV13",
+    "EV16",
+    "EV06"
+   ],
+   "description": "advance() auto-leave bumps pendingConfIndex only when the append is refused (raft.go:572-580). A second Advance with applied entries appends a duplicate LeaveJoint; applying it panics \"can't leave a non-joint config\" (go N6).",
+   "kept_properties": "ConfigurationTransitionSafety (migrated), AckPreservation (relaxed only for a single leave), NoUnexpectedFatal (other panics)"
+  },
+  {
+   "id": "B2",
+   "status": "bug candidate",
+   "evidence_ids": [
+    "EV35"
+   ],
+   "description": "restore() and newRaft() rebuild the configuration from ConfState.Nodes/Learners only (raft.go:1418-1423, 330-341); NodesJoint, LearnersNext and AutoLeave are dropped (go N8).",
+   "kept_properties": "ConfigurationOrigin"
+  },
+  {
+   "id": "B3",
+   "status": "bug candidate (not representable in the spec)",
+   "evidence_ids": [
+    "EV36"
+   ],
+   "description": "tracker.Config.Clone omits AutoLeave (tracker.go:95-111); Status().Config reports a joint auto-leave config as non-auto (go N9).",
+   "kept_properties": "none (no Status observer)"
+  },
+  {
+   "id": "B4",
+   "status": "suspected, requirement unknown",
+   "evidence_ids": [
+    "EV25"
+   ],
+   "description": "numOfPendingConf counts only EntryConfChange (raft.go:1580-1588): a node campaigns while a committed V2 change is unapplied, unlike V1 and unlike stepLeader's V2 handling (go N7).",
+   "kept_properties": "CampaignDecisionEligibility kept in the stronger form (unresolved)"
+  },
+  {
+   "id": "B5",
+   "status": "suspected, requirement unknown",
+   "evidence_ids": [
+    "EV29",
+    "EV30"
+   ],
+   "description": "Demotion is now possible but applyConfChange's comment claims it is prevented (raft.go:1478-1489): a demoted candidate can win as a learner (go N13) and a demoted leader stays leader and accepts proposals (go N15).",
+   "kept_properties": "LearnerEligibility, OutcomeSoundness (unchanged); candidate WinnerIsVoter not adopted"
+  },
+  {
+   "id": "B6",
+   "status": "model environment defect (not library)",
+   "evidence_ids": [
+    "EV34"
+   ],
+   "description": "The old model allowed Step/Tick/Propose on a RawNode between Ready and Advance, which rawnode.go:122-129 now forbids; such calls lose reads/messages (go N12). Fixed by RawIdle guards in Proposed.tla; ReadyAccounting kept.",
+   "kept_properties": "ReadyAccounting"
+  },
+  {
+   "id": "B7",
+   "status": "pre-existing OLD-code defect fixed by the update",
+   "evidence_ids": [
+    "EV24"
+   ],
+   "description": "Old NewRawNode reset term/vote to 1/0 when the log was empty even with a persisted HardState (old/source/rawnode.go:89-90; go O5).",
+   "kept_properties": "VoteRecovery"
+  },
+  {
+   "id": "B8",
+   "status": "latent, not executed",
+   "evidence_ids": [],
+   "description": "Changer.Simple returns an empty config with a nil error if checkInvariants fails after symdiff (confchange.go:148-150), which would silently clear the tracker in applyConfChange. Believed unreachable from valid configs; static observation only."
+  }
+ ],
+ "unresolved_obligations": [
+  "Joint/V2 states are not generated by the model workload; joint properties are verified only on constructed TLC states and Go probes (add V2 requests with a changes field to close this).",
+  "Whether campaigning must be blocked by a pending V2 change (B4): no requirement text.",
+  "Whether a demoted candidate may win or a demoted leader may keep leading and accepting proposals (B5); candidate WinnerIsVoter not adopted.",
+  "Status/Config observer for B3 is outside the spec.",
+  "Random simulation did not measure coverage of conf-change application paths (EV39).",
+  "Messages produced by ApplyConfChange between Ready and Advance at a RawNode leader are cleared at Advance (rawnode.go acceptReady); safe (loss is tolerated) but not separately executed."
+ ]
+}

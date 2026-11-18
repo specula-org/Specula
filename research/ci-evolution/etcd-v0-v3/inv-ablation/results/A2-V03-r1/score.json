@@ -1,0 +1,21 @@
+{
+  "scorer": "coordinator (Claude), not blind to arm",
+  "gold": "gold.json V03",
+  "obligations": {
+    "autoleave_effect_and_progress": {"score": "detected", "note": "AutoLeaveDue uses the observer's level eligibility (autoLeave /\\ cursor >= pendingConf /\\ leader), not the crossing guard. The relaxation (no append while a leave is pending) and the strengthening (no DropQuota escape; pendingConf must cover the new leave) are both checked by TLC. Progress is unresolved only in its temporal form. The decision was the same in the initial and final files."},
+    "proposal_phase": {"score": "detected", "note": "Joint-state admission rules; P5 (joint + empty JointExplicit) evaluated by TLC and observed in Go."},
+    "zero_payload_quota": {"score": "detected", "note": "OutcomeSoundness relaxation only for s = 0, with the effective weight taken from the contract's rewrite rule."},
+    "transfer_demotion": {"score": "detected", "note": "TransferTargetVoter added as a strengthening."}
+  },
+  "bug_B": "named and confirmed by executing real code. EV-AL-D3-NEWCODE: Go test TestEvAutoLeaveAfterElection; TLC: old and proposed AutoLeaveAdvance both FALSE on the mapped post-state. Coordinator re-ran the test on clean trees: V02 appends the leave at index 6 and leaves joint; V03 stays joint (stillJoint=true).",
+  "extra_findings_confirmed_in_code": [
+    "early Advance before ApplyConfChange appends a second leave; applying it panics (old and new code)",
+    "wantsLeaveJoint := len(Changes)==0 admits V2{JointExplicit, no changes} in a joint config; applying it panics 'config is already joint' (old and new code)"
+  ],
+  "format_notes": [
+    "decision.json evidence is prose ('raft.go advance (new)') with no packet-relative path:line citations; 0 citations parsed",
+    "one no-op Bash call (`echo placeholder`) ran before decision.initial.json; disclosed by the agent; no input read"
+  ],
+  "evidence_stats": {"records": 32, "tlc_truth_values": 49, "claim_mismatches": 0, "code_observations": 25},
+  "summary": "4 detected; bug B confirmed in real code (re-verified)"
+}

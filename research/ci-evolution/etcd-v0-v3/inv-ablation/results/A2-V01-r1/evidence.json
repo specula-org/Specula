@@ -1,0 +1,1570 @@
+[
+ {
+  "id": "EV-E1a",
+  "property": "RequestCorrelatedConfigurationEffects (EffectContract)",
+  "kind": "semantic",
+  "state": {
+   "witness": "W_Effect 'E1.newcode-demotion': before voters {s1,s2,s3}; entry V1 AddLearner(s3) id 1 at index 4; post config voters {s1,s2}, learners {s3}",
+   "population": "Observation produced by the actual observer P!EffectObservation(pre, entry, post, requests). pre: raft record built by MkRaft (InitialRaft + config/log/commit/applied); log = Boot(s1,s2,s3) followed by the entry, committed; requests[id] handed off with the entry's kind/target/changes/transition. post.config is the ConfState printed by the Go test (node k -> sk). A recovered panic is mapped to fatal#'' with the config unchanged (Go printed r.prs.Config unchanged). Old is evaluated on OldEffect(o), the projection into the old representation ([voters,learners], entries without V2 fields)."
+  },
+  "old_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "old": "TestEvidenceE1DemoteViaAddLearner: AddLearner(3) on (1 2 3) -> Nodes=[1 2 3] Learners=[] (ignored)",
+   "new": "TestEvidenceE1DemoteViaAddLearner: -> Nodes=[1 2] Learners=[3] (demoted), no panic",
+   "commands": [
+    "cd evidence/go/old && GOFLAGS=-mod=mod GOPROXY=off GOMODCACHE=/tmp/godeps/modcache go test -vet=off -count=1 -v -run 'TestEvidence' .",
+    "cd evidence/go/new && GOFLAGS=-mod=mod GOPROXY=off GOMODCACHE=/tmp/godeps/modcache go test -vet=off -count=1 -v -run 'TestEvidence' ."
+   ],
+   "result": "new code demotes; old code ignored"
+  },
+  "requirement_evidence": "confchange.makeLearner (demote voter); confchange/testdata/simple_promote_demote.txt 'Can demote a voter'; raft_test.go TestAddLearner (demote r, then promote r)",
+  "verdict": "accepted",
+  "note": "The model fold (ConfigStep) and the independent restatement (ExpectedStep) both equal the Go-observed config (foldEqualsObserved/indepEqualsObserved TRUE).",
+  "files": {
+   "proposed_tla": "evidence/tla/Proposed.tla",
+   "old_tla_copy": "evidence/tla/base.tla",
+   "harness": "evidence/tla/WCommon.tla",
+   "witness_tla": "evidence/tla/W_Effect.tla",
+   "cfg": "evidence/tla/W_Effect.cfg",
+   "tlc_log": "evidence/logs/tlc_W_Effect.log",
+   "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config W_Effect.cfg -workers 1 W_Effect.tla",
+   "go_test_new": "evidence/go/new/zz_evidence_test.go",
+   "go_test_old": "evidence/go/old/zz_evidence_test.go",
+   "go_log_new": "evidence/logs/go_new_evidence.log",
+   "go_log_old": "evidence/logs/go_old_evidence.log"
+  }
+ },
+ {
+  "id": "EV-E1b",
+  "property": "RequestCorrelatedConfigurationEffects (EffectContract)",
+  "kind": "control",
+  "state": {
+   "witness": "W_Effect 'E1.oldcode-noop(control)': same pre/entry, post config unchanged (old-code behaviour)",
+   "population": "Observation produced by the actual observer P!EffectObservation(pre, entry, post, requests). pre: raft record built by MkRaft (InitialRaft + config/log/commit/applied); log = Boot(s1,s2,s3) followed by the entry, committed; requests[id] handed off with the entry's kind/target/changes/transition. post.config is the ConfState printed by the Go test (node k -> sk). A recovered panic is mapped to fatal#'' with the config unchanged (Go printed r.prs.Config unchanged). Old is evaluated on OldEffect(o), the projection into the old representation ([voters,learners], entries without V2 fields)."
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "old": "old code produces this (ignored AddLearner)",
+   "new": "new code never produces this (demotes)",
+   "commands": [
+    "cd evidence/go/old && GOFLAGS=-mod=mod GOPROXY=off GOMODCACHE=/tmp/godeps/modcache go test -vet=off -count=1 -v -run 'TestEvidence' .",
+    "cd evidence/go/new && GOFLAGS=-mod=mod GOPROXY=off GOMODCACHE=/tmp/godeps/modcache go test -vet=off -count=1 -v -run 'TestEvidence' ."
+   ],
+   "result": "see EV-E1a"
+  },
+  "requirement_evidence": "same as EV-E1a: the old no-op behaviour is now forbidden",
+  "verdict": "accepted",
+  "note": "Newly forbidden old behaviour stays in the comparison domain, and the proposed contract rejects it.",
+  "files": {
+   "proposed_tla": "evidence/tla/Proposed.tla",
+   "old_tla_copy": "evidence/tla/base.tla",
+   "harness": "evidence/tla/WCommon.tla",
+   "witness_tla": "evidence/tla/W_Effect.tla",
+   "cfg": "evidence/tla/W_Effect.cfg",
+   "tlc_log": "evidence/logs/tlc_W_Effect.log",
+   "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config W_Effect.cfg -workers 1 W_Effect.tla",
+   "go_test_new": "evidence/go/new/zz_evidence_test.go",
+   "go_test_old": "evidence/go/old/zz_evidence_test.go",
+   "go_log_new": "evidence/logs/go_new_evidence.log",
+   "go_log_old": "evidence/logs/go_old_evidence.log"
+  }
+ },
+ {
+  "id": "EV-E2a",
+  "property": "RequestCorrelatedConfigurationEffects (EffectContract)",
+  "kind": "semantic",
+  "state": {
+   "witness": "W_Effect 'E2.newcode-refused': log Boot, Remove s2 (4), Remove s3 (5), Remove s1 (6, id 1); before voters {s1}; post = config unchanged, fatal 'removed all voters'",
+   "population": "Observation produced by the actual observer P!EffectObservation(pre, entry, post, requests). pre: raft record built by MkRaft (InitialRaft + config/log/commit/applied); log = Boot(s1,s2,s3) followed by the entry, committed; requests[id] handed off with the entry's kind/target/changes/transition. post.config is the ConfState printed by the Go test (node k -> sk). A recovered panic is mapped to fatal#'' with the config unchanged (Go printed r.prs.Config unchanged). Old is evaluated on OldEffect(o), the projection into the old representation ([voters,learners], entries without V2 fields)."
+  },
+  "old_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "old": "TestEvidenceE2RemoveLastVoter: Remove(1) on (1) -> Nodes=[] (no panic)",
+   "new": "TestEvidenceE2RemoveLastVoter: panic 'removed all voters'; r.prs.Config stays voters=(1)",
+   "commands": [
+    "cd evidence/go/old && GOFLAGS=-mod=mod GOPROXY=off GOMODCACHE=/tmp/godeps/modcache go test -vet=off -count=1 -v -run 'TestEvidence' .",
+    "cd evidence/go/new && GOFLAGS=-mod=mod GOPROXY=off GOMODCACHE=/tmp/godeps/modcache go test -vet=off -count=1 -v -run 'TestEvidence' ."
+   ],
+   "result": "new code refuses (panics) and leaves the config unchanged"
+  },
+  "requirement_evidence": "confchange.apply 'removed all voters'; confchange/testdata/simple_safety.txt; raft_test.go TestRemoveNode/TestRemoveLearner now expect a panic",
+  "verdict": "accepted",
+  "note": "The proposed EffectContract accepts the refusal (after = before). The panic itself is flagged by the unchanged NoUnexpectedFatal (FALSE on post).",
+  "files": {
+   "proposed_tla": "evidence/tla/Proposed.tla",
+   "old_tla_copy": "evidence/tla/base.tla",
+   "harness": "evidence/tla/WCommon.tla",
+   "witness_tla": "evidence/tla/W_Effect.tla",
+   "cfg": "evidence/tla/W_Effect.cfg",
+   "tlc_log": "evidence/logs/tlc_W_Effect.log",
+   "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config W_Effect.cfg -workers 1 W_Effect.tla",
+   "go_test_new": "evidence/go/new/zz_evidence_test.go",
+   "go_test_old": "evidence/go/old/zz_evidence_test.go",
+   "go_log_new": "evidence/logs/go_new_evidence.log",
+   "go_log_old": "evidence/logs/go_old_evidence.log"
+  }
+ },
+ {
+  "id": "EV-E2b",
+  "property": "RequestCorrelatedConfigurationEffects (EffectContract) + ConfigurationChangeOverlap",
+  "kind": "control",
+  "state": {
+   "witness": "W_Effect 'E2.oldcode-empty-voters': same pre/entry, post voters {} (old-code behaviour)",
+   "population": "Observation produced by the actual observer P!EffectObservation(pre, entry, post, requests). pre: raft record built by MkRaft (InitialRaft + config/log/commit/applied); log = Boot(s1,s2,s3) followed by the entry, committed; requests[id] handed off with the entry's kind/target/changes/transition. post.config is the ConfState printed by the Go test (node k -> sk). A recovered panic is mapped to fatal#'' with the config unchanged (Go printed r.prs.Config unchanged). Old is evaluated on OldEffect(o), the projection into the old representation ([voters,learners], entries without V2 fields)."
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "old": "old code produces voters {}",
+   "new": "never (panic)",
+   "commands": [
+    "cd evidence/go/old && GOFLAGS=-mod=mod GOPROXY=off GOMODCACHE=/tmp/godeps/modcache go test -vet=off -count=1 -v -run 'TestEvidence' .",
+    "cd evidence/go/new && GOFLAGS=-mod=mod GOPROXY=off GOMODCACHE=/tmp/godeps/modcache go test -vet=off -count=1 -v -run 'TestEvidence' ."
+   ],
+   "result": "see EV-E2a"
+  },
+  "requirement_evidence": "zero-voter configurations are now forbidden (confchange.apply)",
+  "verdict": "accepted",
+  "note": "ConfigurationChangeOverlap (new) is also FALSE on this transition (newOverlap FALSE).",
+  "files": {
+   "proposed_tla": "evidence/tla/Proposed.tla",
+   "old_tla_copy": "evidence/tla/base.tla",
+   "harness": "evidence/tla/WCommon.tla",
+   "witness_tla": "evidence/tla/W_Effect.tla",
+   "cfg": "evidence/tla/W_Effect.cfg",
+   "tlc_log": "evidence/logs/tlc_W_Effect.log",
+   "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config W_Effect.cfg -workers 1 W_Effect.tla",
+   "go_test_new": "evidence/go/new/zz_evidence_test.go",
+   "go_test_old": "evidence/go/old/zz_evidence_test.go",
+   "go_log_new": "evidence/logs/go_new_evidence.log",
+   "go_log_old": "evidence/logs/go_old_evidence.log"
+  }
+ },
+ {
+  "id": "EV-E2c",
+  "property": "RequestCorrelatedConfigurationEffects (EffectContract)",
+  "kind": "control",
+  "state": {
+   "witness": "W_Effect 'E2b.newcode-refused-demote-last': AddLearner(s1) on voters {s1}; post config unchanged + fatal",
+   "population": "Observation produced by the actual observer P!EffectObservation(pre, entry, post, requests). pre: raft record built by MkRaft (InitialRaft + config/log/commit/applied); log = Boot(s1,s2,s3) followed by the entry, committed; requests[id] handed off with the entry's kind/target/changes/transition. post.config is the ConfState printed by the Go test (node k -> sk). A recovered panic is mapped to fatal#'' with the config unchanged (Go printed r.prs.Config unchanged). Old is evaluated on OldEffect(o), the projection into the old representation ([voters,learners], entries without V2 fields)."
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "old": "TestEvidenceE2RemoveLastVoter (E2b): ignored, Nodes=[1]",
+   "new": "panic 'removed all voters', config unchanged",
+   "commands": [
+    "cd evidence/go/old && GOFLAGS=-mod=mod GOPROXY=off GOMODCACHE=/tmp/godeps/modcache go test -vet=off -count=1 -v -run 'TestEvidence' .",
+    "cd evidence/go/new && GOFLAGS=-mod=mod GOPROXY=off GOMODCACHE=/tmp/godeps/modcache go test -vet=off -count=1 -v -run 'TestEvidence' ."
+   ],
+   "result": "config unchanged in both; only the fatal differs"
+  },
+  "requirement_evidence": "confchange.apply 'removed all voters'",
+  "verdict": "accepted",
+  "note": "No config-level disagreement. Only NoUnexpectedFatal distinguishes the two (FALSE for the new code).",
+  "files": {
+   "proposed_tla": "evidence/tla/Proposed.tla",
+   "old_tla_copy": "evidence/tla/base.tla",
+   "harness": "evidence/tla/WCommon.tla",
+   "witness_tla": "evidence/tla/W_Effect.tla",
+   "cfg": "evidence/tla/W_Effect.cfg",
+   "tlc_log": "evidence/logs/tlc_W_Effect.log",
+   "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config W_Effect.cfg -workers 1 W_Effect.tla",
+   "go_test_new": "evidence/go/new/zz_evidence_test.go",
+   "go_test_old": "evidence/go/old/zz_evidence_test.go",
+   "go_log_new": "evidence/logs/go_new_evidence.log",
+   "go_log_old": "evidence/logs/go_old_evidence.log"
+  }
+ },
+ {
+  "id": "EV-E3a",
+  "property": "RequestCorrelatedConfigurationEffects (EffectContract)",
+  "kind": "semantic",
+  "state": {
+   "witness": "W_Effect 'E3a.enter-joint-auto(newcode)': before {s1,s2,s3}; V2 Auto [AddVoter s4, Remove s3] id 1; post (s1 s2 s4)&&(s1 s2 s3) autoLeave",
+   "population": "Observation produced by the actual observer P!EffectObservation(pre, entry, post, requests). pre: raft record built by MkRaft (InitialRaft + config/log/commit/applied); log = Boot(s1,s2,s3) followed by the entry, committed; requests[id] handed off with the entry's kind/target/changes/transition. post.config is the ConfState printed by the Go test (node k -> sk). A recovered panic is mapped to fatal#'' with the config unchanged (Go printed r.prs.Config unchanged). Old is evaluated on OldEffect(o), the projection into the old representation ([voters,learners], entries without V2 fields)."
+  },
+  "old_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "old": "not_representable (no ConfChangeV2 in old source)",
+   "new": "TestEvidenceE3EnterLeaveJoint E3a: Nodes=[1 2 4] NodesJoint=[1 2 3] AutoLeave=true",
+   "commands": [
+    "cd evidence/go/new && GOFLAGS=-mod=mod GOPROXY=off GOMODCACHE=/tmp/godeps/modcache go test -vet=off -count=1 -v -run 'TestEvidence' ."
+   ],
+   "result": "joint config entered"
+  },
+  "requirement_evidence": "confchange.EnterJoint; raftpb ConfChangeV2.EnterJoint (Auto with >1 change -> joint, autoLeave); TestRawNodeProposeAndConfChange expected ConfStates",
+  "verdict": "accepted",
+  "note": "Old EffectContract treats V2 as an unknown kind and expects a no-op, so it rejects the correct joint effect.",
+  "files": {
+   "proposed_tla": "evidence/tla/Proposed.tla",
+   "old_tla_copy": "evidence/tla/base.tla",
+   "harness": "evidence/tla/WCommon.tla",
+   "witness_tla": "evidence/tla/W_Effect.tla",
+   "cfg": "evidence/tla/W_Effect.cfg",
+   "tlc_log": "evidence/logs/tlc_W_Effect.log",
+   "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config W_Effect.cfg -workers 1 W_Effect.tla",
+   "go_test_new": "evidence/go/new/zz_evidence_test.go",
+   "go_test_old": "evidence/go/old/zz_evidence_test.go",
+   "go_log_new": "evidence/logs/go_new_evidence.log",
+   "go_log_old": "evidence/logs/go_old_evidence.log"
+  }
+ },
+ {
+  "id": "EV-E3b",
+  "property": "RequestCorrelatedConfigurationEffects + ConfigurationChangeOverlap",
+  "kind": "control",
+  "state": {
+   "witness": "W_Effect 'E3a.control-applied-as-simple(forbidden)': same entry, post (s1 s2 s4) with no outgoing (two voters changed without joint)",
+   "population": "Observation produced by the actual observer P!EffectObservation(pre, entry, post, requests). pre: raft record built by MkRaft (InitialRaft + config/log/commit/applied); log = Boot(s1,s2,s3) followed by the entry, committed; requests[id] handed off with the entry's kind/target/changes/transition. post.config is the ConfState printed by the Go test (node k -> sk). A recovered panic is mapped to fatal#'' with the config unchanged (Go printed r.prs.Config unchanged). Old is evaluated on OldEffect(o), the projection into the old representation ([voters,learners], entries without V2 fields)."
+  },
+  "old_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "old": "not_representable",
+   "new": "never produced (EnterJoint used)",
+   "commands": [
+    "cd evidence/go/new && GOFLAGS=-mod=mod GOPROXY=off GOMODCACHE=/tmp/godeps/modcache go test -vet=off -count=1 -v -run 'TestEvidence' ."
+   ],
+   "result": "n/a"
+  },
+  "requirement_evidence": "confchange.Simple 'more than one voter changed without entering joint config'",
+  "verdict": "accepted",
+  "note": "Proposed EffectContract FALSE and ConfigurationChangeOverlap FALSE (newOverlap FALSE).",
+  "files": {
+   "proposed_tla": "evidence/tla/Proposed.tla",
+   "old_tla_copy": "evidence/tla/base.tla",
+   "harness": "evidence/tla/WCommon.tla",
+   "witness_tla": "evidence/tla/W_Effect.tla",
+   "cfg": "evidence/tla/W_Effect.cfg",
+   "tlc_log": "evidence/logs/tlc_W_Effect.log",
+   "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config W_Effect.cfg -workers 1 W_Effect.tla",
+   "go_test_new": "evidence/go/new/zz_evidence_test.go",
+   "go_test_old": "evidence/go/old/zz_evidence_test.go",
+   "go_log_new": "evidence/logs/go_new_evidence.log",
+   "go_log_old": "evidence/logs/go_old_evidence.log"
+  }
+ },
+ {
+  "id": "EV-E3c",
+  "property": "RequestCorrelatedConfigurationEffects (EffectContract)",
+  "kind": "semantic",
+  "state": {
+   "witness": "W_Effect 'E3d.enter-joint-explicit-staged-learner' (post (s1 s2 s4)&&(s1 s2 s3) learnersNext {s3}) and 'E3d.control-learner-added-directly(forbidden)' (s3 in learners while in outgoing)",
+   "population": "Observation produced by the actual observer P!EffectObservation(pre, entry, post, requests). pre: raft record built by MkRaft (InitialRaft + config/log/commit/applied); log = Boot(s1,s2,s3) followed by the entry, committed; requests[id] handed off with the entry's kind/target/changes/transition. post.config is the ConfState printed by the Go test (node k -> sk). A recovered panic is mapped to fatal#'' with the config unchanged (Go printed r.prs.Config unchanged). Old is evaluated on OldEffect(o), the projection into the old representation ([voters,learners], entries without V2 fields)."
+  },
+  "old_property": {
+   "claimed": "FALSE / FALSE",
+   "tlc": "FALSE / FALSE"
+  },
+  "proposed_property": {
+   "claimed": "TRUE / FALSE",
+   "tlc": "TRUE / FALSE"
+  },
+  "code_observation": {
+   "old": "not_representable",
+   "new": "TestEvidenceE3EnterLeaveJoint E3d: Nodes=[1 2 4] NodesJoint=[1 2 3] LearnersNext=[3]",
+   "commands": [
+    "cd evidence/go/new && GOFLAGS=-mod=mod GOPROXY=off GOMODCACHE=/tmp/godeps/modcache go test -vet=off -count=1 -v -run 'TestEvidence' ."
+   ],
+   "result": "staged learner"
+  },
+  "requirement_evidence": "confchange.makeLearner LearnersNext rule; testdata/joint_learners_next.txt",
+  "verdict": "accepted",
+  "note": "ConfigurationChangeOverlap is TRUE on the forbidden control because it only looks at voters. EffectContract is the property that rejects it.",
+  "files": {
+   "proposed_tla": "evidence/tla/Proposed.tla",
+   "old_tla_copy": "evidence/tla/base.tla",
+   "harness": "evidence/tla/WCommon.tla",
+   "witness_tla": "evidence/tla/W_Effect.tla",
+   "cfg": "evidence/tla/W_Effect.cfg",
+   "tlc_log": "evidence/logs/tlc_W_Effect.log",
+   "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config W_Effect.cfg -workers 1 W_Effect.tla",
+   "go_test_new": "evidence/go/new/zz_evidence_test.go",
+   "go_test_old": "evidence/go/old/zz_evidence_test.go",
+   "go_log_new": "evidence/logs/go_new_evidence.log",
+   "go_log_old": "evidence/logs/go_old_evidence.log"
+  }
+ },
+ {
+  "id": "EV-E3d",
+  "property": "RequestCorrelatedConfigurationEffects (EffectContract)",
+  "kind": "semantic",
+  "state": {
+   "witness": "W_Effect 'E3g.explicit-leave-joint(newcode)': before (s1 s2 s4)&&(s1 s2 s3) learnersNext {s3}; user V2 zero change id 2; post (s1 s2 s4) learners {s3}",
+   "population": "Observation produced by the actual observer P!EffectObservation(pre, entry, post, requests). pre: raft record built by MkRaft (InitialRaft + config/log/commit/applied); log = Boot(s1,s2,s3) followed by the entry, committed; requests[id] handed off with the entry's kind/target/changes/transition. post.config is the ConfState printed by the Go test (node k -> sk). A recovered panic is mapped to fatal#'' with the config unchanged (Go printed r.prs.Config unchanged). Old is evaluated on OldEffect(o), the projection into the old representation ([voters,learners], entries without V2 fields)."
+  },
+  "old_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "old": "not_representable",
+   "new": "TestEvidenceE3EnterLeaveJoint E3g: Nodes=[1 2 4] Learners=[3]",
+   "commands": [
+    "cd evidence/go/new && GOFLAGS=-mod=mod GOPROXY=off GOMODCACHE=/tmp/godeps/modcache go test -vet=off -count=1 -v -run 'TestEvidence' ."
+   ],
+   "result": "left joint, staged learner promoted to learner"
+  },
+  "requirement_evidence": "confchange.LeaveJoint; ConfChangeV2.LeaveJoint (zero except Context)",
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "proposed_tla": "evidence/tla/Proposed.tla",
+   "old_tla_copy": "evidence/tla/base.tla",
+   "harness": "evidence/tla/WCommon.tla",
+   "witness_tla": "evidence/tla/W_Effect.tla",
+   "cfg": "evidence/tla/W_Effect.cfg",
+   "tlc_log": "evidence/logs/tlc_W_Effect.log",
+   "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config W_Effect.cfg -workers 1 W_Effect.tla",
+   "go_test_new": "evidence/go/new/zz_evidence_test.go",
+   "go_test_old": "evidence/go/old/zz_evidence_test.go",
+   "go_log_new": "evidence/logs/go_new_evidence.log",
+   "go_log_old": "evidence/logs/go_old_evidence.log"
+  }
+ },
+ {
+  "id": "EV-E3e",
+  "property": "RequestCorrelatedConfigurationEffects (EffectContract) / NoUnexpectedFatal",
+  "kind": "semantic",
+  "state": {
+   "witness": "W_Effect 'E3c.leave-joint-when-not-joint(newcode-panic)': user zero V2 (id 2) on non-joint (s1 s2 s3); post unchanged + fatal",
+   "population": "Observation produced by the actual observer P!EffectObservation(pre, entry, post, requests). pre: raft record built by MkRaft (InitialRaft + config/log/commit/applied); log = Boot(s1,s2,s3) followed by the entry, committed; requests[id] handed off with the entry's kind/target/changes/transition. post.config is the ConfState printed by the Go test (node k -> sk). A recovered panic is mapped to fatal#'' with the config unchanged (Go printed r.prs.Config unchanged). Old is evaluated on OldEffect(o), the projection into the old representation ([voters,learners], entries without V2 fields)."
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "old": "not_representable",
+   "new": "TestEvidenceE3EnterLeaveJoint E3c: panic \"can't leave a non-joint config\"; also E3e 'config is already joint', E3f \"can't apply simple config change in joint config\"",
+   "commands": [
+    "cd evidence/go/new && GOFLAGS=-mod=mod GOPROXY=off GOMODCACHE=/tmp/godeps/modcache go test -vet=off -count=1 -v -run 'TestEvidence' ."
+   ],
+   "result": "invalid committed conf changes panic on every node at apply time"
+  },
+  "requirement_evidence": "applyConfChange 'TODO(tbg): return the error to the caller' (panic); no leader-side validation in stepLeader",
+  "verdict": "unresolved",
+  "note": "EffectContract accepts the refusal. NoUnexpectedFatal (unchanged) is FALSE. Whether raft must filter such proposals is left as an unresolved obligation (suspected defect D4).",
+  "files": {
+   "proposed_tla": "evidence/tla/Proposed.tla",
+   "old_tla_copy": "evidence/tla/base.tla",
+   "harness": "evidence/tla/WCommon.tla",
+   "witness_tla": "evidence/tla/W_Effect.tla",
+   "cfg": "evidence/tla/W_Effect.cfg",
+   "tlc_log": "evidence/logs/tlc_W_Effect.log",
+   "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config W_Effect.cfg -workers 1 W_Effect.tla",
+   "go_test_new": "evidence/go/new/zz_evidence_test.go",
+   "go_test_old": "evidence/go/old/zz_evidence_test.go",
+   "go_log_new": "evidence/logs/go_new_evidence.log",
+   "go_log_old": "evidence/logs/go_old_evidence.log"
+  }
+ },
+ {
+  "id": "EV-E8a",
+  "property": "RequestCorrelatedConfigurationEffects (EffectContract)",
+  "kind": "semantic",
+  "state": {
+   "witness": "W_Effect 'E8.auto-leave-L(index9,newcode)': auto-leave entry id 0 applied to (s1)&&(s1) learners {s4} autoLeave -> (s1) learners {s4}",
+   "population": "Observation produced by the actual observer P!EffectObservation(pre, entry, post, requests). pre: raft record built by MkRaft (InitialRaft + config/log/commit/applied); log = Boot(s1,s2,s3) followed by the entry, committed; requests[id] handed off with the entry's kind/target/changes/transition. post.config is the ConfState printed by the Go test (node k -> sk). A recovered panic is mapped to fatal#'' with the config unchanged (Go printed r.prs.Config unchanged). Old is evaluated on OldEffect(o), the projection into the old representation ([voters,learners], entries without V2 fields). Log mapped from TestEvidenceE8DoubleAutoLeave (Go indices 1..5 -> TLA 6..10 after V1 removals shrink Boot to {s1}; Go node 2 -> s4)."
+  },
+  "old_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "old": "not_representable",
+   "new": "TestEvidenceE8DoubleAutoLeave: applied V2 index=4 changes=0 -> Nodes=[1] Learners=[2]",
+   "commands": [
+    "cd evidence/go/new && GOFLAGS=-mod=mod GOPROXY=off GOMODCACHE=/tmp/godeps/modcache go test -vet=off -count=1 -v -run 'TestEvidence' ."
+   ],
+   "result": "auto-leave applied"
+  },
+  "requirement_evidence": "raft.go:556-583 advance() appends zero ConfChangeV2 with no request id when AutoLeave",
+  "verdict": "accepted",
+  "note": "Old contract requires every id-0 entry to be a bootstrap AddVoter, so it rejects the legitimate raft-initiated leave.",
+  "files": {
+   "proposed_tla": "evidence/tla/Proposed.tla",
+   "old_tla_copy": "evidence/tla/base.tla",
+   "harness": "evidence/tla/WCommon.tla",
+   "witness_tla": "evidence/tla/W_Effect.tla",
+   "cfg": "evidence/tla/W_Effect.cfg",
+   "tlc_log": "evidence/logs/tlc_W_Effect.log",
+   "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config W_Effect.cfg -workers 1 W_Effect.tla",
+   "go_test_new": "evidence/go/new/zz_evidence_test.go",
+   "go_test_old": "evidence/go/old/zz_evidence_test.go",
+   "go_log_new": "evidence/logs/go_new_evidence.log",
+   "go_log_old": "evidence/logs/go_old_evidence.log"
+  }
+ },
+ {
+  "id": "EV-E8b",
+  "property": "RequestCorrelatedConfigurationEffects (EffectContract) / NoUnexpectedFatal",
+  "kind": "semantic",
+  "state": {
+   "witness": "W_Effect \"E8.second-auto-leave-L'(index10,newcode-panic)\": second id-0 zero V2 applied to non-joint (s1) learners {s4}; post unchanged + fatal",
+   "population": "Observation produced by the actual observer P!EffectObservation(pre, entry, post, requests). pre: raft record built by MkRaft (InitialRaft + config/log/commit/applied); log = Boot(s1,s2,s3) followed by the entry, committed; requests[id] handed off with the entry's kind/target/changes/transition. post.config is the ConfState printed by the Go test (node k -> sk). A recovered panic is mapped to fatal#'' with the config unchanged (Go printed r.prs.Config unchanged). Old is evaluated on OldEffect(o), the projection into the old representation ([voters,learners], entries without V2 fields)."
+  },
+  "old_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "old": "not_representable",
+   "new": "TestEvidenceE8DoubleAutoLeave: V2 entries at [2 4 5], pendingConfIndex stays 2; PANIC applying V2 index=5 \"can't leave a non-joint config\"",
+   "commands": [
+    "cd evidence/go/new && GOFLAGS=-mod=mod GOPROXY=off GOMODCACHE=/tmp/godeps/modcache go test -vet=off -count=1 -v -run 'TestEvidence' ."
+   ],
+   "result": "defect reproduced"
+  },
+  "requirement_evidence": "raft.go:281-286 one pending conf change; auto-leave must only leave an autoLeave joint config",
+  "verdict": "accepted",
+  "note": "The proposed contract rejects L' through the auto-leave correlation clause (b.autoLeave FALSE). NoUnexpectedFatal is FALSE.",
+  "files": {
+   "proposed_tla": "evidence/tla/Proposed.tla",
+   "old_tla_copy": "evidence/tla/base.tla",
+   "harness": "evidence/tla/WCommon.tla",
+   "witness_tla": "evidence/tla/W_Effect.tla",
+   "cfg": "evidence/tla/W_Effect.cfg",
+   "tlc_log": "evidence/logs/tlc_W_Effect.log",
+   "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config W_Effect.cfg -workers 1 W_Effect.tla",
+   "go_test_new": "evidence/go/new/zz_evidence_test.go",
+   "go_test_old": "evidence/go/old/zz_evidence_test.go",
+   "go_log_new": "evidence/logs/go_new_evidence.log",
+   "go_log_old": "evidence/logs/go_old_evidence.log"
+  }
+ },
+ {
+  "id": "EV-E11",
+  "property": "RequestCorrelatedConfigurationEffects / NoUnexpectedFatal (model-only change)",
+  "kind": "control",
+  "state": {
+   "witness": "W_Effect 'E11.remove-unknown-*': Remove(s5) on {s1,s2,s3}; post unchanged (new) or unchanged + fatal (old)",
+   "population": "Observation produced by the actual observer P!EffectObservation(pre, entry, post, requests). pre: raft record built by MkRaft (InitialRaft + config/log/commit/applied); log = Boot(s1,s2,s3) followed by the entry, committed; requests[id] handed off with the entry's kind/target/changes/transition. post.config is the ConfState printed by the Go test (node k -> sk). A recovered panic is mapped to fatal#'' with the config unchanged (Go printed r.prs.Config unchanged). Old is evaluated on OldEffect(o), the projection into the old representation ([voters,learners], entries without V2 fields)."
+  },
+  "old_property": {
+   "claimed": "TRUE / TRUE",
+   "tlc": "TRUE / TRUE"
+  },
+  "proposed_property": {
+   "claimed": "TRUE / TRUE",
+   "tlc": "TRUE / TRUE"
+  },
+  "code_observation": {
+   "old": "TestEvidenceE11RemoveUnknown: panic 'attempting to remove unknown peer'",
+   "new": "TestEvidenceE11RemoveUnknown: no-op, Nodes=[1 2]",
+   "commands": [
+    "cd evidence/go/old && GOFLAGS=-mod=mod GOPROXY=off GOMODCACHE=/tmp/godeps/modcache go test -vet=off -count=1 -v -run 'TestEvidence' .",
+    "cd evidence/go/new && GOFLAGS=-mod=mod GOPROXY=off GOMODCACHE=/tmp/godeps/modcache go test -vet=off -count=1 -v -run 'TestEvidence' ."
+   ],
+   "result": "panic removed"
+  },
+  "requirement_evidence": "confchange.remove: untracked id is a no-op (testdata/simple_idempotency.txt r4)",
+  "verdict": "accepted",
+  "note": "No property edit is needed. Only the model's ApplyConfCore drops the Fatal; NoUnexpectedFatal is FALSE only for the old behaviour.",
+  "files": {
+   "proposed_tla": "evidence/tla/Proposed.tla",
+   "old_tla_copy": "evidence/tla/base.tla",
+   "harness": "evidence/tla/WCommon.tla",
+   "witness_tla": "evidence/tla/W_Effect.tla",
+   "cfg": "evidence/tla/W_Effect.cfg",
+   "tlc_log": "evidence/logs/tlc_W_Effect.log",
+   "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config W_Effect.cfg -workers 1 W_Effect.tla",
+   "go_test_new": "evidence/go/new/zz_evidence_test.go",
+   "go_test_old": "evidence/go/old/zz_evidence_test.go",
+   "go_log_new": "evidence/logs/go_new_evidence.log",
+   "go_log_old": "evidence/logs/go_old_evidence.log"
+  }
+ },
+ {
+  "id": "EV-OVL",
+  "property": "ConfigurationChangeOverlap (new)",
+  "kind": "strengthening",
+  "state": {
+   "witness": "W_Effect newOverlap column on all effect witnesses: forbidden 'E2.oldcode-empty-voters' ((s1)->()), 'E3a.control-applied-as-simple' ((s1 s2 s3)->(s1 s2 s4) with no joint); legit E1 demotion, E2 refusal, E3a enter-joint, E3d staged learner, E3g leave, E8 L, E11 no-op",
+   "population": "Same observer-produced effect records as EV-E1a..EV-E8b (P!EffectObservation on mapped pre/post states)."
+  },
+  "old_property": {
+   "name": "(none in old suite)",
+   "claimed": "absent: no old property constrains the transition shape (the old EffectContract rejects every V2 effect, legit or not)",
+   "tlc": "n/a (old EffectContract: FALSE on both forbidden witnesses and also FALSE on the legit V2 ones)"
+  },
+  "proposed_property": {
+   "claimed": "forbidden: FALSE, FALSE; all legit: TRUE",
+   "tlc": "forbidden: FALSE, FALSE; legit: TRUE for every legit witness"
+  },
+  "code_observation": {
+   "old": "TestEvidenceE2RemoveLastVoter (old): voters -> [] (violates overlap)",
+   "new": "the new code refuses both forbidden transitions (panic 'removed all voters'; EnterJoint used for multi-change)",
+   "commands": [
+    "cd evidence/go/old && go test -vet=off -run TestEvidence .",
+    "cd evidence/go/new && go test -vet=off -run TestEvidence ."
+   ],
+   "result": "new code satisfies the property; old code violates it on last-voter removal"
+  },
+  "requirement_evidence": "confchange.Simple symdiff<=1; EnterJoint copies incoming to outgoing; LeaveJoint keeps incoming; apply 'removed all voters'; raft.proto ConfChangeV2 joint quorum comment",
+  "verdict": "accepted",
+  "note": "An independent, voter-only safety check. The learner-placement error in 'E3d.control-learner-added-directly' passes it (TRUE) and is left to EffectContract.",
+  "files": {
+   "proposed_tla": "evidence/tla/Proposed.tla",
+   "witness_tla": "evidence/tla/W_Effect.tla",
+   "cfg": "evidence/tla/W_Effect.cfg",
+   "tlc_log": "evidence/logs/tlc_W_Effect.log",
+   "go_test_new": "evidence/go/new/zz_evidence_test.go",
+   "go_test_old": "evidence/go/old/zz_evidence_test.go",
+   "go_log_new": "evidence/logs/go_new_evidence.log",
+   "go_log_old": "evidence/logs/go_old_evidence.log"
+  }
+ },
+ {
+  "id": "EV-E4a",
+  "property": "QuorumAccounting",
+  "kind": "strengthening",
+  "state": {
+   "witness": "W_Quorum 'E4.win-incoming-majority-only(forbidden)': config (s1 s4 s5)&&(s1 s2 s3), yes {s1,s4,s5}",
+   "population": "Win records produced by the actual observer P!BecomeLeader(candidate).wins on the mapped candidate (config = Go E4 ConfState). The commitUses record comes from the old model's B!MaybeCommit (incoming-only quorum) on the mapped leader, with the outgoing field attached."
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "old": "not_representable (no joint configs)",
+   "new": "TestEvidenceE4JointElection: votes {1,4,5} -> StateCandidate; {1,2,4,5} -> StateLeader; MsgVote sent to [4 5 2 3]",
+   "commands": [
+    "cd evidence/go/new && GOFLAGS=-mod=mod GOPROXY=off GOMODCACHE=/tmp/godeps/modcache go test -vet=off -count=1 -v -run 'TestEvidence' ."
+   ],
+   "result": "code requires both majorities"
+  },
+  "requirement_evidence": "quorum/joint.go VoteResult; raft.go poll/TallyVotes",
+  "verdict": "accepted",
+  "note": "The old text accepts an incoming-only majority. Proposed model JointWon{1,4,5}=FALSE matches the code; old model Won(voters,{1,4,5})=TRUE.",
+  "files": {
+   "proposed_tla": "evidence/tla/Proposed.tla",
+   "old_tla_copy": "evidence/tla/base.tla",
+   "harness": "evidence/tla/WCommon.tla",
+   "witness_tla": "evidence/tla/W_Quorum.tla",
+   "cfg": "evidence/tla/W_Quorum.cfg",
+   "tlc_log": "evidence/logs/tlc_W_Quorum.log",
+   "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config W_Quorum.cfg -workers 1 W_Quorum.tla",
+   "go_test_new": "evidence/go/new/zz_evidence_test.go",
+   "go_test_old": "evidence/go/old/zz_evidence_test.go",
+   "go_log_new": "evidence/logs/go_new_evidence.log",
+   "go_log_old": "evidence/logs/go_old_evidence.log"
+  }
+ },
+ {
+  "id": "EV-E4b",
+  "property": "QuorumAccounting",
+  "kind": "control",
+  "state": {
+   "witness": "W_Quorum 'E4.win-both-majorities(control)': yes {s1,s2,s4,s5}",
+   "population": "Win records produced by the actual observer P!BecomeLeader(candidate).wins on the mapped candidate (config = Go E4 ConfState). The commitUses record comes from the old model's B!MaybeCommit (incoming-only quorum) on the mapped leader, with the outgoing field attached."
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "old": "not_representable",
+   "new": "becomes leader with {1,2,4,5}",
+   "commands": [
+    "cd evidence/go/new && GOFLAGS=-mod=mod GOPROXY=off GOMODCACHE=/tmp/godeps/modcache go test -vet=off -count=1 -v -run 'TestEvidence' ."
+   ],
+   "result": "legit win accepted"
+  },
+  "requirement_evidence": "quorum/joint.go",
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "proposed_tla": "evidence/tla/Proposed.tla",
+   "old_tla_copy": "evidence/tla/base.tla",
+   "harness": "evidence/tla/WCommon.tla",
+   "witness_tla": "evidence/tla/W_Quorum.tla",
+   "cfg": "evidence/tla/W_Quorum.cfg",
+   "tlc_log": "evidence/logs/tlc_W_Quorum.log",
+   "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config W_Quorum.cfg -workers 1 W_Quorum.tla",
+   "go_test_new": "evidence/go/new/zz_evidence_test.go",
+   "go_test_old": "evidence/go/old/zz_evidence_test.go",
+   "go_log_new": "evidence/logs/go_new_evidence.log",
+   "go_log_old": "evidence/logs/go_old_evidence.log"
+  }
+ },
+ {
+  "id": "EV-E4c",
+  "property": "QuorumAccounting",
+  "kind": "strengthening",
+  "state": {
+   "witness": "W_Quorum 'E4.commitUse-incoming-majority-only(forbidden)': leader matches {s1,s4,s5} at index 5",
+   "population": "Win records produced by the actual observer P!BecomeLeader(candidate).wins on the mapped candidate (config = Go E4 ConfState). The commitUses record comes from the old model's B!MaybeCommit (incoming-only quorum) on the mapped leader, with the outgoing field attached."
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "old": "not_representable",
+   "new": "TestEvidenceE9JointReadIndex shows joint quorum use; Proposed MaybeCommit keeps commit 4, old-model MaybeCommit commits 5 (TLC)",
+   "commands": [
+    "cd evidence/go/new && GOFLAGS=-mod=mod GOPROXY=off GOMODCACHE=/tmp/godeps/modcache go test -vet=off -count=1 -v -run 'TestEvidence' ."
+   ],
+   "result": "joint CommittedIndex = min over halves"
+  },
+  "requirement_evidence": "tracker.Committed -> JointConfig.CommittedIndex",
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "proposed_tla": "evidence/tla/Proposed.tla",
+   "old_tla_copy": "evidence/tla/base.tla",
+   "harness": "evidence/tla/WCommon.tla",
+   "witness_tla": "evidence/tla/W_Quorum.tla",
+   "cfg": "evidence/tla/W_Quorum.cfg",
+   "tlc_log": "evidence/logs/tlc_W_Quorum.log",
+   "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config W_Quorum.cfg -workers 1 W_Quorum.tla",
+   "go_test_new": "evidence/go/new/zz_evidence_test.go",
+   "go_test_old": "evidence/go/old/zz_evidence_test.go",
+   "go_log_new": "evidence/logs/go_new_evidence.log",
+   "go_log_old": "evidence/logs/go_old_evidence.log"
+  }
+ },
+ {
+  "id": "EV-E4d",
+  "property": "QuorumAccounting",
+  "kind": "relaxation",
+  "state": {
+   "witness": "W_Quorum 'E4.commitUse-both-majorities(control)': matches {s1,s2,s4,s5} (s2 is outgoing-only)",
+   "population": "Win records produced by the actual observer P!BecomeLeader(candidate).wins on the mapped candidate (config = Go E4 ConfState). The commitUses record comes from the old model's B!MaybeCommit (incoming-only quorum) on the mapped leader, with the outgoing field attached."
+  },
+  "old_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "old": "not_representable",
+   "new": "legit joint commit includes outgoing-only acks",
+   "commands": [
+    "cd evidence/go/new && GOFLAGS=-mod=mod GOPROXY=off GOMODCACHE=/tmp/godeps/modcache go test -vet=off -count=1 -v -run 'TestEvidence' ."
+   ],
+   "result": "n/a"
+  },
+  "requirement_evidence": "quorum/joint.go CommittedIndex counts acks from both halves",
+  "verdict": "accepted",
+  "note": "Old 'matches subseteq voters' is also too strong for joint configs. The proposed text uses voters cup outgoing. This refines the initial reason; the expression is unchanged.",
+  "files": {
+   "proposed_tla": "evidence/tla/Proposed.tla",
+   "old_tla_copy": "evidence/tla/base.tla",
+   "harness": "evidence/tla/WCommon.tla",
+   "witness_tla": "evidence/tla/W_Quorum.tla",
+   "cfg": "evidence/tla/W_Quorum.cfg",
+   "tlc_log": "evidence/logs/tlc_W_Quorum.log",
+   "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config W_Quorum.cfg -workers 1 W_Quorum.tla",
+   "go_test_new": "evidence/go/new/zz_evidence_test.go",
+   "go_test_old": "evidence/go/old/zz_evidence_test.go",
+   "go_log_new": "evidence/logs/go_new_evidence.log",
+   "go_log_old": "evidence/logs/go_old_evidence.log"
+  }
+ },
+ {
+  "id": "EV-E5a",
+  "property": "ConfigurationTransitionSafety",
+  "kind": "strengthening",
+  "state": {
+   "witness": "W_CTS \"E5.commitUses{L,L'}(code trace)\" (and control 'E5.commitUses{L}')",
+   "population": "commitUses produced by the actual observer P!MaybeCommit on mapped leader states of the Go E8 trace (TestEvidenceE8DoubleAutoLeave): config J=(s1)&&(s1) learners {s4} autoLeave active; L committed on append (Advance#1, oldCommit 8), L' committed on append (Advance#2, oldCommit 9, L not yet applied)."
+  },
+  "old_property": {
+   "claimed": "TRUE (control TRUE)",
+   "tlc": "TRUE (control TRUE)"
+  },
+  "proposed_property": {
+   "claimed": "FALSE (control TRUE)",
+   "tlc": "FALSE (control TRUE)"
+  },
+  "code_observation": {
+   "old": "not_representable",
+   "new": "TestEvidenceE8DoubleAutoLeave: after Advance#2 committed=5 with autoLeave=true (J active) and V2 entries at [2 4 5]",
+   "commands": [
+    "cd evidence/go/new && GOFLAGS=-mod=mod GOPROXY=off GOMODCACHE=/tmp/godeps/modcache go test -vet=off -count=1 -v -run 'TestEvidence' ."
+   ],
+   "result": "L' committed under J while its predecessor config is non-joint"
+  },
+  "requirement_evidence": "configs take effect at apply (ConfChangeV2 doc); raft.go:281-286 pending conf rule",
+  "verdict": "accepted",
+  "note": "Old misses it twice over: V2 is not in the old ConfKinds, and id 0 is exempt.",
+  "files": {
+   "proposed_tla": "evidence/tla/Proposed.tla",
+   "old_tla_copy": "evidence/tla/base.tla",
+   "harness": "evidence/tla/WCommon.tla",
+   "witness_tla": "evidence/tla/W_CTS.tla",
+   "cfg": "evidence/tla/W_CTS.cfg",
+   "tlc_log": "evidence/logs/tlc_W_CTS.log",
+   "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config W_CTS.cfg -workers 1 W_CTS.tla",
+   "go_test_new": "evidence/go/new/zz_evidence_test.go",
+   "go_test_old": "evidence/go/old/zz_evidence_test.go",
+   "go_log_new": "evidence/logs/go_new_evidence.log",
+   "go_log_old": "evidence/logs/go_old_evidence.log"
+  }
+ },
+ {
+  "id": "EV-E5b",
+  "property": "ConfigurationTransitionSafety",
+  "kind": "semantic",
+  "state": {
+   "witness": "W_CTS 'E5.variant-*' and 'E5.old-text-on-new-helpers' on {L,L'}",
+   "population": "commitUses produced by the actual observer P!MaybeCommit on mapped leader states of the Go E8 trace (TestEvidenceE8DoubleAutoLeave): config J=(s1)&&(s1) learners {s4} autoLeave active; L committed on append (Advance#1, oldCommit 8), L' committed on append (Advance#2, oldCommit 9, L not yet applied)."
+  },
+  "old_property": {
+   "claimed": "old text on new helpers: TRUE",
+   "tlc": "TRUE"
+  },
+  "proposed_property": {
+   "claimed": "both halves: FALSE; IsBootstrap-only variant: TRUE; joint-comparison-only variant: TRUE",
+   "tlc": "FALSE; TRUE; TRUE"
+  },
+  "code_observation": {
+   "old": "n/a",
+   "new": "same trace as EV-E5a",
+   "commands": [
+    "cd evidence/go/new && GOFLAGS=-mod=mod GOPROXY=off GOMODCACHE=/tmp/godeps/modcache go test -vet=off -count=1 -v -run 'TestEvidence' ."
+   ],
+   "result": "n/a"
+  },
+  "requirement_evidence": "raft.go advance() auto-leave entries have id 0",
+  "verdict": "accepted",
+  "note": "Each half of the edit alone is insufficient on the real trace: both the IsBootstrap exemption and the outgoing comparison are needed.",
+  "files": {
+   "proposed_tla": "evidence/tla/Proposed.tla",
+   "old_tla_copy": "evidence/tla/base.tla",
+   "harness": "evidence/tla/WCommon.tla",
+   "witness_tla": "evidence/tla/W_CTS.tla",
+   "cfg": "evidence/tla/W_CTS.cfg",
+   "tlc_log": "evidence/logs/tlc_W_CTS.log",
+   "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config W_CTS.cfg -workers 1 W_CTS.tla",
+   "go_test_new": "evidence/go/new/zz_evidence_test.go",
+   "go_test_old": "evidence/go/old/zz_evidence_test.go",
+   "go_log_new": "evidence/logs/go_new_evidence.log",
+   "go_log_old": "evidence/logs/go_old_evidence.log"
+  }
+ },
+ {
+  "id": "EV-E5c",
+  "property": "ConfigurationTransitionSafety",
+  "kind": "strengthening",
+  "state": {
+   "witness": "W_CTS 'E5b.user-leave-committed-under-dropped-outgoing': commitUse voters {s1,s2,s4}, outgoing {} for a user leave whose prefix config is (s1 s2 s4)&&(s1 s2 s3); control with outgoing {s1,s2,s3}",
+   "population": "Hand-built commitUse matching the config a node holds after the restore defect (EV-E6a). Not a full code trace."
+  },
+  "old_property": {
+   "claimed": "TRUE (control TRUE)",
+   "tlc": "TRUE (control TRUE)"
+  },
+  "proposed_property": {
+   "claimed": "FALSE (control TRUE)",
+   "tlc": "FALSE (control TRUE)"
+  },
+  "code_observation": {
+   "old": "not_representable",
+   "new": "unknown: the code state (restored node elected leader, then committing) was not driven end-to-end",
+   "commands": [],
+   "result": "unknown"
+  },
+  "requirement_evidence": "same as EV-E5a",
+  "verdict": "accepted",
+  "note": "Old compares incoming only and accepts this.",
+  "files": {
+   "proposed_tla": "evidence/tla/Proposed.tla",
+   "old_tla_copy": "evidence/tla/base.tla",
+   "harness": "evidence/tla/WCommon.tla",
+   "witness_tla": "evidence/tla/W_CTS.tla",
+   "cfg": "evidence/tla/W_CTS.cfg",
+   "tlc_log": "evidence/logs/tlc_W_CTS.log",
+   "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config W_CTS.cfg -workers 1 W_CTS.tla"
+  }
+ },
+ {
+  "id": "EV-E13a",
+  "property": "PendingConfigurationDiscipline (new)",
+  "kind": "strengthening",
+  "state": {
+   "witness": "W_CTS \"E13.after-Advance#2\": leader s1 term 2, log ..10 with own-term unapplied L(9), L'(10), applied 8",
+   "population": "Leader raft state mapped from TestEvidenceE8DoubleAutoLeave after Advance#2 (applied=3->8, last=5->10); other servers crashed."
+  },
+  "old_property": {
+   "claimed": "absent (no old property); old ConfigurationTransitionSafety/NoUnexpectedFatal on the same state: TRUE",
+   "tlc": "oldCTS TRUE, oldNUF TRUE",
+   "name": "(none in old suite)"
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "old": "not_representable",
+   "new": "TestEvidenceE8DoubleAutoLeave: V2 entries at [2 4 5] with applied=3, pendingConfIndex=2",
+   "commands": [
+    "cd evidence/go/new && GOFLAGS=-mod=mod GOPROXY=off GOMODCACHE=/tmp/godeps/modcache go test -vet=off -count=1 -v -run 'TestEvidence' ."
+   ],
+   "result": "two unapplied own-term conf entries in a leader log"
+  },
+  "requirement_evidence": "raft.go:281-286 'only one conf change may be pending (in the log, but not yet applied) at a time'; node.go ProposeConfChange doc",
+  "verdict": "accepted",
+  "note": "Catches the auto-leave defect at append time, before the panic.",
+  "files": {
+   "proposed_tla": "evidence/tla/Proposed.tla",
+   "old_tla_copy": "evidence/tla/base.tla",
+   "harness": "evidence/tla/WCommon.tla",
+   "witness_tla": "evidence/tla/W_CTS.tla",
+   "cfg": "evidence/tla/W_CTS.cfg",
+   "tlc_log": "evidence/logs/tlc_W_CTS.log",
+   "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config W_CTS.cfg -workers 1 W_CTS.tla",
+   "go_test_new": "evidence/go/new/zz_evidence_test.go",
+   "go_test_old": "evidence/go/old/zz_evidence_test.go",
+   "go_log_new": "evidence/logs/go_new_evidence.log",
+   "go_log_old": "evidence/logs/go_old_evidence.log"
+  }
+ },
+ {
+  "id": "EV-E13b",
+  "property": "PendingConfigurationDiscipline (new)",
+  "kind": "control",
+  "state": {
+   "witness": "W_CTS 'E13.after-Advance#1' (one unapplied own-term conf), 'E13.new-leader-inherits-two-unapplied' (term-3 leader with two unapplied term-2 conf entries), 'E13.model-AutoLeaveCore' (proposed model with the required pendingConf bump)",
+   "population": "Same mapped trace; the inherited case covers the legitimate situation after a leader change."
+  },
+  "old_property": {
+   "claimed": "absent",
+   "tlc": "n/a",
+   "name": "(none in old suite)"
+  },
+  "proposed_property": {
+   "claimed": "TRUE, TRUE, TRUE (no second auto-leave in the model: last stays 9)",
+   "tlc": "TRUE, TRUE, TRUE"
+  },
+  "code_observation": {
+   "old": "n/a",
+   "new": "after Advance#1 the code state is legit (one V2 at 4)",
+   "commands": [
+    "cd evidence/go/new && GOFLAGS=-mod=mod GOPROXY=off GOMODCACHE=/tmp/godeps/modcache go test -vet=off -count=1 -v -run 'TestEvidence' ."
+   ],
+   "result": "n/a"
+  },
+  "requirement_evidence": "becomeLeader sets pendingConfIndex = lastIndex (raft.go:746-751)",
+  "verdict": "accepted",
+  "note": "No false alarm on inherited unapplied entries.",
+  "files": {
+   "proposed_tla": "evidence/tla/Proposed.tla",
+   "old_tla_copy": "evidence/tla/base.tla",
+   "harness": "evidence/tla/WCommon.tla",
+   "witness_tla": "evidence/tla/W_CTS.tla",
+   "cfg": "evidence/tla/W_CTS.cfg",
+   "tlc_log": "evidence/logs/tlc_W_CTS.log",
+   "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config W_CTS.cfg -workers 1 W_CTS.tla",
+   "go_test_new": "evidence/go/new/zz_evidence_test.go",
+   "go_test_old": "evidence/go/old/zz_evidence_test.go",
+   "go_log_new": "evidence/logs/go_new_evidence.log",
+   "go_log_old": "evidence/logs/go_old_evidence.log"
+  }
+ },
+ {
+  "id": "EV-CTRL",
+  "property": "ElectionSafety, LogMatching, LeaderCompleteness, CommittedHistory, AppliedAgreement",
+  "kind": "control",
+  "state": {
+   "witness": "W_CTS 'CONTROL-S.*': E8 leader state with wins/obligations/applied/commitUses populated; consistent vs. an added incompatible obligation",
+   "population": "history.wins = {s1 term 2}, obligations from the committed prefix, applied = prefix to 8."
+  },
+  "old_property": {
+   "claimed": "<<T,T,T,T,T>> / <<T,T,F,F,T>>",
+   "tlc": "<<T,T,T,T,T>> / <<T,T,F,F,T>>"
+  },
+  "proposed_property": {
+   "claimed": "<<T,T,T,T,T>> / <<T,T,F,F,T>>",
+   "tlc": "<<T,T,T,T,T>> / <<T,T,F,F,T>>"
+  },
+  "code_observation": {
+   "old": "n/a",
+   "new": "n/a",
+   "commands": [],
+   "result": "not_representable (control of definitions only)"
+  },
+  "requirement_evidence": "unchanged term/log logic in raft.go diff",
+  "verdict": "accepted",
+  "note": "Identical values in both modules, and the injected violation is caught by both.",
+  "files": {
+   "proposed_tla": "evidence/tla/Proposed.tla",
+   "old_tla_copy": "evidence/tla/base.tla",
+   "harness": "evidence/tla/WCommon.tla",
+   "witness_tla": "evidence/tla/W_CTS.tla",
+   "cfg": "evidence/tla/W_CTS.cfg",
+   "tlc_log": "evidence/logs/tlc_W_CTS.log",
+   "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config W_CTS.cfg -workers 1 W_CTS.tla"
+  }
+ },
+ {
+  "id": "EV-E6a",
+  "property": "ConfigurationOrigin (text unchanged, ConfigOf migrated)",
+  "kind": "observer",
+  "state": {
+   "witness": "W_Origin 'E6.code-restore-drops-outgoing': config voters {s1,s2,s4}, no outgoing, autoLeave FALSE",
+   "population": "Restored raft record: usnap = snapshot (index 4, hist = Boot + enter-joint V2 [v4 r3], config = ConfigOf(hist) = app-recorded ConfState); config = the Go-observed post-restore config; other servers crashed. Old evaluated on OldRafts projection."
+  },
+  "old_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "old": "not_representable",
+   "new": "TestEvidenceE6RestoreJoint: restore of ConfState Nodes=[1 2 4] NodesJoint=[1 2 3] AutoLeave=true -> voters=(1 2 4); newRaft from storage -> voters=(1 2 4); outgoing-only node 3 restore ok=false",
+   "commands": [
+    "cd evidence/go/new && GOFLAGS=-mod=mod GOPROXY=off GOMODCACHE=/tmp/godeps/modcache go test -vet=off -count=1 -v -run 'TestEvidence' ."
+   ],
+   "result": "defect: joint half dropped"
+  },
+  "requirement_evidence": "raftpb ConfState comments (NodesJoint, LearnersNext, AutoLeave); ApplyConfChange returns ConfState that 'must be recorded in snapshots'",
+  "verdict": "accepted",
+  "note": "New is FALSE because of the real defect. Old is FALSE for an unrelated reason: the old ConfigOf ignores V2 entries.",
+  "files": {
+   "proposed_tla": "evidence/tla/Proposed.tla",
+   "old_tla_copy": "evidence/tla/base.tla",
+   "harness": "evidence/tla/WCommon.tla",
+   "witness_tla": "evidence/tla/W_Origin.tla",
+   "cfg": "evidence/tla/W_Origin.cfg",
+   "tlc_log": "evidence/logs/tlc_W_Origin.log",
+   "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config W_Origin.cfg -workers 1 W_Origin.tla",
+   "go_test_new": "evidence/go/new/zz_evidence_test.go",
+   "go_test_old": "evidence/go/old/zz_evidence_test.go",
+   "go_log_new": "evidence/logs/go_new_evidence.log",
+   "go_log_old": "evidence/logs/go_old_evidence.log"
+  }
+ },
+ {
+  "id": "EV-E6b",
+  "property": "ConfigurationOrigin",
+  "kind": "observer",
+  "state": {
+   "witness": "W_Origin 'E6.required-joint-restore(control)': config = (s1 s2 s4)&&(s1 s2 s3) autoLeave",
+   "population": "Restored raft record: usnap = snapshot (index 4, hist = Boot + enter-joint V2 [v4 r3], config = ConfigOf(hist) = app-recorded ConfState); config = the Go-observed post-restore config; other servers crashed. Old evaluated on OldRafts projection."
+  },
+  "old_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "old": "n/a",
+   "new": "required behaviour (not produced by new code)",
+   "commands": [
+    "cd evidence/go/new && GOFLAGS=-mod=mod GOPROXY=off GOMODCACHE=/tmp/godeps/modcache go test -vet=off -count=1 -v -run 'TestEvidence' ."
+   ],
+   "result": "proposed model Restore yields the joint config (TLC TRUE)"
+  },
+  "requirement_evidence": "same as EV-E6a",
+  "verdict": "accepted",
+  "note": "The helper migration is required; without it the unchanged text raises a false alarm on every legit joint state.",
+  "files": {
+   "proposed_tla": "evidence/tla/Proposed.tla",
+   "old_tla_copy": "evidence/tla/base.tla",
+   "harness": "evidence/tla/WCommon.tla",
+   "witness_tla": "evidence/tla/W_Origin.tla",
+   "cfg": "evidence/tla/W_Origin.cfg",
+   "tlc_log": "evidence/logs/tlc_W_Origin.log",
+   "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config W_Origin.cfg -workers 1 W_Origin.tla",
+   "go_test_new": "evidence/go/new/zz_evidence_test.go",
+   "go_test_old": "evidence/go/old/zz_evidence_test.go",
+   "go_log_new": "evidence/logs/go_new_evidence.log",
+   "go_log_old": "evidence/logs/go_old_evidence.log"
+  }
+ },
+ {
+  "id": "EV-E6c",
+  "property": "SnapshotBacking (SnapshotValid helper)",
+  "kind": "observer",
+  "state": {
+   "witness": "W_Origin 'E6.SnapshotValid(joint snapshot)' / '(incoming-only snapshot)' / 'E6.SnapshotBacking(new, ...)'",
+   "population": "Restored raft record: usnap = snapshot (index 4, hist = Boot + enter-joint V2 [v4 r3], config = ConfigOf(hist) = app-recorded ConfState); config = the Go-observed post-restore config; other servers crashed. Old evaluated on OldRafts projection."
+  },
+  "old_property": {
+   "claimed": "FALSE / FALSE",
+   "tlc": "FALSE / FALSE"
+  },
+  "proposed_property": {
+   "claimed": "TRUE / FALSE (SnapshotBacking TRUE)",
+   "tlc": "TRUE / FALSE (TRUE)"
+  },
+  "code_observation": {
+   "old": "n/a",
+   "new": "n/a",
+   "commands": [],
+   "result": "not_representable (definition check)"
+  },
+  "requirement_evidence": "ConfState must carry the joint fields",
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "proposed_tla": "evidence/tla/Proposed.tla",
+   "old_tla_copy": "evidence/tla/base.tla",
+   "harness": "evidence/tla/WCommon.tla",
+   "witness_tla": "evidence/tla/W_Origin.tla",
+   "cfg": "evidence/tla/W_Origin.cfg",
+   "tlc_log": "evidence/logs/tlc_W_Origin.log",
+   "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config W_Origin.cfg -workers 1 W_Origin.tla"
+  }
+ },
+ {
+  "id": "EV-E7a",
+  "property": "CampaignDecisionEligibility",
+  "kind": "relaxation",
+  "state": {
+   "witness": "W_Campaign 'E7a.joint-(1)&&(1 2)-campaign-to-s2(code)' and control 'E7a.control-immediate-leader-no-requests'",
+   "population": "Observation produced by the actual observer P!CampaignObservation(pre, post) with trigger Hup; post = pre with role/term/vote/out mapped from the Go result (MsgVote recipients). PreVote disabled. proposedModelRole = P!StepHup(pre)."
+  },
+  "old_property": {
+   "claimed": "FALSE / TRUE",
+   "tlc": "FALSE / TRUE"
+  },
+  "proposed_property": {
+   "claimed": "TRUE / FALSE",
+   "tlc": "TRUE / FALSE"
+  },
+  "code_observation": {
+   "old": "not_representable",
+   "new": "TestEvidenceE4JointElection E4b: config (1)&&(1 2) -> StateCandidate, MsgVote to [2]",
+   "commands": [
+    "cd evidence/go/new && GOFLAGS=-mod=mod GOPROXY=off GOMODCACHE=/tmp/godeps/modcache go test -vet=off -count=1 -v -run 'TestEvidence' ."
+   ],
+   "result": "not a singleton under joint quorum"
+  },
+  "requirement_evidence": "raft.go campaign(): poll self, then send to r.prs.Voters.IDs()",
+  "verdict": "accepted",
+  "note": "Old 'singleton = |voters|=1' gives a false alarm on correct code and accepts the forbidden immediate win.",
+  "files": {
+   "proposed_tla": "evidence/tla/Proposed.tla",
+   "old_tla_copy": "evidence/tla/base.tla",
+   "harness": "evidence/tla/WCommon.tla",
+   "witness_tla": "evidence/tla/W_Campaign.tla",
+   "cfg": "evidence/tla/W_Campaign.cfg",
+   "tlc_log": "evidence/logs/tlc_W_Campaign.log",
+   "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config W_Campaign.cfg -workers 1 W_Campaign.tla",
+   "go_test_new": "evidence/go/new/zz_evidence_test.go",
+   "go_test_old": "evidence/go/old/zz_evidence_test.go",
+   "go_log_new": "evidence/logs/go_new_evidence.log",
+   "go_log_old": "evidence/logs/go_old_evidence.log"
+  }
+ },
+ {
+  "id": "EV-E7b",
+  "property": "CampaignDecisionEligibility (pending clause, ConfKinds includes V2)",
+  "kind": "strengthening",
+  "state": {
+   "witness": "W_Campaign 'E7b.pending-V2-campaigns(code)', 'E7b.pending-V2-blocked(required)', 'E7c.pending-V1-blocked(control,code)'",
+   "population": "Observation produced by the actual observer P!CampaignObservation(pre, post) with trigger Hup; post = pre with role/term/vote/out mapped from the Go result (MsgVote recipients). PreVote disabled. proposedModelRole = P!StepHup(pre). Log Boot + V2 [AddVoter s4] at 4, commit 4, applied 3."
+  },
+  "old_property": {
+   "claimed": "TRUE / FALSE / TRUE",
+   "tlc": "TRUE / FALSE / TRUE"
+  },
+  "proposed_property": {
+   "claimed": "FALSE / TRUE / TRUE",
+   "tlc": "FALSE / TRUE / TRUE"
+  },
+  "code_observation": {
+   "old": "TestEvidenceE5HupPendingConf (old): EntryConfChange pending -> stays StateFollower",
+   "new": "TestEvidenceE5HupPendingConf (new): EntryConfChange -> StateFollower ('cannot campaign'); EntryConfChangeV2 -> StateCandidate term 2, MsgVote to [3 2]",
+   "commands": [
+    "cd evidence/go/old && GOFLAGS=-mod=mod GOPROXY=off GOMODCACHE=/tmp/godeps/modcache go test -vet=off -count=1 -v -run 'TestEvidence' .",
+    "cd evidence/go/new && GOFLAGS=-mod=mod GOPROXY=off GOMODCACHE=/tmp/godeps/modcache go test -vet=off -count=1 -v -run 'TestEvidence' ."
+   ],
+   "result": "defect: numOfPendingConf ignores EntryConfChangeV2"
+  },
+  "requirement_evidence": "raft.go MsgHup comment 'cannot campaign ... pending configuration changes to apply'; stepLeader treats EntryConfChangeV2 as conf (raft.go:1016); ConfChangeV2 doc: changes take effect when applied",
+  "verdict": "accepted",
+  "note": "The new code violates the still-required property (suspected defect D1). The property is not weakened.",
+  "files": {
+   "proposed_tla": "evidence/tla/Proposed.tla",
+   "old_tla_copy": "evidence/tla/base.tla",
+   "harness": "evidence/tla/WCommon.tla",
+   "witness_tla": "evidence/tla/W_Campaign.tla",
+   "cfg": "evidence/tla/W_Campaign.cfg",
+   "tlc_log": "evidence/logs/tlc_W_Campaign.log",
+   "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config W_Campaign.cfg -workers 1 W_Campaign.tla",
+   "go_test_new": "evidence/go/new/zz_evidence_test.go",
+   "go_test_old": "evidence/go/old/zz_evidence_test.go",
+   "go_log_new": "evidence/logs/go_new_evidence.log",
+   "go_log_old": "evidence/logs/go_old_evidence.log"
+  }
+ },
+ {
+  "id": "EV-E7c",
+  "property": "CampaignDecisionEligibility",
+  "kind": "relaxation",
+  "state": {
+   "witness": "W_Campaign 'E7d.outgoing-only-voter-campaigns(code)' and control 'E7d.control-campaign-to-incoming-only'",
+   "population": "Observation produced by the actual observer P!CampaignObservation(pre, post) with trigger Hup; post = pre with role/term/vote/out mapped from the Go result (MsgVote recipients). PreVote disabled. proposedModelRole = P!StepHup(pre)."
+  },
+  "old_property": {
+   "claimed": "FALSE / FALSE",
+   "tlc": "FALSE / FALSE"
+  },
+  "proposed_property": {
+   "claimed": "TRUE / FALSE",
+   "tlc": "TRUE / FALSE"
+  },
+  "code_observation": {
+   "old": "not_representable",
+   "new": "TestEvidenceE4JointElection E4c: s3 in (1 2)&&(1 2 3) promotable=true -> StateCandidate, MsgVote to [2 1]",
+   "commands": [
+    "cd evidence/go/new && GOFLAGS=-mod=mod GOPROXY=off GOMODCACHE=/tmp/godeps/modcache go test -vet=off -count=1 -v -run 'TestEvidence' ."
+   ],
+   "result": "outgoing-only voters campaign"
+  },
+  "requirement_evidence": "raft.go promotable(): Progress exists and not learner",
+  "verdict": "accepted",
+  "note": "Control: omitting the incoming-only recipient set is still rejected.",
+  "files": {
+   "proposed_tla": "evidence/tla/Proposed.tla",
+   "old_tla_copy": "evidence/tla/base.tla",
+   "harness": "evidence/tla/WCommon.tla",
+   "witness_tla": "evidence/tla/W_Campaign.tla",
+   "cfg": "evidence/tla/W_Campaign.cfg",
+   "tlc_log": "evidence/logs/tlc_W_Campaign.log",
+   "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config W_Campaign.cfg -workers 1 W_Campaign.tla",
+   "go_test_new": "evidence/go/new/zz_evidence_test.go",
+   "go_test_old": "evidence/go/old/zz_evidence_test.go",
+   "go_log_new": "evidence/logs/go_new_evidence.log",
+   "go_log_old": "evidence/logs/go_old_evidence.log"
+  }
+ },
+ {
+  "id": "EV-E9a",
+  "property": "ReadBasis",
+  "kind": "strengthening",
+  "state": {
+   "witness": "W_Read 'E9.acks{1,2,4,5}-released(code)', 'E9.acks{1,4,5}-incoming-only(forbidden)', 'E9.old-text-new-helpers'",
+   "population": "Read record produced by the actual observer P!ReadRecord on the mapped leader (log Boot + V2 explicit + own-term entry, committed), completed into a readResults entry as in ProtocolCompleteRead; history.applied = {log}. Old is evaluated on the projected record."
+  },
+  "old_property": {
+   "claimed": "FALSE / FALSE (old text on new helpers: TRUE on forbidden)",
+   "tlc": "FALSE / FALSE (TRUE)"
+  },
+  "proposed_property": {
+   "claimed": "TRUE / FALSE",
+   "tlc": "TRUE / FALSE"
+  },
+  "code_observation": {
+   "old": "not_representable",
+   "new": "TestEvidenceE9JointReadIndex: acks {1,4,5} -> readStates=0; {1,2,4,5} -> readStates=1",
+   "commands": [
+    "cd evidence/go/new && GOFLAGS=-mod=mod GOPROXY=off GOMODCACHE=/tmp/godeps/modcache go test -vet=off -count=1 -v -run 'TestEvidence' ."
+   ],
+   "result": "joint quorum confirmation"
+  },
+  "requirement_evidence": "raft.go:1146 VoteResult(acks)==VoteWon on JointConfig",
+  "verdict": "accepted",
+  "note": "The old text with migrated helpers accepts the forbidden incoming-only confirmation, so it is too weak.",
+  "files": {
+   "proposed_tla": "evidence/tla/Proposed.tla",
+   "old_tla_copy": "evidence/tla/base.tla",
+   "harness": "evidence/tla/WCommon.tla",
+   "witness_tla": "evidence/tla/W_Read.tla",
+   "cfg": "evidence/tla/W_Read.cfg",
+   "tlc_log": "evidence/logs/tlc_W_Read.log",
+   "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config W_Read.cfg -workers 1 W_Read.tla",
+   "go_test_new": "evidence/go/new/zz_evidence_test.go",
+   "go_test_old": "evidence/go/old/zz_evidence_test.go",
+   "go_log_new": "evidence/logs/go_new_evidence.log",
+   "go_log_old": "evidence/logs/go_old_evidence.log"
+  }
+ },
+ {
+  "id": "EV-E9b",
+  "property": "ReadBasis",
+  "kind": "relaxation",
+  "state": {
+   "witness": "W_Read 'E9c.outgoing-only-leader-s3-acks{1,2,3}', 'E9c.acks{1,2}(joint quorum, legit)', 'E9c.control-acks{1,3}(no incoming majority, forbidden)'",
+   "population": "Read record produced by the actual observer P!ReadRecord on the mapped leader (log Boot + V2 explicit + own-term entry, committed), completed into a readResults entry as in ProtocolCompleteRead; history.applied = {log}. Old is evaluated on the projected record."
+  },
+  "old_property": {
+   "claimed": "FALSE / FALSE / FALSE (old text on new helpers: FALSE on legit)",
+   "tlc": "FALSE / FALSE / FALSE"
+  },
+  "proposed_property": {
+   "claimed": "TRUE / TRUE / FALSE",
+   "tlc": "TRUE / TRUE / FALSE"
+  },
+  "code_observation": {
+   "old": "not_representable",
+   "new": "TestEvidenceE10OutgoingOnlyMember: leader s3 in (1 2)&&(1 2 3) keeps acting as leader (accepts proposals)",
+   "commands": [
+    "cd evidence/go/new && GOFLAGS=-mod=mod GOPROXY=off GOMODCACHE=/tmp/godeps/modcache go test -vet=off -count=1 -v -run 'TestEvidence' ."
+   ],
+   "result": "outgoing-only leader is legitimate in joint config"
+  },
+  "requirement_evidence": "raft.go: leader removal handled only when it leaves the config; ReadIndex uses joint VoteResult",
+  "verdict": "revised",
+  "note": "Witness revised: my first control (acks {1,2}) was in fact a joint quorum of (1 2)&&(1 2 3), so the new TRUE was correct. It was replaced by {1,3}, which the proposed property rejects. The property expression is unchanged.",
+  "files": {
+   "proposed_tla": "evidence/tla/Proposed.tla",
+   "old_tla_copy": "evidence/tla/base.tla",
+   "harness": "evidence/tla/WCommon.tla",
+   "witness_tla": "evidence/tla/W_Read.tla",
+   "cfg": "evidence/tla/W_Read.cfg",
+   "tlc_log": "evidence/logs/tlc_W_Read.log",
+   "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config W_Read.cfg -workers 1 W_Read.tla",
+   "go_test_new": "evidence/go/new/zz_evidence_test.go",
+   "go_test_old": "evidence/go/old/zz_evidence_test.go",
+   "go_log_new": "evidence/logs/go_new_evidence.log",
+   "go_log_old": "evidence/logs/go_old_evidence.log"
+  }
+ },
+ {
+  "id": "EV-E10a",
+  "property": "TransferDecisionEligibility",
+  "kind": "relaxation",
+  "state": {
+   "witness": "W_Member 'E10a.transfer-to-outgoing-only-accepted(code)', 'E10a.control-transfer-ignored', 'E10a.control-transfer-to-learner-accepted(forbidden)'",
+   "population": "Observations produced by P!TransferObservation / P!ProposalObservation on mapped pre/post states (leader in Go E10 config)."
+  },
+  "old_property": {
+   "claimed": "FALSE / TRUE / FALSE",
+   "tlc": "FALSE / TRUE / FALSE"
+  },
+  "proposed_property": {
+   "claimed": "TRUE / FALSE / FALSE",
+   "tlc": "TRUE / FALSE / FALSE"
+  },
+  "code_observation": {
+   "old": "not_representable",
+   "new": "TestEvidenceE10OutgoingOnlyMember E10a: leadTransferee=3",
+   "commands": [
+    "cd evidence/go/new && GOFLAGS=-mod=mod GOPROXY=off GOMODCACHE=/tmp/godeps/modcache go test -vet=off -count=1 -v -run 'TestEvidence' ."
+   ],
+   "result": "accepted"
+  },
+  "requirement_evidence": "stepLeader: pr==nil -> ignore; MsgTransferLeader: pr.IsLearner -> ignore",
+  "verdict": "accepted",
+  "note": "Learner targets are still rejected.",
+  "files": {
+   "proposed_tla": "evidence/tla/Proposed.tla",
+   "old_tla_copy": "evidence/tla/base.tla",
+   "harness": "evidence/tla/WCommon.tla",
+   "witness_tla": "evidence/tla/W_Member.tla",
+   "cfg": "evidence/tla/W_Member.cfg",
+   "tlc_log": "evidence/logs/tlc_W_Member.log",
+   "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config W_Member.cfg -workers 1 W_Member.tla",
+   "go_test_new": "evidence/go/new/zz_evidence_test.go",
+   "go_test_old": "evidence/go/old/zz_evidence_test.go",
+   "go_log_new": "evidence/logs/go_new_evidence.log",
+   "go_log_old": "evidence/logs/go_old_evidence.log"
+  }
+ },
+ {
+  "id": "EV-E10b",
+  "property": "ProposalConfigurationDecisions",
+  "kind": "relaxation",
+  "state": {
+   "witness": "W_Member 'E10b.outgoing-only-leader-accepts(code)' and 'E10b.control-DropRemoved'",
+   "population": "Observations produced by P!TransferObservation / P!ProposalObservation on mapped pre/post states (leader in Go E10 config)."
+  },
+  "old_property": {
+   "claimed": "FALSE / TRUE",
+   "tlc": "FALSE / TRUE"
+  },
+  "proposed_property": {
+   "claimed": "TRUE / FALSE",
+   "tlc": "TRUE / FALSE"
+  },
+  "code_observation": {
+   "old": "not_representable",
+   "new": "TestEvidenceE10OutgoingOnlyMember E10b: err=nil, lastIndex 1 -> 2",
+   "commands": [
+    "cd evidence/go/new && GOFLAGS=-mod=mod GOPROXY=off GOMODCACHE=/tmp/godeps/modcache go test -vet=off -count=1 -v -run 'TestEvidence' ."
+   ],
+   "result": "accepted"
+  },
+  "requirement_evidence": "stepLeader MsgProp: drop only if r.prs.Progress[r.id]==nil",
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "proposed_tla": "evidence/tla/Proposed.tla",
+   "old_tla_copy": "evidence/tla/base.tla",
+   "harness": "evidence/tla/WCommon.tla",
+   "witness_tla": "evidence/tla/W_Member.tla",
+   "cfg": "evidence/tla/W_Member.cfg",
+   "tlc_log": "evidence/logs/tlc_W_Member.log",
+   "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config W_Member.cfg -workers 1 W_Member.tla",
+   "go_test_new": "evidence/go/new/zz_evidence_test.go",
+   "go_test_old": "evidence/go/old/zz_evidence_test.go",
+   "go_log_new": "evidence/logs/go_new_evidence.log",
+   "go_log_old": "evidence/logs/go_old_evidence.log"
+  }
+ },
+ {
+  "id": "EV-E10c",
+  "property": "ProposalConfigurationDecisions (V2 content)",
+  "kind": "strengthening",
+  "state": {
+   "witness": "W_Member 'E10c.V2-proposal-logged-intact' and 'E10c.V2-proposal-logged-with-altered-changes(forbidden)'",
+   "population": "Observations produced by P!TransferObservation / P!ProposalObservation on mapped pre/post states (leader in Go E10 config)."
+  },
+  "old_property": {
+   "claimed": "TRUE / TRUE",
+   "tlc": "TRUE / TRUE"
+  },
+  "proposed_property": {
+   "claimed": "TRUE / FALSE",
+   "tlc": "TRUE / FALSE"
+  },
+  "code_observation": {
+   "old": "not_representable",
+   "new": "TestRawNodeProposeAndConfChange checks the logged ConfChangeV2 bytes equal the proposal",
+   "commands": [],
+   "result": "existing upstream test"
+  },
+  "requirement_evidence": "rawnode_test.go:301-310 entries[1].Data == ccdata",
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "proposed_tla": "evidence/tla/Proposed.tla",
+   "old_tla_copy": "evidence/tla/base.tla",
+   "harness": "evidence/tla/WCommon.tla",
+   "witness_tla": "evidence/tla/W_Member.tla",
+   "cfg": "evidence/tla/W_Member.cfg",
+   "tlc_log": "evidence/logs/tlc_W_Member.log",
+   "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config W_Member.cfg -workers 1 W_Member.tla"
+  }
+ },
+ {
+  "id": "EV-E11t",
+  "property": "TypeOK (+JointConfigWellFormed)",
+  "kind": "semantic",
+  "state": {
+   "witness": "W_Type 'E11.*': legit joint (Go E3d) and three malformed configs",
+   "population": "Full state: raft for all servers (s1 mapped, others InitialRaft), disk/ready/application/requests domains, wire EmptyBag."
+  },
+  "old_property": {
+   "claimed": "legit FALSE; malformed TRUE,TRUE,TRUE",
+   "tlc": "FALSE; TRUE,TRUE,TRUE"
+  },
+  "proposed_property": {
+   "claimed": "legit TRUE; malformed FALSE,FALSE,FALSE",
+   "tlc": "TRUE; FALSE,FALSE,FALSE"
+  },
+  "code_observation": {
+   "old": "not_representable",
+   "new": "TestEvidenceE3EnterLeaveJoint E3d config with Progress for outgoing voter 3",
+   "commands": [
+    "cd evidence/go/new && GOFLAGS=-mod=mod GOPROXY=off GOMODCACHE=/tmp/godeps/modcache go test -vet=off -count=1 -v -run 'TestEvidence' ."
+   ],
+   "result": "legit"
+  },
+  "requirement_evidence": "confchange.checkInvariants",
+  "verdict": "accepted",
+  "note": "Old TypeOK raises a false alarm on legit joint states (DOMAIN prs includes outgoing-only voters).",
+  "files": {
+   "proposed_tla": "evidence/tla/Proposed.tla",
+   "old_tla_copy": "evidence/tla/base.tla",
+   "harness": "evidence/tla/WCommon.tla",
+   "witness_tla": "evidence/tla/W_Type.tla",
+   "cfg": "evidence/tla/W_Type.cfg",
+   "tlc_log": "evidence/logs/tlc_W_Type.log",
+   "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config W_Type.cfg -workers 1 W_Type.tla",
+   "go_test_new": "evidence/go/new/zz_evidence_test.go",
+   "go_test_old": "evidence/go/old/zz_evidence_test.go",
+   "go_log_new": "evidence/logs/go_new_evidence.log",
+   "go_log_old": "evidence/logs/go_old_evidence.log"
+  }
+ },
+ {
+  "id": "EV-E14",
+  "property": "DurableObligations observer (feeds CommittedHistory/LeaderCompleteness)",
+  "kind": "observer",
+  "state": {
+   "witness": "W_Type 'E14.*': leader in Go E9 config (s1 s4 s5)&&(s1 s2 s3); prefix durable on s1,s4,s5 only; control durable on s1,s2,s4,s5",
+   "population": "Disks built with DiskAppend; old evaluated on projected rafts/disks."
+  },
+  "old_property": {
+   "claimed": "records obligation",
+   "tlc": "1 obligation"
+  },
+  "proposed_property": {
+   "claimed": "no obligation (control: 1)",
+   "tlc": "{} (control: 1)"
+  },
+  "code_observation": {
+   "old": "n/a",
+   "new": "joint commit needs both halves (EV-E4a/E9a)",
+   "commands": [],
+   "result": "not_representable directly"
+  },
+  "requirement_evidence": "tracker.Committed (joint)",
+  "verdict": "accepted",
+  "note": "The old observer over-records commitments in joint configs.",
+  "files": {
+   "proposed_tla": "evidence/tla/Proposed.tla",
+   "old_tla_copy": "evidence/tla/base.tla",
+   "harness": "evidence/tla/WCommon.tla",
+   "witness_tla": "evidence/tla/W_Type.tla",
+   "cfg": "evidence/tla/W_Type.cfg",
+   "tlc_log": "evidence/logs/tlc_W_Type.log",
+   "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config W_Type.cfg -workers 1 W_Type.tla"
+  }
+ },
+ {
+  "id": "EV-E12",
+  "property": "VoteDecisionEligibility, LearnerEligibility (keep)",
+  "kind": "control",
+  "state": {
+   "witness": "W_Vote 'E12.*': staged learner s3 (learnersNext) grants; demoted learner silent; forbidden: demoted learner grants",
+   "population": "P!VoteObservation(pre, MsgVote, post) with post mapped from Go E12."
+  },
+  "old_property": {
+   "claimed": "TRUE, TRUE, FALSE",
+   "tlc": "TRUE, TRUE, FALSE"
+  },
+  "proposed_property": {
+   "claimed": "TRUE, TRUE, FALSE",
+   "tlc": "TRUE, TRUE, FALSE"
+  },
+  "code_observation": {
+   "old": "n/a",
+   "new": "TestEvidenceE12StagedLearnerVotes: staged learner isLearner=false, MsgVoteResp reject=false; demoted learner isLearner=true, 0 responses",
+   "commands": [
+    "cd evidence/go/new && GOFLAGS=-mod=mod GOPROXY=off GOMODCACHE=/tmp/godeps/modcache go test -vet=off -count=1 -v -run 'TestEvidence' ."
+   ],
+   "result": "learner flag = membership in learners only"
+  },
+  "requirement_evidence": "makeLearner keeps IsLearner=false for LearnersNext",
+  "verdict": "accepted",
+  "note": "Keep confirmed: identical values.",
+  "files": {
+   "proposed_tla": "evidence/tla/Proposed.tla",
+   "old_tla_copy": "evidence/tla/base.tla",
+   "harness": "evidence/tla/WCommon.tla",
+   "witness_tla": "evidence/tla/W_Vote.tla",
+   "cfg": "evidence/tla/W_Vote.cfg",
+   "tlc_log": "evidence/logs/tlc_W_Vote.log",
+   "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config W_Vote.cfg -workers 1 W_Vote.tla",
+   "go_test_new": "evidence/go/new/zz_evidence_test.go",
+   "go_test_old": "evidence/go/old/zz_evidence_test.go",
+   "go_log_new": "evidence/logs/go_new_evidence_E12.log",
+   "go_log_old": "evidence/logs/go_old_evidence.log"
+  }
+ },
+ {
+  "id": "EV-SIM",
+  "property": "all retained/modified/added invariants (sanity)",
+  "kind": "control",
+  "state": {
+   "witness": "TLC -simulate num=4000 -depth 40 -seed 7 over Spec, base.cfg constants with RequestId={1,2}",
+   "population": "random behaviours of the model"
+  },
+  "old_property": {
+   "claimed": "no violation",
+   "tlc": "no violation (16000 traces, 667241 states)"
+  },
+  "proposed_property": {
+   "claimed": "no violation",
+   "tlc": "no violation (16000 traces, 667350 states)"
+  },
+  "code_observation": {
+   "old": "n/a",
+   "new": "n/a",
+   "result": "not_representable"
+  },
+  "requirement_evidence": "n/a",
+  "verdict": "accepted",
+  "note": "Sanity check only: the migrated helpers do not break existing model behaviour. Joint configs are not generated by the model's client actions (Invoke does not set V2 change lists), so this does not exercise the joint semantics.",
+  "files": {
+   "proposed_tla": "evidence/tla/Proposed.tla",
+   "cfg": "evidence/tla/SimProposed.cfg",
+   "cfg_old": "evidence/tla/SimBase.cfg",
+   "tlc_log": "evidence/logs/tlc_sim_Proposed.log",
+   "tlc_log_old": "evidence/logs/tlc_sim_base.log"
+  }
+ }
+]

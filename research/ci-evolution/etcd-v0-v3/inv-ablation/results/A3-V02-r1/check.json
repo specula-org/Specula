@@ -1,0 +1,63 @@
+{
+  "run": "A3-V02-r1",
+  "status": "ok",
+  "entries": 16,
+  "decisions": {
+    "modify": 5,
+    "add": 2,
+    "keep": 9
+  },
+  "edits_without_witness": [],
+  "edits_without_predicate": [],
+  "entries_without_evidence": [],
+  "citations": 36,
+  "bad_citations": [],
+  "top_level_keys": [
+    "phase",
+    "overall_decision",
+    "overall_reason",
+    "entries",
+    "model_edits_not_property_edits",
+    "updated_behaviors_already_covered",
+    "suspected_defects",
+    "unresolved_obligations"
+  ],
+  "evidence": {
+    "status": "ok",
+    "records": 20,
+    "kinds": {
+      "relaxation": 2,
+      "strengthening": 4,
+      "control": 6,
+      "semantic": 7,
+      "observer": 1
+    },
+    "verdicts": {
+      "accepted": 18,
+      "revised": 1,
+      "unresolved": 1
+    },
+    "cells": {
+      "impl produces / requirement allowed -> relaxation justified": 2,
+      "impl does not produce / requirement forbidden -> strengtheni": 3,
+      "impl does not produce / requirement forbidden (nearby forbid": 2,
+      "impl produces / requirement allowed -> accept (old raw branc": 1,
+      "(a) impl does not produce / forbidden -> control holds; (b) ": 1,
+      "impl produces / requirement allowed -> observer migration ju": 1,
+      "keep: new state impl produces / allowed -> property TRUE as ": 1,
+      "keep: required verdicts on both states": 1,
+      "impl produces / requirement forbidden -> BUG CANDIDATE: keep": 1,
+      "allowed controls accepted, forbidden control rejected": 1,
+      "impl produces / requirement allowed -> migrate canary (old c": 1,
+      "keep: allowed state accepted, forbidden controls rejected": 1,
+      "kept property: allowed backed grant TRUE, forbidden unbacked": 1,
+      "keep: impl produces / allowed -> TRUE as required": 1,
+      "keep: impl produces / allowed -> TRUE (non-vacuous: eligible": 1,
+      "either axis unknown -> no edit is based on this record": 1
+    },
+    "tlc_evaluated": 13,
+    "claim_mismatch": [],
+    "code_observed": 17,
+    "implementation_cited_as_requirement": []
+  }
+}

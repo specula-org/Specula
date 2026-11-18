@@ -1,0 +1,2878 @@
+[
+ {
+  "id": "EV01",
+  "property": "RequestCorrelatedConfigurationEffects (EffectContract)",
+  "kind": "relaxation",
+  "state": {
+   "witness": "Leader s1, config voters {s1,s2,s3}, log BootLog o <<Normal@4, AddLearner(s3) id1 @5>>, commit 5; ApplyEntry of AddLearner(s3).",
+   "population": "Pre-state built from base!InitialRaft(s1); post-state computed by Proposed!ApplyConfCore (new model) and cross-checked with go N1; the observation is Proposed!EffectObservation(pre, e, post, requests) (old: base!EffectObservation on the representation projection). requests[1] = handed-off AddLearner(s3).",
+   "tlc_checks": {
+    "W1.model.new_post_config": "<<{s1, s2}, {s3}, \"\">>, <<{s1, s2}, {s3}, \"\">>,",
+    "W1.relax.old_prop_on_new_impl": "FALSE, FALSE,",
+    "W1.relax.new_prop_on_new_impl": "TRUE, TRUE,"
+   }
+  },
+  "old_property": {
+   "claimed": false,
+   "tlc": false,
+   "tlc_check": "W1.relax.old_prop_on_new_impl"
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_check": "W1.relax.new_prop_on_new_impl"
+  },
+  "code_observation": {
+   "old": "O1: voters=[1 2 3] learners=[] (AddLearner of a voter ignored)",
+   "new": "N1: voters=[1 2] learners=[3], pr3.IsLearner=true, Progress kept (Match=0, RecentActive=false)",
+   "test_file": "evidence/new_tree/zz_evidence_test.go:TestEvDemoteVoter; evidence/old_tree/zz_evidence_test.go:TestEvDemoteVoter",
+   "command": [
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ],
+   "result": "new code demotes; old code ignored"
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "go_new.log N1"
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/raft_test.go:3120-3128 (TestAddLearner 'Demote r.': AddLearner on voter 1 must make Progress[1].IsLearner and r.isLearner true)",
+    "new/source/confchange/testdata/simple_promote_demote.txt:34-41 ('# Can demote a voter.' l2 -> voters=(1 3) learners=(2))"
+   ],
+   "basis": "tests assert the demotion"
+  },
+  "cell": "impl produces it / requirement allowed: relaxation justified",
+  "requirement_evidence": "new/source/raft_test.go:3120-3128 (TestAddLearner 'Demote r.': AddLearner on voter 1 must make Progress[1].IsLearner and r.isLearner true); new/source/confchange/testdata/simple_promote_demote.txt:34-41 ('# Can demote a voter.' l2 -> voters=(1 3) learners=(2))",
+  "verdict": "accepted",
+  "note": "Old EffectContract encoded the old 'ignore' behaviour (learnerAdd required target notin voters).",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/Proposed.diff",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)",
+    "evidence/Witness.tla",
+    "evidence/Witness.cfg",
+    "evidence/scripts/make_proposed.py"
+   ],
+   "go": [
+    "evidence/new_tree/zz_evidence_test.go",
+    "evidence/old_tree/zz_evidence_test.go"
+   ],
+   "logs": [
+    "evidence/tlc_witness.log",
+    "evidence/go_new.log",
+    "evidence/go_old.log"
+   ],
+   "commands": [
+    "cd evidence && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 -metadir tlc_meta Witness.tla",
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ]
+  }
+ },
+ {
+  "id": "EV02",
+  "property": "RequestCorrelatedConfigurationEffects (EffectContract)",
+  "kind": "control",
+  "state": {
+   "witness": "Same pre-state; post-state = the OLD behaviour (AddLearner of a voter ignored), lifted to the proposed representation.",
+   "population": "Post-state from base!ApplyConfCore (old model, matches go O1), lifted with Lift().",
+   "tlc_checks": {
+    "W1.model.old_post_config": "[voters |-> {s1, s2, s3}, learners |-> {}], [voters |-> {s1, s2, s3}, learners |-> {}],",
+    "W1.ctl.old_prop_on_old_behaviour": "TRUE, TRUE,",
+    "W1.ctl.new_prop_on_old_behaviour": "FALSE, FALSE,"
+   }
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_check": "W1.ctl.old_prop_on_old_behaviour"
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false,
+   "tlc_check": "W1.ctl.new_prop_on_old_behaviour"
+  },
+  "code_observation": {
+   "old": "O1: ignored",
+   "new": "N1: demoted (does not produce the ignore)",
+   "test_file": "evidence/new_tree/zz_evidence_test.go:TestEvDemoteVoter",
+   "command": [
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ],
+   "result": "only old code produces it"
+  },
+  "impl_produces": {
+   "value": "no",
+   "basis": "go_new.log N1 shows demotion"
+  },
+  "requirement": {
+   "value": "forbidden",
+   "citations": [
+    "new/source/raft_test.go:3120-3128 (TestAddLearner 'Demote r.': AddLearner on voter 1 must make Progress[1].IsLearner and r.isLearner true)",
+    "new/source/confchange/testdata/simple_promote_demote.txt:34-41 ('# Can demote a voter.' l2 -> voters=(1 3) learners=(2))"
+   ],
+   "basis": "tests require the demotion to happen"
+  },
+  "cell": "impl does not produce it / requirement forbidden: strengthening justified",
+  "requirement_evidence": "new/source/raft_test.go:3120-3128 (TestAddLearner 'Demote r.': AddLearner on voter 1 must make Progress[1].IsLearner and r.isLearner true); new/source/confchange/testdata/simple_promote_demote.txt:34-41 ('# Can demote a voter.' l2 -> voters=(1 3) learners=(2))",
+  "verdict": "accepted",
+  "note": "Newly forbidden old behaviour is kept in the comparison domain and rejected.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/Proposed.diff",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)",
+    "evidence/Witness.tla",
+    "evidence/Witness.cfg",
+    "evidence/scripts/make_proposed.py"
+   ],
+   "go": [
+    "evidence/new_tree/zz_evidence_test.go",
+    "evidence/old_tree/zz_evidence_test.go"
+   ],
+   "logs": [
+    "evidence/tlc_witness.log",
+    "evidence/go_new.log",
+    "evidence/go_old.log"
+   ],
+   "commands": [
+    "cd evidence && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 -metadir tlc_meta Witness.tla",
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ]
+  }
+ },
+ {
+  "id": "EV03",
+  "property": "RequestCorrelatedConfigurationEffects (EffectContract)",
+  "kind": "semantic",
+  "state": {
+   "witness": "Leader s1 with config voters {s1} (after Remove s2, Remove s3), applies Remove(s1) id1 @6.",
+   "population": "Pre-state constructed from base!InitialRaft; post-state by Proposed!ApplyConfCore = Fatal('removed all voters'), config unchanged (matches go N2); observation via EffectObservation with the new fatal field.",
+   "tlc_checks": {
+    "W2.model.new_post": "<<{s1}, \"removed all voters\">>, <<{s1}, \"removed all voters\">>,",
+    "W2.sem.old_prop_on_new_impl": "FALSE, FALSE,",
+    "W2.sem.new_prop_on_new_impl": "TRUE, TRUE,"
+   }
+  },
+  "old_property": {
+   "claimed": false,
+   "tlc": false,
+   "tlc_check": "W2.sem.old_prop_on_new_impl"
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_check": "W2.sem.new_prop_on_new_impl"
+  },
+  "code_observation": {
+   "old": "O2: no panic, voters=[] (zero-voter config accepted)",
+   "new": "N2: panic 'removed all voters', voters=[1]; N2b: demoting the last voter also panics",
+   "test_file": "evidence/new_tree/zz_evidence_test.go:TestEvRemoveLastVoter",
+   "command": [
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ],
+   "result": "new code refuses by panic"
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "go_new.log N2/N2b"
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/raft_test.go:3183-3190 (TestRemoveNode: 'Removing the remaining voter will panic.', t.Error if no panic)",
+    "new/source/raft_test.go:3207-3214 (TestRemoveLearner: same)",
+    "new/source/confchange/testdata/simple_safety.txt:1-4,26-29,51-54 ('removed all voters')",
+    "superseded: old/source/raft_test.go:3151-3156 asserted VoterNodes()==[] after removing all nodes"
+   ],
+   "basis": "tests require the panic"
+  },
+  "cell": "impl produces it / requirement allowed: relaxation justified",
+  "requirement_evidence": "new/source/raft_test.go:3183-3190 (TestRemoveNode: 'Removing the remaining voter will panic.', t.Error if no panic); new/source/raft_test.go:3207-3214 (TestRemoveLearner: same); new/source/confchange/testdata/simple_safety.txt:1-4,26-29,51-54 ('removed all voters'); superseded: old/source/raft_test.go:3151-3156 asserted VoterNodes()==[] after removing all nodes",
+  "verdict": "accepted",
+  "note": "Old contract demanded voters={}; requirement changed with the tests.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/Proposed.diff",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)",
+    "evidence/Witness.tla",
+    "evidence/Witness.cfg",
+    "evidence/scripts/make_proposed.py"
+   ],
+   "go": [
+    "evidence/new_tree/zz_evidence_test.go",
+    "evidence/old_tree/zz_evidence_test.go"
+   ],
+   "logs": [
+    "evidence/tlc_witness.log",
+    "evidence/go_new.log",
+    "evidence/go_old.log"
+   ],
+   "commands": [
+    "cd evidence && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 -metadir tlc_meta Witness.tla",
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ]
+  }
+ },
+ {
+  "id": "EV04",
+  "property": "RequestCorrelatedConfigurationEffects (EffectContract)",
+  "kind": "control",
+  "state": {
+   "witness": "Same pre-state; post-state = old behaviour (voters {} accepted, no fatal).",
+   "population": "Post-state from base!ApplyConfCore (matches go O2), lifted.",
+   "tlc_checks": {
+    "W2.model.old_post": "<<{}, \"\">>, <<{}, \"\">>,",
+    "W2.ctl.old_prop_on_zero_voters": "TRUE, TRUE,",
+    "W2.ctl.new_prop_on_zero_voters": "FALSE, FALSE,"
+   }
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_check": "W2.ctl.old_prop_on_zero_voters"
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false,
+   "tlc_check": "W2.ctl.new_prop_on_zero_voters"
+  },
+  "code_observation": {
+   "old": "O2: voters=[]",
+   "new": "N2: panic (does not produce)",
+   "test_file": "evidence/new_tree/zz_evidence_test.go:TestEvRemoveLastVoter",
+   "command": [
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ],
+   "result": ""
+  },
+  "impl_produces": {
+   "value": "no",
+   "basis": "go_new.log N2"
+  },
+  "requirement": {
+   "value": "forbidden",
+   "citations": [
+    "new/source/raft_test.go:3183-3190 (TestRemoveNode: 'Removing the remaining voter will panic.', t.Error if no panic)",
+    "new/source/raft_test.go:3207-3214 (TestRemoveLearner: same)",
+    "new/source/confchange/testdata/simple_safety.txt:1-4,26-29,51-54 ('removed all voters')",
+    "superseded: old/source/raft_test.go:3151-3156 asserted VoterNodes()==[] after removing all nodes"
+   ],
+   "basis": "tests require refusal"
+  },
+  "cell": "impl does not produce it / requirement forbidden: strengthening justified",
+  "requirement_evidence": "new/source/raft_test.go:3183-3190 (TestRemoveNode: 'Removing the remaining voter will panic.', t.Error if no panic); new/source/raft_test.go:3207-3214 (TestRemoveLearner: same); new/source/confchange/testdata/simple_safety.txt:1-4,26-29,51-54 ('removed all voters'); superseded: old/source/raft_test.go:3151-3156 asserted VoterNodes()==[] after removing all nodes",
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/Proposed.diff",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)",
+    "evidence/Witness.tla",
+    "evidence/Witness.cfg",
+    "evidence/scripts/make_proposed.py"
+   ],
+   "go": [
+    "evidence/new_tree/zz_evidence_test.go",
+    "evidence/old_tree/zz_evidence_test.go"
+   ],
+   "logs": [
+    "evidence/tlc_witness.log",
+    "evidence/go_new.log",
+    "evidence/go_old.log"
+   ],
+   "commands": [
+    "cd evidence && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 -metadir tlc_meta Witness.tla",
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ]
+  }
+ },
+ {
+  "id": "EV05",
+  "property": "NoUnexpectedFatal",
+  "kind": "relaxation",
+  "state": {
+   "witness": "raft map where s1 = post-state of EV03 (fatal 'removed all voters'), others InitialRaft.",
+   "population": "From Proposed!ApplyConfCore as in EV03.",
+   "tlc_checks": {
+    "W2.nuf.old_on_refusal": "FALSE, FALSE,",
+    "W2.nuf.new_on_refusal": "TRUE, TRUE,"
+   }
+  },
+  "old_property": {
+   "claimed": false,
+   "tlc": false,
+   "tlc_check": "W2.nuf.old_on_refusal"
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_check": "W2.nuf.new_on_refusal"
+  },
+  "code_observation": {
+   "old": "O2: no panic",
+   "new": "N2: panic 'removed all voters'",
+   "test_file": "evidence/new_tree/zz_evidence_test.go:TestEvRemoveLastVoter",
+   "command": [
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ],
+   "result": ""
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "go_new.log N2"
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/raft_test.go:3183-3190 (TestRemoveNode: 'Removing the remaining voter will panic.', t.Error if no panic)",
+    "new/source/raft_test.go:3207-3214 (TestRemoveLearner: same)"
+   ],
+   "basis": "the refusal panic is test-required behaviour, not a library failure"
+  },
+  "cell": "impl produces it / requirement allowed: relaxation justified",
+  "requirement_evidence": "new/source/raft_test.go:3183-3190 (TestRemoveNode: 'Removing the remaining voter will panic.', t.Error if no panic); new/source/raft_test.go:3207-3214 (TestRemoveLearner: same)",
+  "verdict": "accepted",
+  "note": "Changed from the initial 'keep': the strict property rejects a test-required state. Relaxation is limited to the exact refusal reason; EV06 shows other panics are still rejected.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/Proposed.diff",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)",
+    "evidence/Witness.tla",
+    "evidence/Witness.cfg",
+    "evidence/scripts/make_proposed.py"
+   ],
+   "go": [
+    "evidence/new_tree/zz_evidence_test.go",
+    "evidence/old_tree/zz_evidence_test.go"
+   ],
+   "logs": [
+    "evidence/tlc_witness.log",
+    "evidence/go_new.log",
+    "evidence/go_old.log"
+   ],
+   "commands": [
+    "cd evidence && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 -metadir tlc_meta Witness.tla",
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ]
+  }
+ },
+ {
+  "id": "EV06",
+  "property": "NoUnexpectedFatal",
+  "kind": "control",
+  "state": {
+   "witness": "Same raft map but s1.fatal = \"can't leave a non-joint config\" (the panic produced by the duplicate auto-leave, go N6).",
+   "population": "Edited post-state; the same reason is produced by Proposed!ApplyConfCore for the second LeaveJoint (W5.model.apply_L7_then_L8).",
+   "tlc_checks": {
+    "W2.nuf.ctl_old_on_other_panic": "FALSE, FALSE,",
+    "W2.nuf.ctl_new_on_other_panic": "FALSE, FALSE,",
+    "W5.model.apply_L7_then_L8": "<<\"\", \"can't leave a non-joint config\">>, <<\"\", \"can't leave a non-joint config\">>,"
+   }
+  },
+  "old_property": {
+   "claimed": false,
+   "tlc": false,
+   "tlc_check": "W2.nuf.ctl_old_on_other_panic"
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false,
+   "tlc_check": "W2.nuf.ctl_new_on_other_panic"
+  },
+  "code_observation": {
+   "old": "n/a (no V2 in old code)",
+   "new": "N6: second LeaveJoint panics \"can't leave a non-joint config\"",
+   "test_file": "evidence/new_tree/zz_evidence_test.go:TestEvAutoLeave",
+   "command": [
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ],
+   "result": ""
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "go_new.log N6"
+  },
+  "requirement": {
+   "value": "forbidden",
+   "citations": [
+    "new/source/doc.go:184-188 ('we simply disallow any proposed membership change while any uncommitted change appears in the leader's log')",
+    "new/source/node.go:136-139 ('configuration changes are dropped unless the leader has certainty that there is no prior unapplied configuration change in its log')",
+    "new/source/confchange/confchange.go:81-82 (LeaveJoint: 'It is an error to call this method if the configuration is not joint')"
+   ],
+   "basis": "a second membership change must never be pending"
+  },
+  "cell": "impl produces it / requirement forbidden: BUG CANDIDATE - keep the stronger property, record the defect",
+  "requirement_evidence": "new/source/doc.go:184-188 ('we simply disallow any proposed membership change while any uncommitted change appears in the leader's log'); new/source/node.go:136-139 ('configuration changes are dropped unless the leader has certainty that there is no prior unapplied configuration change in its log'); new/source/confchange/confchange.go:81-82 (LeaveJoint: 'It is an error to call this method if the configuration is not joint')",
+  "verdict": "accepted",
+  "note": "Nearby forbidden control for the EV05 relaxation: detection of non-refusal panics is not erased.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/Proposed.diff",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)",
+    "evidence/Witness.tla",
+    "evidence/Witness.cfg",
+    "evidence/scripts/make_proposed.py"
+   ],
+   "go": [
+    "evidence/new_tree/zz_evidence_test.go",
+    "evidence/old_tree/zz_evidence_test.go"
+   ],
+   "logs": [
+    "evidence/tlc_witness.log",
+    "evidence/go_new.log",
+    "evidence/go_old.log"
+   ],
+   "commands": [
+    "cd evidence && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 -metadir tlc_meta Witness.tla",
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ]
+  }
+ },
+ {
+  "id": "EV07",
+  "property": "NoUnexpectedFatal (model migration of ApplyConfCore)",
+  "kind": "semantic",
+  "state": {
+   "witness": "Leader s1 (voters {s1,s2,s3}) applies Remove(s4) where s4 is unknown, CancelUnknownRemovals=FALSE.",
+   "population": "Old post-state by base!ApplyConfCore (Fatal 'remove unknown peer', matches go O3); new post-state by Proposed!ApplyConfCore (no-op, matches go N3). old_property: old text on the old-model post-state; proposed_property: proposed text on the new-model post-state.",
+   "tlc_checks": {
+    "W2u.model.old_fatal": "\"remove unknown peer\", \"remove unknown peer\",",
+    "W2u.model.new_post": "<<\"\", TRUE>>, <<\"\", TRUE>>,",
+    "W2u.nuf.old_model": "FALSE, FALSE,",
+    "W2u.nuf.new_model": "TRUE, TRUE,"
+   }
+  },
+  "old_property": {
+   "claimed": false,
+   "tlc": false,
+   "tlc_check": "W2u.nuf.old_model"
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_check": "W2u.nuf.new_model"
+  },
+  "code_observation": {
+   "old": "O3: panic 'attempting to remove unknown peer %x'",
+   "new": "N3: no panic, voters=[1 2] unchanged",
+   "test_file": "evidence/new_tree/zz_evidence_test.go:TestEvRemoveUnknown; evidence/old_tree/zz_evidence_test.go:TestEvRemoveUnknown",
+   "command": [
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ],
+   "result": ""
+  },
+  "impl_produces": {
+   "value": "no",
+   "basis": "new code no longer panics (go N3)"
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/confchange/testdata/simple_idempotency.txt:66-69 (r4 on an unknown peer leaves voters=(2))",
+    "new/source/confchange/testdata/joint_idempotency.txt:1-2 ('removing an absent node is fine')"
+   ],
+   "basis": "unknown removal is an idempotent no-op"
+  },
+  "cell": "impl does not produce it / requirement allowed: edit may be unnecessary; nearby forbidden control required",
+  "requirement_evidence": "new/source/confchange/testdata/simple_idempotency.txt:66-69 (r4 on an unknown peer leaves voters=(2)); new/source/confchange/testdata/joint_idempotency.txt:1-2 ('removing an absent node is fine')",
+  "verdict": "accepted",
+  "note": "Property text unaffected for this state; the change is in the model. EV08 is the nearby forbidden control (the old panic is now rejected by EffectContract).",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/Proposed.diff",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)",
+    "evidence/Witness.tla",
+    "evidence/Witness.cfg",
+    "evidence/scripts/make_proposed.py"
+   ],
+   "go": [
+    "evidence/new_tree/zz_evidence_test.go",
+    "evidence/old_tree/zz_evidence_test.go"
+   ],
+   "logs": [
+    "evidence/tlc_witness.log",
+    "evidence/go_new.log",
+    "evidence/go_old.log"
+   ],
+   "commands": [
+    "cd evidence && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 -metadir tlc_meta Witness.tla",
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ]
+  }
+ },
+ {
+  "id": "EV08",
+  "property": "RequestCorrelatedConfigurationEffects (EffectContract o.fatal clause)",
+  "kind": "strengthening",
+  "state": {
+   "witness": "Transition of EV07 with the OLD behaviour (fatal 'remove unknown peer', config unchanged).",
+   "population": "base!ApplyConfCore post-state lifted; observation with fatal field.",
+   "tlc_checks": {
+    "W2u.effect.old_prop_on_old_panic": "TRUE, TRUE,",
+    "W2u.effect.new_prop_on_old_panic": "FALSE, FALSE,"
+   }
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_check": "W2u.effect.old_prop_on_old_panic"
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false,
+   "tlc_check": "W2u.effect.new_prop_on_old_panic"
+  },
+  "code_observation": {
+   "old": "O3: panic",
+   "new": "N3: no panic",
+   "test_file": "evidence/new_tree/zz_evidence_test.go:TestEvRemoveUnknown",
+   "command": [
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ],
+   "result": ""
+  },
+  "impl_produces": {
+   "value": "no",
+   "basis": "go_new.log N3"
+  },
+  "requirement": {
+   "value": "forbidden",
+   "citations": [
+    "new/source/confchange/testdata/simple_idempotency.txt:66-69 (r4 on an unknown peer leaves voters=(2))",
+    "new/source/confchange/testdata/joint_idempotency.txt:1-2 ('removing an absent node is fine')"
+   ],
+   "basis": "removal of an absent node must be a no-op, not a panic"
+  },
+  "cell": "impl does not produce it / requirement forbidden: strengthening justified",
+  "requirement_evidence": "new/source/confchange/testdata/simple_idempotency.txt:66-69 (r4 on an unknown peer leaves voters=(2)); new/source/confchange/testdata/joint_idempotency.txt:1-2 ('removing an absent node is fine')",
+  "verdict": "accepted",
+  "note": "Added after Phase 2 (not in the initial predicate): the old contract was blind to fatal outcomes.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/Proposed.diff",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)",
+    "evidence/Witness.tla",
+    "evidence/Witness.cfg",
+    "evidence/scripts/make_proposed.py"
+   ],
+   "go": [
+    "evidence/new_tree/zz_evidence_test.go",
+    "evidence/old_tree/zz_evidence_test.go"
+   ],
+   "logs": [
+    "evidence/tlc_witness.log",
+    "evidence/go_new.log",
+    "evidence/go_old.log"
+   ],
+   "commands": [
+    "cd evidence && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 -metadir tlc_meta Witness.tla",
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ]
+  }
+ },
+ {
+  "id": "EV09",
+  "property": "ConfigurationOrigin (via migrated ConfigAfter/ConfigOf helper)",
+  "kind": "observer",
+  "state": {
+   "witness": "Node s1 after applying the demotion of EV01, cfgHist = log prefix 1..5 (as ProtocolApplyEntry sets it).",
+   "population": "Post-state of EV01 with cfgHist updated exactly as ProtocolApplyEntry's b0; other nodes InitialRaft.",
+   "tlc_checks": {
+    "W3.helper.old_ConfigOf": "[voters |-> {s1, s2, s3}, learners |-> {}], [voters |-> {s1, s2, s3}, learners |-> {}],",
+    "W3.helper.new_ConfigOf": "<<{s1, s2}, {s3}>>, <<{s1, s2}, {s3}>>,",
+    "W3.keep.old_prop_on_new_impl": "FALSE, FALSE,",
+    "W3.keep.new_prop_on_new_impl": "TRUE, TRUE,"
+   }
+  },
+  "old_property": {
+   "claimed": false,
+   "tlc": false,
+   "tlc_check": "W3.keep.old_prop_on_new_impl"
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_check": "W3.keep.new_prop_on_new_impl"
+  },
+  "code_observation": {
+   "old": "O1: ignored",
+   "new": "N1: demoted",
+   "test_file": "evidence/new_tree/zz_evidence_test.go:TestEvDemoteVoter",
+   "command": [
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ],
+   "result": ""
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "go_new.log N1"
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/raft_test.go:3120-3128 (TestAddLearner 'Demote r.': AddLearner on voter 1 must make Progress[1].IsLearner and r.isLearner true)",
+    "new/source/confchange/testdata/simple_promote_demote.txt:34-41 ('# Can demote a voter.' l2 -> voters=(1 3) learners=(2))",
+    "new/source/doc.go:177-182 (membership change takes effect when applied)"
+   ],
+   "basis": ""
+  },
+  "cell": "impl produces it / requirement allowed: relaxation justified",
+  "requirement_evidence": "new/source/raft_test.go:3120-3128 (TestAddLearner 'Demote r.': AddLearner on voter 1 must make Progress[1].IsLearner and r.isLearner true); new/source/confchange/testdata/simple_promote_demote.txt:34-41 ('# Can demote a voter.' l2 -> voters=(1 3) learners=(2)); new/source/doc.go:177-182 (membership change takes effect when applied)",
+  "verdict": "accepted",
+  "note": "Identical predicate text, different meaning: the old helper ConfigAfter ignored AddLearner on a voter.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/Proposed.diff",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)",
+    "evidence/Witness.tla",
+    "evidence/Witness.cfg",
+    "evidence/scripts/make_proposed.py"
+   ],
+   "go": [
+    "evidence/new_tree/zz_evidence_test.go",
+    "evidence/old_tree/zz_evidence_test.go"
+   ],
+   "logs": [
+    "evidence/tlc_witness.log",
+    "evidence/go_new.log",
+    "evidence/go_old.log"
+   ],
+   "commands": [
+    "cd evidence && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 -metadir tlc_meta Witness.tla",
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ]
+  }
+ },
+ {
+  "id": "EV10",
+  "property": "ConfigurationOrigin",
+  "kind": "control",
+  "state": {
+   "witness": "Same state but s1.config.voters={s1} (not derivable from any history).",
+   "population": "Edited post-state.",
+   "tlc_checks": {
+    "W3.ctl.old_on_unbacked": "FALSE, FALSE,",
+    "W3.ctl.new_on_unbacked": "FALSE, FALSE,"
+   }
+  },
+  "old_property": {
+   "claimed": false,
+   "tlc": false,
+   "tlc_check": "W3.ctl.old_on_unbacked"
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false,
+   "tlc_check": "W3.ctl.new_on_unbacked"
+  },
+  "code_observation": {
+   "old": "n/a",
+   "new": "n/a",
+   "test_file": "",
+   "command": [
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ],
+   "result": "not_representable in code (config must come from an applied change)"
+  },
+  "impl_produces": {
+   "value": "no",
+   "basis": "config is only changed by applyConfChange"
+  },
+  "requirement": {
+   "value": "forbidden",
+   "citations": [
+    "new/source/doc.go:177-182"
+   ],
+   "basis": "config must originate from applied changes"
+  },
+  "cell": "impl does not produce it / requirement forbidden: strengthening justified",
+  "requirement_evidence": "new/source/doc.go:177-182",
+  "verdict": "accepted",
+  "note": "Helper migration does not erase detection of unbacked configurations.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/Proposed.diff",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)",
+    "evidence/Witness.tla",
+    "evidence/Witness.cfg",
+    "evidence/scripts/make_proposed.py"
+   ],
+   "go": [
+    "evidence/new_tree/zz_evidence_test.go",
+    "evidence/old_tree/zz_evidence_test.go"
+   ],
+   "logs": [
+    "evidence/tlc_witness.log",
+    "evidence/go_new.log",
+    "evidence/go_old.log"
+   ],
+   "commands": [
+    "cd evidence && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 -metadir tlc_meta Witness.tla",
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ]
+  }
+ },
+ {
+  "id": "EV11",
+  "property": "SnapshotBacking (SnapshotValid uses ConfigOf)",
+  "kind": "observer",
+  "state": {
+   "witness": "Snapshot at index 5 of the EV01 log whose config is the demoted configuration.",
+   "population": "Snapshot config = Proposed!ConfigOf(H5) (what the application records from the ConfState returned by ApplyConfChange).",
+   "tlc_checks": {
+    "W3.snap.old_SnapshotValid": "FALSE, FALSE,",
+    "W3.snap.new_SnapshotValid": "TRUE, TRUE,"
+   }
+  },
+  "old_property": {
+   "claimed": false,
+   "tlc": false,
+   "tlc_check": "W3.snap.old_SnapshotValid"
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_check": "W3.snap.new_SnapshotValid"
+  },
+  "code_observation": {
+   "old": "O1",
+   "new": "N1 ConfState {Nodes:[1 2] Learners:[3]}",
+   "test_file": "evidence/new_tree/zz_evidence_test.go:TestEvDemoteVoter",
+   "command": [
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ],
+   "result": ""
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "go_new.log N1 ConfState"
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/raft_test.go:3120-3128 (TestAddLearner 'Demote r.': AddLearner on voter 1 must make Progress[1].IsLearner and r.isLearner true)",
+    "new/source/confchange/testdata/simple_promote_demote.txt:34-41 ('# Can demote a voter.' l2 -> voters=(1 3) learners=(2))",
+    "new/source/node.go:173-174 (ConfState must be recorded in snapshots)"
+   ],
+   "basis": ""
+  },
+  "cell": "impl produces it / requirement allowed: relaxation justified",
+  "requirement_evidence": "new/source/raft_test.go:3120-3128 (TestAddLearner 'Demote r.': AddLearner on voter 1 must make Progress[1].IsLearner and r.isLearner true); new/source/confchange/testdata/simple_promote_demote.txt:34-41 ('# Can demote a voter.' l2 -> voters=(1 3) learners=(2)); new/source/node.go:173-174 (ConfState must be recorded in snapshots)",
+  "verdict": "accepted",
+  "note": "Kept text; meaning migrates with ConfigOf.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/Proposed.diff",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)",
+    "evidence/Witness.tla",
+    "evidence/Witness.cfg",
+    "evidence/scripts/make_proposed.py"
+   ],
+   "go": [
+    "evidence/new_tree/zz_evidence_test.go",
+    "evidence/old_tree/zz_evidence_test.go"
+   ],
+   "logs": [
+    "evidence/tlc_witness.log",
+    "evidence/go_new.log",
+    "evidence/go_old.log"
+   ],
+   "commands": [
+    "cd evidence && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 -metadir tlc_meta Witness.tla",
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ]
+  }
+ },
+ {
+  "id": "EV12",
+  "property": "ConfigurationTransitionSafety",
+  "kind": "observer",
+  "state": {
+   "witness": "Leader s1, voters {s1,s2,s3} learners {s4} after applying AddLearner(s4) @6; Update(s2) @8 newly committed under voters {s1,s2,s3} (oldCommit 7).",
+   "population": "commitUses produced by Proposed!MaybeCommit (old: base!MaybeCommit on the projection) on a pre-state mirroring go N4 (indices shifted by the 3 boot entries and an AddVoter(s4)).",
+   "tlc_checks": {
+    "W4.model.commit": "<<8, 8>>, <<8, 8>>,",
+    "W4.helper.new_cfg_matches_impl": "TRUE, TRUE,",
+    "W4.keep.old_prop": "FALSE, FALSE,",
+    "W4.keep.new_prop": "TRUE, TRUE,"
+   }
+  },
+  "old_property": {
+   "claimed": false,
+   "tlc": false,
+   "tlc_check": "W4.keep.old_prop"
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_check": "W4.keep.new_prop"
+  },
+  "code_observation": {
+   "old": "O4: demotion ignored, commit stays 2",
+   "new": "N4: commit 2->3 after applying the demotion; later conf entry 4 committed with voters [1 2 3]",
+   "test_file": "evidence/new_tree/zz_evidence_test.go:TestEvDemotionCommit; evidence/old_tree/zz_evidence_test.go:TestEvDemotionCommit",
+   "command": [
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ],
+   "result": ""
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "go_new.log N4"
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/doc.go:177-182 (entry committed under the membership in effect when it was applied)",
+    "new/source/raft_test.go:3120-3128 (TestAddLearner 'Demote r.': AddLearner on voter 1 must make Progress[1].IsLearner and r.isLearner true)",
+    "new/source/confchange/testdata/simple_promote_demote.txt:34-41 ('# Can demote a voter.' l2 -> voters=(1 3) learners=(2))"
+   ],
+   "basis": ""
+  },
+  "cell": "impl produces it / requirement allowed: relaxation justified",
+  "requirement_evidence": "new/source/doc.go:177-182 (entry committed under the membership in effect when it was applied); new/source/raft_test.go:3120-3128 (TestAddLearner 'Demote r.': AddLearner on voter 1 must make Progress[1].IsLearner and r.isLearner true); new/source/confchange/testdata/simple_promote_demote.txt:34-41 ('# Can demote a voter.' l2 -> voters=(1 3) learners=(2))",
+  "verdict": "accepted",
+  "note": "The old helper computed predecessor voters {s1..s4}.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/Proposed.diff",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)",
+    "evidence/Witness.tla",
+    "evidence/Witness.cfg",
+    "evidence/scripts/make_proposed.py"
+   ],
+   "go": [
+    "evidence/new_tree/zz_evidence_test.go",
+    "evidence/old_tree/zz_evidence_test.go"
+   ],
+   "logs": [
+    "evidence/tlc_witness.log",
+    "evidence/go_new.log",
+    "evidence/go_old.log"
+   ],
+   "commands": [
+    "cd evidence && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 -metadir tlc_meta Witness.tla",
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ]
+  }
+ },
+ {
+  "id": "EV13",
+  "property": "ConfigurationTransitionSafety",
+  "kind": "strengthening",
+  "state": {
+   "witness": "Joint auto-leave leader: log ... EnterJoint[AddVoter s4]@5, Normal@6, LeaveJoint@7, LeaveJoint@8 (both id 0, raft-initiated); both leave entries newly committed together under the joint config.",
+   "population": "Proposed!MaybeCommit on a pre-state reproducing go N6 (duplicate auto-leave). The initial-decision predicate (exempting every id=0 entry) is evaluated too (W5i).",
+   "tlc_checks": {
+    "W5.helper.CfgJ": "[ voters |-> {s1, s2, s3, s4}, outgoing |-> {s1, s2, s3}, learners |-> {}, learnersNext |-> {}, autoLeave |-> TRUE ], [ voters |-> {s1, s2, s3, s4}, outgoing |-> {s1, s2, s3}, learners |-> {}, learnersNext |-> {}, autoLeave |-> TRUE ],",
+    "W5.model.commit": "<<8, 7>>, <<8, 7>>,",
+    "W5.bug.old_prop_on_double_leave": "TRUE, TRUE,",
+    "W5.bug.new_prop_on_double_leave": "FALSE, FALSE,",
+    "W5i.initial_predicate_on_double_leave": "TRUE, TRUE,"
+   }
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_check": "W5.bug.old_prop_on_double_leave"
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false,
+   "tlc_check": "W5.bug.new_prop_on_double_leave"
+  },
+  "code_observation": {
+   "old": "not_representable (no V2 in old code)",
+   "new": "N6: advance1 appends LeaveJoint@4, advance2 appends LeaveJoint@5 (pendingConfIndex stays 2); applying @5 panics \"can't leave a non-joint config\"",
+   "test_file": "evidence/new_tree/zz_evidence_test.go:TestEvAutoLeave",
+   "command": [
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ],
+   "result": "duplicate leave entries produced"
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "go_new.log N6"
+  },
+  "requirement": {
+   "value": "forbidden",
+   "citations": [
+    "new/source/doc.go:184-188 ('we simply disallow any proposed membership change while any uncommitted change appears in the leader's log')",
+    "new/source/node.go:136-139 ('configuration changes are dropped unless the leader has certainty that there is no prior unapplied configuration change in its log')",
+    "new/source/confchange/confchange.go:81-82 (LeaveJoint: 'It is an error to call this method if the configuration is not joint')"
+   ],
+   "basis": "two membership changes must not be in flight / committed together"
+  },
+  "cell": "impl produces it / requirement forbidden: BUG CANDIDATE - keep the stronger property, record the defect",
+  "requirement_evidence": "new/source/doc.go:184-188 ('we simply disallow any proposed membership change while any uncommitted change appears in the leader's log'); new/source/node.go:136-139 ('configuration changes are dropped unless the leader has certainty that there is no prior unapplied configuration change in its log'); new/source/confchange/confchange.go:81-82 (LeaveJoint: 'It is an error to call this method if the configuration is not joint')",
+  "verdict": "accepted",
+  "note": "Defect: raft.go:572-580 bumps pendingConfIndex only when the append is refused. Old property is blind (V2 kinds unknown, id 0 exempt). The INITIAL proposal also returned TRUE (W5i) because it exempted all id 0 entries; the final predicate exempts only bootstrap AddVoter entries.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/Proposed.diff",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)",
+    "evidence/Witness.tla",
+    "evidence/Witness.cfg",
+    "evidence/scripts/make_proposed.py"
+   ],
+   "go": [
+    "evidence/new_tree/zz_evidence_test.go",
+    "evidence/old_tree/zz_evidence_test.go"
+   ],
+   "logs": [
+    "evidence/tlc_witness.log",
+    "evidence/go_new.log",
+    "evidence/go_old.log"
+   ],
+   "commands": [
+    "cd evidence && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 -metadir tlc_meta Witness.tla",
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ]
+  }
+ },
+ {
+  "id": "EV14",
+  "property": "ConfigurationTransitionSafety",
+  "kind": "control",
+  "state": {
+   "witness": "Same scenario with only one LeaveJoint@7 committed.",
+   "population": "Proposed!MaybeCommit.",
+   "tlc_checks": {
+    "W5.ctl.old_prop_on_single_leave": "TRUE, TRUE,",
+    "W5.ctl.new_prop_on_single_leave": "TRUE, TRUE,"
+   }
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_check": "W5.ctl.old_prop_on_single_leave"
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_check": "W5.ctl.new_prop_on_single_leave"
+  },
+  "code_observation": {
+   "old": "n/a",
+   "new": "N6 advance1 (single leave) and TestRawNodeProposeAndConfChange",
+   "test_file": "evidence/new_tree/zz_evidence_test.go:TestEvAutoLeave",
+   "command": [
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ],
+   "result": ""
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "go_new.log N6 advance1"
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/rawnode_test.go:322-357",
+    "new/source/raftpb/raft.proto:85-91"
+   ],
+   "basis": ""
+  },
+  "cell": "impl produces it / requirement allowed: relaxation justified",
+  "requirement_evidence": "new/source/rawnode_test.go:322-357; new/source/raftpb/raft.proto:85-91",
+  "verdict": "accepted",
+  "note": "Legitimate auto-leave is not rejected.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/Proposed.diff",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)",
+    "evidence/Witness.tla",
+    "evidence/Witness.cfg",
+    "evidence/scripts/make_proposed.py"
+   ],
+   "go": [
+    "evidence/new_tree/zz_evidence_test.go",
+    "evidence/old_tree/zz_evidence_test.go"
+   ],
+   "logs": [
+    "evidence/tlc_witness.log",
+    "evidence/go_new.log",
+    "evidence/go_old.log"
+   ],
+   "commands": [
+    "cd evidence && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 -metadir tlc_meta Witness.tla",
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ]
+  }
+ },
+ {
+  "id": "EV15",
+  "property": "AckPreservation",
+  "kind": "relaxation",
+  "state": {
+   "witness": "Advance at a joint auto-leave leader with cursor 5 (EnterJoint applied), pendingConf 5, log 1..6; Advance appends one LeaveJoint@7.",
+   "population": "Post-state computed by Proposed!AdvanceCore (models raft.go:554-594); ack record built with the migrated observer fields (role, config, pendingConf) exactly as ProtocolAdvance would record it; old record without those fields.",
+   "tlc_checks": {
+    "W6.model.first_advance_appends": "<<7, \"LeaveJoint\", 5, 5>>, <<7, \"LeaveJoint\", 5, 5>>,",
+    "W6.relax.old_prop_on_single_leave": "FALSE, FALSE,",
+    "W6.relax.new_prop_on_single_leave": "TRUE, TRUE,"
+   }
+  },
+  "old_property": {
+   "claimed": false,
+   "tlc": false,
+   "tlc_check": "W6.relax.old_prop_on_single_leave"
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_check": "W6.relax.new_prop_on_single_leave"
+  },
+  "code_observation": {
+   "old": "not_representable (no auto-leave in old code)",
+   "new": "N6 advance1: after=... [4 t1 V2:LeaveJoint]; upstream TestRawNodeProposeAndConfChange passes",
+   "test_file": "evidence/new_tree/zz_evidence_test.go:TestEvAutoLeave; new/source/rawnode_test.go:TestRawNodeProposeAndConfChange",
+   "command": [
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ],
+   "result": ""
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "go_new.log N6"
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/rawnode_test.go:322-357 (exactly one empty EntryConfChangeV2 after Advance when AutoLeave)",
+    "new/source/raftpb/raft.proto:85-91 (JointImplicit: transition out automatically by proposing a zero configuration change)"
+   ],
+   "basis": ""
+  },
+  "cell": "impl produces it / requirement allowed: relaxation justified",
+  "requirement_evidence": "new/source/rawnode_test.go:322-357 (exactly one empty EntryConfChangeV2 after Advance when AutoLeave); new/source/raftpb/raft.proto:85-91 (JointImplicit: transition out automatically by proposing a zero configuration change)",
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/Proposed.diff",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)",
+    "evidence/Witness.tla",
+    "evidence/Witness.cfg",
+    "evidence/scripts/make_proposed.py"
+   ],
+   "go": [
+    "evidence/new_tree/zz_evidence_test.go",
+    "evidence/old_tree/zz_evidence_test.go"
+   ],
+   "logs": [
+    "evidence/tlc_witness.log",
+    "evidence/go_new.log",
+    "evidence/go_old.log"
+   ],
+   "commands": [
+    "cd evidence && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 -metadir tlc_meta Witness.tla",
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ]
+  }
+ },
+ {
+  "id": "EV16",
+  "property": "AckPreservation",
+  "kind": "control",
+  "state": {
+   "witness": "Second Advance (cursor 6) while LeaveJoint@7 is still unapplied: Advance appends a second LeaveJoint@8.",
+   "population": "Proposed!AdvanceCore applied to the EV15 post-state after committing entry 6; reproduces go N6 advance2 (pendingConf not bumped).",
+   "tlc_checks": {
+    "W6.model.second_advance_duplicates": "<<8, \"LeaveJoint\", 5>>, <<8, \"LeaveJoint\", 5>>,",
+    "W6.ctl.old_prop_on_duplicate": "FALSE, FALSE,",
+    "W6.ctl.new_prop_on_duplicate": "FALSE, FALSE,"
+   }
+  },
+  "old_property": {
+   "claimed": false,
+   "tlc": false,
+   "tlc_check": "W6.ctl.old_prop_on_duplicate"
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false,
+   "tlc_check": "W6.ctl.new_prop_on_duplicate"
+  },
+  "code_observation": {
+   "old": "not_representable",
+   "new": "N6 advance2: appends [5 t1 V2:LeaveJoint] with pending=2",
+   "test_file": "evidence/new_tree/zz_evidence_test.go:TestEvAutoLeave",
+   "command": [
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ],
+   "result": ""
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "go_new.log N6"
+  },
+  "requirement": {
+   "value": "forbidden",
+   "citations": [
+    "new/source/doc.go:184-188 ('we simply disallow any proposed membership change while any uncommitted change appears in the leader's log')",
+    "new/source/node.go:136-139 ('configuration changes are dropped unless the leader has certainty that there is no prior unapplied configuration change in its log')",
+    "new/source/confchange/confchange.go:81-82 (LeaveJoint: 'It is an error to call this method if the configuration is not joint')"
+   ],
+   "basis": ""
+  },
+  "cell": "impl produces it / requirement forbidden: BUG CANDIDATE - keep the stronger property, record the defect",
+  "requirement_evidence": "new/source/doc.go:184-188 ('we simply disallow any proposed membership change while any uncommitted change appears in the leader's log'); new/source/node.go:136-139 ('configuration changes are dropped unless the leader has certainty that there is no prior unapplied configuration change in its log'); new/source/confchange/confchange.go:81-82 (LeaveJoint: 'It is an error to call this method if the configuration is not joint')",
+  "verdict": "accepted",
+  "note": "The relaxation does not absorb the defect: AutoLeaveAllowed requires no unapplied conf entry beyond the cursor.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/Proposed.diff",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)",
+    "evidence/Witness.tla",
+    "evidence/Witness.cfg",
+    "evidence/scripts/make_proposed.py"
+   ],
+   "go": [
+    "evidence/new_tree/zz_evidence_test.go",
+    "evidence/old_tree/zz_evidence_test.go"
+   ],
+   "logs": [
+    "evidence/tlc_witness.log",
+    "evidence/go_new.log",
+    "evidence/go_old.log"
+   ],
+   "commands": [
+    "cd evidence && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 -metadir tlc_meta Witness.tla",
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ]
+  }
+ },
+ {
+  "id": "EV17",
+  "property": "AckPreservation",
+  "kind": "control",
+  "state": {
+   "witness": "(a) Advance appends a Normal entry; (b) Advance appends LeaveJoint under an explicit (non-auto) joint config.",
+   "population": "Edited post/pre states of EV15.",
+   "tlc_checks": {
+    "W6.ctl.old_prop_on_normal_append": "FALSE, FALSE,",
+    "W6.ctl.new_prop_on_normal_append": "FALSE, FALSE,",
+    "W6.ctl.new_prop_explicit_joint": "FALSE, FALSE,"
+   }
+  },
+  "old_property": {
+   "claimed": false,
+   "tlc": false,
+   "tlc_check": "W6.ctl.old_prop_on_normal_append"
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false,
+   "tlc_check": "W6.ctl.new_prop_on_normal_append"
+  },
+  "code_observation": {
+   "old": "n/a",
+   "new": "raft.go:561 appends only when AutoLeave",
+   "test_file": "evidence/new_tree/zz_evidence_test.go",
+   "command": [
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ],
+   "result": "not produced"
+  },
+  "impl_produces": {
+   "value": "no",
+   "basis": "raft.go:561 guard (code path citation)"
+  },
+  "requirement": {
+   "value": "forbidden",
+   "citations": [
+    "new/source/raftpb/raft.proto:92-96 (JointExplicit: remain joint until the application proposes)",
+    "new/source/rawnode.go:122-129"
+   ],
+   "basis": ""
+  },
+  "cell": "impl does not produce it / requirement forbidden: strengthening justified",
+  "requirement_evidence": "new/source/raftpb/raft.proto:92-96 (JointExplicit: remain joint until the application proposes); new/source/rawnode.go:122-129",
+  "verdict": "accepted",
+  "note": "Nearby forbidden controls for the relaxation (explicit-joint case also FALSE: W6.ctl.new_prop_explicit_joint).",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/Proposed.diff",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)",
+    "evidence/Witness.tla",
+    "evidence/Witness.cfg",
+    "evidence/scripts/make_proposed.py"
+   ],
+   "go": [
+    "evidence/new_tree/zz_evidence_test.go",
+    "evidence/old_tree/zz_evidence_test.go"
+   ],
+   "logs": [
+    "evidence/tlc_witness.log",
+    "evidence/go_new.log",
+    "evidence/go_old.log"
+   ],
+   "commands": [
+    "cd evidence && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 -metadir tlc_meta Witness.tla",
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ]
+  }
+ },
+ {
+  "id": "EV18",
+  "property": "QuorumAccounting (commitUses)",
+  "kind": "strengthening",
+  "state": {
+   "witness": "Leader s2, joint config incoming {s1,s2,s3}, outgoing {s1}; matches s1=0, s2=5, s3=5; commit 3 -> 5 recorded with matches {s2,s3}.",
+   "population": "base!MaybeCommit on the projection commits 5 (old model cannot see the outgoing half); Proposed!MaybeCommit does not commit (3). The old commitUse record is lifted with the actual joint config.",
+   "tlc_checks": {
+    "W7.model.commit_old_new_forbidden_matches": "<<5, 3>>, <<5, 3>>,",
+    "W7.str.old_prop_forbidden": "TRUE, TRUE,",
+    "W7.str.new_prop_forbidden": "FALSE, FALSE,"
+   }
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_check": "W7.str.old_prop_forbidden"
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false,
+   "tlc_check": "W7.str.new_prop_forbidden"
+  },
+  "code_observation": {
+   "old": "n/a (old raft never entered joint)",
+   "new": "N10: JointConfig (1 2 3)&&(1) CommittedIndex=0 (incoming-only would be 5)",
+   "test_file": "evidence/new_tree/quorum/zz_evidence_test.go:TestEvJointCommitted",
+   "command": [
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ],
+   "result": ""
+  },
+  "impl_produces": {
+   "value": "no",
+   "basis": "go_new.log N10"
+  },
+  "requirement": {
+   "value": "forbidden",
+   "citations": [
+    "new/source/raftpb/raft.proto:153-157 ('in which quorum requires a majority of both the pre-changes and post-changes configuration')",
+    "new/source/quorum/testdata/joint_commit.txt:17-30 (joint singleton quorums commit only what both halves acked)"
+   ],
+   "basis": ""
+  },
+  "cell": "impl does not produce it / requirement forbidden: strengthening justified",
+  "requirement_evidence": "new/source/raftpb/raft.proto:153-157 ('in which quorum requires a majority of both the pre-changes and post-changes configuration'); new/source/quorum/testdata/joint_commit.txt:17-30 (joint singleton quorums commit only what both halves acked)",
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/Proposed.diff",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)",
+    "evidence/Witness.tla",
+    "evidence/Witness.cfg",
+    "evidence/scripts/make_proposed.py"
+   ],
+   "go": [
+    "evidence/new_tree/zz_evidence_test.go",
+    "evidence/old_tree/zz_evidence_test.go"
+   ],
+   "logs": [
+    "evidence/tlc_witness.log",
+    "evidence/go_new.log",
+    "evidence/go_old.log"
+   ],
+   "commands": [
+    "cd evidence && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 -metadir tlc_meta Witness.tla",
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ]
+  }
+ },
+ {
+  "id": "EV19",
+  "property": "QuorumAccounting (wins)",
+  "kind": "strengthening",
+  "state": {
+   "witness": "Win by s2 in the same joint config with yes {s2,s3}.",
+   "population": "Constructed win record (observer with config field).",
+   "tlc_checks": {
+    "W7.str.win_old_forbidden": "TRUE, TRUE,",
+    "W7.str.win_new_forbidden": "FALSE, FALSE,"
+   }
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_check": "W7.str.win_old_forbidden"
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false,
+   "tlc_check": "W7.str.win_new_forbidden"
+  },
+  "code_observation": {
+   "old": "n/a",
+   "new": "N10: VoteResult yes{2,3} = VoteLost",
+   "test_file": "evidence/new_tree/quorum/zz_evidence_test.go:TestEvJointCommitted",
+   "command": [
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ],
+   "result": ""
+  },
+  "impl_produces": {
+   "value": "no",
+   "basis": "go_new.log N10"
+  },
+  "requirement": {
+   "value": "forbidden",
+   "citations": [
+    "new/source/raftpb/raft.proto:153-157 ('in which quorum requires a majority of both the pre-changes and post-changes configuration')",
+    "new/source/quorum/testdata/joint_commit.txt:17-30 (joint singleton quorums commit only what both halves acked)"
+   ],
+   "basis": ""
+  },
+  "cell": "impl does not produce it / requirement forbidden: strengthening justified",
+  "requirement_evidence": "new/source/raftpb/raft.proto:153-157 ('in which quorum requires a majority of both the pre-changes and post-changes configuration'); new/source/quorum/testdata/joint_commit.txt:17-30 (joint singleton quorums commit only what both halves acked)",
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/Proposed.diff",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)",
+    "evidence/Witness.tla",
+    "evidence/Witness.cfg",
+    "evidence/scripts/make_proposed.py"
+   ],
+   "go": [
+    "evidence/new_tree/zz_evidence_test.go",
+    "evidence/old_tree/zz_evidence_test.go"
+   ],
+   "logs": [
+    "evidence/tlc_witness.log",
+    "evidence/go_new.log",
+    "evidence/go_old.log"
+   ],
+   "commands": [
+    "cd evidence && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 -metadir tlc_meta Witness.tla",
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ]
+  }
+ },
+ {
+  "id": "EV20",
+  "property": "QuorumAccounting",
+  "kind": "control",
+  "state": {
+   "witness": "(a) joint commit with matches {s1,s2}; (b) joint win yes {s1,s2}; (c) non-joint commit after demotion (EV12 state).",
+   "population": "Proposed!MaybeCommit / constructed records.",
+   "tlc_checks": {
+    "W7.ctl.old_prop_legit": "TRUE, TRUE,",
+    "W7.ctl.new_prop_legit": "TRUE, TRUE,",
+    "W7.ctl.win_new_legit": "TRUE, TRUE,",
+    "W4.ctl.old_QuorumAccounting": "TRUE, TRUE,",
+    "W4.ctl.new_QuorumAccounting": "TRUE, TRUE,"
+   }
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_check": "W4.ctl.old_QuorumAccounting"
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_check": "W4.ctl.new_QuorumAccounting"
+  },
+  "code_observation": {
+   "old": "O4",
+   "new": "N10 control committed=5, yes{1,2}=VoteWon; N4",
+   "test_file": "evidence/new_tree/quorum/zz_evidence_test.go; evidence/new_tree/zz_evidence_test.go",
+   "command": [
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ],
+   "result": ""
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "go_new.log N4, N10"
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/raftpb/raft.proto:153-157 ('in which quorum requires a majority of both the pre-changes and post-changes configuration')",
+    "new/source/quorum/testdata/joint_commit.txt:17-30 (joint singleton quorums commit only what both halves acked)"
+   ],
+   "basis": ""
+  },
+  "cell": "impl produces it / requirement allowed: relaxation justified",
+  "requirement_evidence": "new/source/raftpb/raft.proto:153-157 ('in which quorum requires a majority of both the pre-changes and post-changes configuration'); new/source/quorum/testdata/joint_commit.txt:17-30 (joint singleton quorums commit only what both halves acked)",
+  "verdict": "accepted",
+  "note": "Observer migration preserves V1 verdicts and accepts legitimate joint quorums.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/Proposed.diff",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)",
+    "evidence/Witness.tla",
+    "evidence/Witness.cfg",
+    "evidence/scripts/make_proposed.py"
+   ],
+   "go": [
+    "evidence/new_tree/zz_evidence_test.go",
+    "evidence/old_tree/zz_evidence_test.go"
+   ],
+   "logs": [
+    "evidence/tlc_witness.log",
+    "evidence/go_new.log",
+    "evidence/go_old.log"
+   ],
+   "commands": [
+    "cd evidence && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 -metadir tlc_meta Witness.tla",
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ]
+  }
+ },
+ {
+  "id": "EV21",
+  "property": "ReadBasis",
+  "kind": "observer",
+  "state": {
+   "witness": "Read confirmed in the joint config incoming {s1,s2,s4} / outgoing {s1,s2,s3} (EnterJoint[Remove s3, AddVoter s4]@5) with acks {s1,s2} (both majorities).",
+   "population": "Read record built with the ReadRecord field set; confirmConfig = Proposed!ConfigOf(hist).",
+   "tlc_checks": {
+    "W19.helper.CfgR": "<<{s1, s2, s4}, {s1, s2, s3}>>, <<{s1, s2, s4}, {s1, s2, s3}>>,",
+    "W19.ctl.new_both_majorities": "TRUE, TRUE,",
+    "W19.old.both_majorities": "FALSE, FALSE,"
+   }
+  },
+  "old_property": {
+   "claimed": false,
+   "tlc": false,
+   "tlc_check": "W19.old.both_majorities"
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_check": "W19.ctl.new_both_majorities"
+  },
+  "code_observation": {
+   "old": "n/a",
+   "new": "raft.go:1146 uses r.prs.Voters.VoteResult (joint); N10 VoteResult yes{1,2}=VoteWon",
+   "test_file": "evidence/new_tree/quorum/zz_evidence_test.go",
+   "command": [
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ],
+   "result": ""
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "raft.go:1146 code path + go N10"
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/raftpb/raft.proto:153-157 ('in which quorum requires a majority of both the pre-changes and post-changes configuration')",
+    "new/source/quorum/testdata/joint_commit.txt:17-30 (joint singleton quorums commit only what both halves acked)"
+   ],
+   "basis": ""
+  },
+  "cell": "impl produces it / requirement allowed: relaxation justified",
+  "requirement_evidence": "new/source/raftpb/raft.proto:153-157 ('in which quorum requires a majority of both the pre-changes and post-changes configuration'); new/source/quorum/testdata/joint_commit.txt:17-30 (joint singleton quorums commit only what both halves acked)",
+  "verdict": "accepted",
+  "note": "Old ReadBasis rejects every joint read because the old ConfigOf cannot represent EnterJoint.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/Proposed.diff",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)",
+    "evidence/Witness.tla",
+    "evidence/Witness.cfg",
+    "evidence/scripts/make_proposed.py"
+   ],
+   "go": [
+    "evidence/new_tree/zz_evidence_test.go",
+    "evidence/old_tree/zz_evidence_test.go"
+   ],
+   "logs": [
+    "evidence/tlc_witness.log",
+    "evidence/go_new.log",
+    "evidence/go_old.log"
+   ],
+   "commands": [
+    "cd evidence && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 -metadir tlc_meta Witness.tla",
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ]
+  }
+ },
+ {
+  "id": "EV22",
+  "property": "ReadBasis",
+  "kind": "strengthening",
+  "state": {
+   "witness": "Same read but acks {s1,s4}: incoming majority only.",
+   "population": "As EV21.",
+   "tlc_checks": {
+    "W19.str.new_incoming_only_acks": "FALSE, FALSE,",
+    "W19.old.incoming_only_acks": "FALSE, FALSE,",
+    "W19.old.Won_clause_incoming_only": "TRUE, TRUE,"
+   }
+  },
+  "old_property": {
+   "claimed": false,
+   "tlc": false,
+   "tlc_check": "W19.old.incoming_only_acks"
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false,
+   "tlc_check": "W19.str.new_incoming_only_acks"
+  },
+  "code_observation": {
+   "old": "n/a",
+   "new": "N10: incoming-only acks -> VoteLost",
+   "test_file": "evidence/new_tree/quorum/zz_evidence_test.go",
+   "command": [
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ],
+   "result": ""
+  },
+  "impl_produces": {
+   "value": "no",
+   "basis": "go_new.log N10"
+  },
+  "requirement": {
+   "value": "forbidden",
+   "citations": [
+    "new/source/raftpb/raft.proto:153-157 ('in which quorum requires a majority of both the pre-changes and post-changes configuration')",
+    "new/source/quorum/testdata/joint_commit.txt:17-30 (joint singleton quorums commit only what both halves acked)"
+   ],
+   "basis": ""
+  },
+  "cell": "impl does not produce it / requirement forbidden: strengthening justified",
+  "requirement_evidence": "new/source/raftpb/raft.proto:153-157 ('in which quorum requires a majority of both the pre-changes and post-changes configuration'); new/source/quorum/testdata/joint_commit.txt:17-30 (joint singleton quorums commit only what both halves acked)",
+  "verdict": "accepted",
+  "note": "Old verdict FALSE only through the ConfigOf clause; its quorum clause alone (W19.old.Won_clause_incoming_only = TRUE) would accept the incoming-only acks.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/Proposed.diff",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)",
+    "evidence/Witness.tla",
+    "evidence/Witness.cfg",
+    "evidence/scripts/make_proposed.py"
+   ],
+   "go": [
+    "evidence/new_tree/zz_evidence_test.go",
+    "evidence/old_tree/zz_evidence_test.go"
+   ],
+   "logs": [
+    "evidence/tlc_witness.log",
+    "evidence/go_new.log",
+    "evidence/go_old.log"
+   ],
+   "commands": [
+    "cd evidence && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 -metadir tlc_meta Witness.tla",
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ]
+  }
+ },
+ {
+  "id": "EV23",
+  "property": "DurableObligations (observer feeding LeaderCompleteness/CommittedHistory)",
+  "kind": "observer",
+  "state": {
+   "witness": "Joint leader s2 (incoming {s1,s2,s3}, outgoing {s1}) at commit 5 with entries durable only on s2,s3.",
+   "population": "OP!/NP!DurableObligations evaluated on raft/disk maps.",
+   "tlc_checks": {
+    "W20.obs.old_records_obligation": "TRUE, TRUE,",
+    "W20.obs.new_records_obligation": "FALSE, FALSE,",
+    "W20.ctl.new_records_when_both_majorities": "TRUE, TRUE,"
+   }
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_check": "W20.obs.old_records_obligation"
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false,
+   "tlc_check": "W20.obs.new_records_obligation"
+  },
+  "code_observation": {
+   "old": "n/a",
+   "new": "N10 joint commit rule",
+   "test_file": "evidence/new_tree/quorum/zz_evidence_test.go",
+   "command": [
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ],
+   "result": "ghost observer; no code counterpart"
+  },
+  "impl_produces": {
+   "value": "unknown",
+   "basis": "ghost observer; a correct leader would not reach commit 5 here"
+  },
+  "requirement": {
+   "value": "forbidden",
+   "citations": [
+    "new/source/raftpb/raft.proto:153-157 ('in which quorum requires a majority of both the pre-changes and post-changes configuration')",
+    "new/source/quorum/testdata/joint_commit.txt:17-30 (joint singleton quorums commit only what both halves acked)"
+   ],
+   "basis": "an obligation must reflect a joint-durable commit"
+  },
+  "cell": "impl does not produce it / requirement forbidden: strengthening justified",
+  "requirement_evidence": "new/source/raftpb/raft.proto:153-157 ('in which quorum requires a majority of both the pre-changes and post-changes configuration'); new/source/quorum/testdata/joint_commit.txt:17-30 (joint singleton quorums commit only what both halves acked)",
+  "verdict": "accepted",
+  "note": "Old observer over-records obligations under joint configs; values printed: old records (TRUE), new does not (FALSE), new records once both majorities are durable (TRUE).",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/Proposed.diff",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)",
+    "evidence/Witness.tla",
+    "evidence/Witness.cfg",
+    "evidence/scripts/make_proposed.py"
+   ],
+   "go": [
+    "evidence/new_tree/zz_evidence_test.go",
+    "evidence/old_tree/zz_evidence_test.go"
+   ],
+   "logs": [
+    "evidence/tlc_witness.log",
+    "evidence/go_new.log",
+    "evidence/go_old.log"
+   ],
+   "commands": [
+    "cd evidence && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 -metadir tlc_meta Witness.tla",
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ]
+  }
+ },
+ {
+  "id": "EV24",
+  "property": "VoteRecovery",
+  "kind": "semantic",
+  "state": {
+   "witness": "RawNode s4 restarts with persisted HardState {term 3, vote s1} and an empty log.",
+   "population": "Recovery record computed from base!RestartCore (old model, reproduces old code) and Proposed!RestartCore (migrated: no 'fresh' reset), with the same field set as ProtocolRestart.",
+   "tlc_checks": {
+    "W8.model.old_new_term_vote": "<<1, 0, 3, s1>>, <<1, 0, 3, s1>>,",
+    "W8.keep.old_prop_on_old_impl": "FALSE, FALSE,",
+    "W8.keep.old_prop_on_new_impl": "TRUE, TRUE,",
+    "W8.keep.new_prop_on_new_impl": "TRUE, TRUE,",
+    "W8.ctl.RecoveryBacking_new": "TRUE, TRUE,"
+   }
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_check": "W8.keep.old_prop_on_new_impl"
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_check": "W8.keep.new_prop_on_new_impl"
+  },
+  "code_observation": {
+   "old": "O5: term=1 vote=0 (persisted vote lost)",
+   "new": "N5: term=3 vote=2 prevHardSt={3 2 0}",
+   "test_file": "evidence/new_tree/zz_evidence_test.go:TestEvRestartEmptyLog; evidence/old_tree/zz_evidence_test.go:TestEvRestartEmptyLog",
+   "command": [
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ],
+   "result": ""
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "go_new.log N5"
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/README.md:116-118 (HardState persisted before messages are sent: the vote is a durable promise)"
+   ],
+   "basis": ""
+  },
+  "cell": "impl produces it / requirement allowed: relaxation justified",
+  "requirement_evidence": "new/source/README.md:116-118 (HardState persisted before messages are sent: the vote is a durable promise)",
+  "verdict": "accepted",
+  "note": "Keep. The OLD code violated the kept property (W8.keep.old_prop_on_old_impl = FALSE): a pre-existing defect the update fixes.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/Proposed.diff",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)",
+    "evidence/Witness.tla",
+    "evidence/Witness.cfg",
+    "evidence/scripts/make_proposed.py"
+   ],
+   "go": [
+    "evidence/new_tree/zz_evidence_test.go",
+    "evidence/old_tree/zz_evidence_test.go"
+   ],
+   "logs": [
+    "evidence/tlc_witness.log",
+    "evidence/go_new.log",
+    "evidence/go_old.log"
+   ],
+   "commands": [
+    "cd evidence && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 -metadir tlc_meta Witness.tla",
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ]
+  }
+ },
+ {
+  "id": "EV25",
+  "property": "CampaignDecisionEligibility (CampaignContract)",
+  "kind": "semantic",
+  "state": {
+   "witness": "Follower s1 with committed but unapplied EnterJoint@4 (applied 3) receives Hup.",
+   "population": "Proposed!StepHup (models numOfPendingConf counting V1 only) campaigns; CampaignObservation from pre/post.",
+   "tlc_checks": {
+    "W9.model.v2_campaigns_v1_blocked": "<<\"Candidate\", 2, \"Follower\">>, <<\"Candidate\", 2, \"Follower\">>,",
+    "W9.unres.old_prop_on_v2_campaign": "TRUE, TRUE,",
+    "W9.unres.new_prop_on_v2_campaign": "FALSE, FALSE,"
+   }
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_check": "W9.unres.old_prop_on_v2_campaign"
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false,
+   "tlc_check": "W9.unres.new_prop_on_v2_campaign"
+  },
+  "code_observation": {
+   "old": "not_representable (no V2)",
+   "new": "N7: v2=true -> StateCandidate term 2, MsgVote to 2,3; v2=false -> stays follower",
+   "test_file": "evidence/new_tree/zz_evidence_test.go:TestEvCampaignPendingConf",
+   "command": [
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ],
+   "result": ""
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "go_new.log N7"
+  },
+  "requirement": {
+   "value": "unknown",
+   "citations": [
+    "new/source/raftpb/raft.proto:14-15 (EntryConfChangeV2 corresponds to ConfChangeV2)",
+    "new/source/node.go:170-176 (V2 entries are config changes to apply)",
+    "no test, README, doc.go or design.md statement about blocking Hup on pending configuration changes; raft.go:907-910 is implementation"
+   ],
+   "basis": ""
+  },
+  "cell": "requirement unknown: unresolved, do not edit toward the implementation",
+  "requirement_evidence": "new/source/raftpb/raft.proto:14-15 (EntryConfChangeV2 corresponds to ConfChangeV2); new/source/node.go:170-176 (V2 entries are config changes to apply); no test, README, doc.go or design.md statement about blocking Hup on pending configuration changes; raft.go:907-910 is implementation",
+  "verdict": "unresolved",
+  "note": "Kept the stronger form (ConfKinds includes V2) and recorded the V1/V2 inconsistency (raft.go:1580-1588) as a suspected defect; not weakened.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/Proposed.diff",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)",
+    "evidence/Witness.tla",
+    "evidence/Witness.cfg",
+    "evidence/scripts/make_proposed.py"
+   ],
+   "go": [
+    "evidence/new_tree/zz_evidence_test.go",
+    "evidence/old_tree/zz_evidence_test.go"
+   ],
+   "logs": [
+    "evidence/tlc_witness.log",
+    "evidence/go_new.log",
+    "evidence/go_old.log"
+   ],
+   "commands": [
+    "cd evidence && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 -metadir tlc_meta Witness.tla",
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ]
+  }
+ },
+ {
+  "id": "EV26",
+  "property": "CampaignDecisionEligibility",
+  "kind": "control",
+  "state": {
+   "witness": "Same with a V1 AddVoter@4 pending: campaign blocked.",
+   "population": "Both models block.",
+   "tlc_checks": {
+    "W9.ctl.old_prop_v1_blocked": "TRUE, TRUE,",
+    "W9.ctl.new_prop_v1_blocked": "TRUE, TRUE,"
+   }
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_check": "W9.ctl.old_prop_v1_blocked"
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_check": "W9.ctl.new_prop_v1_blocked"
+  },
+  "code_observation": {
+   "old": "",
+   "new": "N7 v2=false: StateFollower, no msgs",
+   "test_file": "evidence/new_tree/zz_evidence_test.go:TestEvCampaignPendingConf",
+   "command": [
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ],
+   "result": ""
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "go_new.log N7"
+  },
+  "requirement": {
+   "value": "unknown",
+   "citations": [
+    "no requirement text; unchanged behaviour"
+   ],
+   "basis": ""
+  },
+  "cell": "unchanged behaviour: old and new agree",
+  "requirement_evidence": "no requirement text; unchanged behaviour",
+  "verdict": "accepted",
+  "note": "V1 verdict unchanged by the ConfKinds migration.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/Proposed.diff",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)",
+    "evidence/Witness.tla",
+    "evidence/Witness.cfg",
+    "evidence/scripts/make_proposed.py"
+   ],
+   "go": [
+    "evidence/new_tree/zz_evidence_test.go",
+    "evidence/old_tree/zz_evidence_test.go"
+   ],
+   "logs": [
+    "evidence/tlc_witness.log",
+    "evidence/go_new.log",
+    "evidence/go_old.log"
+   ],
+   "commands": [
+    "cd evidence && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 -metadir tlc_meta Witness.tla",
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ]
+  }
+ },
+ {
+  "id": "EV27",
+  "property": "ProposalConfigurationDecisions (ProposalContract, via ConfKinds)",
+  "kind": "observer",
+  "state": {
+   "witness": "Leader s1 with pendingConf 5 > applied 4 receives a proposal containing an EnterJoint entry.",
+   "population": "Proposed!StepLeaderProposal (RewriteConf over ConfKinds incl. V2) rewrites it to a Normal no-op; ProposalObservation from pre/post.",
+   "tlc_checks": {
+    "W10.model.rewritten": "<<\"Accepted\", \"Normal\">>, <<\"Accepted\", \"Normal\">>,",
+    "W10.rep.old_prop_on_new_impl": "FALSE, FALSE,",
+    "W10.rep.new_prop_on_new_impl": "TRUE, TRUE,"
+   }
+  },
+  "old_property": {
+   "claimed": false,
+   "tlc": false,
+   "tlc_check": "W10.rep.old_prop_on_new_impl"
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_check": "W10.rep.new_prop_on_new_impl"
+  },
+  "code_observation": {
+   "old": "n/a",
+   "new": "N14: pending=2 applied=0, V2 proposal appended as [3 t1 Normal]",
+   "test_file": "evidence/new_tree/zz_evidence_test.go:TestEvRewriteV2Pending",
+   "command": [
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ],
+   "result": ""
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "go_new.log N14"
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/node.go:136-139",
+    "new/source/raftpb/raft.proto:14-15"
+   ],
+   "basis": ""
+  },
+  "cell": "impl produces it / requirement allowed: relaxation justified",
+  "requirement_evidence": "new/source/node.go:136-139; new/source/raftpb/raft.proto:14-15",
+  "verdict": "accepted",
+  "note": "Representation migration: the old ConfKinds did not know V2 entries.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/Proposed.diff",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)",
+    "evidence/Witness.tla",
+    "evidence/Witness.cfg",
+    "evidence/scripts/make_proposed.py"
+   ],
+   "go": [
+    "evidence/new_tree/zz_evidence_test.go",
+    "evidence/old_tree/zz_evidence_test.go"
+   ],
+   "logs": [
+    "evidence/tlc_witness.log",
+    "evidence/go_new.log",
+    "evidence/go_old.log"
+   ],
+   "commands": [
+    "cd evidence && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 -metadir tlc_meta Witness.tla",
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ]
+  }
+ },
+ {
+  "id": "EV28",
+  "property": "ProposalConfigurationDecisions",
+  "kind": "control",
+  "state": {
+   "witness": "Same but the V2 entry appended verbatim while a change is pending.",
+   "population": "Edited post-state.",
+   "tlc_checks": {
+    "W10.ctl.old_prop_on_verbatim_append": "TRUE, TRUE,",
+    "W10.ctl.new_prop_on_verbatim_append": "FALSE, FALSE,"
+   }
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_check": "W10.ctl.old_prop_on_verbatim_append"
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false,
+   "tlc_check": "W10.ctl.new_prop_on_verbatim_append"
+  },
+  "code_observation": {
+   "old": "",
+   "new": "N14 shows rewrite (not produced)",
+   "test_file": "evidence/new_tree/zz_evidence_test.go:TestEvRewriteV2Pending",
+   "command": [
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ],
+   "result": ""
+  },
+  "impl_produces": {
+   "value": "no",
+   "basis": "go_new.log N14"
+  },
+  "requirement": {
+   "value": "forbidden",
+   "citations": [
+    "new/source/node.go:136-139",
+    "new/source/doc.go:184-188"
+   ],
+   "basis": ""
+  },
+  "cell": "impl does not produce it / requirement forbidden: strengthening justified",
+  "requirement_evidence": "new/source/node.go:136-139; new/source/doc.go:184-188",
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/Proposed.diff",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)",
+    "evidence/Witness.tla",
+    "evidence/Witness.cfg",
+    "evidence/scripts/make_proposed.py"
+   ],
+   "go": [
+    "evidence/new_tree/zz_evidence_test.go",
+    "evidence/old_tree/zz_evidence_test.go"
+   ],
+   "logs": [
+    "evidence/tlc_witness.log",
+    "evidence/go_new.log",
+    "evidence/go_old.log"
+   ],
+   "commands": [
+    "cd evidence && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 -metadir tlc_meta Witness.tla",
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ]
+  }
+ },
+ {
+  "id": "EV29",
+  "property": "LearnerEligibility / QuorumAccounting / candidate WinnerIsVoter",
+  "kind": "semantic",
+  "state": {
+   "witness": "s3 campaigns as a voter (term 2), then applies AddLearner(s3) (demoted), then receives grants from s1,s2 and becomes leader while a learner.",
+   "population": "Proposed!CampaignElection, ApplyConfCore, StepCandidate x2; history wins/campaigns/grants from the resulting record.",
+   "tlc_checks": {
+    "W11.model.learner_leader": "<<\"Leader\", TRUE>>, <<\"Leader\", TRUE>>,",
+    "W11.keep.old_LearnerEligibility": "TRUE, TRUE,",
+    "W11.keep.new_LearnerEligibility": "TRUE, TRUE,",
+    "W11.keep.old_QuorumAccounting": "TRUE, TRUE,",
+    "W11.keep.new_QuorumAccounting": "TRUE, TRUE,",
+    "W11.candidate.WinnerIsVoter": "FALSE, FALSE,",
+    "W11.ctl.LearnerEligibility_learner_campaign": "FALSE, FALSE,"
+   }
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_check": "W11.keep.old_LearnerEligibility"
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_check": "W11.keep.new_LearnerEligibility"
+  },
+  "code_observation": {
+   "old": "not reachable (old code could not demote)",
+   "new": "N13: state=StateLeader isLearner=true voters=[1 2] learners=[3]",
+   "test_file": "evidence/new_tree/zz_evidence_test.go:TestEvDemotedCandidate",
+   "command": [
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ],
+   "result": ""
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "go_new.log N13"
+  },
+  "requirement": {
+   "value": "unknown",
+   "citations": [
+    "new/source/raft.go:1478-1489 comment ('We prevent demotions at the time writing but hypothetically we handle them the same way as removing the leader: stepping down') - stale, demotion is now possible",
+    "new/source/raft_test.go:3918+ TestLearnerCampaign and raft_test.go:382-391 TestLearnerCannotVote cover learners starting/answering votes, not a demoted candidate completing an election"
+   ],
+   "basis": ""
+  },
+  "cell": "requirement unknown: unresolved, do not edit toward the implementation",
+  "requirement_evidence": "new/source/raft.go:1478-1489 comment ('We prevent demotions at the time writing but hypothetically we handle them the same way as removing the leader: stepping down') - stale, demotion is now possible; new/source/raft_test.go:3918+ TestLearnerCampaign and raft_test.go:382-391 TestLearnerCannotVote cover learners starting/answering votes, not a demoted candidate completing an election",
+  "verdict": "unresolved",
+  "note": "LearnerEligibility kept (control: a learner campaign record is rejected). Candidate property WinnerIsVoter evaluates FALSE on this state but is NOT adopted without requirement evidence.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/Proposed.diff",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)",
+    "evidence/Witness.tla",
+    "evidence/Witness.cfg",
+    "evidence/scripts/make_proposed.py"
+   ],
+   "go": [
+    "evidence/new_tree/zz_evidence_test.go",
+    "evidence/old_tree/zz_evidence_test.go"
+   ],
+   "logs": [
+    "evidence/tlc_witness.log",
+    "evidence/go_new.log",
+    "evidence/go_old.log"
+   ],
+   "commands": [
+    "cd evidence && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 -metadir tlc_meta Witness.tla",
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ]
+  }
+ },
+ {
+  "id": "EV30",
+  "property": "OutcomeSoundness",
+  "kind": "semantic",
+  "state": {
+   "witness": "Leader s1 demotes itself (AddLearner(s1)), remains leader, then a Normal proposal arrives.",
+   "population": "Proposed!ApplyConfCore then Proposed!Step(MsgProp); outcome record fields as in ProtocolPropose.",
+   "tlc_checks": {
+    "W16.model.demoted_leader": "<<\"Leader\", {s1}, \"Accepted\">>, <<\"Leader\", {s1}, \"Accepted\">>,",
+    "W16.keep.old_OutcomeSoundness": "TRUE, TRUE,",
+    "W16.keep.new_OutcomeSoundness": "TRUE, TRUE,",
+    "W16.ctl.new_drop_while_member": "FALSE, FALSE,"
+   }
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_check": "W16.keep.old_OutcomeSoundness"
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_check": "W16.keep.new_OutcomeSoundness"
+  },
+  "code_observation": {
+   "old": "not reachable",
+   "new": "N15: state=StateLeader isLearner=true err=nil, entry appended (last 1->2)",
+   "test_file": "evidence/new_tree/zz_evidence_test.go:TestEvDemotedLeaderProposes",
+   "command": [
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ],
+   "result": ""
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "go_new.log N15"
+  },
+  "requirement": {
+   "value": "unknown",
+   "citations": [
+    "new/source/raft.go:1478-1489 comment (demoted leader hypothetically handled like a removed leader / should step down - TODO)"
+   ],
+   "basis": ""
+  },
+  "cell": "requirement unknown: unresolved, do not edit toward the implementation",
+  "requirement_evidence": "new/source/raft.go:1478-1489 comment (demoted leader hypothetically handled like a removed leader / should step down - TODO)",
+  "verdict": "unresolved",
+  "note": "Property kept: its decision function matches; whether a demoted leader may keep accepting proposals is an open obligation.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/Proposed.diff",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)",
+    "evidence/Witness.tla",
+    "evidence/Witness.cfg",
+    "evidence/scripts/make_proposed.py"
+   ],
+   "go": [
+    "evidence/new_tree/zz_evidence_test.go",
+    "evidence/old_tree/zz_evidence_test.go"
+   ],
+   "logs": [
+    "evidence/tlc_witness.log",
+    "evidence/go_new.log",
+    "evidence/go_old.log"
+   ],
+   "commands": [
+    "cd evidence && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 -metadir tlc_meta Witness.tla",
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ]
+  }
+ },
+ {
+  "id": "EV31",
+  "property": "VoteDecisionEligibility (VoteContract)",
+  "kind": "semantic",
+  "state": {
+   "witness": "Demoted node s3 (learner) receives MsgVote term 2 from s1.",
+   "population": "Proposed!ApplyConfCore then Proposed!Step; VoteObservation from pre/post.",
+   "tlc_checks": {
+    "W17.model.silent": "<<2, 0, TRUE>>, <<2, 0, TRUE>>,",
+    "W17.keep.old_VoteDecisionEligibility": "TRUE, TRUE,",
+    "W17.keep.new_VoteDecisionEligibility": "TRUE, TRUE,",
+    "W17.ctl.new_learner_grant": "FALSE, FALSE,"
+   }
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_check": "W17.keep.old_VoteDecisionEligibility"
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_check": "W17.keep.new_VoteDecisionEligibility"
+  },
+  "code_observation": {
+   "old": "not reachable",
+   "new": "N16: isLearner=true term=2 vote=0 msgs=0",
+   "test_file": "evidence/new_tree/zz_evidence_test.go:TestEvDemotedVoter",
+   "command": [
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ],
+   "result": ""
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "go_new.log N16"
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/raft_test.go:382-391 TestLearnerCannotVote (learner must send no messages for MsgVote)"
+   ],
+   "basis": ""
+  },
+  "cell": "impl produces it / requirement allowed: relaxation justified",
+  "requirement_evidence": "new/source/raft_test.go:382-391 TestLearnerCannotVote (learner must send no messages for MsgVote)",
+  "verdict": "accepted",
+  "note": "Keep; control (learner grants) is rejected.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/Proposed.diff",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)",
+    "evidence/Witness.tla",
+    "evidence/Witness.cfg",
+    "evidence/scripts/make_proposed.py"
+   ],
+   "go": [
+    "evidence/new_tree/zz_evidence_test.go",
+    "evidence/old_tree/zz_evidence_test.go"
+   ],
+   "logs": [
+    "evidence/tlc_witness.log",
+    "evidence/go_new.log",
+    "evidence/go_old.log"
+   ],
+   "commands": [
+    "cd evidence && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 -metadir tlc_meta Witness.tla",
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ]
+  }
+ },
+ {
+  "id": "EV32",
+  "property": "TransferDecisionEligibility (TransferContract)",
+  "kind": "semantic",
+  "state": {
+   "witness": "Leader s1 after demoting s3 receives MsgTransferLeader targeting s3.",
+   "population": "Proposed!StepLeaderTransfer on the EV01 post-state.",
+   "tlc_checks": {
+    "W18.model.ignored": "0, 0,",
+    "W18.keep.old_TransferDecisionEligibility": "TRUE, TRUE,",
+    "W18.keep.new_TransferDecisionEligibility": "TRUE, TRUE,",
+    "W18.ctl.new_accept_learner": "FALSE, FALSE,"
+   }
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_check": "W18.keep.old_TransferDecisionEligibility"
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_check": "W18.keep.new_TransferDecisionEligibility"
+  },
+  "code_observation": {
+   "old": "not reachable",
+   "new": "N17: leadTransferee=0 msgs=0",
+   "test_file": "evidence/new_tree/zz_evidence_test.go:TestEvTransferToDemoted",
+   "command": [
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ],
+   "result": ""
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "go_new.log N17"
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/raft_test.go:3939 ('TransferLeader already checks that the recipient is not a learner')"
+   ],
+   "basis": ""
+  },
+  "cell": "impl produces it / requirement allowed: relaxation justified",
+  "requirement_evidence": "new/source/raft_test.go:3939 ('TransferLeader already checks that the recipient is not a learner')",
+  "verdict": "accepted",
+  "note": "Keep; control (transfer accepted to a learner) is rejected.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/Proposed.diff",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)",
+    "evidence/Witness.tla",
+    "evidence/Witness.cfg",
+    "evidence/scripts/make_proposed.py"
+   ],
+   "go": [
+    "evidence/new_tree/zz_evidence_test.go",
+    "evidence/old_tree/zz_evidence_test.go"
+   ],
+   "logs": [
+    "evidence/tlc_witness.log",
+    "evidence/go_new.log",
+    "evidence/go_old.log"
+   ],
+   "commands": [
+    "cd evidence && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 -metadir tlc_meta Witness.tla",
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ]
+  }
+ },
+ {
+  "id": "EV33",
+  "property": "QuotaIntegrity",
+  "kind": "semantic",
+  "state": {
+   "witness": "Leader s1 after Ready but before Advance: committed-but-unapplied entry of weight 3 still counted in quota 3; then after Advance quota 0.",
+   "population": "Pre-state constructed; post-state by Proposed!AdvanceCore (quota released at Advance).",
+   "tlc_checks": {
+    "W12.model.quota_after_advance": "0, 0,",
+    "W12.keep.old_prop_after_ready": "TRUE, TRUE,",
+    "W12.keep.new_prop_after_ready": "TRUE, TRUE,",
+    "W12.keep.new_prop_after_advance": "TRUE, TRUE,",
+    "W12.ctl.over_quota": "FALSE, FALSE,"
+   }
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_check": "W12.keep.old_prop_after_ready"
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_check": "W12.keep.new_prop_after_ready"
+  },
+  "code_observation": {
+   "old": "O11: quota afterPropose=7 afterReady=0 afterAdvance=0",
+   "new": "N11: quota afterPropose=7 afterReady=7 afterAdvance=0",
+   "test_file": "evidence/new_tree/zz_evidence_test.go:TestEvQuotaTiming; evidence/old_tree/zz_evidence_test.go:TestEvQuotaTiming",
+   "command": [
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ],
+   "result": ""
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "go_new.log N11"
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/raft.go:1570-1573 comment ('uncommittedSize may underestimate ... but will never overestimate it')",
+    "new/source/rawnode.go:120-129 (Ready is read-only)"
+   ],
+   "basis": ""
+  },
+  "cell": "impl produces it / requirement allowed: relaxation justified",
+  "requirement_evidence": "new/source/raft.go:1570-1573 comment ('uncommittedSize may underestimate ... but will never overestimate it'); new/source/rawnode.go:120-129 (Ready is read-only)",
+  "verdict": "accepted",
+  "note": "Keep; over-quota control rejected.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/Proposed.diff",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)",
+    "evidence/Witness.tla",
+    "evidence/Witness.cfg",
+    "evidence/scripts/make_proposed.py"
+   ],
+   "go": [
+    "evidence/new_tree/zz_evidence_test.go",
+    "evidence/old_tree/zz_evidence_test.go"
+   ],
+   "logs": [
+    "evidence/tlc_witness.log",
+    "evidence/go_new.log",
+    "evidence/go_old.log"
+   ],
+   "commands": [
+    "cd evidence && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 -metadir tlc_meta Witness.tla",
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ]
+  }
+ },
+ {
+  "id": "EV34",
+  "property": "ReadyAccounting",
+  "kind": "semantic",
+  "state": {
+   "witness": "(a) RawNode ReadIndex -> Ready(reads) -> Advance: lostReads={}; (b) ReadIndex between Ready and Advance: the second read is dropped.",
+   "population": "lostReads computed with the ProtocolAdvance formula SeqSet(r.readStates) \\ SeqSet(application.reads).",
+   "tlc_checks": {
+    "W13.keep.legal_sequence": "TRUE, TRUE,",
+    "W13.keep.illegal_step_between": "FALSE, FALSE,",
+    "W13.keep.old_illegal_step_between": "FALSE, FALSE,"
+   }
+  },
+  "old_property": {
+   "claimed": false,
+   "tlc": false,
+   "tlc_check": "W13.keep.old_illegal_step_between"
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false,
+   "tlc_check": "W13.keep.illegal_step_between"
+  },
+  "code_observation": {
+   "old": "",
+   "new": "N12: ready.reads=1; after the illegal ReadIndex and Advance raft.readStates=0 (read 'b' never delivered)",
+   "test_file": "evidence/new_tree/zz_evidence_test.go:TestEvReadStatesAcrossAdvance",
+   "command": [
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ],
+   "result": ""
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "go_new.log N12 (only under the illegal caller interleaving)"
+  },
+  "requirement": {
+   "value": "forbidden",
+   "citations": [
+    "new/source/rawnode.go:122-129 ('it is illegal to call Ready, followed by Step, followed by Advance')"
+   ],
+   "basis": "the interleaving itself is forbidden to callers"
+  },
+  "cell": "impl produces it / requirement forbidden: BUG CANDIDATE - keep the stronger property, record the defect",
+  "requirement_evidence": "new/source/rawnode.go:122-129 ('it is illegal to call Ready, followed by Step, followed by Advance')",
+  "verdict": "accepted",
+  "note": "The defect is in the MODEL environment (it allowed the forbidden interleaving), not the library: Proposed adds RawIdle(n) guards instead of weakening the property. The legal sequence is accepted (W13.keep.legal_sequence = TRUE).",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/Proposed.diff",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)",
+    "evidence/Witness.tla",
+    "evidence/Witness.cfg",
+    "evidence/scripts/make_proposed.py"
+   ],
+   "go": [
+    "evidence/new_tree/zz_evidence_test.go",
+    "evidence/old_tree/zz_evidence_test.go"
+   ],
+   "logs": [
+    "evidence/tlc_witness.log",
+    "evidence/go_new.log",
+    "evidence/go_old.log"
+   ],
+   "commands": [
+    "cd evidence && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 -metadir tlc_meta Witness.tla",
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ]
+  }
+ },
+ {
+  "id": "EV35",
+  "property": "ConfigurationOrigin (restore of a joint snapshot)",
+  "kind": "strengthening",
+  "state": {
+   "witness": "Follower s2 restores snapshot @6 whose ConfState is joint (incoming {s1,s2,s4}, outgoing {s1,s2,s3}, autoLeave).",
+   "population": "Proposed!Restore models raft.go:1418-1423 (DropJoint); snapshot config = Proposed!ConfigOf(hist).",
+   "tlc_checks": {
+    "W14.model.restored_config": "<<{s1, s2, s4}, {}, {s1, s2, s3}>>, <<{s1, s2, s4}, {}, {s1, s2, s3}>>,",
+    "W14.bug.new_ConfigurationOrigin_on_impl": "FALSE, FALSE,",
+    "W14.ctl.new_ConfigurationOrigin_on_required": "TRUE, TRUE,",
+    "W14.ctl.new_SnapshotBacking": "TRUE, TRUE,",
+    "W14.old.ConfigurationOrigin_on_impl": "FALSE, FALSE,",
+    "W14.old.ConfigurationOrigin_on_required": "FALSE, FALSE,"
+   }
+  },
+  "old_property": {
+   "claimed": false,
+   "tlc": false,
+   "tlc_check": "W14.old.ConfigurationOrigin_on_impl"
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false,
+   "tlc_check": "W14.bug.new_ConfigurationOrigin_on_impl"
+  },
+  "code_observation": {
+   "old": "not_representable",
+   "new": "N8: restore ok=true, restored voters=[1 2 4] outgoing=[] autoLeave=false; newRaft(InitialState) identical",
+   "test_file": "evidence/new_tree/zz_evidence_test.go:TestEvRestoreJoint",
+   "command": [
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ],
+   "result": ""
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "go_new.log N8"
+  },
+  "requirement": {
+   "value": "forbidden",
+   "citations": [
+    "new/source/raftpb/raft.proto:99-114 (ConfState carries nodes_joint, learners_next, auto_leave as part of the configuration)",
+    "new/source/node.go:173-174 (ConfState must be recorded in snapshots)",
+    "new/source/raft.go:1416 comment ('Reset the configuration and add the (potentially updated) peers in anew')"
+   ],
+   "basis": ""
+  },
+  "cell": "impl produces it / requirement forbidden: BUG CANDIDATE - keep the stronger property, record the defect",
+  "requirement_evidence": "new/source/raftpb/raft.proto:99-114 (ConfState carries nodes_joint, learners_next, auto_leave as part of the configuration); new/source/node.go:173-174 (ConfState must be recorded in snapshots); new/source/raft.go:1416 comment ('Reset the configuration and add the (potentially updated) peers in anew')",
+  "verdict": "accepted",
+  "note": "Kept property detects the defect once the representation is migrated; old property cannot separate (rejects both the buggy and the required restore: W14.old.*).",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/Proposed.diff",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)",
+    "evidence/Witness.tla",
+    "evidence/Witness.cfg",
+    "evidence/scripts/make_proposed.py"
+   ],
+   "go": [
+    "evidence/new_tree/zz_evidence_test.go",
+    "evidence/old_tree/zz_evidence_test.go"
+   ],
+   "logs": [
+    "evidence/tlc_witness.log",
+    "evidence/go_new.log",
+    "evidence/go_old.log"
+   ],
+   "commands": [
+    "cd evidence && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 -metadir tlc_meta Witness.tla",
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ]
+  }
+ },
+ {
+  "id": "EV36",
+  "property": "none (Status observer not modeled)",
+  "kind": "observer",
+  "state": {
+   "witness": "1-node leader enters joint config (1 2)&&(1) with autoLeave; getStatus(r).Config",
+   "population": "Go only",
+   "tlc_checks": {}
+  },
+  "old_property": {
+   "claimed": "not_representable",
+   "tlc": "not_representable",
+   "tlc_check": "none"
+  },
+  "proposed_property": {
+   "claimed": "not_representable",
+   "tlc": "not_representable",
+   "tlc_check": "none"
+  },
+  "code_observation": {
+   "old": "n/a",
+   "new": "N9: tracker.AutoLeave=true status.Config.AutoLeave=false status.Config=voters=(1 2)&&(1)",
+   "test_file": "evidence/new_tree/zz_evidence_test.go:TestEvStatusAutoLeave",
+   "command": [
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ],
+   "result": "Clone drops AutoLeave"
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "go_new.log N9"
+  },
+  "requirement": {
+   "value": "forbidden",
+   "citations": [
+    "new/source/tracker/tracker.go:94 ('Clone returns a copy of the Config')",
+    "new/source/status.go:24 (Status = this peer's view of the system)"
+   ],
+   "basis": "a copy must preserve AutoLeave"
+  },
+  "cell": "impl produces it / requirement forbidden: BUG CANDIDATE - keep the stronger property, record the defect",
+  "requirement_evidence": "new/source/tracker/tracker.go:94; new/source/status.go:24",
+  "verdict": "unresolved",
+  "note": "Defect recorded; no spec property can observe it (spec has no Status observer).",
+  "files": {
+   "tla": [],
+   "go": [
+    "evidence/new_tree/zz_evidence_test.go"
+   ],
+   "logs": [
+    "evidence/go_new.log"
+   ],
+   "commands": [
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/"
+   ]
+  }
+ },
+ {
+  "id": "EV37",
+  "property": "ElectionSafety, LogMatching, LeaderCompleteness, LogStructure (unaffected safety controls)",
+  "kind": "control",
+  "state": {
+   "witness": "Two wins in the same term by different nodes; two wins in different terms; demotion state logs; a win whose log lacks an obligation.",
+   "population": "Same records evaluated in both modules (config field added only for the proposed observer).",
+   "tlc_checks": {
+    "W15.ElectionSafety.dup_term.old_new": "<<FALSE, FALSE>>, <<FALSE, FALSE>>,",
+    "W15.ElectionSafety.distinct.old_new": "<<TRUE, TRUE>>, <<TRUE, TRUE>>,",
+    "W15.LogMatching.old_new": "<<TRUE, TRUE>>, <<TRUE, TRUE>>,",
+    "W15.LeaderCompleteness.old_new": "<<TRUE, TRUE>>, <<TRUE, TRUE>>,",
+    "W15.LeaderCompleteness.violation.old_new": "<<FALSE, FALSE>>, <<FALSE, FALSE>>,",
+    "W15.LogStructure.new_on_demotion_state": "TRUE, TRUE,"
+   }
+  },
+  "old_property": {
+   "claimed": "<<dupTerm,distinct,LogMatching,LeaderCompleteness,LCviolation>> = <<F,T,T,T,F>>",
+   "tlc": "old values printed as first tuple component of each W15 check: <<F,T,T,T,F>>",
+   "tlc_check": "not separately evaluated: old values printed as first tuple component of each W15 check: <<F,T,T,T,F>>"
+  },
+  "proposed_property": {
+   "claimed": "<<F,T,T,T,F>> and LogStructure T",
+   "tlc": "new values printed as second tuple component of each W15 check: <<F,T,T,T,F>>; LogStructure TRUE",
+   "tlc_check": "not separately evaluated: new values printed as second tuple component of each W15 check: <<F,T,T,T,F>>; LogStructure TRUE"
+  },
+  "code_observation": {
+   "old": "",
+   "new": "",
+   "test_file": "",
+   "command": [
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ],
+   "result": "not applicable (pure properties over ghost records)"
+  },
+  "impl_produces": {
+   "value": "unknown",
+   "basis": "constructed records"
+  },
+  "requirement": {
+   "value": "forbidden",
+   "citations": [
+    "Raft election safety / leader completeness (design.md, doc.go:172-176)"
+   ],
+   "basis": "violating records must be rejected; legitimate ones accepted"
+  },
+  "cell": "control: old and new verdicts identical",
+  "requirement_evidence": "Raft election safety / leader completeness (design.md, doc.go:172-176)",
+  "verdict": "accepted",
+  "note": "Edits do not change unaffected properties.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/Proposed.diff",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)",
+    "evidence/Witness.tla",
+    "evidence/Witness.cfg",
+    "evidence/scripts/make_proposed.py"
+   ],
+   "go": [
+    "evidence/new_tree/zz_evidence_test.go",
+    "evidence/old_tree/zz_evidence_test.go"
+   ],
+   "logs": [
+    "evidence/tlc_witness.log",
+    "evidence/go_new.log",
+    "evidence/go_old.log"
+   ],
+   "commands": [
+    "cd evidence && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 -metadir tlc_meta Witness.tla",
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ]
+  }
+ },
+ {
+  "id": "EV38",
+  "property": "TypeOK (structural joint clauses)",
+  "kind": "strengthening",
+  "state": {
+   "witness": "(a) demotion state; (b) required joint restore; (c) learnersNext not in outgoing; (d) autoLeave on a non-joint config.",
+   "population": "Proposed!TypeOK over a full variable valuation (instance NT).",
+   "tlc_checks": {
+    "W21.new_TypeOK_demotion": "TRUE, TRUE,",
+    "W21.new_TypeOK_joint_required_restore": "TRUE, TRUE,",
+    "W21.ctl.new_TypeOK_learnersNext_not_outgoing": "FALSE, FALSE,",
+    "W21.ctl.new_TypeOK_autoLeave_not_joint": "FALSE, FALSE,",
+    "W21.old_TypeOK_demotion_projected": "TRUE, TRUE,"
+   }
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_check": "W21.old_TypeOK_demotion_projected"
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_check": "W21.new_TypeOK_demotion"
+  },
+  "code_observation": {
+   "old": "",
+   "new": "confchange.go:282-338 checkInvariants enforces these on every Changer result (impl never produces (c)/(d))",
+   "test_file": "new/source/confchange",
+   "command": [
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ],
+   "result": ""
+  },
+  "impl_produces": {
+   "value": "no",
+   "basis": "checkInvariants rejects (c)/(d) (code path citation)"
+  },
+  "requirement": {
+   "value": "forbidden",
+   "citations": [
+    "new/source/confchange/confchange.go:300-301 comment ('Any staged learner was staged because it could not be directly added due to a conflicting voter in the outgoing config')",
+    "new/source/confchange/confchange.go:311 comment ('Conversely Learners and Voters doesn't intersect at all')",
+    "new/source/tracker/tracker.go:28-32 (AutoLeave only meaningful when joint)"
+   ],
+   "basis": ""
+  },
+  "cell": "impl does not produce it / requirement forbidden: strengthening justified",
+  "requirement_evidence": "new/source/confchange/confchange.go:300-301 comment ('Any staged learner was staged because it could not be directly added due to a conflicting voter in the outgoing config'); new/source/confchange/confchange.go:311 comment ('Conversely Learners and Voters doesn't intersect at all'); new/source/tracker/tracker.go:28-32 (AutoLeave only meaningful when joint)",
+  "verdict": "accepted",
+  "note": "Controls (c),(d) FALSE; legitimate (a),(b) TRUE.",
+  "files": {
+   "tla": [
+    "evidence/Proposed.tla",
+    "evidence/Proposed.diff",
+    "evidence/base.tla (unmodified copy of old/spec/base.tla)",
+    "evidence/Witness.tla",
+    "evidence/Witness.cfg",
+    "evidence/scripts/make_proposed.py"
+   ],
+   "go": [
+    "evidence/new_tree/zz_evidence_test.go",
+    "evidence/old_tree/zz_evidence_test.go"
+   ],
+   "logs": [
+    "evidence/tlc_witness.log",
+    "evidence/go_new.log",
+    "evidence/go_old.log"
+   ],
+   "commands": [
+    "cd evidence && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 -metadir tlc_meta Witness.tla",
+    "cd evidence/new_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ./ ./quorum/",
+    "cd evidence/old_tree && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -v -run 'TestEv' ."
+   ]
+  }
+ },
+ {
+  "id": "EV39",
+  "property": "whole migrated suite (smoke)",
+  "kind": "control",
+  "state": {
+   "witness": "random simulation, 8000 traces each, depth<=45, SimConstraint (term<=4, log<=9, wire<=6, incarnation<=1), RawNodes={s1,s2}, PreVote {s1,s2}, CheckQuorum {s3}",
+   "population": "TLC -simulate num=4000 -workers 2 -seed 7 on MC_base.tla and MC_Proposed.tla",
+   "tlc_checks": {}
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_check": "evidence/sim_base.log: 378919 states, no invariant violated"
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true,
+   "tlc_check": "evidence/sim_Proposed.log: 381310 states, no invariant violated"
+  },
+  "code_observation": {
+   "old": "n/a",
+   "new": "n/a",
+   "test_file": "",
+   "command": [],
+   "result": "not applicable"
+  },
+  "impl_produces": {
+   "value": "unknown",
+   "basis": "random traces; coverage of conf-change application not measured"
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [],
+   "basis": "smoke test for false positives / evaluation errors only"
+  },
+  "cell": "control (no separation intended)",
+  "requirement_evidence": "",
+  "verdict": "accepted",
+  "note": "Shows the migrated actions evaluate without errors and the migrated invariants raise no spurious violation on sampled V1 behaviour. Not evidence of completeness; joint states are not generated by the workload.",
+  "files": {
+   "tla": [
+    "evidence/MC_base.tla",
+    "evidence/MC_base.cfg",
+    "evidence/MC_Proposed.tla",
+    "evidence/MC_Proposed.cfg",
+    "evidence/Proposed.tla"
+   ],
+   "go": [],
+   "logs": [
+    "evidence/sim_base.log",
+    "evidence/sim_Proposed.log"
+   ],
+   "commands": [
+    "cd evidence && java -cp ... tlc2.TLC -simulate num=4000 -depth 45 -seed 7 -workers 2 -config MC_<M>.cfg MC_<M>.tla"
+   ]
+  }
+ }
+]

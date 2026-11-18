@@ -1,0 +1,14 @@
+{
+  "scorer": "coordinator (Claude), not blind to arm",
+  "gold": "gold.json V01",
+  "obligations": {
+    "advance_append": {"score": "detected", "note": "AckPreservation modified: Covers(after, before), at most one appended entry, and that entry must be a raft-generated auto-leave by a leader in an autoLeave joint config with cursor >= pendingBefore. The separating state is exactly the legitimate auto-leave append."},
+    "joint_quorum": {"score": "detected", "note": "QuorumAccounting uses JointWon over both halves; the disagreement witness shows the old union-majority rule both flags a valid joint win and passes an invalid one."},
+    "campaign_v2": {"score": "detected", "note": "CampaignContract pending scan over ConfKinds2 (V2 included). The disagreement witness is bug A: the source campaigns with a committed, unapplied ConfV2, and the proposed contract flags it."},
+    "unchanged_safety": {"score": "correct_retention", "note": "ElectionSafety, LogMatching, LeaderCompleteness, CommittedHistory, AppliedAgreement and VoteRecovery kept, each with a source and reference citation."}
+  },
+  "bug_A": "named (suspected defect D2: numOfPendingConf counts only EntryConfChange) and used as the disagreement witness for CampaignDecisionEligibility",
+  "extra_suspected_defects": ["D1 auto-leave does not bump pendingConfIndex (duplicate leave, panic)", "D3 restore/newRaft drop joint ConfState fields", "Config.Clone omits AutoLeave", "Changer.Simple silently wipes config on a failed invariant check"],
+  "format_notes": ["96 citations, 1 out of range (bootstrap.go:67-84; the file has 80 lines)"],
+  "summary": "3 detected + 1 correct retention; bug A named"
+}

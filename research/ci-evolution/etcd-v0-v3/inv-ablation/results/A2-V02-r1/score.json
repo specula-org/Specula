@@ -1,0 +1,40 @@
+{
+  "scorer": "coordinator (Claude), not blind to arm",
+  "gold": "gold.json V02",
+  "obligations": {
+    "learner_vote_campaign": {
+      "score": "detected",
+      "note": "VoteContract grant no longer excludes learners; LearnerEligibility restricted to campaigns (~x.learner); QuorumAccounting kept. A mutant learner that always rejects shows TestLearnerCanVote is too weak (E2e)."
+    },
+    "ready_ownership": {
+      "score": "detected",
+      "note": "ReadyOwnership modified: Ready now takes the outbox and read states."
+    },
+    "post_ready_output": {
+      "score": "detected",
+      "note": "AdvanceOutputRetention added: output and reads generated after Ready survive Advance."
+    },
+    "joint_recovery": {
+      "score": "correct_retention",
+      "note": "JointSnapshotRecovery kept; old-code violations (E7, E8) recorded as defects, not used to weaken it."
+    }
+  },
+  "bug_A": "found by the agent's own guarded TLC simulation and confirmed by executing real code (E12, Go TestEvidenceHupWithPendingConf; legacy-entry control stays Follower). Caught by the unchanged CampaignDecisionEligibility. The agent also noted that the old Update_full.cfg did not enable that property (the F3 gap). Coordinator re-ran the test on a clean V02 tree: StateCandidate with MsgVote while a V2 entry is committed and unapplied.",
+  "extra_findings": [
+    "restore() ignores a joint snapshot for an outgoing-only voter (E10, old and new code)",
+    "old base.tla AdvanceCore dropped read states (model defect, E6b)",
+    "TestLearnerCanVote too weak (executed mutant)"
+  ],
+  "format_notes": [
+    "decision.json evidence is prose; 0 packet path:line citations parsed",
+    "decision.initial.json written after 20 read-only Bash calls (cat/sed/grep/ls/diff); no TLC, go build or go test ran before the freeze, so no evidence was executed before the initial judgment. The run.py audit flag counts any Bash call."
+  ],
+  "evidence_stats": {
+    "records": 32,
+    "tlc_truth_values": 37,
+    "claim_mismatches": 0,
+    "code_observations": 21
+  },
+  "cost_note": "$13.08 and 83 minutes, the longest run so far; most of the extra time went to guarded TLC simulation",
+  "summary": "3 detected + 1 correct retention; bug A found by simulation and confirmed in real code (re-verified)"
+}

@@ -1,0 +1,176 @@
+{
+  "phase": "final (after executed evidence)",
+  "overall_decision": "modify-and-add",
+  "overall_reason": "Executed evidence (50 TLC evaluations of the real base/Proposed definitions on states mapped from Go runs of both trees) confirms the initial plan with one revision. AutoLeaveAdvance must be modified: the old property required the duplicate leave the update fixes (AL-dup-old), accepted the now-forbidden DropQuota retry (AL-quota-old) and the missing pendingConf bump (AL-nobump-old), and accepted a duplicate the new code still produces under early Advance (AL-early-dup-new). ProposalConfigurationDecisions and OutcomeSoundness are modified for the joint admission rule, the observer migration and the s>0 quota relaxation; the admission contract was revised so it no longer forbids an allowed admission (PCinit-nonjoint-empty-explicit-old). LeaderTransferTarget is added for demoted transferees. All other properties are kept; keep checks on new-code states pass and unaffected controls keep identical verdicts. Four bug candidates in the new code are recorded and NOT hidden: BC1, BC2a, BC2b, BC3.",
+  "entries": [
+    {
+      "property": "AutoLeaveAdvance (and alias Update!UpdateAutoLeaveAdvance)",
+      "decision": "modify",
+      "change_type": "semantic (strengthening + repair of pre-existing property defect) plus observer migration",
+      "category": "semantic requirement change + repair of pre-existing property defect + observer migration",
+      "evidence": [
+        "new/source/testdata/confchange_v2_add_double_auto.txt:238-240",
+        "new/source/rawnode_test.go:319-331",
+        "new/source/raft_test.go:251-258",
+        "new/source/raft.go:577,1609,1620-1623 (intent comments)",
+        "new/source/testdata/confchange_v2_add_double_implicit.txt:4-5",
+        "new/source/raftpb/raft.proto:85-86,111-112,164-168",
+        "new/source/README.md:122; new/source/node.go:159-168",
+        "old/spec/base.tla:1101-1115,1129-1132,1355-1362"
+      ],
+      "old_expression": "\\A a\\in history.autoLeaveChecks: a.eligible => (one V2 leave appended) \\/ (a.decision=\"DropQuota\" /\\ a.pending=Len(a.afterHist))",
+      "proposed_expression": "Observer (Proposed!AutoLeaveCheck) keeps the old fields verbatim and adds autoLeave, leader, cursor, pendingBefore, oldApplied, leaveInFlight == \\E k\\in Len(r.cfgHist)+1..Last(r): IsLeave(Hist(r)[k]). AutoLeaveDue(a) == a.autoLeave /\\ a.leader /\\ a.cursor>0 /\\ a.cursor>=a.pendingBefore /\\ ~a.leaveInFlight; AutoLeaveAppended(a) == Len(a.afterHist)=a.beforeLast+1 /\\ IsLeave(last) /\\ last.id=0; AutoLeaveAdvance == \\A a: (AutoLeaveDue(a) => AutoLeaveAppended(a) /\\ a.pending=Len(a.afterHist)) /\\ (Len(a.afterHist)>a.beforeLast => AutoLeaveDue(a)). File: evidence/tla/Proposed.tla.",
+      "disagreement_witnesses": ["AL-dup-old (old TRUE / proposed FALSE)", "AL-nobump-old (TRUE/FALSE)", "AL-quota-old (TRUE/FALSE)", "AL-early-dup-new (TRUE/FALSE, bug candidate BC2b)"],
+      "evidence_ids": ["AL-dup-old", "AL-dup-new", "AL-normal-new", "AL-nobump-old", "AL-quota-old", "AL-quota-new", "AL-newleader-new", "AL-early-miss-a-new", "AL-early-miss-b-new", "AL-early-dup-new", "K-ack-early-dup-new", "NUF-BC2b-dup-leave-apply", "NUF-BC1-stuck-joint"],
+      "changed_from_initial": false
+    },
+    {
+      "property": "ProposalConfigurationDecisions (ProposalContract)",
+      "decision": "modify",
+      "change_type": "semantic (joint admission rewrites; zero-weight quota relaxation) plus observer migration (ProposalObservation gains outgoing)",
+      "category": "semantic requirement change + observer migration",
+      "evidence": [
+        "new/source/testdata/confchange_v2_add_single_explicit.txt:100-106,108-111,165-168",
+        "new/source/raftpb/confchange.go:71-73,100-102",
+        "new/source/confchange/testdata/joint_safety.txt:20-22,24-27,30-32,55,60,65",
+        "new/source/node.go:136-139",
+        "new/source/raft_test.go:236-258",
+        "new/source/raft.go:1620-1623 (comment)"
+      ],
+      "old_expression": "rewritten = conf entries with pending>applied or an earlier conf in the batch; DropQuota iff quota>0 /\\ quota+weight>MaxUncommitted",
+      "proposed_expression": "OptionalNoOpEnter(o,k) == o.outgoing={} /\\ kind=V2 /\\ changes=<<>> /\\ ~IsLeave(e). AdmitConf(o,S,k) == kind\\in ConfKinds /\\ o.pending<=o.applied /\\ ~\\E j<k: AdmitConf(o,S,j) /\\ IF o.outgoing#{} THEN IsLeave(e) ELSE (changes#<<>> \\/ (OptionalNoOpEnter(o,k) /\\ k\\in S)). ProposalContract(o) == \\E S\\in SUBSET {k: OptionalNoOpEnter(o,k)}: old body with effective = ProposalEffective(o,S) and DropQuota iff quota>0 /\\ weight>0 /\\ quota+weight>MaxUncommitted.",
+      "disagreement_witnesses": ["PC1/PC2 joint non-leave (new rewrite: old FALSE/proposed TRUE; old admission: TRUE/FALSE)", "PC5 non-joint leave (same pattern)", "PC8 zero-weight at quota>max (same pattern)", "PC4 joint empty JointExplicit admitted (old TRUE / proposed FALSE, bug candidate BC3)"],
+      "evidence_ids": ["PC1-joint-addvoter-new", "PC1-joint-addvoter-old", "PC2-joint-v1-new", "PC2-joint-v1-old", "PC3-joint-leave-new", "PC4-joint-empty-explicit-new", "PC5-nonjoint-leave-new", "PC5-nonjoint-leave-old", "PC6-nonjoint-empty-explicit-new", "PC6-nonjoint-empty-explicit-old", "PC7-nonjoint-addvoter-new", "PC8-quota0-new", "PC8-quota0-old", "PC9-quota1-new", "PC9-quota1-bad-control", "PCinit-nonjoint-empty-explicit-old", "PCinit-nonjoint-empty-explicit-new", "PCinit-joint-empty-explicit-new", "NUF-BC3-empty-explicit-apply"],
+      "changed_from_initial": true,
+      "change_reason": "The initial deterministic contract (non-joint arm: admit iff changes#<<>>) rejected the old code's admission of a valid no-op enter-joint (empty changes, JointExplicit) in a non-joint config (PCinit-nonjoint-empty-explicit-old: initial FALSE). That behaviour is allowed (joint_safety.txt:24-27 shows it is a valid transition; node.go:136-139 also permits dropping), and the new code does not produce it, so the strengthening was not justified. The final contract makes that single case an optional drop; nearby forbidden controls (PC4, PC5-nonjoint-leave-old) are still rejected."
+    },
+    {
+      "property": "OutcomeSoundness (ExpectedDecision)",
+      "decision": "modify",
+      "change_type": "semantic relaxation (zero-weight proposals are never DropQuota) + observer migration (weight via Proposed!RewriteConf)",
+      "category": "semantic requirement change + observer migration",
+      "evidence": ["new/source/raft.go:1616-1623", "new/source/raft_test.go:251-258", "old/spec/base.tla:906-910,1393-1399"],
+      "old_expression": "DropQuota iff quota>0 /\\ quota+weight>MaxUncommitted; weight from base!RewriteConf",
+      "proposed_expression": "DropQuota iff quota>0 /\\ weight>0 /\\ quota+weight>MaxUncommitted; weight computed with the migrated admission rewrite (Proposed!RewriteConf)",
+      "disagreement_witnesses": ["OS1-quota0-new (old FALSE / proposed TRUE)", "OS2-observer-oldweight-vs-new (old observer FALSE / migrated TRUE)"],
+      "evidence_ids": ["OS1-quota0-new", "OS2-observer-oldweight-vs-new", "OS2b-old-property-on-migrated-observer", "OS3-quota1-new", "OS3-quota1-bad-control"],
+      "changed_from_initial": false
+    },
+    {
+      "property": "LeaderTransferTarget (new)",
+      "decision": "add",
+      "change_type": "semantic strengthening (new requirement)",
+      "category": "semantic requirement change",
+      "evidence": ["new/source/raft_test.go:3598-3646", "new/source/raft.go:1568 (comment)", "new/source/raftpb/raft.proto:107-110"],
+      "old_expression": "none; base!ApplyConfCore aborted only when the transferee left Members",
+      "proposed_expression": "\\A n\\in Server: raft[n].alive /\\ raft[n].role=\"Leader\" /\\ Promotable(raft[n]) /\\ raft[n].transfer#0 => raft[n].transfer\\in VoterIDs(raft[n].config)",
+      "disagreement_witnesses": ["TT-demote-oldcode (old suite all TRUE / proposed FALSE)"],
+      "evidence_ids": ["TT-demote-oldcode", "TT-demote-newcode", "TT-joint-control", "TT-remove-control"],
+      "changed_from_initial": false,
+      "note": "Recommended to add to Update_focused.cfg together with NoUnexpectedFatal (not run)."
+    },
+    {
+      "property": "(model, not a property) AutoLeaveWeight, AppendQuotaExceeded, RewriteConf, ChangeProgress, ProbeAppend/ApplyConfCore, Restore, AdvanceCore, ProtocolAdvance observer",
+      "decision": "modify (model representation)",
+      "change_type": "representation / implementation-model migration",
+      "category": "representational/observer migration",
+      "evidence": ["update.patch:46-65,616-660,683-724,752-790", "evidence/logs/Proposed.diff"],
+      "proposed_expression": "See evidence/tla/Proposed.tla PROPOSED comments: weight-0 auto-leave; s>0 quota; ImplRefuseConf with len(Changes)==0 (mirrors code, including BC3); Next=LastIndex; self Match=s.index-1 after restore; probe on config change without forced empty appends; transfer abort when not in VoterIDs; edge-triggered auto-leave with pendingConf bump and Fatal on refusal.",
+      "disagreement_witnesses": ["DIAG lines in evidence/logs/tlc_witness.log match the Go observations (indices +2)"],
+      "evidence_ids": ["AL-normal-new", "AL-quota-new", "K-replication-evidence", "K-typeok", "PC1-joint-addvoter-new", "TT-demote-newcode"],
+      "changed_from_initial": false
+    },
+    {
+      "property": "AckPreservation (Update!UpdateAdvanceOutputPreservation)",
+      "decision": "keep",
+      "change_type": "none",
+      "category": "unchanged requirement (touched action)",
+      "evidence": ["old/spec/base.tla:1333-1341"],
+      "proposed_expression": "unchanged",
+      "evidence_ids": ["K-ack-normal-new", "K-ack-early-dup-new"],
+      "changed_from_initial": false,
+      "note": "TRUE on the BC2b duplicate transition: its own obligation (outputs preserved, at most one empty V2 appended) holds; the duplicate is rejected by AutoLeaveAdvance'."
+    },
+    {
+      "property": "RequestCorrelatedConfigurationEffects (EffectContract)",
+      "decision": "keep",
+      "change_type": "none",
+      "category": "unchanged requirement (touched: id-0 nil-Data auto-leave)",
+      "evidence": ["old/spec/base.tla:723-732", "new/source/testdata/confchange_v2_add_double_auto.txt:66-68"],
+      "proposed_expression": "unchanged",
+      "evidence_ids": ["K-effect-autoleave-new"],
+      "changed_from_initial": false
+    },
+    {
+      "property": "QuotaIntegrity",
+      "decision": "keep",
+      "change_type": "none",
+      "category": "unchanged requirement (touched: s>0, reduce-before-append)",
+      "evidence": ["old/spec/base.tla:1385-1391"],
+      "proposed_expression": "unchanged",
+      "evidence_ids": ["K-quota-integrity"],
+      "changed_from_initial": false
+    },
+    {
+      "property": "ReplicationEvidence, TypeOK, LogStructure",
+      "decision": "keep",
+      "change_type": "none",
+      "category": "unchanged requirement (touched: Next=LastIndex, probe on config change, restore self progress)",
+      "evidence": ["old/spec/base.tla:1322-1327,1418-1437", "update.patch:396-442 (simple_safety.txt next=LastIndex)", "new/source/testdata/confchange_v2_add_double_auto.txt:53"],
+      "proposed_expression": "unchanged",
+      "evidence_ids": ["K-replication-evidence", "K-typeok", "K-logstructure"],
+      "changed_from_initial": false
+    },
+    {
+      "property": "CampaignDecisionEligibility",
+      "decision": "keep",
+      "change_type": "none",
+      "category": "unchanged requirement (touched: sorted vote order)",
+      "evidence": ["old/spec/base.tla:663-698"],
+      "proposed_expression": "unchanged",
+      "evidence_ids": ["K-campaign"],
+      "changed_from_initial": false
+    },
+    {
+      "property": "NoUnexpectedFatal",
+      "decision": "keep",
+      "change_type": "none",
+      "category": "unchanged requirement",
+      "evidence": ["old/spec/base.tla:1415"],
+      "proposed_expression": "unchanged; recommend enabling it in the Update cfgs because it catches the apply-time panics of BC2b and BC3",
+      "evidence_ids": ["NUF-BC2b-dup-leave-apply", "NUF-BC3-empty-explicit-apply", "NUF-BC1-stuck-joint"],
+      "changed_from_initial": false
+    },
+    {
+      "property": "TransferDecisionEligibility, VoteDecisionEligibility, JointConfigurationShape, ConfigurationOrigin, ConfigurationTransitionSafety, QuorumAccounting, LearnerEligibility, JointSnapshotRecovery, JointSnapshotMemberAcceptance, ReadyOwnership, ReadyAccounting, ReadBasis, ReadApplication, ReadCorrelation, PromiseBacking, VoteRecovery, RecoveryBacking, SnapshotBacking, ElectionSafety, LogMatching, LeaderCompleteness, CommittedHistory, AppliedAgreement",
+      "decision": "keep",
+      "change_type": "none",
+      "category": "unchanged requirement / unaffected safety controls",
+      "evidence": ["update.patch:560-582,725-729 (behaviour-preserving refactors)"],
+      "proposed_expression": "unchanged",
+      "evidence_ids": ["CTL-good", "CTL-bad-election", "TT-demote-oldcode"],
+      "changed_from_initial": false,
+      "note": "Only the properties named in CTL-good and those printed for TT-demote-oldcode were evaluated; the read/recovery/snapshot properties were kept on the basis of the patch review alone (no update-related change), not executed."
+    }
+  ],
+  "updated_behaviors_already_covered": [
+    {"behavior": "nil-Data auto-leave entry is still exactly one V2 leave per Advance with outputs preserved", "property": "AckPreservation", "explanation": "K-ack-normal-new TRUE; the first conjunct accepts one appended V2 entry with changes <<>>."},
+    {"behavior": "id-0 entries applied as configuration changes are leave-joint", "property": "RequestCorrelatedConfigurationEffects", "explanation": "K-effect-autoleave-new TRUE: EffectContract e.id=0 => IsLeave(e)."},
+    {"behavior": "new leader / early-Advance never auto-leaving (BC1, BC2a)", "property": "AutoLeaveAdvance (old and proposed)", "explanation": "AL-newleader-new and AL-early-miss-b-new are FALSE under both; the proposed edit keeps this detection."},
+    {"behavior": "apply-time panic from duplicate leave or enter-joint-while-joint", "property": "NoUnexpectedFatal", "explanation": "NUF-BC2b/NUF-BC3 FALSE in both models; not enabled in the Update cfgs."},
+    {"behavior": "learner transfer targets ignored at MsgTransferLeader", "property": "TransferDecisionEligibility", "explanation": "unchanged path."}
+  ],
+  "suspected_defects_not_to_hide": [
+    {"id": "BC1", "status": "bug candidate (regression)", "description": "A follower that applied an Auto/JointImplicit joint entry and becomes leader while applied==lastIndex never auto-leaves: raft.go:567 requires oldApplied < pendingConfIndex but becomeLeader sets pendingConfIndex=lastIndex (raft.go:752). Old code left the joint config here.", "evidence_ids": ["AL-newleader-new", "NUF-BC1-stuck-joint"], "requirement_evidence": ["new/source/testdata/confchange_v2_add_double_implicit.txt:4-5", "new/source/raftpb/raft.proto:85-86,111-112,164-166"]},
+    {"id": "BC2a", "status": "bug candidate (regression)", "description": "Early Advance (permitted by README.md:122 and node.go:164-167) over the joint entry before ApplyConfChange: the crossing is consumed while the config is not yet joint, so the auto-leave is never issued. Old code left on the next Advance.", "evidence_ids": ["AL-early-miss-a-new", "AL-early-miss-b-new"], "requirement_evidence": ["new/source/README.md:122", "new/source/node.go:159-168", "new/source/raftpb/raft.proto:111-112"]},
+    {"id": "BC2b", "status": "bug candidate (pre-existing; not fixed by the update)", "description": "Early Advance over the leave entry before ApplyConfChange appends a second leave (crossing pendingConf=leave index while still joint), which panics on apply ('can't leave a non-joint config').", "evidence_ids": ["AL-early-dup-new", "NUF-BC2b-dup-leave-apply", "K-ack-early-dup-new"], "requirement_evidence": ["new/source/testdata/confchange_v2_add_double_auto.txt:238-240", "new/source/README.md:122", "new/source/confchange/testdata/joint_safety.txt:20-22"]},
+    {"id": "BC3", "status": "bug candidate (pre-existing hazard; the update's new gate misclassifies it)", "description": "stepLeader treats any ConfChangeV2 with len(Changes)==0 as a leave (raft.go:1055), so an empty JointExplicit/JointImplicit change is admitted while joint and panics on apply ('config is already joint').", "evidence_ids": ["PC4-joint-empty-explicit-new", "PCinit-joint-empty-explicit-new", "NUF-BC3-empty-explicit-apply"], "requirement_evidence": ["new/source/raftpb/confchange.go:71-73,100-102", "new/source/confchange/testdata/joint_safety.txt:30-32,55,60", "new/source/testdata/confchange_v2_add_single_explicit.txt:100-106"]},
+    {"id": "M1", "status": "model drift (not a defect claim)", "description": "base.tla's implementation model still describes the old code; migrated in evidence/tla/Proposed.tla. New code sets the follower's self Match to s.index-1 after restore (Go RESTORE self.match=10 for s.index 11), which raft.go:1483 calls 'likely unneeded'; no property observes it."}
+  ],
+  "unresolved_obligations": [
+    "Eventual auto-leave is a liveness obligation (e.g. joint /\\ autoLeave /\\ stable leader ~> ~joint); BC1/BC2a show the safety check at Advance is only a proxy. Not executed.",
+    "BC2a/BC2b were driven with RawNode in the order Node's run loop uses (node.go:356,388-389); RawNode.Advance's own doc (rawnode.go:170) says 'has applied', so they are reachable through the Node API's documented early Advance, not through a RawNode caller that follows rawnode.go:170.",
+    "Proposed.tla was only evaluated on witness states (and parsed by SANY); no bounded TLC run of the full Proposed spec or of Update cfgs including LeaderTransferTarget/NoUnexpectedFatal was performed.",
+    "Pre-existing, not update-related, not executed: CampaignContract treats V2 entries as pending conf changes while code and model scan only EntryConfChange (raft.go:1652-1660, base.tla:267 vs 684)."
+  ]
+}

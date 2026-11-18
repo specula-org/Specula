@@ -7,6 +7,7 @@ Prototypes for #188 §3. This branch is not merged into main.
 - `etcd-v0-v3/`: etcd/raft V0–V3 evolution experiment. Overview in `PLAN.md` and `REPORT-20260923.md` (Chinese).
   - 3.1 Action validation: `agent-runs/action-framework-final/`
   - 3.2 Invariant evolution: `agent-runs/inv-evidence/`, `agent-runs/inv-*/TASK.md`
+    - Ablation of the judgment step with Claude Opus 5.5 (A0 product rules, A1 separating state, A2 executed evidence, A3 two-axis classification): `inv-ablation/`
   - 3.3 Update-focused model checking: `experiments/campaign-prefix/`, `agent-runs/progress-probe-V03/`
     - Same-budget comparison of the bug B probe with ordinary model checking: `prefix-ablation/`
 - `update-coverage/`: checks that the checking configs reach the update's affected actions with the suite's checks enabled (§3.3), with results on etcd V01–V03 and a MongoDB case study.

@@ -1,0 +1,1094 @@
+[
+ {
+  "id": "E1",
+  "property": "VoteDecisionEligibility / VoteContract",
+  "kind": "relaxation",
+  "state": "Pre-state RL (W_vote.tla): node 2 learner, config voters={1} learners={2}, Follower, term 1, vote 0, lead 0, empty log, checkQuorum/preVote off - mirrors TestLearnerCanVote (newTestLearnerRaft(2,{1},{2}); becomeFollower(1,None)). Input M1 = MsgVote{from 1,to 2,term 2,logTerm 11,index 11}. Post-state aNew = Proposed!Step(RL,M1); quality.votes = {VoteObservation(RL,M1,aNew)} (populated by the actual observer from the actual step): responses={MsgVoteResp term 2 to 1 reject FALSE}, afterTerm 2, afterVote 1, learner TRUE.",
+  "old_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "old": "learner-fresh isLearner=true term=2 vote=0 msgs=[] (silent)",
+   "new": "learner-fresh isLearner=true term=2 vote=1 msgs=[{MsgVoteResp to=1 term=2 reject=false}] (grant)",
+   "test_file": "evidence/go/evidence_common_test.go (copied as zz_evidence_common_test.go into evidence/go/old and evidence/go/new)",
+   "test": "TestEvidenceLearnerVote",
+   "command": "cd evidence/go/<old|new> && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -count=1 -v -run TestEvidence .",
+   "result": "PASS (log-only test); see EV E1 lines"
+  },
+  "requirement_evidence": "new/source/raft.go Step MsgVote/MsgPreVote: learner early-return removed, design comment 'learners must be allowed to cast votes' (promoted learner unaware of promotion); raft_test.go TestLearnerCannotVote -> TestLearnerCanVote expecting one MsgVoteResp.",
+  "verdict": "accepted",
+  "note": "The old contract demands silence from a learner, so it rejects the new required behavior; the proposed contract accepts it.",
+  "files": {
+   "tla": [
+    "evidence/tla/W_vote.tla",
+    "evidence/tla/WBase.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/W.cfg"
+   ],
+   "logs": [
+    "evidence/logs/W_vote.log",
+    "evidence/logs/go_old_evidence.log",
+    "evidence/logs/go_new_evidence.log"
+   ]
+  }
+ },
+ {
+  "id": "E1b",
+  "property": "VoteDecisionEligibility / VoteContract",
+  "kind": "semantic",
+  "state": "Same pre-state/input as E1; post-state aOld = base!Step(RL,M1) (old model, mirrors old code): quality.votes={VoteObservation(RL,M1,aOld)} with responses={}, afterTerm 2, afterVote 0.",
+  "old_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "old": "silent (EV E1 old)",
+   "new": "grant (EV E1 new)",
+   "test_file": "evidence/go/evidence_common_test.go (copied as zz_evidence_common_test.go into evidence/go/old and evidence/go/new)",
+   "command": "cd evidence/go/<old|new> && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -count=1 -v -run TestEvidence ."
+  },
+  "requirement_evidence": "As E1: silence is now forbidden for a fresh, up-to-date candidate.",
+  "verdict": "accepted",
+  "note": "Newly forbidden old behavior kept in the comparison domain: the proposed contract rejects the old learner silence.",
+  "files": {
+   "tla": [
+    "evidence/tla/W_vote.tla"
+   ],
+   "logs": [
+    "evidence/logs/W_vote.log"
+   ]
+  }
+ },
+ {
+  "id": "E2a",
+  "property": "VoteDecisionEligibility / VoteContract",
+  "kind": "control",
+  "state": "Learner control (double vote). Pre-state RL1 = RL with term 2, vote 3; input M1 (term 2 from 1). Observation populated from VoteObservation over the actual proposed step; the forbidden control is Forged grant observation (responses={MsgVoteResp term 2 reject FALSE}, afterVote 1) on the same pre-state. (actual Proposed!Step reply {MsgVoteResp term 2 reject TRUE}: old FALSE (demands silence), proposed TRUE).",
+  "old_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "old": "learner-double-vote term=2 vote=3 msgs=[]",
+   "new": "learner-double-vote term=2 vote=3 msgs=[{MsgVoteResp to=1 term=2 reject=true}]",
+   "test_file": "evidence/go/evidence_common_test.go (copied as zz_evidence_common_test.go into evidence/go/old and evidence/go/new)",
+   "test": "TestEvidenceLearnerVote",
+   "command": "cd evidence/go/<old|new> && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -count=1 -v -run TestEvidence ."
+  },
+  "requirement_evidence": "raft.go canVote/isUpToDate and lease checks are unchanged by the update; only the learner early-return was removed.",
+  "verdict": "accepted",
+  "note": "Truth values are for the forbidden (forged grant) observation: the relaxed contract still rejects it. On the real new-code observation the proposed contract is TRUE and the old one FALSE except under lease (both TRUE).",
+  "files": {
+   "tla": [
+    "evidence/tla/W_vote.tla"
+   ],
+   "logs": [
+    "evidence/logs/W_vote.log",
+    "evidence/logs/go_old_evidence.log",
+    "evidence/logs/go_new_evidence.log"
+   ]
+  }
+ },
+ {
+  "id": "E2b",
+  "property": "VoteDecisionEligibility / VoteContract",
+  "kind": "control",
+  "state": "Learner control (candidate log behind learner). Pre-state RL2 = RL with one entry (index 1, term 12); input M1 (logTerm 11). Observation populated from VoteObservation over the actual proposed step; the forbidden control is Forged grant observation on the same pre-state. (actual reply reject TRUE: old FALSE, proposed TRUE).",
+  "old_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "old": "learner-stale-candidate term=2 vote=0 msgs=[]",
+   "new": "learner-stale-candidate term=2 vote=0 msgs=[{MsgVoteResp to=1 term=2 reject=true}]",
+   "test_file": "evidence/go/evidence_common_test.go (copied as zz_evidence_common_test.go into evidence/go/old and evidence/go/new)",
+   "test": "TestEvidenceLearnerVote",
+   "command": "cd evidence/go/<old|new> && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -count=1 -v -run TestEvidence ."
+  },
+  "requirement_evidence": "raft.go canVote/isUpToDate and lease checks are unchanged by the update; only the learner early-return was removed.",
+  "verdict": "accepted",
+  "note": "Truth values are for the forbidden (forged grant) observation: the relaxed contract still rejects it. On the real new-code observation the proposed contract is TRUE and the old one FALSE except under lease (both TRUE).",
+  "files": {
+   "tla": [
+    "evidence/tla/W_vote.tla"
+   ],
+   "logs": [
+    "evidence/logs/W_vote.log",
+    "evidence/logs/go_old_evidence.log",
+    "evidence/logs/go_new_evidence.log"
+   ]
+  }
+ },
+ {
+  "id": "E2c",
+  "property": "VoteDecisionEligibility / VoteContract",
+  "kind": "control",
+  "state": "Learner control (lease suppression). Pre-state RL3 = RL with checkQuorum TRUE, lead 1, elapsed 0; input MsgVote from 3 term 2. Observation populated from VoteObservation over the actual proposed step; the forbidden control is Forged grant observation on the same pre-state. (actual: silent, term stays 1: old TRUE, proposed TRUE).",
+  "old_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "old": "learner-lease term=1 vote=0 lead=1 msgs=[]",
+   "new": "learner-lease term=1 vote=0 lead=1 msgs=[]",
+   "test_file": "evidence/go/evidence_common_test.go (copied as zz_evidence_common_test.go into evidence/go/old and evidence/go/new)",
+   "test": "TestEvidenceLearnerVote",
+   "command": "cd evidence/go/<old|new> && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -count=1 -v -run TestEvidence ."
+  },
+  "requirement_evidence": "raft.go canVote/isUpToDate and lease checks are unchanged by the update; only the learner early-return was removed.",
+  "verdict": "accepted",
+  "note": "Truth values are for the forbidden (forged grant) observation: the relaxed contract still rejects it. On the real new-code observation the proposed contract is TRUE and the old one FALSE except under lease (both TRUE).",
+  "files": {
+   "tla": [
+    "evidence/tla/W_vote.tla"
+   ],
+   "logs": [
+    "evidence/logs/W_vote.log",
+    "evidence/logs/go_old_evidence.log",
+    "evidence/logs/go_new_evidence.log"
+   ]
+  }
+ },
+ {
+  "id": "E2d",
+  "property": "VoteDecisionEligibility / VoteContract",
+  "kind": "control",
+  "state": "Voter control: RV = node 2 with voters={1,2}, otherwise as RL; input M1. Actual step grants (both models). Forbidden control: forged silent observation (responses={}, afterVote 0).",
+  "old_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "old": "voter term=2 vote=1 msgs=[{MsgVoteResp to=1 term=2 reject=false}]",
+   "new": "identical",
+   "test_file": "evidence/go/evidence_common_test.go (copied as zz_evidence_common_test.go into evidence/go/old and evidence/go/new)",
+   "command": "cd evidence/go/<old|new> && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -count=1 -v -run TestEvidence ."
+  },
+  "requirement_evidence": "Unchanged voter behavior.",
+  "verdict": "accepted",
+  "note": "On the actual voter grant both contracts are TRUE (TLC); the edit does not change voter obligations.",
+  "files": {
+   "tla": [
+    "evidence/tla/W_vote.tla"
+   ],
+   "logs": [
+    "evidence/logs/W_vote.log"
+   ]
+  }
+ },
+ {
+  "id": "E2e",
+  "property": "VoteDecisionEligibility / VoteContract (vs. TestLearnerCanVote)",
+  "kind": "control",
+  "state": "E1 pre-state; observation that a learner-always-rejects implementation produces: responses={MsgVoteResp term 2 to 1 reject TRUE}, afterVote 0.",
+  "old_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "new_mutant": "evidence/go/new_mut_learner_reject (new tree + learner always replies Reject=true; diff in evidence/logs/mut_learner_reject.diff): TestLearnerCanVote PASSES",
+   "command": "cd evidence/go/new_mut_learner_reject && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -count=1 -v -run 'TestLearnerCanVote$' .",
+   "result": "--- PASS: TestLearnerCanVote"
+  },
+  "requirement_evidence": "TestLearnerCanVote checks `msg.Type != pb.MsgVoteResp && !msg.Reject`, which is satisfied by any MsgVoteResp, including a rejection.",
+  "verdict": "accepted",
+  "note": "The upstream test is too weak to pin the grant; the proposed contract does reject the mutant's behavior (test defect recorded, not hidden).",
+  "files": {
+   "tla": [
+    "evidence/tla/W_vote.tla"
+   ],
+   "logs": [
+    "evidence/logs/W_vote.log",
+    "evidence/logs/go_mut_learner_reject.log",
+    "evidence/logs/mut_learner_reject.diff"
+   ]
+  }
+ },
+ {
+  "id": "E3",
+  "property": "LearnerEligibility",
+  "kind": "relaxation",
+  "state": "history.grants = aNew.grants where aNew = Proposed!Step(RL,M1) (E1): {[node 2, learner TRUE, term 2, candidate 1, pre FALSE]} - produced by the proposed StepVote ghost; with the old step the set is {}.",
+  "old_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "old": "learner does not grant (EV E1 old)",
+   "new": "learner grants (EV E1 new)",
+   "test_file": "evidence/go/evidence_common_test.go (copied as zz_evidence_common_test.go into evidence/go/old and evidence/go/new)",
+   "command": "cd evidence/go/<old|new> && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -count=1 -v -run TestEvidence ."
+  },
+  "requirement_evidence": "Same as E1.",
+  "verdict": "accepted",
+  "note": "With history.grants from the old step (empty) both are TRUE.",
+  "files": {
+   "tla": [
+    "evidence/tla/W_vote.tla"
+   ],
+   "logs": [
+    "evidence/logs/W_vote.log"
+   ]
+  }
+ },
+ {
+  "id": "E3c",
+  "property": "LearnerEligibility (retained campaign conjunct)",
+  "kind": "control",
+  "state": "history.campaigns={[node 2, learner TRUE]} (forbidden learner campaign). Also: Proposed!Step(RL, MsgHup) leaves campaigns {} and role Follower; Proposed!Step(RV, MsgHup) yields {[node 2, learner FALSE]}.",
+  "old_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "old": "learner-hup state=StateFollower term=1 msgs=[]; learner-timeoutnow ignored",
+   "new": "identical",
+   "test_file": "evidence/go/evidence_common_test.go (copied as zz_evidence_common_test.go into evidence/go/old and evidence/go/new)",
+   "command": "cd evidence/go/<old|new> && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -count=1 -v -run TestEvidence ."
+  },
+  "requirement_evidence": "promotable() unchanged; MsgHup/MsgTimeoutNow still ignored by learners.",
+  "verdict": "accepted",
+  "note": "Real voter campaign record: old TRUE, proposed TRUE. Real learner MsgHup produces no record: both TRUE.",
+  "files": {
+   "tla": [
+    "evidence/tla/W_vote.tla"
+   ],
+   "logs": [
+    "evidence/logs/W_vote.log",
+    "evidence/logs/go_old_evidence.log",
+    "evidence/logs/go_new_evidence.log"
+   ]
+  }
+ },
+ {
+  "id": "E4",
+  "property": "ReadyOwnership (alias UpdateReadyOwnership)",
+  "kind": "semantic",
+  "state": "W_ready.tla, Which=new: raw node 1 (RawNodes={1,2,3}), Follower term 1, BootLog stable in Storage, commit=applied=3, out=bag{m1(ctx 7)}, readStates=<<rd1(id 7)>> (mirrors TestRawNodeConsumeReady injection of m1). history.readyChecks populated by the actual Proposed!Ready(1) action: outBefore {7}, outAfter {}, readsBefore <<7>>, readsAfter <<>>, quota 0->0.",
+  "old_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "old": "after rn.Ready(): raft.msgs=[m1] raft.readStates=[rd1] (read-only)",
+   "new": "after rn.Ready(): raft.msgs=[] raft.readStates=[] (accepted)",
+   "test_file": "evidence/go/evidence_common_test.go (copied as zz_evidence_common_test.go into evidence/go/old and evidence/go/new)",
+   "test": "TestEvidenceRawNodeReadyAdvance",
+   "command": "cd evidence/go/<old|new> && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -count=1 -v -run TestEvidence .",
+   "result": "EV E4 lines"
+  },
+  "requirement_evidence": "new/source/rawnode.go Ready() = readyWithoutAccept()+acceptReady(); doc: 'The returned Ready() *must* be handled and subsequently passed back via Advance()'; TestRawNodeConsumeReady requires raft.msgs empty after Ready().",
+  "verdict": "accepted",
+  "note": "Same result for PreKind=noReads (readsBefore <<>>).",
+  "files": {
+   "tla": [
+    "evidence/tla/W_ready.tla",
+    "evidence/tla/W_ready_new_reads.cfg",
+    "evidence/tla/W_ready_new_noReads.cfg"
+   ],
+   "logs": [
+    "evidence/logs/W_ready_new_reads.log",
+    "evidence/logs/W_ready_new_noReads.log",
+    "evidence/logs/go_old_evidence.log",
+    "evidence/logs/go_new_evidence.log"
+   ]
+  }
+ },
+ {
+  "id": "E4b",
+  "property": "ReadyOwnership",
+  "kind": "semantic",
+  "state": "Same pre-state, Which=old: readyChecks produced by base!Ready(1): outBefore {7}, outAfter {7}, readsBefore <<7>>, readsAfter <<7>>.",
+  "old_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "old": "raft.msgs=[m1] after Ready (EV E4 old)",
+   "new": "raft.msgs=[] after Ready (EV E4 new)",
+   "test_file": "evidence/go/evidence_common_test.go (copied as zz_evidence_common_test.go into evidence/go/old and evidence/go/new)",
+   "command": "cd evidence/go/<old|new> && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -count=1 -v -run TestEvidence ."
+  },
+  "requirement_evidence": "As E4: read-only Ready is no longer the RawNode contract.",
+  "verdict": "accepted",
+  "note": "Old read-only behavior kept in the comparison domain and rejected by the proposed property.",
+  "files": {
+   "tla": [
+    "evidence/tla/W_ready.tla",
+    "evidence/tla/W_ready_old_reads.cfg"
+   ],
+   "logs": [
+    "evidence/logs/W_ready_old_reads.log",
+    "evidence/logs/W_ready_old_noReads.log"
+   ]
+  }
+ },
+ {
+  "id": "E4c",
+  "property": "ReadyOwnership",
+  "kind": "control",
+  "state": "Non-raw Node control: RawNodes={2,3} so node 1 is a Node; same pre-state. readyChecks from base!Ready(1) and Proposed!Ready(1) are identical: raw FALSE, outAfter {}, readsAfter <<>>.",
+  "old_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": "unknown (node.go goroutine wrapper not driven; source diff shows node.run uses readyWithoutAccept + acceptReady on delivery, i.e. unchanged semantics)",
+  "requirement_evidence": "node.go unchanged semantics.",
+  "verdict": "accepted",
+  "note": "Quota conjunct unchanged in text; not separately forged.",
+  "files": {
+   "tla": [
+    "evidence/tla/W_ready.tla",
+    "evidence/tla/W_ready_old_nonraw.cfg",
+    "evidence/tla/W_ready_new_nonraw.cfg"
+   ],
+   "logs": [
+    "evidence/logs/W_ready_old_nonraw.log",
+    "evidence/logs/W_ready_new_nonraw.log"
+   ]
+  }
+ },
+ {
+  "id": "E5",
+  "property": "AdvanceOutputRetention (new)",
+  "kind": "strengthening",
+  "state": "W_ready.tla PRE-ADVANCE state reached by the actual Ready -> StartPersist/CompletePersist(All) -> Storage* -> Publish -> QueueApplication actions, then output produced while handling the Ready: m2 (ctx 8) and rd2 (id 8) appended. Raw node, new flow: out {8}, readStates <<8>>. history.acks record built by Proposed!AckObservation(r, core(r,b,1), b) with core = base!AdvanceCore (old) vs Proposed!AdvanceCore (new).",
+  "old_property": {
+   "claimed": null,
+   "tlc": null,
+   "explanation": "not defined in the old suite (no constraint, i.e. the old suite accepts the drop)"
+  },
+  "proposed_property": {
+   "claimed": {
+    "old_core": false,
+    "new_core": true
+   },
+   "tlc": {
+    "old_core": false,
+    "new_core": true
+   }
+  },
+  "code_observation": {
+   "old": "after rn.Advance(rd): raft.msgs=[] (m2 dropped); withReads=true: readStates=[] (rd2 dropped)",
+   "new": "after rn.Advance(rd): raft.msgs=[m2]; readStates=[rd2]",
+   "test_file": "evidence/go/evidence_common_test.go (copied as zz_evidence_common_test.go into evidence/go/old and evidence/go/new)",
+   "test": "TestEvidenceRawNodeReadyAdvance",
+   "command": "cd evidence/go/<old|new> && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -count=1 -v -run TestEvidence .",
+   "result": "EV E5 lines"
+  },
+  "requirement_evidence": "rawnode.go Advance no longer calls acceptReady; TestRawNodeConsumeReady: 'Add a message to raft to make sure that Advance() doesn't drop it.'",
+  "verdict": "accepted",
+  "note": "Action-level: Proposed!Advance(1) post-state has out {8}, readStates <<8>> and New!AdvanceOutputRetention TRUE. Same results for PreKind=noReads.",
+  "files": {
+   "tla": [
+    "evidence/tla/W_ready.tla",
+    "evidence/tla/Proposed.tla"
+   ],
+   "logs": [
+    "evidence/logs/W_ready_new_reads.log",
+    "evidence/logs/W_ready_new_noReads.log",
+    "evidence/logs/W_ready_old_reads.log",
+    "evidence/logs/go_old_evidence.log",
+    "evidence/logs/go_new_evidence.log"
+   ]
+  }
+ },
+ {
+  "id": "E5c",
+  "property": "AdvanceOutputRetention (new) + AckPreservation",
+  "kind": "control",
+  "state": "W_autoleave.tla: leader 1 holding the restored joint autoLeave config (JSnap installed in Storage), applied 4, pendingConf 5, out bag{m2}. b = Proposed!NewReady(RL) (cursor 5). Both cores append the leave-joint V2 entry (changes <<>>); proposed core keeps m2, old raw core drops it.",
+  "old_property": {
+   "claimed": null,
+   "tlc": null,
+   "explanation": "not in old suite; AckPreservation (unchanged) TRUE on the proposed core"
+  },
+  "proposed_property": {
+   "claimed": {
+    "proposed_core": true,
+    "old_raw_core": false
+   },
+   "tlc": {
+    "proposed_core": true,
+    "old_raw_core": false
+   }
+  },
+  "code_observation": "not_representable (no Go driver for leader auto-leave in this run; covered by upstream TestRawNodeProposeAndConfChange implicit transitions)",
+  "requirement_evidence": "raft.go advance(): auto-leave appendEntry does not send messages.",
+  "verdict": "accepted",
+  "note": "Legitimate Advance that changes the log is not rejected by the new property; AckPreservation old/proposed text both TRUE.",
+  "files": {
+   "tla": [
+    "evidence/tla/W_autoleave.tla"
+   ],
+   "logs": [
+    "evidence/logs/W_autoleave.log"
+   ]
+  }
+ },
+ {
+  "id": "E5n",
+  "property": "AdvanceOutputRetention (new)",
+  "kind": "control",
+  "state": "Non-raw Node (RawNodes={2,3}), same flow: both cores keep out {8} and readStates <<8>>.",
+  "old_property": {
+   "claimed": null,
+   "tlc": null,
+   "explanation": "not in old suite"
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": "unknown (Node wrapper not driven)",
+  "requirement_evidence": "Node always allowed Step between Ready delivery and Advance (node.go run loop).",
+  "verdict": "accepted",
+  "note": "AdvanceOutputRetention(oldCore)=TRUE and (newCore)=TRUE for the Node; the obligation is not new for Node.",
+  "files": {
+   "tla": [
+    "evidence/tla/W_ready.tla"
+   ],
+   "logs": [
+    "evidence/logs/W_ready_old_nonraw.log",
+    "evidence/logs/W_ready_new_nonraw.log"
+   ]
+  }
+ },
+ {
+  "id": "E6",
+  "property": "ReadyAccounting (history.lostReads observer)",
+  "kind": "observer",
+  "state": "Raw node, PRE-ADVANCE state of the new flow (E5): readStates <<8>> (rd2 produced after Ready), application[1].reads <<7>> (rd1 delivered by Ready), b.reads <<7>>. Old observer = verbatim old ProtocolAdvance expression (OldObserverText) and base!Advance in the 'mixed' run on the same pre-state; proposed observer = Proposed!AdvanceLostReads(r, Proposed!AdvanceCore(r,b,1), app.reads) and Proposed!Advance in the 'new' run.",
+  "old_property": {
+   "claimed": false,
+   "tlc": false,
+   "detail": "old observer yields lostReads={8} although the proposed core keeps rd2 (newCore.readStates <<8>>) -> ReadyAccounting FALSE (false alarm)"
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true,
+   "detail": "proposed observer yields {} -> ReadyAccounting TRUE (POST-ADVANCE new run)"
+  },
+  "code_observation": {
+   "old": "rd2 dropped by Advance when the Ready carried reads",
+   "new": "rd2 retained (EV E5 new)",
+   "test_file": "evidence/go/evidence_common_test.go (copied as zz_evidence_common_test.go into evidence/go/old and evidence/go/new)",
+   "command": "cd evidence/go/<old|new> && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -count=1 -v -run TestEvidence ."
+  },
+  "requirement_evidence": "ReadyAccounting's requirement (no read state is lost) is unchanged; only the observer's assumption that Advance clears raw readStates became false.",
+  "verdict": "accepted",
+  "note": "Identical predicate text, different meaning: the observer must be migrated together with the model.",
+  "files": {
+   "tla": [
+    "evidence/tla/W_ready.tla",
+    "evidence/tla/Proposed.tla"
+   ],
+   "logs": [
+    "evidence/logs/W_ready_new_reads.log",
+    "evidence/logs/W_ready_mixed_reads.log"
+   ]
+  }
+ },
+ {
+  "id": "E6c",
+  "property": "ReadyAccounting (proposed observer)",
+  "kind": "control",
+  "state": "Same pre-state; core = base!AdvanceCore (drops rd2). Proposed observer on (r, oldCore) yields {8}.",
+  "old_property": {
+   "claimed": false,
+   "tlc": false,
+   "detail": "old observer also {8}"
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false,
+   "detail": "proposed observer {8} -> lostReads non-empty -> ReadyAccounting FALSE"
+  },
+  "code_observation": {
+   "old": "withReads=true: Advance clears rd2 (genuine loss)",
+   "test_file": "evidence/go/evidence_common_test.go (copied as zz_evidence_common_test.go into evidence/go/old and evidence/go/new)",
+   "command": "cd evidence/go/<old|new> && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -count=1 -v -run TestEvidence ."
+  },
+  "requirement_evidence": "Reads must not be lost.",
+  "verdict": "accepted",
+  "note": "The migrated observer still reports a real loss.",
+  "files": {
+   "tla": [
+    "evidence/tla/W_ready.tla"
+   ],
+   "logs": [
+    "evidence/logs/W_ready_new_reads.log",
+    "evidence/logs/W_ready_mixed_reads.log"
+   ]
+  }
+ },
+ {
+  "id": "E6b",
+  "property": "ReadyAccounting (old observer, pre-existing defect)",
+  "kind": "observer",
+  "state": "Old flow, PreKind=noReads: the Ready carries no reads (b.reads <<>>), rd2 is produced before Advance. base!AdvanceCore clears readStates unconditionally (rd2 dropped) but the old observer's guard b.reads#<<>> yields {} -> old ReadyAccounting TRUE. Proposed observer on the same old-core transition yields {8}.",
+  "old_property": {
+   "claimed": true,
+   "tlc": true,
+   "detail": "masked loss in the old model"
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false,
+   "detail": "proposed observer applied to the old core reports {8}"
+  },
+  "code_observation": {
+   "old": "withReads=false: after Advance raft.readStates=[rd2] - OLD CODE RETAINS rd2 (acceptReady clears only when rd.ReadStates non-empty), so the old model diverges from old code here",
+   "new": "retained",
+   "test_file": "evidence/go/evidence_common_test.go (copied as zz_evidence_common_test.go into evidence/go/old and evidence/go/new)",
+   "command": "cd evidence/go/<old|new> && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -count=1 -v -run TestEvidence ."
+  },
+  "requirement_evidence": "old/source rawnode.go acceptReady: `if len(rd.ReadStates) != 0 { rn.raft.readStates = nil }`.",
+  "verdict": "accepted",
+  "note": "Pre-existing model/observer defect in the old suite (not caused by the update); disappears with the proposed model migration and would be caught by the proposed observer.",
+  "files": {
+   "tla": [
+    "evidence/tla/W_ready.tla",
+    "evidence/tla/W_ready_old_noReads.cfg"
+   ],
+   "logs": [
+    "evidence/logs/W_ready_old_noReads.log",
+    "evidence/logs/go_old_evidence.log"
+   ]
+  }
+ },
+ {
+  "id": "E7",
+  "property": "JointSnapshotRecovery (kept), ConfigurationOrigin (kept)",
+  "kind": "semantic",
+  "state": "W_restore.tla: snapshot JSnap index 5 term 2, hist = BootLog(1,2,3) + no-op + V2{Remove 3, AddLearner 3, Auto}; ConfigOf = voters {1,2} & outgoing {1,2,3}, learnersNext {3}, autoLeave TRUE (SnapshotValid TRUE). Pre-state node 1 = InitialRaft(1) at term 2, commit 3. raft[1] replaced by base!Restore (old) / Proposed!Restore (new); other nodes InitialRaft.",
+  "old_property": {
+   "claimed": {
+    "old_model_post": false,
+    "new_model_post": true
+   },
+   "tlc": {
+    "old_model_post": false,
+    "new_model_post": true
+   }
+  },
+  "proposed_property": {
+   "claimed": {
+    "old_model_post": false,
+    "new_model_post": true
+   },
+   "tlc": {
+    "old_model_post": false,
+    "new_model_post": true
+   }
+  },
+  "code_observation": {
+   "old": "restore ok=true config=voters=(1 2) (outgoing, learners_next, autoleave lost)",
+   "new": "restore ok=true config=voters=(1 2)&&(1 2 3) learners_next=(3) autoleave; ConfState().Equivalent(cs)=nil",
+   "test_file": "evidence/go/old_restore_evidence_test.go and evidence/go/new_restore_evidence_test.go (copied as zz_evidence_restore_test.go)",
+   "test": "TestEvidenceJointRestore",
+   "command": "cd evidence/go/<old|new> && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -count=1 -v -run TestEvidence .",
+   "result": "EV E7 lines"
+  },
+  "requirement_evidence": "new raft.go restore(): confchange.Restore + assertConfStatesEquivalent; confchange/restore_test.go round-trip.",
+  "verdict": "accepted",
+  "note": "Property unchanged (identical text); ConfigurationOrigin old-model FALSE / new-model TRUE; TypeOK and JointConfigurationShape TRUE for both. Controls: new restore with autoLeave forced FALSE, or learnersNext forced {}, are rejected by JointSnapshotRecovery (old and proposed) and ConfigurationOrigin.",
+  "files": {
+   "tla": [
+    "evidence/tla/W_restore.tla"
+   ],
+   "logs": [
+    "evidence/logs/W_restore.log",
+    "evidence/logs/go_old_evidence.log",
+    "evidence/logs/go_new_evidence.log"
+   ]
+  }
+ },
+ {
+  "id": "E8",
+  "property": "JointSnapshotRecovery (kept), ConfigurationOrigin (kept) - restart path",
+  "kind": "semantic",
+  "state": "W_restart.tla: node 1 crashed; disk[1].snapshot=JSnap, hs={term 2, vote 0, commit 5}; RecoveryMode Replay. history.recovery populated by the actual base!Restart(1,3) / Proposed!Restart(1,3) action: expectedConfig = joint config; config = projection (old) or full (new).",
+  "old_property": {
+   "claimed": {
+    "old_model_post": false,
+    "new_model_post": true
+   },
+   "tlc": {
+    "old_model_post": false,
+    "new_model_post": true
+   }
+  },
+  "proposed_property": {
+   "claimed": {
+    "old_model_post": false,
+    "new_model_post": true
+   },
+   "tlc": {
+    "old_model_post": false,
+    "new_model_post": true
+   }
+  },
+  "code_observation": {
+   "old": "newRaft from Storage: config=voters=(1 2)",
+   "new": "config=voters=(1 2)&&(1 2 3) learners_next=(3) autoleave; Equivalent=nil",
+   "test_file": "evidence/go/{old,new}_restore_evidence_test.go",
+   "test": "TestEvidenceJointRestore",
+   "command": "cd evidence/go/<old|new> && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -count=1 -v -run TestEvidence ."
+  },
+  "requirement_evidence": "new raft.go newRaft: confchange.Restore(cs) + assertConfStatesEquivalent.",
+  "verdict": "accepted",
+  "note": "VoteRecovery and RecoveryBacking TRUE in both runs (unaffected controls).",
+  "files": {
+   "tla": [
+    "evidence/tla/W_restart.tla",
+    "evidence/tla/W_restart_old.cfg",
+    "evidence/tla/W_restart_new.cfg"
+   ],
+   "logs": [
+    "evidence/logs/W_restart_old.log",
+    "evidence/logs/W_restart_new.log"
+   ]
+  }
+ },
+ {
+  "id": "E9",
+  "property": "JointRecoveryNotReached (Update.tla canary, non-safety)",
+  "kind": "observer",
+  "state": "Post-state of Proposed!Restart in E8 (correct joint recovery). Old canary evaluated through INSTANCE Update; proposed canary from Proposed.tla.",
+  "old_property": {
+   "claimed": true,
+   "tlc": true,
+   "detail": "TRUE = no witness although joint recovery happened"
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false,
+   "detail": "FALSE = witness found"
+  },
+  "code_observation": "not_representable (reachability canary)",
+  "requirement_evidence": "Canary purpose (Update.tla comment): dedicated hunt cfg must produce a witness of joint recovery.",
+  "verdict": "accepted",
+  "note": "On the old model's lossy restart both canaries are FALSE (witness), so the migration loses nothing for the old model.",
+  "files": {
+   "tla": [
+    "evidence/tla/W_restart.tla",
+    "evidence/tla/Update.tla",
+    "evidence/tla/Proposed.tla"
+   ],
+   "logs": [
+    "evidence/logs/W_restart_old.log",
+    "evidence/logs/W_restart_new.log"
+   ]
+  }
+ },
+ {
+  "id": "E10",
+  "property": "(suspected defect) snapshot acceptance by an outgoing-only voter",
+  "kind": "semantic",
+  "state": "W_restore.tla: node 3 (in outgoing {1,2,3} and learnersNext {3}, not in voters/learners of JSnap.config) restores JSnap: both base!Restore and Proposed!Restore ignore it (usnap.index 0, commit stays 3).",
+  "old_property": {
+   "claimed": null,
+   "tlc": null,
+   "explanation": "no property in old or proposed suite constrains this"
+  },
+  "proposed_property": {
+   "claimed": null,
+   "tlc": null,
+   "explanation": "no property proposed (progress obligation)"
+  },
+  "code_observation": {
+   "old": "node3 restore ok=false commit=0",
+   "new": "node3 restore ok=false commit=0",
+   "test_file": "evidence/go/{old,new}_restore_evidence_test.go",
+   "test": "TestEvidenceJointRestore",
+   "command": "cd evidence/go/<old|new> && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -count=1 -v -run TestEvidence ."
+  },
+  "requirement_evidence": "raft.go restore() comment: 'throw away snapshot if recipient is not in the config' - but node 3 is a voter of the joint config; the check only looks at cs.Voters and cs.Learners.",
+  "verdict": "unresolved",
+  "note": "Pre-existing, unchanged by the update; affects catch-up (progress) of outgoing voters while joint. Recorded as suspected defect, not hidden by any property edit.",
+  "files": {
+   "tla": [
+    "evidence/tla/W_restore.tla"
+   ],
+   "logs": [
+    "evidence/logs/W_restore.log",
+    "evidence/logs/go_old_evidence.log",
+    "evidence/logs/go_new_evidence.log"
+   ]
+  }
+ },
+ {
+  "id": "E5r",
+  "property": "AdvanceOutputRetention (new), ReadyOwnership",
+  "kind": "strengthening",
+  "state": "W_ready.tla PreKind=recv: instead of injecting m2, a MsgHeartbeat (from 2, term 1, commit 3, ctx 9) on the wire is delivered to node 1 by the ACTUAL Receive action while node 1's Ready is in flight; node 1's MsgHeartbeatResp (ctx 9) is real protocol output pending at Advance.",
+  "old_property": {
+   "claimed": null,
+   "tlc": null,
+   "explanation": "not in old suite; old ReadyOwnership TRUE on old Ready, FALSE on new Ready (as E4/E4b)"
+  },
+  "proposed_property": {
+   "claimed": {
+    "old_core": false,
+    "new_core": true
+   },
+   "tlc": {
+    "old_core": false,
+    "new_core": true
+   }
+  },
+  "code_observation": "same mechanism as E5 (Go: message appended to raft.msgs between Ready and Advance)",
+  "requirement_evidence": "As E5.",
+  "verdict": "accepted",
+  "note": "Old run: response never reaches the wire (out {} after Advance, wire {7}) - a silently dropped MsgHeartbeatResp; new run keeps out {9}; proposed AdvanceOutputRetention TRUE in the new post-state.",
+  "files": {
+   "tla": [
+    "evidence/tla/W_ready.tla",
+    "evidence/tla/W_ready_old_recv.cfg",
+    "evidence/tla/W_ready_new_recv.cfg"
+   ],
+   "logs": [
+    "evidence/logs/W_ready_old_recv.log",
+    "evidence/logs/W_ready_new_recv.log"
+   ]
+  }
+ },
+ {
+  "id": "E11a",
+  "property": "(coverage) random simulation of the proposed model under FullUpdateSpec",
+  "kind": "control",
+  "state": "PUpdate.tla (MC/Update rebased on Proposed) with Update_full constants (+AddLearner/AddVoter workloads), -simulate. Diagnostic canaries: NoCandidateYet, NoOutputYet, RawReadyWithOutputNotReached, PendingOutputAtAdvanceNotReached were NEVER violated (e.g. 2.6M states, 1166 traces of mean length 192 with TickLimit 40/CampaignLimit 12); NoApplyYet trace shows all 40 ticks and 12 campaigns spent before any node applied its bootstrap conf entries (StepHup blocked).",
+  "old_property": {
+   "claimed": null,
+   "tlc": null
+  },
+  "proposed_property": {
+   "claimed": null,
+   "tlc": "no violation in 3.4M states (PUpdate_full_sim) - VACUOUS: no election/message ever occurred"
+  },
+  "code_observation": "not_representable",
+  "requirement_evidence": "n/a (evidence-quality check)",
+  "verdict": "unresolved",
+  "note": "These unguarded simulation results are discarded as evidence; replaced by the guarded simulation E11b/E11c.",
+  "files": {
+   "tla": [
+    "evidence/tla/PUpdate.tla",
+    "evidence/tla/PMC.tla",
+    "evidence/tla/PUpdate_full_sim.cfg",
+    "evidence/tla/PUpdate_sim2.cfg"
+   ],
+   "logs": [
+    "evidence/logs/PUpdate_full_sim.log",
+    "evidence/logs/PUpdate_canary_RawReadyWithOutputNotReached.log",
+    "evidence/logs/PUpdate_canary_PendingOutputAtAdvanceNotReached.log",
+    "evidence/logs/PUpdate_sim2_canary_RawReadyWithOutputNotReached.log",
+    "evidence/logs/PUpdate_sim2_diag_NoApplyYet.log",
+    "evidence/logs/PUpdate_sim2_diag_NoCandidateYet.log",
+    "evidence/logs/PUpdate_sim2_diag_NoOutputYet.log"
+   ]
+  }
+ },
+ {
+  "id": "E11b",
+  "property": "Proposed suite on the proposed model (guarded simulation): ElectionSafety, LogMatching, LeaderCompleteness, CommittedHistory, AppliedAgreement, MCTypeOK, LogStructure, UpdateJointConfigurationShape, QuorumAccounting, UpdateReadyOwnership, UpdateAutoLeaveAdvance, UpdateJointSnapshotRecovery, ReadyAccounting, UpdateAdvanceOutputRetention, ConfigurationOrigin, VoteDecisionEligibility, LearnerEligibility, CampaignDecisionEligibility, PromiseBacking",
+  "kind": "control",
+  "state": "GuardedSpec (PUpdate.tla): a subset of FullUpdateNext in which injected tick/campaign/transfer/crash/snapshot actions need Settled(n) and invokes need a leader. Non-vacuity canaries under GuardedSpec: RawReadyWithOutputNotReached violated at depth 24, PendingOutputAtAdvanceNotReached violated at depth 81 (Advance with output pending reachable).",
+  "old_property": {
+   "claimed": null,
+   "tlc": null
+  },
+  "proposed_property": {
+   "claimed": "no violation of edited properties",
+   "tlc": "first violation: CampaignDecisionEligibility (UNCHANGED property) at depth 112 after ~3M states - see E12; no edited property violated before that"
+  },
+  "code_observation": "see E12",
+  "requirement_evidence": "n/a",
+  "verdict": "accepted",
+  "note": "The violation is a pre-existing implementation defect (E12), not caused by the proposed edits.",
+  "files": {
+   "tla": [
+    "evidence/tla/PUpdate.tla",
+    "evidence/tla/PUpdate_gsim.cfg",
+    "evidence/tla/PUpdate_gsim_canary_RawReadyWithOutputNotReached.cfg",
+    "evidence/tla/PUpdate_gsim_canary_PendingOutputAtAdvanceNotReached.cfg"
+   ],
+   "logs": [
+    "evidence/logs/PUpdate_gsim.log",
+    "evidence/logs/PUpdate_gsim_canary_RawReadyWithOutputNotReached.log",
+    "evidence/logs/PUpdate_gsim_canary_PendingOutputAtAdvanceNotReached.log"
+   ]
+  }
+ },
+ {
+  "id": "E11c",
+  "property": "Proposed suite (minus the known CampaignDecisionEligibility defect) on the proposed model, guarded simulation, EarlyAdvance=TRUE",
+  "kind": "control",
+  "state": "PUpdate_gsim_noCDE.cfg (GuardedSpec, Update_full constants + AddLearner/AddVoter workloads, EarlyAdvance TRUE).",
+  "old_property": {
+   "claimed": null,
+   "tlc": null
+  },
+  "proposed_property": {
+   "claimed": "no violation of edited properties",
+   "tlc": "first violation: ElectionSafety (UNCHANGED) at depth 242 after ~1.6M states - see E15; no edited property violated before that"
+  },
+  "code_observation": "see E15",
+  "requirement_evidence": "n/a",
+  "verdict": "accepted",
+  "note": "Two wins in term 2: s1 alone with config {s1} (restarted without snapshot, early Advance, only bootstrap entry 1 re-applied) and s2 with {s2,s3} under {s1,s2,s3}. No learner/joint involvement.",
+  "files": {
+   "tla": [
+    "evidence/tla/PUpdate.tla",
+    "evidence/tla/PUpdate_gsim_noCDE.cfg"
+   ],
+   "logs": [
+    "evidence/logs/PUpdate_gsim_noCDE.log"
+   ]
+  }
+ },
+ {
+  "id": "E12",
+  "property": "CampaignDecisionEligibility (kept unchanged) - pre-existing defect",
+  "kind": "semantic",
+  "state": "W_hup.tla: node 1, voters {1,2}, follower term 1, log [1: Normal t1, 2: V2{Remove 2} t1], commit 2, applied 0, MsgHup; observation from CampaignObservation over the actual base!Step / Proposed!Step (both campaign: Candidate, MsgVote to 2 term 2). Originally found by the guarded simulation (Tick trigger, committed-unapplied JointImplicit V2 at index 5). Control: same with legacy Remove entry -> stays Follower.",
+  "old_property": {
+   "claimed": false,
+   "tlc": false,
+   "detail": "V2-pending campaign rejected by the old text; legacy control TRUE"
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false,
+   "detail": "identical text; same values"
+  },
+  "code_observation": {
+   "old": "pending=EntryConfChangeV2: state=StateCandidate term=2 msgs=[MsgVote to=2]; pending=EntryConfChange: StateFollower",
+   "new": "identical",
+   "test_file": "evidence/go/evidence_hup_test.go (copied as zz_evidence_hup_test.go)",
+   "test": "TestEvidenceHupWithPendingConf",
+   "command": "cd evidence/go/<old|new> && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -count=1 -v -run TestEvidenceHupWithPendingConf ."
+  },
+  "requirement_evidence": "raft.go MsgHup: 'cannot campaign ... since there are still %d pending configuration changes to apply'; numOfPendingConf (unchanged by the update) counts only EntryConfChange, so EntryConfChangeV2 is missed. base.tla already notes 'Retain the implementation omission for EntryConfChangeV2'.",
+  "verdict": "accepted",
+  "note": "Keep CampaignDecisionEligibility; record the implementation defect. Old Update_full.cfg did not enable this property, so the defect was not surfaced there.",
+  "files": {
+   "tla": [
+    "evidence/tla/W_hup.tla"
+   ],
+   "logs": [
+    "evidence/logs/W_hup.log",
+    "evidence/logs/go_old_hup.log",
+    "evidence/logs/go_new_hup.log",
+    "evidence/logs/PUpdate_gsim.log"
+   ]
+  }
+ },
+ {
+  "id": "E13",
+  "property": "Non-vacuity of the learner-vote edits on reachable model states (LearnerGrantNotReached canary)",
+  "kind": "control",
+  "state": "LearnerGrantNotReached == ~\\E g\\in history.grants:g.learner as invariant: FullUpdateSpec simulation (7.2M states), narrowed FullUpdateSpec (no PreVote/CheckQuorum, AddLearner only; 12.3M states), GuardedSpec Update_full constants (36M states), GuardedSpec narrowed (43M states).",
+  "old_property": {
+   "claimed": null,
+   "tlc": null
+  },
+  "proposed_property": {
+   "claimed": "witness hoped for",
+   "tlc": "no learner grant reached in any run"
+  },
+  "code_observation": "learner grant is real code behavior in the TestLearnerCanVote pre-state (E1)",
+  "requirement_evidence": "Reaching it needs a stale candidate (demotion/promotion not yet applied) to solicit a demoted node - deep interleavings.",
+  "verdict": "unresolved",
+  "note": "Reachable-state checks of VoteDecisionEligibility/LearnerEligibility are vacuous for learner grants; the evidence for those edits is the mapped constant-level witnesses E1-E3 plus Go.",
+  "files": {
+   "tla": [
+    "evidence/tla/PUpdate.tla",
+    "evidence/tla/PUpdate_learner_hunt.cfg",
+    "evidence/tla/PUpdate_learner_hunt2.cfg",
+    "evidence/tla/PUpdate_gsim_canary_LearnerGrantNotReached.cfg",
+    "evidence/tla/PUpdate_gsim_learner_hunt2.cfg"
+   ],
+   "logs": [
+    "evidence/logs/PUpdate_learner_hunt.log",
+    "evidence/logs/PUpdate_learner_hunt2.log",
+    "evidence/logs/PUpdate_gsim_canary_LearnerGrantNotReached.log",
+    "evidence/logs/PUpdate_gsim_learner_hunt2.log"
+   ]
+  }
+ },
+ {
+  "id": "E15",
+  "property": "ElectionSafety (kept unchanged) - pre-existing restart/replay hazard",
+  "kind": "semantic",
+  "state": "W_replay.tla: node 1 restarted without snapshot (config EmptyConfig in both models since RestoreProjection(EmptyConfig)=EmptyConfig), store = BootLog, commit=applied=3 (early Advance), application re-applied only BootLog[1]: ApplyConfCore -> voters {1} (identical old/new); Step(MsgHup) -> Leader term 2 (identical wins). history.wins = that win + node 2's majority win in term 2 (config {1,2,3}, yes {2,3}).",
+  "old_property": {
+   "claimed": false,
+   "tlc": false,
+   "detail": "QuorumAccounting TRUE"
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false,
+   "detail": "identical text; QuorumAccounting TRUE"
+  },
+  "code_observation": {
+   "old": "after-restart config=voters=() ; ready committed=3; Advance; ApplyConfChange(AddNode 1) -> nodes:1, applied=3; Campaign -> StateLeader term=2 (alone)",
+   "new": "identical (voters:1; StateLeader term=2)",
+   "test_file": "evidence/go/evidence_replay_test.go (copied as zz_evidence_replay_test.go)",
+   "test": "TestEvidenceRestartReplaySingletonWin",
+   "command": "cd evidence/go/<old|new> && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -count=1 -v -run TestEvidenceRestartReplaySingletonWin ."
+  },
+  "requirement_evidence": "node.go:164-167 explicitly allows calling Advance while still applying; rawnode.go NewRawNode doc recommends bootstrapping through Storage InitialState rather than Bootstrap/log entries. MsgHup's pending-conf guard only scans (applied, committed], which early Advance has already passed.",
+  "verdict": "accepted",
+  "note": "Keep ElectionSafety. Pre-existing hazard present identically in old and new code and models; not caused by the update or the proposed edits. Recorded as suspected defect.",
+  "files": {
+   "tla": [
+    "evidence/tla/W_replay.tla"
+   ],
+   "logs": [
+    "evidence/logs/W_replay.log",
+    "evidence/logs/go_old_replay.log",
+    "evidence/logs/go_new_replay.log",
+    "evidence/logs/PUpdate_gsim_noCDE.log"
+   ]
+  }
+ },
+ {
+  "id": "E11d",
+  "property": "Proposed suite on the proposed model, guarded simulation, EarlyAdvance=FALSE: ElectionSafety, LogMatching, LeaderCompleteness, CommittedHistory, AppliedAgreement, MCTypeOK, LogStructure, UpdateJointConfigurationShape, QuorumAccounting, UpdateReadyOwnership, UpdateAutoLeaveAdvance, UpdateJointSnapshotRecovery, ReadyAccounting, UpdateAdvanceOutputRetention, ConfigurationOrigin, VoteDecisionEligibility, LearnerEligibility, PromiseBacking",
+  "kind": "control",
+  "state": "PUpdate_gsim_noCDE_noEarly.cfg (GuardedSpec; EarlyAdvance FALSE excludes the known E15 hazard; CampaignDecisionEligibility excluded from this run only because of the known E12 defect). Non-vacuity under the same settings: PendingOutputAtAdvanceNotReached violated at depth 67 (Advance with pending output reachable). Discrimination: OldReadyOwnershipOnProposed (old text via INSTANCE base) violated at depth 38 while UpdateReadyOwnership holds.",
+  "old_property": {
+   "claimed": "old ReadyOwnership violated on reachable proposed states",
+   "tlc": "violated at depth 38 (PUpdate_gsim_oldRO.log)"
+  },
+  "proposed_property": {
+   "claimed": "no violation",
+   "tlc": "no violation in 10.26M states, 2264 traces (mean length 173), 8 min"
+  },
+  "code_observation": "not_representable (model-level coverage)",
+  "requirement_evidence": "n/a",
+  "verdict": "accepted",
+  "note": "Bounded random evidence, not exhaustive. Learner grants and joint recovery were not reached (E13, E9b), so this run is vacuous for those edits.",
+  "files": {
+   "tla": [
+    "evidence/tla/PUpdate.tla",
+    "evidence/tla/PUpdate_gsim_noCDE_noEarly.cfg",
+    "evidence/tla/PUpdate_gsim_noEarly_canary_PendingOutput.cfg",
+    "evidence/tla/PUpdate_gsim_oldRO.cfg"
+   ],
+   "logs": [
+    "evidence/logs/PUpdate_gsim_noCDE_noEarly.log",
+    "evidence/logs/PUpdate_gsim_noEarly_canary_PendingOutput.log",
+    "evidence/logs/PUpdate_gsim_oldRO.log"
+   ]
+  }
+ },
+ {
+  "id": "E9b",
+  "property": "JointRecoveryNotReached (proposed canary) - reachability hunt",
+  "kind": "observer",
+  "state": "Proposed canary as invariant: (a) BFS with Update_hunt_recovery constants (stopped after ~3 min at depth 4, >3M states queued); (b) -simulate same constants, 12 min, 22M states; (c) GuardedSpec simulation with Update_full constants, 8 min, 36M states.",
+  "old_property": {
+   "claimed": null,
+   "tlc": null,
+   "explanation": "old canary not hunted on the proposed model beyond the stopped BFS"
+  },
+  "proposed_property": {
+   "claimed": "witness expected",
+   "tlc": "no witness found within budget"
+  },
+  "code_observation": "not_representable",
+  "requirement_evidence": "Canary only.",
+  "verdict": "unresolved",
+  "note": "Joint recovery on the proposed model was not reached by these bounded/random searches; the canary's meaning is established at constant level (E9) and by the restart action witness (E8).",
+  "files": {
+   "tla": [
+    "evidence/tla/PUpdate.tla",
+    "evidence/tla/PUpdate_hunt_recovery_new.cfg",
+    "evidence/tla/PUpdate_gsim_canary_JointRecoveryNotReached.cfg"
+   ],
+   "logs": [
+    "evidence/logs/PUpdate_hunt_recovery_new.log",
+    "evidence/logs/PUpdate_hunt_recovery_new_sim.log",
+    "evidence/logs/PUpdate_gsim_canary_JointRecoveryNotReached.log"
+   ]
+  }
+ },
+ {
+  "id": "E14",
+  "property": "Requirement sources (upstream contract tests on the new tree)",
+  "kind": "control",
+  "state": "n/a",
+  "old_property": {
+   "claimed": null,
+   "tlc": null
+  },
+  "proposed_property": {
+   "claimed": null,
+   "tlc": null
+  },
+  "code_observation": {
+   "new": "PASS: TestLearnerCanVote, TestRawNodeConsumeReady, raft TestRestore, confchange TestRestore (quickcheck joint ConfState round-trip), raftpb TestConfState_Equivalent",
+   "command": "cd evidence/go/new && GOFLAGS=-mod=mod GOPROXY=off go test -vet=off -count=1 -v -run 'TestRawNodeConsumeReady|TestLearnerCanVote|TestRestore$|TestConfState_Equivalent' ./..."
+  },
+  "requirement_evidence": "These tests encode the new contracts used to justify the edits (TestLearnerCanVote is weak, see E2e).",
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "logs": [
+    "evidence/logs/go_new_upstream_contract_tests.log"
+   ]
+  }
+ }
+]

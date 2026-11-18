@@ -1,0 +1,37 @@
+{
+  "run": "A1-V03-r1",
+  "status": "ok",
+  "entries": 16,
+  "decisions": {
+    "modify": 4,
+    "keep": 9,
+    "add": 3
+  },
+  "edits_without_witness": [
+    "PhaseRefusalNotReached, ZeroWeightOverQuotaNotReached, TransferDemotionNotReached, AutoLeaveJointElectionNotReached"
+  ],
+  "edits_without_predicate": [],
+  "entries_without_evidence": [
+    "RequestCorrelatedConfigurationEffects (EffectContract)",
+    "QuotaIntegrity",
+    "CampaignDecisionEligibility",
+    "TransferDecisionEligibility",
+    "JointConfigurationShape / UpdateJointConfigurationShape",
+    "ReplicationEvidence, PromiseBacking, LogMatching",
+    "NoUnexpectedFatal",
+    "Hunt canaries (AutoLeaveNotAppended, JointNotReached, JointRecoveryNotReached, OutgoingSnapshotRestoreNotReached, LearnerGrantNotReached, PostReadyOutputNotReached)",
+    "PhaseRefusalNotReached, ZeroWeightOverQuotaNotReached, TransferDemotionNotReached, AutoLeaveJointElectionNotReached"
+  ],
+  "citations": 10,
+  "bad_citations": [],
+  "top_level_keys": [
+    "overall",
+    "update_summary",
+    "entries",
+    "unchanged_safety_controls",
+    "covered_updated_behaviors",
+    "suspected_defects",
+    "unresolved_obligations",
+    "cfg_recommendations"
+  ]
+}

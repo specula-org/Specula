@@ -1,0 +1,14 @@
+{
+  "scorer": "coordinator (Claude), not blind to arm",
+  "gold": "gold.json V02",
+  "obligations": {
+    "learner_vote_campaign": {"score": "detected", "note": "VoteContract_new lets learners grant votes; LearnerEligibility_new restricted to campaigns; adds LearnerVoteFreshness (learner votes from a stale-config candidate)."},
+    "ready_ownership": {"score": "detected", "note": "ReadyOwnership_new: Ready takes the outbox, read states and soft state."},
+    "post_ready_output": {"score": "detected", "note": "AdvanceRetainsPostReadyOutput added (output generated after Ready survives Advance), with reachability canaries."},
+    "joint_recovery": {"score": "correct_retention", "note": "JointSnapshotRecovery kept; the reason notes the old source dropped NodesJoint/LearnersNext/AutoLeave."}
+  },
+  "bug_A": "named (D2 and the CampaignDecisionEligibility recheck note: numOfPendingConf counts only EntryConfChange; 'Do not reconcile this by editing the contract')",
+  "extra_suspected_defects": ["D1 restore() ignores a joint snapshot for an outgoing-only voter (same as A2-V02 E10 and A3-V02 D1)"],
+  "format_notes": ["78 citations, none invalid", "16 edits without a separating state (A0 does not ask for one)"],
+  "summary": "3 detected + 1 correct retention; bug A named"
+}

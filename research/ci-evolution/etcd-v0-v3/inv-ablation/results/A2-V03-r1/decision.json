@@ -1,0 +1,123 @@
+{
+  "phase": "final (after executed evidence)",
+  "process_disclosure": "Before decision.initial.json was written, one Bash call ran a no-op `echo placeholder` by mistake. It read no input and changed no state. decision.initial.json was not edited after it was written.",
+  "overall_decision": "modify",
+  "overall_reason": "The update changes three contracts the old suite encodes. (1) Auto-leave: it must not be refused, must not be duplicated, and pendingConfIndex must cover it. Old AutoLeaveAdvance accepts a quota drop and requires the duplicate append that crashes the node. (2) Leader conf-change admission adds joint-state refusals, and zero-payload proposals are no longer quota-refused. Old ProposalContract/ExpectedDecision encode the old rules. (3) A demoted transferee must be aborted, and no old property states this. Executed evidence (45 TLC witness runs over Go-mapped states, 7 Go scenarios on both trees, forbidden-observation controls) confirms every edit and shows no unchanged property was affected. The evidence also confirms that the NEW code still violates the proposed AutoLeaveAdvance (no auto-leave after an election with applied==pendingConf; duplicate leave with an early Advance) and the proposed ProposalContract (empty non-Auto V2 admitted in a joint config). These are reported as implementation defects, not resolved by weakening the properties.",
+  "entries": [
+    {
+      "name": "AutoLeaveAdvance (UpdateAutoLeaveAdvance alias)",
+      "decision": "modify",
+      "change_kind": "semantic: relaxed (no append when a leave is already pending), strengthened (no DropQuota escape; pendingConf must cover the new leave), plus observer migration",
+      "evidence": [
+        "raft.go advance (new): edge trigger, Data=nil, panic on refusal, pendingConfIndex = lastIndex()",
+        "increaseUncommittedSize s>0; TestUncommittedEntryLimit empty-Data assertion",
+        "testdata/confchange_v2_add_double_auto.txt duplicate-leave regression note",
+        "rawnode_test pendingConfIndex == auto-leave index",
+        "raft.proto ConfState.auto_leave",
+        "Go: TestEvAutoLeaveDuplicate, TestEvAutoLeaveEarlyAdvance, TestEvAutoLeaveQuota, TestEvAutoLeaveAfterElection (old and new trees)"
+      ],
+      "proposed_expression": "AutoLeaveDue(a) == a.eligible /\\ a.cursor>0 /\\ a.appliedOK\nAutoLeavePending(a) == \\E k\\in (a.cfgLen+1)..a.beforeLast: IsLeave(a.afterHist[k])\nAutoLeaveAdvance == \\A a\\in history.autoLeaveChecks: AutoLeaveDue(a) => IF AutoLeavePending(a) THEN Len(a.afterHist)=a.beforeLast ELSE /\\ Len(a.afterHist)=a.beforeLast+1 /\\ IsLeave(a.afterHist[Len(a.afterHist)]) /\\ a.afterHist[Len(a.afterHist)].id=0 /\\ a.pending=Len(a.afterHist)",
+      "disagreement_states": [
+        "D1 (old code, ordinary schedule): a leave is pending at 4 and pendingConf=2; Advance of entry 3 appends a second leave. Old TRUE, proposed FALSE (TLC). The Go old tree later panics.",
+        "E (early Advance, new and old code): the duplicate leave is appended. Old TRUE, proposed FALSE. The corrected (fixed) behavior gives old FALSE, proposed TRUE.",
+        "D2 (old code): leave refused by quota. Old TRUE via DropQuota, proposed FALSE.",
+        "D3 (new code): no auto-leave after an election with applied==pendingConf. Old FALSE, proposed FALSE."
+      ],
+      "evidence_ids": ["EV-AL-D1-OLDCODE", "EV-AL-D1-NEWCODE", "EV-AL-D1-FIXED", "EV-AL-E-NEWCODE", "EV-AL-E-OLDCODE", "EV-AL-E-FIXED", "EV-AL-D2-OLDCODE", "EV-AL-D2-NEWCODE", "EV-AL-D3-NEWCODE", "EV-AL-D3-OLDCODE", "EV-AL-D3-FIXED", "EV-HUNT-VACUOUS"],
+      "changed_from_initial": false
+    },
+    {
+      "name": "history.autoLeaveChecks observer (ProtocolAdvance)",
+      "decision": "modify",
+      "change_kind": "observer migration (representation)",
+      "evidence": ["The base and migrated observers give identical old-property values on D1/E/D2/D3. Each witness produced exactly one record."],
+      "proposed_expression": "Add cursor |-> b.cursor, cfgLen |-> Len(r.cfgHist), appliedOK |-> AppliedTo(r,b.cursor).fatal=\"\", plus diagnostic oldApplied, oldPending, afterFatal. Existing fields are unchanged.",
+      "disagreement_states": ["The old record cannot tell whether a leave is already pending (D1/E)."],
+      "evidence_ids": ["EV-AL-OBSERVER"],
+      "changed_from_initial": false,
+      "note": "The diagnostic fields oldApplied and afterFatal were added during implementation. No property reads them."
+    },
+    {
+      "name": "ProposalConfigurationDecisions / ProposalContract",
+      "decision": "modify",
+      "change_kind": "semantic (joint-state admission rules; zero-weight quota relaxation) + observer migration (joint field)",
+      "evidence": [
+        "raft.go stepLeader (new) refusal reasons",
+        "testdata/confchange_v2_add_single_explicit.txt:106,168 (both refusal reasons exercised)",
+        "raft.proto ConfChangeV2 leave definition",
+        "Go TestEvAdmission / TestEvQuotaZeroWeight (old and new trees)"
+      ],
+      "proposed_expression": "ContractJointRefusal(joint,e) == IF joint THEN ~IsLeave(e) ELSE e.kind=\"V2\" /\\ e.changes=<<>>\nRefusedConf(es,k,pend,joint): sequential; a conf entry is refused iff pend \\/ ContractJointRefusal(joint,e); an admitted conf entry sets pend\nQuotaRefuses(q,w) == q>0 /\\ w>0 /\\ q+w>MaxUncommitted\nProposalContract uses rewritten == RefusedConf(o.entries,1,o.pending>o.applied,o.joint) and QuotaRefuses(o.quota,weight). The observer adds joint |-> r.config.outgoing#{}.",
+      "disagreement_states": [
+        "P1: joint config + V2 Auto <<AddVoter>>. Old code admits it and panics at apply; new code rewrites it. Old/proposed: TRUE/FALSE on old code, FALSE/TRUE on new.",
+        "P2: non-joint config + leave. Same pattern; the old code panics at apply.",
+        "P6: non-joint config + empty JointExplicit. Old code admits it (valid); new code refuses it. The proposed contract follows the new design.",
+        "P4: quota 3 > max 2, weight-0 proposal. Old TRUE/FALSE on the drop; FALSE/TRUE on the acceptance.",
+        "P5 (defect): joint config + empty JointExplicit. Both versions admit it and panic at apply. Proposed FALSE."
+      ],
+      "evidence_ids": ["EV-PC-P1-OLDCODE", "EV-PC-P1-NEWCODE", "EV-PC-P2-OLDCODE", "EV-PC-P2-NEWCODE", "EV-PC-C1", "EV-PC-C2", "EV-PC-P5-NEWCODE", "EV-PC-P6-OLDCODE", "EV-PC-P6-NEWCODE", "EV-PC-P4-OLDCODE", "EV-PC-P4-NEWCODE", "EV-PC-Q1", "EV-PC-FORBIDDEN"],
+      "changed_from_initial": false,
+      "note": "Judgment call: refusing an empty non-Auto V2 outside a joint config (P6) follows the code's len(Changes)==0 predicate and its 'refusing empty conf change' reason. Only the Auto case is exercised by testdata. Admitting it was safe in the old code, so this restriction is a design adoption, not a safety requirement."
+    },
+    {
+      "name": "OutcomeSoundness / ExpectedDecision",
+      "decision": "modify",
+      "change_kind": "semantic relaxation (s>0) + observer migration (effective weight from the contract's rewrite rule)",
+      "evidence": ["increaseUncommittedSize s>0", "TestUncommittedEntryLimit", "Go TestEvQuotaZeroWeight"],
+      "proposed_expression": "ExpectedDecision: ... ELSE IF QuotaRefuses(o.quota,o.weight) THEN \"DropQuota\" ELSE \"Accepted\". The outcome record's weight is Weight(ContractEffective(raft[n],m.entries)) instead of the implementation model's RewriteConf.",
+      "disagreement_states": [
+        "P4: old TRUE/FALSE on the drop; FALSE/TRUE on the acceptance.",
+        "Forbidden control: weight-1 acceptance over quota is FALSE under both."
+      ],
+      "evidence_ids": ["EV-PC-P4-OLDCODE", "EV-PC-P4-NEWCODE", "EV-PC-Q1", "EV-PC-FORBIDDEN"],
+      "changed_from_initial": true,
+      "change_reason": "The initial plan had the outcome weight follow the migrated implementation RewriteConf. The final version computes it from the contract's rewrite (ContractEffective). P5 showed that the code-faithful RewriteConf differs from the contract (it admits an empty non-Auto V2 in a joint config), and an oracle that takes its weight from the implementation model would inherit implementation defects."
+    },
+    {
+      "name": "TransferTargetVoter (new)",
+      "decision": "add",
+      "change_kind": "semantic strengthening (new requirement)",
+      "evidence": ["raft.go switchToConfig (new) abort on removed or demoted", "TestLeaderTransferDemoteNode", "Go TestEvTransferDemote: old keeps transferee 3 as a learner; new resets it to 0"],
+      "proposed_expression": "\\A n\\in Server: raft[n].alive /\\ raft[n].role=\"Leader\" /\\ Promotable(raft[n]) /\\ raft[n].transfer#0 => raft[n].transfer\\in VoterIDs(raft[n].config)",
+      "disagreement_states": [
+        "After leaving joint with s3 demoted: old model keeps transfer=s3, so the property is FALSE (old suite: no property); new model gives TRUE.",
+        "Controls: an outgoing-only voter during joint is TRUE; a voter is TRUE; a learner or a non-member is FALSE."
+      ],
+      "evidence_ids": ["EV-TT-OLDCODE", "EV-TT-NEWCODE", "EV-TT-CONTROLS"],
+      "changed_from_initial": false
+    },
+    {"name": "AckPreservation (UpdateAdvanceOutputPreservation)", "decision": "keep", "change_kind": "unchanged", "evidence": ["TRUE and identical under base and Proposed on all 45 post-states, including every auto-leave append"], "proposed_expression": "unchanged", "disagreement_states": ["none observed"], "evidence_ids": ["EV-CTRL-UNCHANGED"], "changed_from_initial": false},
+    {"name": "RequestCorrelatedConfigurationEffects / EffectContract", "decision": "keep", "change_kind": "unchanged", "evidence": ["The applied nil-Data leave is accepted (T witness effects record)"], "proposed_expression": "unchanged", "disagreement_states": ["none observed"], "evidence_ids": ["EV-CTRL-UNCHANGED", "EV-TT-NEWCODE"], "changed_from_initial": false},
+    {"name": "QuotaIntegrity", "decision": "keep", "change_kind": "unchanged", "evidence": ["TRUE and identical on all post-states, including the new reduce-before-append order"], "proposed_expression": "unchanged", "disagreement_states": ["none observed"], "evidence_ids": ["EV-CTRL-UNCHANGED"], "changed_from_initial": false},
+    {"name": "TransferDecisionEligibility / TransferContract", "decision": "keep", "change_kind": "unchanged", "evidence": ["control"], "proposed_expression": "unchanged", "disagreement_states": ["none"], "evidence_ids": ["EV-CTRL-UNCHANGED"], "changed_from_initial": false},
+    {"name": "CampaignDecisionEligibility", "decision": "keep", "change_kind": "representation only (sorted campaign order is not observable)", "evidence": ["control"], "proposed_expression": "unchanged", "disagreement_states": ["none"], "evidence_ids": ["EV-CTRL-UNCHANGED"], "changed_from_initial": false},
+    {"name": "JointConfigurationShape / JointSnapshotRecovery / JointSnapshotMemberAcceptance", "decision": "keep", "change_kind": "unchanged", "evidence": ["control (JointConfigurationShape evaluated)"], "proposed_expression": "unchanged", "disagreement_states": ["none"], "evidence_ids": ["EV-CTRL-UNCHANGED"], "changed_from_initial": false},
+    {"name": "ConfigurationTransitionSafety", "decision": "keep", "change_kind": "unchanged (pre-existing gap: id=0 exemption also covers auto-leave entries)", "evidence": ["not executed; repair left as an unresolved obligation"], "proposed_expression": "unchanged", "disagreement_states": ["not evaluated"], "evidence_ids": [], "changed_from_initial": false},
+    {"name": "NoUnexpectedFatal", "decision": "keep", "change_kind": "unchanged", "evidence": ["Go shows a duplicate leave or an invalid admitted change panics at apply; the model maps this to Fatal. Recommend enabling it in the Update cfgs."], "proposed_expression": "unchanged", "disagreement_states": ["none"], "evidence_ids": ["EV-CTRL-UNCHANGED"], "changed_from_initial": false},
+    {"name": "ElectionSafety, LogMatching, LeaderCompleteness, CommittedHistory, AppliedAgreement, VoteRecovery, RecoveryBacking, PromiseBacking, ConfigurationOrigin, LearnerEligibility, QuorumAccounting, ReplicationEvidence, SnapshotBacking, ReadyAccounting, ReadyOwnership, ReadBasis, ReadApplication, ReadCorrelation, VoteDecisionEligibility, TypeOK, LogStructure", "decision": "keep", "change_kind": "unchanged (safety controls)", "evidence": ["The evaluated subset (ElectionSafety, LogMatching, CommittedHistory, AppliedAgreement, ReadyAccounting, ReadyOwnership, VoteDecisionEligibility, LogStructure) is TRUE and identical through base and Proposed on all post-states"], "proposed_expression": "unchanged", "disagreement_states": ["none"], "evidence_ids": ["EV-CTRL-UNCHANGED"], "changed_from_initial": false},
+    {"name": "Update.tla canaries (AutoLeaveNotAppended etc.)", "decision": "keep", "change_kind": "unchanged", "evidence": ["AutoLeaveNotAppended was used to show that the bounded hunts were vacuous"], "proposed_expression": "unchanged", "disagreement_states": ["none"], "evidence_ids": ["EV-HUNT-VACUOUS"], "changed_from_initial": false},
+    {"name": "(no property) new progress Next=lastIndex and probe on config switch", "decision": "unresolved", "change_kind": "model migration only (ChangeProgress, BroadcastProbe in Proposed)", "evidence": ["Go TestEvNewPeerProbe: old next=2 and no message; new next=1 with an immediate MsgApp"], "proposed_expression": "none (latency/liveness, not a safety property)", "disagreement_states": ["n/a"], "evidence_ids": ["EV-NP-PROBE"], "changed_from_initial": false}
+  ],
+  "updated_behaviors_already_covered": [
+    {"behavior": "Shape of the auto-leave append (at most one empty V2 per Advance; output, reads and SoftState preserved)", "property": "AckPreservation (evaluated TRUE on every Advance witness)"},
+    {"behavior": "The nil-Data auto-leave applies as a leave with id 0", "property": "EffectContract branch e.id=0 => IsLeave(e)"},
+    {"behavior": "Joint config shape after leave or demotion", "property": "JointConfigurationShape"},
+    {"behavior": "Sorted campaign fan-out", "property": "CampaignContract compares the set of requests"},
+    {"behavior": "Quota accounting with reduce-before-append", "property": "QuotaIntegrity"}
+  ],
+  "suspected_defects": [
+    {"where": "new code, raft.go advance", "defect": "The edge trigger `oldApplied < pendingConfIndex` never fires for a leader elected with applied == pendingConfIndex. The joint config is never left automatically (contradicts raft.proto auto_leave).", "evidence": "EV-AL-D3-NEWCODE (Go: still joint after 3 more rounds; TLC: old and proposed both FALSE)", "status": "confirmed"},
+    {"where": "new and old code, raft.go advance with early Advance (node.go/README allow it)", "defect": "When Advance runs before ApplyConfChange of the auto-leave entry, a second leave is appended. Applying it panics with \"can't leave a non-joint config\".", "evidence": "EV-AL-E-NEWCODE / EV-AL-E-OLDCODE (Go panic in both trees)", "status": "confirmed"},
+    {"where": "new code, raft.go advance with early Advance", "defect": "If the joint entry is applied after the Advance that crossed pendingConf, the edge has passed and auto-leave never fires.", "evidence": "reasoned from code only; not executed", "status": "suspected"},
+    {"where": "new and old code, stepLeader admission", "defect": "wantsLeaveJoint := len(Changes)==0 admits V2{JointExplicit/Implicit, no changes} in a joint config. Apply then panics with \"config is already joint\".", "evidence": "EV-PC-P5-NEWCODE (Go panic in both trees)", "status": "confirmed"},
+    {"where": "old code (fixed by the update)", "defect": "Duplicate auto-leave under the ordinary schedule (panic); auto-leave refused by quota; non-leave conf changes admitted in a joint config and leaves admitted outside one (both panic at apply); a demoted transferee is kept.", "evidence": "EV-AL-D1-OLDCODE, EV-AL-D2-OLDCODE, EV-PC-P1-OLDCODE, EV-PC-P2-OLDCODE, EV-TT-OLDCODE", "status": "confirmed"},
+    {"where": "old model (base.tla)", "defect": "AdvanceCore, AppendQuotaExceeded, RewriteConf, ChangeProgress, ApplyConfCore and AutoLeaveWeight/Encoded encode old behavior. Migrated versions are in evidence/Proposed.tla (ImplModel=\"new\"); their post-states match the Go post-states on every witness.", "evidence": "all EV-AL/EV-PC/EV-TT runs", "status": "model migration required"}
+  ],
+  "unresolved_obligations": [
+    "Bounded model checking of the proposed properties on reachable states was inconclusive. The auto-leave path was never reached (canary AutoLeaveNotAppended held over 18.6M BFS states and 23M simulated states). A scenario-directed run is still needed (EV-HUNT-VACUOUS).",
+    "Prompt probing of newly added replicas (Next=lastIndex plus probe in switchToConfig) is latency/liveness only. No safety property was added; CatchupProgress is not model-checked.",
+    "ConfigurationTransitionSafety exempts all id=0 entries, including auto-leave entries. The proposed repair (exempt only bootstrap AddVoter) was not executed.",
+    "Admitted conf changes must be applicable (no panic at apply). The joint rule in ProposalContract covers P1/P2/P5, but other invalid admitted changes (for example removing the last voter) are not covered.",
+    "Pre-existing, outside the update: CampaignContract treats pending V2 entries as blocking a campaign, while numOfPendingConf counts only EntryConfChange."
+  ]
+}

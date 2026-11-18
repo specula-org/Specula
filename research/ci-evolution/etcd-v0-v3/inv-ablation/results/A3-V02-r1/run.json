@@ -1,0 +1,109 @@
+{
+  "run": "A3-V02-r1",
+  "arm": "A3",
+  "transition": "V02",
+  "rep": 1,
+  "model": "claude-opus-5-5",
+  "effort": "xhigh",
+  "tools": "Bash,Read,Glob,Grep,Write,Edit",
+  "sandboxed": true,
+  "prompt": "prompts/A3-two-axis.md",
+  "prompt_sha256": "85d5a987af864adb90d5a409168a6d46b7c9c5627b7c9270334f12f2d6efa545",
+  "packet": {
+    "transition": "V02",
+    "verified": 160,
+    "missing": []
+  },
+  "started_at": "2026-11-14T21:05:16.250273+00:00",
+  "attempt": 1,
+  "seconds": 2264.3,
+  "exit_code": 0,
+  "subtype": "success",
+  "cost_usd": 10.217335499999997,
+  "turns": 99,
+  "usage": {
+    "input_tokens": 162,
+    "cache_creation_input_tokens": 359952,
+    "cache_read_input_tokens": 18599197,
+    "output_tokens": 180842,
+    "output_tokens_details": {
+      "thinking_tokens": 90379
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 359952,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 1275,
+        "cache_read_input_tokens": 368893,
+        "cache_creation_input_tokens": 776,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 776
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "permission_denials": [],
+  "tool_uses": {
+    "Bash": 72,
+    "Read": 3,
+    "Grep": 1,
+    "Write": 8,
+    "Edit": 14
+  },
+  "produced": [
+    "decision.initial.json",
+    "decision.json",
+    "decision.md",
+    "evidence.json"
+  ],
+  "evidence_files": 58,
+  "audit": {
+    "bash_commands": 72,
+    "network_like_commands": [],
+    "initial_written_before_first_bash": false,
+    "initial_rewritten_later": 0
+  },
+  "decision_json_parses": true,
+  "log": "/mydata/bingzhuo/inv-ablation/runs/A3-V02-r1/stream.jsonl",
+  "log_sha256": "cf0462c01d8e307c5a24c95aadeb38d41e30e11923e8b6d22912c6475d152161",
+  "command": [
+    "/mydata/bingzhuo/src/Specula/research/ci-evolution/etcd-v0-v3/inv-ablation/sandbox.sh",
+    "/mydata/bingzhuo/inv-ablation/runs/A3-V02-r1/workspace",
+    "--",
+    "claude",
+    "-p",
+    "<prompts/A3-two-axis.md>",
+    "--allowedTools",
+    "Bash",
+    "--model",
+    "claude-opus-5-5",
+    "--effort",
+    "xhigh",
+    "--tools",
+    "Bash,Read,Glob,Grep,Write,Edit",
+    "--permission-mode",
+    "acceptEdits",
+    "--strict-mcp-config",
+    "--setting-sources",
+    "",
+    "--no-session-persistence",
+    "--max-budget-usd",
+    "40",
+    "--output-format",
+    "stream-json",
+    "--verbose"
+  ]
+}

@@ -1,0 +1,1399 @@
+[
+ {
+  "id": "E1",
+  "property": "VoteDecisionEligibility (VoteContract)",
+  "kind": "relaxation",
+  "state": {
+   "witness": "EvalVote branches 'new' and 'new_pre', level 2 (post-state of New!Receive).",
+   "pre_state": "TestLearnerCanVote mapping: Server={1,2}; raft[2] learner (config voters={1}, learners={2}), term 1, vote 0, lead 0, empty log; wire={MsgVote 1->2 term 2 index 11 logTerm 11} (resp. MsgPreVote).",
+   "population": "quality.votes = {VoteObservation(r,m,a)} produced by the action's own QualityEvent(\"Receive\"); responses computed by NewResponses from raft[2].out before/after; history.grants filled by Observe from raft[2].grants.",
+   "observed": "new: node2 term 2, vote 1, out={MsgVoteResp term 2 reject FALSE}; PreVote: MsgPreVoteResp term 2 reject FALSE, term stays 1."
+  },
+  "old_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "new": "TestEvLearnerVote: MsgVote -> 1 msg MsgVoteResp to=1 term=2 reject=false, vote=1; MsgPreVote -> MsgPreVoteResp term=2 reject=false. Upstream TestLearnerCanVote PASS.",
+   "old": "TestEvLearnerVote: nmsgs=0 for MsgVote (term advanced to 2, vote 0) and MsgPreVote.",
+   "test_file": "evidence/go/{new,old}/zz_evidence_test.go:TestEvLearnerVote",
+   "command": "cd evidence/go/{new,old} && go test -vet=off -count=1 -v -run 'TestEv' .",
+   "result": "matches model: new grants, old silent"
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new TestEvLearnerVote; New!Receive post-state"
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/raft.go:933-950",
+    "new/source/raft_test.go:381-397"
+   ],
+   "basis": "comment: 'learners must be allowed to cast votes'; test renamed TestLearnerCanVote 'checks that a learner can vote when it receives a valid Vote request'"
+  },
+  "cell": "impl produces / requirement allowed -> relaxation justified",
+  "requirement_evidence": [
+   "new/source/raft.go:933-950",
+   "new/source/raft_test.go:381-397"
+  ],
+  "verdict": "accepted",
+  "note": "Old VoteContract demanded silence for learners and is FALSE on required behavior. Test assertion at raft_test.go:394 is vacuous for a rejecting MsgVoteResp (D2) but :390-392 still requires exactly one response.",
+  "files": {
+   "proposed_tla": "evidence/Proposed.tla",
+   "old_tla_copy": "evidence/base.tla",
+   "harness_tla": "evidence/EvalVote.tla",
+   "harness_cfg": "evidence/EvalVote.cfg",
+   "tlc_log": "evidence/logs/tlc_EvalVote.log",
+   "tlc_command": "java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -workers 1 -config EvalVote.cfg EvalVote.tla",
+   "summarizer": "evidence/scripts/summarize.py",
+   "go_tests": [
+    "evidence/go/new/zz_evidence_test.go",
+    "evidence/go/old/zz_evidence_test.go",
+    "evidence/go/new/zz_autoleave_evidence_test.go",
+    "evidence/go/old/zz_autoleave_evidence_test.go"
+   ],
+   "go_logs": [
+    "evidence/logs/go_new_ev.log",
+    "evidence/logs/go_old_ev.log"
+   ]
+  }
+ },
+ {
+  "id": "E2",
+  "property": "VoteDecisionEligibility (VoteContract)",
+  "kind": "strengthening",
+  "state": {
+   "witness": "EvalVote branches 'old' and 'old_pre', level 2 (post-state of Old!Receive, i.e. the old learner early-return).",
+   "pre_state": "same as E1",
+   "population": "quality.votes from the action's QualityEvent; responses={} (learner silent)."
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "new": "does not produce silence (responds, see E1)",
+   "old": "produces silence (nmsgs=0)",
+   "test_file": "evidence/go/{new,old}/zz_evidence_test.go:TestEvLearnerVote",
+   "command": "cd evidence/go/{new,old} && go test -vet=off -count=1 -v -run 'TestEv' .",
+   "result": "old silent / new responds"
+  },
+  "impl_produces": {
+   "value": "no",
+   "basis": "Go new TestEvLearnerVote emits one MsgVoteResp"
+  },
+  "requirement": {
+   "value": "forbidden",
+   "citations": [
+    "new/source/raft_test.go:390-392",
+    "new/source/raft.go:933-950"
+   ],
+   "basis": "TestLearnerCanVote fails unless exactly one message is sent; comment requires learners to vote"
+  },
+  "cell": "impl does not produce / requirement forbidden -> strengthening justified",
+  "requirement_evidence": [
+   "new/source/raft_test.go:390-392",
+   "new/source/raft.go:933-950"
+  ],
+  "verdict": "accepted",
+  "note": "The proposed contract rejects the old behavior, so a regression to the learner early-return is detected.",
+  "files": {
+   "proposed_tla": "evidence/Proposed.tla",
+   "old_tla_copy": "evidence/base.tla",
+   "harness_tla": "evidence/EvalVote.tla",
+   "harness_cfg": "evidence/EvalVote.cfg",
+   "tlc_log": "evidence/logs/tlc_EvalVote.log",
+   "tlc_command": "java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -workers 1 -config EvalVote.cfg EvalVote.tla",
+   "summarizer": "evidence/scripts/summarize.py",
+   "go_tests": [
+    "evidence/go/new/zz_evidence_test.go",
+    "evidence/go/old/zz_evidence_test.go",
+    "evidence/go/new/zz_autoleave_evidence_test.go",
+    "evidence/go/old/zz_autoleave_evidence_test.go"
+   ],
+   "go_logs": [
+    "evidence/logs/go_new_ev.log",
+    "evidence/logs/go_old_ev.log"
+   ]
+  }
+ },
+ {
+  "id": "E3",
+  "property": "VoteDecisionEligibility (VoteContract)",
+  "kind": "control",
+  "state": {
+   "witness": "EvalVote 'forged_stale_grant' level 1 (forbidden), plus 'new_stale' and 'old_stale' level 2.",
+   "pre_state": "raft[2] learner, term 2, log [t1,t2]; MsgVote 1->2 term 3 index 1 logTerm 1 (stale candidate).",
+   "population": "forged: quality.votes={New!VoteObservation(RS,MS,ForgedStaleGrant)} where ForgedStaleGrant = BecomeFollower(RS,3) with vote:=1 and a granting MsgVoteResp added to out (TLA+ operators evaluated by TLC); new_stale/old_stale: produced by New!/Old!Receive.",
+   "observed": "new_stale: MsgVoteResp term 3 reject TRUE; old_stale: silence"
+  },
+  "old_property": {
+   "claimed": false,
+   "tlc": {
+    "forged_stale_grant": false,
+    "new_stale(reject)": false,
+    "old_stale(silent)": true
+   }
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": {
+    "forged_stale_grant": false,
+    "new_stale(reject)": true,
+    "old_stale(silent)": false
+   }
+  },
+  "code_observation": {
+   "new": "TestEvLearnerVoteControls: learner_stale -> MsgVoteResp reject=true; learner_double (already voted 3 in term 2) -> reject=true",
+   "old": "both silent (nmsgs=0)",
+   "test_file": "evidence/go/{new,old}/zz_evidence_test.go:TestEvLearnerVoteControls",
+   "command": "cd evidence/go/{new,old} && go test -vet=off -count=1 -v -run 'TestEv' .",
+   "result": "new learner still rejects stale/second-vote requests"
+  },
+  "impl_produces": {
+   "value": "no",
+   "basis": "forged grant not produced: Go new rejects stale candidate and double vote"
+  },
+  "requirement": {
+   "value": "forbidden",
+   "citations": [
+    "new/source/raft.go:925-931",
+    "new/source/raft_paper_test.go:820-823",
+    "new/source/raft_test.go:1454-1545"
+   ],
+   "basis": "vote only if repeat / not yet voted and 'we believe the candidate is up to date'; TestVoter/TestRecvMsgVote require rejection for stale logs"
+  },
+  "cell": "impl does not produce / requirement forbidden (nearby forbidden control for the relaxation)",
+  "requirement_evidence": [
+   "new/source/raft.go:925-931",
+   "new/source/raft_paper_test.go:820-823",
+   "new/source/raft_test.go:1454-1545"
+  ],
+  "verdict": "accepted",
+  "note": "Relaxation removes only the learner clause; freshness/can-vote/lease/stale-term detection is unchanged and still rejects the forged learner grant.",
+  "files": {
+   "proposed_tla": "evidence/Proposed.tla",
+   "old_tla_copy": "evidence/base.tla",
+   "harness_tla": "evidence/EvalVote.tla",
+   "harness_cfg": "evidence/EvalVote.cfg",
+   "tlc_log": "evidence/logs/tlc_EvalVote.log",
+   "tlc_command": "java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -workers 1 -config EvalVote.cfg EvalVote.tla",
+   "summarizer": "evidence/scripts/summarize.py",
+   "go_tests": [
+    "evidence/go/new/zz_evidence_test.go",
+    "evidence/go/old/zz_evidence_test.go",
+    "evidence/go/new/zz_autoleave_evidence_test.go",
+    "evidence/go/old/zz_autoleave_evidence_test.go"
+   ],
+   "go_logs": [
+    "evidence/logs/go_new_ev.log",
+    "evidence/logs/go_old_ev.log"
+   ]
+  }
+ },
+ {
+  "id": "E4",
+  "property": "LearnerEligibility",
+  "kind": "relaxation",
+  "state": {
+   "witness": "EvalVote 'new' levels 2-6 and EvalQuorum 'new' levels 2-12.",
+   "population": "history.grants contains [node 2|1, learner TRUE, term 2, candidate 1|3, pre FALSE] written by StepVote into raft[n].grants and accumulated by Observe during New!Receive; not hand-written.",
+   "observed": "EvalQuorum: the learner grant subsequently elects candidate 3."
+  },
+  "old_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "new": "TestEvLearnerVote grant (see E1); TestEvCandidateLearnerGrant: candidate with voters {1,2,3} becomes leader on grant from 1",
+   "old": "learner silent",
+   "test_file": "evidence/go/{new,old}/zz_evidence_test.go",
+   "command": "cd evidence/go/{new,old} && go test -vet=off -count=1 -v -run 'TestEv' .",
+   "result": "learner grants recorded in new code"
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new TestEvLearnerVote"
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/raft.go:933-950",
+    "new/source/raft_test.go:381-397"
+   ],
+   "basis": "same as E1"
+  },
+  "cell": "impl produces / requirement allowed -> relaxation justified",
+  "requirement_evidence": [
+   "new/source/raft.go:933-950",
+   "new/source/raft_test.go:381-397"
+  ],
+  "verdict": "accepted",
+  "note": "Only the grants conjunct is dropped; campaigns conjunct is retained (E5).",
+  "files": {
+   "proposed_tla": "evidence/Proposed.tla",
+   "old_tla_copy": "evidence/base.tla",
+   "harness_tla": "evidence/EvalVote.tla",
+   "harness_cfg": "evidence/EvalVote.cfg",
+   "tlc_log": "evidence/logs/tlc_EvalVote.log",
+   "tlc_command": "java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -workers 1 -config EvalVote.cfg EvalVote.tla",
+   "summarizer": "evidence/scripts/summarize.py",
+   "go_tests": [
+    "evidence/go/new/zz_evidence_test.go",
+    "evidence/go/old/zz_evidence_test.go",
+    "evidence/go/new/zz_autoleave_evidence_test.go",
+    "evidence/go/old/zz_autoleave_evidence_test.go"
+   ],
+   "go_logs": [
+    "evidence/logs/go_new_ev.log",
+    "evidence/logs/go_old_ev.log"
+   ],
+   "harness_tla_2": "evidence/EvalQuorum.tla",
+   "tlc_log_2": "evidence/logs/tlc_EvalQuorum.log"
+  }
+ },
+ {
+  "id": "E5",
+  "property": "LearnerEligibility",
+  "kind": "control",
+  "state": {
+   "witness": "EvalVote 'forged_learner_campaign' level 1.",
+   "population": "history.campaigns={[node |-> 2, learner |-> TRUE]} (forged forbidden observation; same record shape as CampaignElection writes)."
+  },
+  "old_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "new": "TestLearnerElectionTimeout PASS (learner stays follower after election timeout); TestLearnerPromotion PASS",
+   "old": "n/a",
+   "test_file": "new/source/raft_test.go (upstream, run in evidence/go/new)",
+   "command": "go test -vet=off -count=1 -v -run 'TestLearnerElectionTimeout|TestLearnerPromotion' .",
+   "result": "PASS (evidence/logs/go_new_upstream_tests.log)"
+  },
+  "impl_produces": {
+   "value": "no",
+   "basis": "promotable() guard unchanged; upstream tests pass"
+  },
+  "requirement": {
+   "value": "forbidden",
+   "citations": [
+    "new/source/raft_test.go:311-327",
+    "new/source/raft_test.go:329-331"
+   ],
+   "basis": "'Learner should not start election even when times out'; 'the learner should not election until it is promoted'"
+  },
+  "cell": "impl does not produce / requirement forbidden (nearby forbidden control for the relaxation)",
+  "requirement_evidence": [
+   "new/source/raft_test.go:311-327",
+   "new/source/raft_test.go:329-331"
+  ],
+  "verdict": "accepted",
+  "note": "The relaxation does not erase detection of learner campaigns.",
+  "files": {
+   "proposed_tla": "evidence/Proposed.tla",
+   "old_tla_copy": "evidence/base.tla",
+   "harness_tla": "evidence/EvalVote.tla",
+   "harness_cfg": "evidence/EvalVote.cfg",
+   "tlc_log": "evidence/logs/tlc_EvalVote.log",
+   "tlc_command": "java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -workers 1 -config EvalVote.cfg EvalVote.tla",
+   "summarizer": "evidence/scripts/summarize.py",
+   "go_log": "evidence/logs/go_new_upstream_tests.log"
+  }
+ },
+ {
+  "id": "E6a",
+  "property": "ReadyOwnership",
+  "kind": "semantic",
+  "state": {
+   "witness": "EvalReady 'new' level 2 (post New!Ready(1)), also 'new_msgs_only' level 2.",
+   "pre_state": "TestRawNodeConsumeReady mapping: RawNode 1 with raft.out={M1 (MsgHeartbeatResp)}, readStates=<<R1>>, no pending Ready.",
+   "population": "history.readyChecks record written by ProtocolReady's own observer: outBefore {M1}, outAfter EmptyBag, readsBefore <<R1>>, readsAfter <<>>, raw TRUE."
+  },
+  "old_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "new": "TestEvRawNodeReadyAdvance: rd.msgs=1 rd.reads=1 raft.msgs_after_Ready=0 raft.reads_after_Ready=0; upstream TestRawNodeConsumeReady PASS",
+   "old": "raft.msgs_after_Ready=1 raft.reads_after_Ready=1",
+   "test_file": "evidence/go/{new,old}/zz_evidence_test.go:TestEvRawNodeReadyAdvance",
+   "command": "cd evidence/go/{new,old} && go test -vet=off -count=1 -v -run 'TestEv' .",
+   "result": "new Ready accepts; old Ready read-only"
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new observation"
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/rawnode.go:119-127",
+    "new/source/rawnode_test.go:928-952"
+   ],
+   "basis": "'The returned Ready() *must* be handled and subsequently passed back via Advance()'; test: Ready() 'should move the message into the Ready (as opposed to leaving it in both places)'"
+  },
+  "cell": "impl produces / requirement allowed -> accept (old raw branch inverted)",
+  "requirement_evidence": [
+   "new/source/rawnode.go:119-127",
+   "new/source/rawnode_test.go:928-952"
+  ],
+  "verdict": "accepted",
+  "note": "Semantic API contract change: RawNode.Ready() now consumes; read-only variant is internal readyWithoutAccept.",
+  "files": {
+   "proposed_tla": "evidence/Proposed.tla",
+   "old_tla_copy": "evidence/base.tla",
+   "harness_tla": "evidence/EvalReady.tla",
+   "harness_cfg": "evidence/EvalReady.cfg",
+   "tlc_log": "evidence/logs/tlc_EvalReady.log",
+   "tlc_command": "java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -workers 1 -config EvalReady.cfg EvalReady.tla",
+   "summarizer": "evidence/scripts/summarize.py",
+   "go_tests": [
+    "evidence/go/new/zz_evidence_test.go",
+    "evidence/go/old/zz_evidence_test.go",
+    "evidence/go/new/zz_autoleave_evidence_test.go",
+    "evidence/go/old/zz_autoleave_evidence_test.go"
+   ],
+   "go_logs": [
+    "evidence/logs/go_new_ev.log",
+    "evidence/logs/go_old_ev.log"
+   ]
+  }
+ },
+ {
+  "id": "E6b",
+  "property": "ReadyOwnership",
+  "kind": "strengthening",
+  "state": {
+   "witness": "EvalReady 'old' level 2 (post Old!Ready(1): RawNode Ready left out={M1}, readStates=<<R1>>).",
+   "population": "readyChecks record from Old!ProtocolReady observer (raw TRUE, outAfter=outBefore={M1})."
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "new": "does not produce (msgs reset)",
+   "old": "produces (msgs retained after Ready)",
+   "test_file": "evidence/go/{new,old}/zz_evidence_test.go:TestEvRawNodeReadyAdvance",
+   "command": "cd evidence/go/{new,old} && go test -vet=off -count=1 -v -run 'TestEv' .",
+   "result": "old retains / new clears"
+  },
+  "impl_produces": {
+   "value": "no",
+   "basis": "Go new raft.msgs_after_Ready=0"
+  },
+  "requirement": {
+   "value": "forbidden",
+   "citations": [
+    "new/source/rawnode_test.go:947-950"
+   ],
+   "basis": "t.Fatalf(\"messages not reset\") if raft.msgs non-empty after Ready()"
+  },
+  "cell": "impl does not produce / requirement forbidden -> strengthening justified",
+  "requirement_evidence": [
+   "new/source/rawnode_test.go:947-950"
+  ],
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "proposed_tla": "evidence/Proposed.tla",
+   "old_tla_copy": "evidence/base.tla",
+   "harness_tla": "evidence/EvalReady.tla",
+   "harness_cfg": "evidence/EvalReady.cfg",
+   "tlc_log": "evidence/logs/tlc_EvalReady.log",
+   "tlc_command": "java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -workers 1 -config EvalReady.cfg EvalReady.tla",
+   "summarizer": "evidence/scripts/summarize.py",
+   "go_tests": [
+    "evidence/go/new/zz_evidence_test.go",
+    "evidence/go/old/zz_evidence_test.go",
+    "evidence/go/new/zz_autoleave_evidence_test.go",
+    "evidence/go/old/zz_autoleave_evidence_test.go"
+   ],
+   "go_logs": [
+    "evidence/logs/go_new_ev.log",
+    "evidence/logs/go_old_ev.log"
+   ]
+  }
+ },
+ {
+  "id": "E7",
+  "property": "ReadyOwnership",
+  "kind": "control",
+  "state": {
+   "witness": "EvalReady 'forged_node_keeps_out' and 'forged_quota_change' level 1.",
+   "population": "history.readyChecks={record} hand-built in the readyChecks shape: (a) raw FALSE, outBefore=outAfter={M1}; (b) raw TRUE, out empty, quotaAfter 1 # quotaBefore 0."
+  },
+  "old_property": {
+   "claimed": false,
+   "tlc": {
+    "forged_node_keeps_out": false,
+    "forged_quota_change": false
+   }
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": {
+    "forged_node_keeps_out": false,
+    "forged_quota_change": false
+   }
+  },
+  "code_observation": {
+   "new": "node.go:384-386 calls acceptReady when the Ready is delivered (code path; not separately executed)",
+   "old": "same",
+   "test_file": "not_representable as a separate Go run (Node goroutine internals)",
+   "command": "n/a",
+   "result": "unknown beyond cited code path"
+  },
+  "impl_produces": {
+   "value": "no",
+   "basis": "cited code path node.go:384-386 (acceptReady on delivery)"
+  },
+  "requirement": {
+   "value": "forbidden (a); unknown (b)",
+   "citations": [
+    "new/source/node.go:310-318",
+    "new/source/rawnode.go:135-137",
+    "new/source/rawnode_test.go:943-946"
+   ],
+   "basis": "(a) messages must move into the Ready, not stay in both places, and the Node only accepts a delivered Ready; (b) no explicit contract text for uncommitted-size quota at Ready \u2014 conjunct carried over unchanged, not an edit"
+  },
+  "cell": "(a) impl does not produce / forbidden -> control holds; (b) requirement unknown -> unresolved, no edit made toward it",
+  "requirement_evidence": [
+   "new/source/node.go:310-318",
+   "new/source/rawnode.go:135-137",
+   "new/source/rawnode_test.go:943-946"
+  ],
+  "verdict": "accepted",
+  "note": "The modified ReadyOwnership still rejects a Node wrapper that fails to accept, so the unification of the raw/non-raw branches does not erase detection.",
+  "files": {
+   "proposed_tla": "evidence/Proposed.tla",
+   "old_tla_copy": "evidence/base.tla",
+   "harness_tla": "evidence/EvalReady.tla",
+   "harness_cfg": "evidence/EvalReady.cfg",
+   "tlc_log": "evidence/logs/tlc_EvalReady.log",
+   "tlc_command": "java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -workers 1 -config EvalReady.cfg EvalReady.tla",
+   "summarizer": "evidence/scripts/summarize.py"
+  }
+ },
+ {
+  "id": "E8",
+  "property": "ReadyAccounting (lostReads observer)",
+  "kind": "observer",
+  "state": {
+   "witness": "EvalReady 'new' level 12 and 'old' level 12 (post Advance).",
+   "pre_state": "RawNode 1: Ready (delivers R1 and M1) -> StartPersist/CompletePersist(All) -> StorageApplySnapshot/Append/SetHardState -> Publish(M1) -> QueueApplication -> Receive(MsgHeartbeat from 2) adds MsgHeartbeatResp m2 -> Receive(MsgReadIndexResp R2) adds R2 -> Advance(1). All steps are real Old!/New! actions.",
+   "population": "Old observer = verbatim TLA+ copy of base.tla:1102-1103 (OldLostReadsObserver) applied to the executed transition via a prev-state variable; new observer = Proposed!LostReadsAtAdvance applied to the same transition. ReadyAccounting evaluated through INSTANCE ... WITH history <- (history with that lostReads).",
+   "observed": "new transition: readStates before {R2}, after {R2}, delivered {R1}. old transition: before {R1,R2}, after {}."
+  },
+  "old_property": {
+   "claimed": false,
+   "tlc": {
+    "new_transition": false,
+    "old_transition": false
+   },
+   "lostReads": {
+    "new_transition": "{R2}",
+    "old_transition": "{R2}"
+   }
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": {
+    "new_transition": true,
+    "old_transition": false
+   },
+   "lostReads": {
+    "new_transition": "{}",
+    "old_transition": "{R2}"
+   }
+  },
+  "code_observation": {
+   "new": "TestEvRawNodeReadyAdvance: raft.reads_after(Advance)=[r2]; next Ready reads=[r2]",
+   "old": "raft.reads_after(Advance)=[]; next Ready reads=[] (R2 lost)",
+   "test_file": "evidence/go/{new,old}/zz_evidence_test.go:TestEvRawNodeReadyAdvance",
+   "command": "cd evidence/go/{new,old} && go test -vet=off -count=1 -v -run 'TestEv' .",
+   "result": "new retains R2 and delivers it next Ready; old drops it"
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new retains R2 across Advance"
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/rawnode_test.go:954-959",
+    "new/source/rawnode.go:119-122"
+   ],
+   "basis": "Advance must not drop state produced after Ready (test comment 'make sure that Advance() doesn't drop it'); Ready() owns delivery"
+  },
+  "cell": "impl produces / requirement allowed -> observer migration justified (old observer is a false positive)",
+  "requirement_evidence": [
+   "new/source/rawnode_test.go:954-959",
+   "new/source/rawnode.go:119-122"
+  ],
+  "verdict": "accepted",
+  "note": "Identical predicate text (history.lostReads={}) has a different meaning under the new Advance: the old observer presumed Advance clears readStates. Under the new model the migrated observer is a regression detector (it fires on the old transition).",
+  "files": {
+   "proposed_tla": "evidence/Proposed.tla",
+   "old_tla_copy": "evidence/base.tla",
+   "harness_tla": "evidence/EvalReady.tla",
+   "harness_cfg": "evidence/EvalReady.cfg",
+   "tlc_log": "evidence/logs/tlc_EvalReady.log",
+   "tlc_command": "java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -workers 1 -config EvalReady.cfg EvalReady.tla",
+   "summarizer": "evidence/scripts/summarize.py",
+   "go_tests": [
+    "evidence/go/new/zz_evidence_test.go",
+    "evidence/go/old/zz_evidence_test.go",
+    "evidence/go/new/zz_autoleave_evidence_test.go",
+    "evidence/go/old/zz_autoleave_evidence_test.go"
+   ],
+   "go_logs": [
+    "evidence/logs/go_new_ev.log",
+    "evidence/logs/go_old_ev.log"
+   ]
+  }
+ },
+ {
+  "id": "E9",
+  "property": "AdvanceRetention (new)",
+  "kind": "strengthening",
+  "state": {
+   "witness": "EvalReady 'new'/'old' level 12 and 'new_msgs_only'/'old_msgs_only' level 11 (post Advance).",
+   "population": "acks record = Proposed!AdvanceAck(prev.raft[1], raft[1], prev.ready[1]) \u2014 the proposed observer applied to the executed transition (the new action writes the same record itself).",
+   "observed": "new: outBefore=outAfter={m2 MsgHeartbeatResp}, readStates {R2} kept; old: outAfter=EmptyBag, readStates <<>>"
+  },
+  "old_property": {
+   "claimed": "absent (no property over outbox at Advance)",
+   "tlc": {
+    "old_msgs_only: ReadyAccounting(old obs)": true,
+    "old_msgs_only: AckPreservation": true,
+    "old (with R2): ReadyAccounting(old obs)": false
+   }
+  },
+  "proposed_property": {
+   "claimed": {
+    "new": true,
+    "old": false
+   },
+   "tlc": {
+    "new": true,
+    "new_msgs_only": true,
+    "old": false,
+    "old_msgs_only": false
+   }
+  },
+  "code_observation": {
+   "new": "TestEvRawNodeReadyAdvance: raft.msgs_after(Advance)=[bar] (m2 kept); upstream TestRawNodeConsumeReady PASS",
+   "old": "raft.msgs_after(Advance)=[] (m2 dropped)",
+   "test_file": "evidence/go/{new,old}/zz_evidence_test.go:TestEvRawNodeReadyAdvance",
+   "command": "cd evidence/go/{new,old} && go test -vet=off -count=1 -v -run 'TestEv' .",
+   "result": "new keeps m2; old drops it"
+  },
+  "impl_produces": {
+   "value": "no",
+   "basis": "dropping behavior not produced by new code"
+  },
+  "requirement": {
+   "value": "forbidden",
+   "citations": [
+    "new/source/rawnode_test.go:954-959"
+   ],
+   "basis": "'Add a message to raft to make sure that Advance() doesn't drop it' + Fatalf unless m2 remains"
+  },
+  "cell": "impl does not produce / requirement forbidden -> strengthening justified",
+  "requirement_evidence": [
+   "new/source/rawnode_test.go:954-959"
+  ],
+  "verdict": "accepted",
+  "note": "msgs-only variant shows the old suite is blind to dropped messages (ReadyAccounting and AckPreservation stay TRUE); only AdvanceRetention rejects it. Allowed control: EvalJoint new_restart level 18 (leader Advance appending leave-joint) gives AdvanceRetention TRUE, but its outbox is empty there (weak).",
+  "files": {
+   "proposed_tla": "evidence/Proposed.tla",
+   "old_tla_copy": "evidence/base.tla",
+   "harness_tla": "evidence/EvalReady.tla",
+   "harness_cfg": "evidence/EvalReady.cfg",
+   "tlc_log": "evidence/logs/tlc_EvalReady.log",
+   "tlc_command": "java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -workers 1 -config EvalReady.cfg EvalReady.tla",
+   "summarizer": "evidence/scripts/summarize.py",
+   "go_tests": [
+    "evidence/go/new/zz_evidence_test.go",
+    "evidence/go/old/zz_evidence_test.go",
+    "evidence/go/new/zz_autoleave_evidence_test.go",
+    "evidence/go/old/zz_autoleave_evidence_test.go"
+   ],
+   "go_logs": [
+    "evidence/logs/go_new_ev.log",
+    "evidence/logs/go_old_ev.log"
+   ]
+  }
+ },
+ {
+  "id": "E10",
+  "property": "JointSnapshotRecovery / ConfigurationOrigin / JointConfigurationShape (keep) - restart path",
+  "kind": "semantic",
+  "state": {
+   "witness": "EvalJoint 'new_restart' level 2 vs 'old_restart' level 2 (post Restart(1)).",
+   "pre_state": "node 1 crashed; disk[1].snapshot = SJ (index 5, term 2, hist H5 = bootstrap(1,2,3) . Normal(t2) . V2{AddLearner 3, JointImplicit}, config = ConfigOf(H5) = voters {1,2} & outgoing {1,2,3}, learnersNext {3}, autoLeave TRUE), hs term 2 commit 5 \u2014 mirrors Go jointCS().",
+   "population": "history.recovery record written by ProtocolRestart's observer (expectedConfig = disk snapshot config, config = constructed config); raft[1].cfgHist = snapshot hist.",
+   "observed": "new config = full joint config; old config = <<{1,2},{},{},{},FALSE>>"
+  },
+  "old_property": {
+   "claimed": {
+    "new_state": true,
+    "old_state": false
+   },
+   "tlc": {
+    "JointSnapshotRecovery": {
+     "new_state": true,
+     "old_state": false
+    },
+    "ConfigurationOrigin": {
+     "new_state": true,
+     "old_state": false
+    },
+    "JointConfigurationShape": {
+     "new_state": true,
+     "old_state": true
+    },
+    "VoteRecovery/RecoveryBacking/SnapshotBacking/TypeOK": {
+     "new_state": true,
+     "old_state": true
+    }
+   }
+  },
+  "proposed_property": {
+   "claimed": "unchanged text",
+   "tlc": "identical results (New! instance)"
+  },
+  "code_observation": {
+   "new": "TestEvJointRestart: config voters=(1 2)&&(1 2 3) learners_next=(3) autoleave; progress ids [1 2 3]",
+   "old": "config voters=(1 2) autoLeave=false; progress ids [1 2]",
+   "test_file": "evidence/go/{new,old}/zz_evidence_test.go:TestEvJointRestart",
+   "command": "cd evidence/go/{new,old} && go test -vet=off -count=1 -v -run 'TestEv' .",
+   "result": "new restores joint config exactly; old projects"
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new TestEvJointRestart"
+  },
+  "requirement": {
+   "value": "allowed (full restore); forbidden (projection)",
+   "citations": [
+    "new/source/confchange/restore.go:111-119",
+    "new/source/confchange/restore_test.go:84-142",
+    "new/source/raftpb/raft.proto:99-114"
+   ],
+   "basis": "Restore 'runs a sequence of changes enacting the configuration described in the ConfState'; TestRestore requires ConfState round-trip equality incl. VotersOutgoing/LearnersNext/AutoLeave"
+  },
+  "cell": "keep: new state impl produces / allowed -> property TRUE as required; old projection forbidden -> property FALSE as required",
+  "requirement_evidence": [
+   "new/source/confchange/restore.go:111-119",
+   "new/source/confchange/restore_test.go:84-142",
+   "new/source/raftpb/raft.proto:99-114"
+  ],
+  "verdict": "accepted",
+  "note": "JointConfigurationShape cannot detect the projection (a projected config is well-formed); JointSnapshotRecovery/ConfigurationOrigin are the detectors. Model edit only: RestoreProjection = identity.",
+  "files": {
+   "proposed_tla": "evidence/Proposed.tla",
+   "old_tla_copy": "evidence/base.tla",
+   "harness_tla": "evidence/EvalJoint.tla",
+   "harness_cfg": "evidence/EvalJoint.cfg",
+   "tlc_log": "evidence/logs/tlc_EvalJoint.log",
+   "tlc_command": "java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -workers 1 -config EvalJoint.cfg EvalJoint.tla",
+   "summarizer": "evidence/scripts/summarize.py",
+   "go_tests": [
+    "evidence/go/new/zz_evidence_test.go",
+    "evidence/go/old/zz_evidence_test.go",
+    "evidence/go/new/zz_autoleave_evidence_test.go",
+    "evidence/go/old/zz_autoleave_evidence_test.go"
+   ],
+   "go_logs": [
+    "evidence/logs/go_new_ev.log",
+    "evidence/logs/go_old_ev.log"
+   ]
+  }
+ },
+ {
+  "id": "E11",
+  "property": "JointSnapshotRecovery / ConfigurationOrigin (keep) - MsgSnap path",
+  "kind": "semantic",
+  "state": {
+   "witness": "EvalJoint 'new_snap2' vs 'old_snap2' level 2 (post Receive(MsgSnap SJ -> 2)).",
+   "pre_state": "all nodes InitialRaft (term 1, commit 3, BootConfig); wire={MsgSnap 1->2 term 2 snapshot SJ}; node 2 is an incoming voter.",
+   "population": "raft[2].config/cfgHist/usnap set by Restore inside the executed Receive."
+  },
+  "old_property": {
+   "claimed": {
+    "new_state": true,
+    "old_state": false
+   },
+   "tlc": {
+    "JointSnapshotRecovery": {
+     "new_state": true,
+     "old_state": false
+    },
+    "ConfigurationOrigin": {
+     "new_state": true,
+     "old_state": false
+    }
+   }
+  },
+  "proposed_property": {
+   "claimed": "unchanged text",
+   "tlc": "identical"
+  },
+  "code_observation": {
+   "new": "TestEvJointSnapRestore: ok=true config=voters=(1 2)&&(1 2 3) learners_next=(3) autoleave; TestEvOutgoingMemberSnap incoming_member_snap committed=11 joint config",
+   "old": "ok=true config=voters=(1 2) autoLeave=false",
+   "test_file": "evidence/go/{new,old}/zz_evidence_test.go",
+   "command": "cd evidence/go/{new,old} && go test -vet=off -count=1 -v -run 'TestEv' .",
+   "result": "new restores joint snapshot; old projects"
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new TestEvJointSnapRestore"
+  },
+  "requirement": {
+   "value": "allowed (full restore); forbidden (projection)",
+   "citations": [
+    "new/source/confchange/restore.go:111-119",
+    "new/source/confchange/restore_test.go:84-142",
+    "new/source/raftpb/raft.proto:99-114"
+   ],
+   "basis": "as E10"
+  },
+  "cell": "keep: required verdicts on both states",
+  "requirement_evidence": [
+   "new/source/confchange/restore.go:111-119",
+   "new/source/confchange/restore_test.go:84-142",
+   "new/source/raftpb/raft.proto:99-114"
+  ],
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "proposed_tla": "evidence/Proposed.tla",
+   "old_tla_copy": "evidence/base.tla",
+   "harness_tla": "evidence/EvalJoint.tla",
+   "harness_cfg": "evidence/EvalJoint.cfg",
+   "tlc_log": "evidence/logs/tlc_EvalJoint.log",
+   "tlc_command": "java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -workers 1 -config EvalJoint.cfg EvalJoint.tla",
+   "summarizer": "evidence/scripts/summarize.py",
+   "go_tests": [
+    "evidence/go/new/zz_evidence_test.go",
+    "evidence/go/old/zz_evidence_test.go",
+    "evidence/go/new/zz_autoleave_evidence_test.go",
+    "evidence/go/old/zz_autoleave_evidence_test.go"
+   ],
+   "go_logs": [
+    "evidence/logs/go_new_ev.log",
+    "evidence/logs/go_old_ev.log"
+   ]
+  }
+ },
+ {
+  "id": "E12",
+  "property": "SnapshotMemberRestore (new)",
+  "kind": "strengthening",
+  "state": {
+   "witness": "EvalJoint 'new_snap3' and 'new_snap3_removal' level 2 (post New!Receive(MsgSnap -> 3)).",
+   "pre_state": "node 3 follower (InitialRaft, commit 3); snapshot SJ (3 in outgoing and learnersNext: demotion) or SR (H5R: V2{Remove 3, JointExplicit}; 3 only in outgoing: removal).",
+   "population": "quality.restores = {Proposed!RestoreObservation(prev.raft[3], m, raft[3])} evaluated on the executed transition (also written by the new action's QualityEvent).",
+   "observed": "node 3 ignores the snapshot: commit stays 3, config stays BootConfig, usnap unchanged; replies MsgAppResp index=commit."
+  },
+  "old_property": {
+   "claimed": "absent; closest JointSnapshotRecovery/ConfigurationOrigin TRUE (blind)",
+   "tlc": {
+    "JointSnapshotRecovery": true,
+    "ConfigurationOrigin": true
+   }
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "new": "TestEvOutgoingMemberSnap: case 0 (jointCS) and case 1 (removalCS): committed=0 lastIndex=0 config=voters=(1 2 3); reply MsgAppResp index=0",
+   "old": "same (old check scans Nodes/Learners only)",
+   "test_file": "evidence/go/{new,old}/zz_evidence_test.go:TestEvOutgoingMemberSnap",
+   "command": "cd evidence/go/{new,old} && go test -vet=off -count=1 -v -run 'TestEv' .",
+   "result": "snapshot ignored by an outgoing-only member"
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new TestEvOutgoingMemberSnap; raft.go:1401-1420 scans only cs.Voters, cs.Learners"
+  },
+  "requirement": {
+   "value": "forbidden",
+   "citations": [
+    "new/source/raft.go:1398-1400",
+    "new/source/raft_test.go:2789-2796",
+    "new/source/raftpb/raft.proto:105-110"
+   ],
+   "basis": "intent is to throw away a snapshot only 'if recipient is not in the config'; a VotersOutgoing member is in the joint config (and in the restored progress tracker); a member that cannot accept a snapshot 'is permanently cut off from the Raft log'"
+  },
+  "cell": "impl produces / requirement forbidden -> BUG CANDIDATE: keep the stronger property, record defect D1",
+  "requirement_evidence": [
+   "new/source/raft.go:1398-1400",
+   "new/source/raft_test.go:2789-2796",
+   "new/source/raftpb/raft.proto:105-110"
+  ],
+  "verdict": "accepted",
+  "note": "Do not weaken SnapshotMemberRestore to exclude outgoing-only members. The defect predates the update but becomes reachable/meaningful now that joint ConfStates are restored.",
+  "files": {
+   "proposed_tla": "evidence/Proposed.tla",
+   "old_tla_copy": "evidence/base.tla",
+   "harness_tla": "evidence/EvalJoint.tla",
+   "harness_cfg": "evidence/EvalJoint.cfg",
+   "tlc_log": "evidence/logs/tlc_EvalJoint.log",
+   "tlc_command": "java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -workers 1 -config EvalJoint.cfg EvalJoint.tla",
+   "summarizer": "evidence/scripts/summarize.py",
+   "go_tests": [
+    "evidence/go/new/zz_evidence_test.go",
+    "evidence/go/old/zz_evidence_test.go",
+    "evidence/go/new/zz_autoleave_evidence_test.go",
+    "evidence/go/old/zz_autoleave_evidence_test.go"
+   ],
+   "go_logs": [
+    "evidence/logs/go_new_ev.log",
+    "evidence/logs/go_old_ev.log"
+   ]
+  }
+ },
+ {
+  "id": "E13",
+  "property": "SnapshotMemberRestore (new)",
+  "kind": "control",
+  "state": {
+   "witness": "EvalJoint 'new_snap2' level 2 (incoming voter restores: allowed), 'new_snap3_nonmember' level 2 (SN: 3 removed, not in config: allowed to ignore), 'old_snap2' level 2 (projected restore: forbidden).",
+   "population": "as E12 (Proposed!RestoreObservation on the executed transition)."
+  },
+  "old_property": {
+   "claimed": "absent",
+   "tlc": "n/a"
+  },
+  "proposed_property": {
+   "claimed": {
+    "new_snap2": true,
+    "new_snap3_nonmember": true,
+    "old_snap2": false
+   },
+   "tlc": {
+    "new_snap2": true,
+    "new_snap3_nonmember": true,
+    "old_snap2": false
+   }
+  },
+  "code_observation": {
+   "new": "incoming_member_snap committed=11 joint; TestEvNonMemberSnap: committed=0 config unchanged (ignored)",
+   "old": "snap_restore_member projects config; nonmember ignored",
+   "test_file": "evidence/go/{new,old}/zz_evidence_test.go, zz_autoleave_evidence_test.go:TestEvNonMemberSnap",
+   "command": "cd evidence/go/{new,old} && go test -vet=off -count=1 -v -run 'TestEv' .",
+   "result": "consistent with model"
+  },
+  "impl_produces": {
+   "value": "yes (new_snap2, nonmember); no (old_snap2 projection)",
+   "basis": "Go observations"
+  },
+  "requirement": {
+   "value": "allowed (new_snap2, nonmember); forbidden (projection)",
+   "citations": [
+    "new/source/raft.go:1398-1400",
+    "new/source/raft_test.go:2789-2796",
+    "new/source/raftpb/raft.proto:105-110",
+    "new/source/confchange/restore.go:111-119",
+    "new/source/confchange/restore_test.go:84-142",
+    "new/source/raftpb/raft.proto:99-114"
+   ],
+   "basis": "non-members may throw the snapshot away (raft.go:1398-1400); members must restore the described config"
+  },
+  "cell": "allowed controls accepted, forbidden control rejected",
+  "requirement_evidence": [
+   "new/source/raft.go:1398-1400",
+   "new/source/raft_test.go:2789-2796",
+   "new/source/raftpb/raft.proto:105-110",
+   "new/source/confchange/restore.go:111-119",
+   "new/source/confchange/restore_test.go:84-142",
+   "new/source/raftpb/raft.proto:99-114"
+  ],
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "proposed_tla": "evidence/Proposed.tla",
+   "old_tla_copy": "evidence/base.tla",
+   "harness_tla": "evidence/EvalJoint.tla",
+   "harness_cfg": "evidence/EvalJoint.cfg",
+   "tlc_log": "evidence/logs/tlc_EvalJoint.log",
+   "tlc_command": "java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -workers 1 -config EvalJoint.cfg EvalJoint.tla",
+   "summarizer": "evidence/scripts/summarize.py",
+   "go_tests": [
+    "evidence/go/new/zz_evidence_test.go",
+    "evidence/go/old/zz_evidence_test.go",
+    "evidence/go/new/zz_autoleave_evidence_test.go",
+    "evidence/go/old/zz_autoleave_evidence_test.go"
+   ],
+   "go_logs": [
+    "evidence/logs/go_new_ev.log",
+    "evidence/logs/go_old_ev.log"
+   ]
+  }
+ },
+ {
+  "id": "E14",
+  "property": "JointRecoveryNotReached (Update.tla canary)",
+  "kind": "semantic",
+  "state": {
+   "witness": "EvalJoint 'new_restart' L2 and 'new_snap2' L2 (joint recovery reached), initial states L1 (not reached), 'old_restart'/'old_snap2' L2.",
+   "population": "history.recovery from Restart observer; raft[2].usnap from the executed MsgSnap restore. Old canary evaluated through INSTANCE Update (MC constants substituted)."
+  },
+  "old_property": {
+   "claimed": {
+    "new_restart": true,
+    "new_snap2": true
+   },
+   "tlc": {
+    "new_restart L2": true,
+    "new_snap2 L2": true,
+    "old_restart L2": false,
+    "old_snap2 L2": false,
+    "L1": true
+   }
+  },
+  "proposed_property": {
+   "claimed": {
+    "initial proposal (recovery only)": {
+     "new_restart": false,
+     "new_snap2": false
+    },
+    "revised": {
+     "new_restart": false,
+     "new_snap2": false
+    }
+   },
+   "tlc": {
+    "initial proposal (recovery only)": {
+     "new_restart L2": false,
+     "new_snap2 L2": true,
+     "L1": true
+    },
+    "revised (recovery or joint usnap)": {
+     "new_restart L2": false,
+     "new_snap2 L2": false,
+     "L1": true,
+     "new_snap3/nonmember L2": true
+    }
+   }
+  },
+  "code_observation": {
+   "new": "joint recovery happens (E10/E11 Go observations)",
+   "old": "joint recovery collapses (projection)",
+   "test_file": "see E10/E11",
+   "command": "cd evidence/go/{new,old} && go test -vet=off -count=1 -v -run 'TestEv' .",
+   "result": "scenario reachable in new code"
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new TestEvJointRestart/TestEvJointSnapRestore"
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/confchange/restore.go:111-119",
+    "new/source/confchange/restore_test.go:84-142",
+    "new/source/raftpb/raft.proto:99-114"
+   ],
+   "basis": "joint ConfState restore is required behavior; canary must witness reaching it, not the old loss"
+  },
+  "cell": "impl produces / requirement allowed -> migrate canary (old canary targets the fixed defect and no longer witnesses the scenario)",
+  "requirement_evidence": [
+   "new/source/confchange/restore.go:111-119",
+   "new/source/confchange/restore_test.go:84-142",
+   "new/source/raftpb/raft.proto:99-114"
+  ],
+  "verdict": "revised",
+  "note": "Initial proposal missed the MsgSnap path (TRUE at new_snap2 L2); revised definition adds 'raft[n].usnap.config.outgoing # {}'.",
+  "files": {
+   "proposed_tla": "evidence/Proposed.tla",
+   "old_tla_copy": "evidence/base.tla",
+   "harness_tla": "evidence/EvalJoint.tla",
+   "harness_cfg": "evidence/EvalJoint.cfg",
+   "tlc_log": "evidence/logs/tlc_EvalJoint.log",
+   "tlc_command": "java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -workers 1 -config EvalJoint.cfg EvalJoint.tla",
+   "summarizer": "evidence/scripts/summarize.py",
+   "go_tests": [
+    "evidence/go/new/zz_evidence_test.go",
+    "evidence/go/old/zz_evidence_test.go",
+    "evidence/go/new/zz_autoleave_evidence_test.go",
+    "evidence/go/old/zz_autoleave_evidence_test.go"
+   ],
+   "go_logs": [
+    "evidence/logs/go_new_ev.log",
+    "evidence/logs/go_old_ev.log"
+   ]
+  }
+ },
+ {
+  "id": "E15",
+  "property": "QuorumAccounting / ElectionSafety / LeaderCompleteness (keep) under learner votes",
+  "kind": "semantic",
+  "state": {
+   "witness": "EvalQuorum 'new' level 12: raft.go:936-947 scenario executed end-to-end.",
+   "pre_state": "node 1 thinks it is a learner (voters {2,3}, learners {1}); candidate 3 (term 2, voters {1,2,3}) has applied the promotion; node 2 down; wire={MsgVote 3->1}.",
+   "population": "Real actions: New!Receive(MsgVote@1) (learner grants) -> Ready/Persist/Install/Publish/Queue/Advance at 1 -> New!Receive(MsgVoteResp@3) -> BecomeLeader writes win [node 3, term 2, config voters {1,2,3}, yes {1,3}] -> Observe.",
+   "controls": "'forged_learner_counted': win with config voters {2,3}, learners {1}, yes {1,3}; 'forged_double_win': two winners in term 2."
+  },
+  "old_property": {
+   "claimed": {
+    "new L12": true,
+    "forged_learner_counted": false,
+    "forged_double_win(ElectionSafety)": false
+   },
+   "tlc": {
+    "QuorumAccounting new L12": true,
+    "ElectionSafety new L12": true,
+    "LeaderCompleteness new L12": true,
+    "PromiseBacking new L12": true,
+    "QuorumAccounting forged_learner_counted": false,
+    "ElectionSafety forged_double_win": false
+   }
+  },
+  "proposed_property": {
+   "claimed": "unchanged text",
+   "tlc": "identical (New! instance)"
+  },
+  "code_observation": {
+   "new": "TestEvCandidateLearnerGrant: candidate (voters {2,3}, learners {1}) stays Candidate after learner 1's grant, Leader after 2's grant; candidate with voters {1,2,3} becomes Leader on grant from 1",
+   "old": "identical candidate-side behavior; old learner never grants so the scenario stalls (EvalQuorum 'old': no win)",
+   "test_file": "evidence/go/{new,old}/zz_evidence_test.go:TestEvCandidateLearnerGrant",
+   "command": "cd evidence/go/{new,old} && go test -vet=off -count=1 -v -run 'TestEv' .",
+   "result": "learner votes count only toward a candidate whose config lists the learner as voter"
+  },
+  "impl_produces": {
+   "value": "yes (win); no (forged)",
+   "basis": "Go + EvalQuorum new branch"
+  },
+  "requirement": {
+   "value": "allowed (win); forbidden (forged)",
+   "citations": [
+    "new/source/raft.go:936-950",
+    "new/source/quorum/joint.go:17-18"
+   ],
+   "basis": "comment describes this exact election as necessary; 'The candidate's config may be stale, too; but in that case it won't win'; joint decisions require both majorities"
+  },
+  "cell": "keep: allowed state accepted, forbidden controls rejected",
+  "requirement_evidence": [
+   "new/source/raft.go:936-950",
+   "new/source/quorum/joint.go:17-18"
+  ],
+  "verdict": "accepted",
+  "note": "Old LearnerEligibility and VoteDecisionEligibility are FALSE along this required behavior (E1/E4).",
+  "files": {
+   "proposed_tla": "evidence/Proposed.tla",
+   "old_tla_copy": "evidence/base.tla",
+   "harness_tla": "evidence/EvalQuorum.tla",
+   "harness_cfg": "evidence/EvalQuorum.cfg",
+   "tlc_log": "evidence/logs/tlc_EvalQuorum.log",
+   "tlc_command": "java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -workers 1 -config EvalQuorum.cfg EvalQuorum.tla",
+   "summarizer": "evidence/scripts/summarize.py",
+   "go_tests": [
+    "evidence/go/new/zz_evidence_test.go",
+    "evidence/go/old/zz_evidence_test.go",
+    "evidence/go/new/zz_autoleave_evidence_test.go",
+    "evidence/go/old/zz_autoleave_evidence_test.go"
+   ],
+   "go_logs": [
+    "evidence/logs/go_new_ev.log",
+    "evidence/logs/go_old_ev.log"
+   ]
+  }
+ },
+ {
+  "id": "E16",
+  "property": "PromiseBacking (keep)",
+  "kind": "control",
+  "state": {
+   "witness": "EvalVote 'new' level 6 (after Publish of the learner's grant) and 'forged_unbacked_grant' level 1.",
+   "population": "new: history.promises written by ProtocolPublish ([message G, backed PromiseOK(2,G)]) after HardState {term 2, vote 1} was persisted by CompletePersist(All); forged: promise record with backed := Old!PromiseOK(2,G) evaluated against an empty disk."
+  },
+  "old_property": {
+   "claimed": {
+    "new L6": true,
+    "forged": false
+   },
+   "tlc": {
+    "new L6": true,
+    "forged": false
+   }
+  },
+  "proposed_property": {
+   "claimed": "unchanged text",
+   "tlc": {
+    "new L6": true,
+    "forged": false
+   }
+  },
+  "code_observation": {
+   "new": "not_representable: publication order is a caller obligation (README step 2), not raft code",
+   "old": "n/a",
+   "test_file": "n/a",
+   "command": "n/a",
+   "result": "not_representable"
+  },
+  "impl_produces": {
+   "value": "unknown (caller-side)",
+   "basis": "model's Publish requires Done(HS); Go caller ordering not exercised"
+  },
+  "requirement": {
+   "value": "forbidden (unbacked grant)",
+   "citations": [
+    "new/source/README.md:118"
+   ],
+   "basis": "'no messages be sent until the latest HardState has been persisted'"
+  },
+  "cell": "kept property: allowed backed grant TRUE, forbidden unbacked grant FALSE (impl axis unknown for the forged control, no edit made)",
+  "requirement_evidence": [
+   "new/source/README.md:118"
+  ],
+  "verdict": "accepted",
+  "note": "Learner grants are new publications; the kept property covers them.",
+  "files": {
+   "proposed_tla": "evidence/Proposed.tla",
+   "old_tla_copy": "evidence/base.tla",
+   "harness_tla": "evidence/EvalVote.tla",
+   "harness_cfg": "evidence/EvalVote.cfg",
+   "tlc_log": "evidence/logs/tlc_EvalVote.log",
+   "tlc_command": "java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -workers 1 -config EvalVote.cfg EvalVote.tla",
+   "summarizer": "evidence/scripts/summarize.py"
+  }
+ },
+ {
+  "id": "E17",
+  "property": "CampaignDecisionEligibility (keep)",
+  "kind": "semantic",
+  "state": {
+   "witness": "EvalJoint 'new_restart' level 3 vs 'old_restart' level 3 (post Campaign(1) after restart).",
+   "population": "quality.campaigns written by QualityEvent(\"Campaign\") of the executed action."
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": {
+    "new_restart L3 (requests to 2,3)": true,
+    "old_restart L3 (requests to 2)": true
+   }
+  },
+  "proposed_property": {
+   "claimed": "unchanged text",
+   "tlc": "identical"
+  },
+  "code_observation": {
+   "new": "TestEvJointRestartCampaign: StateCandidate voteRequestsTo=[2 3]",
+   "old": "voteRequestsTo=[2]",
+   "test_file": "evidence/go/{new,old}/zz_autoleave_evidence_test.go:TestEvJointRestartCampaign",
+   "command": "cd evidence/go/{new,old} && go test -vet=off -count=1 -v -run 'TestEv' .",
+   "result": "new campaigns across both joint halves"
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new observation"
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/quorum/joint.go:17-18",
+    "new/source/raftpb/raft.proto:99-106"
+   ],
+   "basis": "joint decisions require both majorities, so vote requests go to VoterIDs incl. outgoing"
+  },
+  "cell": "keep: impl produces / allowed -> TRUE as required",
+  "requirement_evidence": [
+   "new/source/quorum/joint.go:17-18",
+   "new/source/raftpb/raft.proto:99-106"
+  ],
+  "verdict": "accepted",
+  "note": "CampaignContract is relative to the node's own config, so it does not detect the old projection (TRUE there too); JointSnapshotRecovery does.",
+  "files": {
+   "proposed_tla": "evidence/Proposed.tla",
+   "old_tla_copy": "evidence/base.tla",
+   "harness_tla": "evidence/EvalJoint.tla",
+   "harness_cfg": "evidence/EvalJoint.cfg",
+   "tlc_log": "evidence/logs/tlc_EvalJoint.log",
+   "tlc_command": "java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -workers 1 -config EvalJoint.cfg EvalJoint.tla",
+   "summarizer": "evidence/scripts/summarize.py",
+   "go_tests": [
+    "evidence/go/new/zz_evidence_test.go",
+    "evidence/go/old/zz_evidence_test.go",
+    "evidence/go/new/zz_autoleave_evidence_test.go",
+    "evidence/go/old/zz_autoleave_evidence_test.go"
+   ],
+   "go_logs": [
+    "evidence/logs/go_new_ev.log",
+    "evidence/logs/go_old_ev.log"
+   ]
+  }
+ },
+ {
+  "id": "E18",
+  "property": "AutoLeaveAdvance / AckPreservation (keep)",
+  "kind": "semantic",
+  "state": {
+   "witness": "EvalJoint 'new_restart' level 18 vs 'old_restart' level 16 (post Advance as leader).",
+   "population": "chain of real actions: Restart(1) -> Campaign(1) -> Receive(MsgVoteResp from 2) -> Receive(MsgAppResp index 6 from 2) -> Ready -> Persist/Install/Publish(all msgs)/Queue -> Advance; history.autoLeaveChecks/acks written by ProtocolAdvance.",
+   "observed": "new: eligible TRUE, leave-joint V2 entry appended at index 7; old: eligible FALSE (config lost), no leave"
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": {
+    "AutoLeaveAdvance new": true,
+    "AutoLeaveAdvance old": true,
+    "AckPreservation new": true,
+    "AckPreservation old": true
+   }
+  },
+  "proposed_property": {
+   "claimed": true,
+   "tlc": {
+    "AutoLeaveAdvance new": true,
+    "AdvanceRetention new": true
+   }
+  },
+  "code_observation": {
+   "new": "TestEvJointRestartAutoLeave: committed=6 applied=6 last=7 lastType=EntryConfChangeV2 leaveJoint=true",
+   "old": "config=voters=(1 2) last=6 lastType=EntryNormal leaveJoint=false",
+   "test_file": "evidence/go/{new,old}/zz_autoleave_evidence_test.go:TestEvJointRestartAutoLeave",
+   "command": "cd evidence/go/{new,old} && go test -vet=off -count=1 -v -run 'TestEv' .",
+   "result": "matches model"
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new observation"
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/raftpb/raft.proto:111-113",
+    "new/source/tracker/tracker.go:29-31"
+   ],
+   "basis": "'If set, the config is joint and Raft will automatically transition into the final config ... when this is safe'"
+  },
+  "cell": "keep: impl produces / allowed -> TRUE (non-vacuous: eligible check recorded)",
+  "requirement_evidence": [
+   "new/source/raftpb/raft.proto:111-113",
+   "new/source/tracker/tracker.go:29-31"
+  ],
+  "verdict": "accepted",
+  "note": "Old behavior (no auto-leave after restart) is a requirement violation caught by JointSnapshotRecovery, not by AutoLeaveAdvance (vacuous there).",
+  "files": {
+   "proposed_tla": "evidence/Proposed.tla",
+   "old_tla_copy": "evidence/base.tla",
+   "harness_tla": "evidence/EvalJoint.tla",
+   "harness_cfg": "evidence/EvalJoint.cfg",
+   "tlc_log": "evidence/logs/tlc_EvalJoint.log",
+   "tlc_command": "java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -workers 1 -config EvalJoint.cfg EvalJoint.tla",
+   "summarizer": "evidence/scripts/summarize.py",
+   "go_tests": [
+    "evidence/go/new/zz_evidence_test.go",
+    "evidence/go/old/zz_evidence_test.go",
+    "evidence/go/new/zz_autoleave_evidence_test.go",
+    "evidence/go/old/zz_autoleave_evidence_test.go"
+   ],
+   "go_logs": [
+    "evidence/logs/go_new_ev.log",
+    "evidence/logs/go_old_ev.log"
+   ]
+  }
+ },
+ {
+  "id": "E19",
+  "property": "all proposed + kept invariants (bounded regression of the proposed model)",
+  "kind": "control",
+  "state": {
+   "witness": "Random TLC simulation of evidence/bounded/UpdateP.tla (FullUpdateSpec over the Proposed model), depth 80, 600 s time box per run; plus a 4-minute BFS attempt (stopped at depth 4).",
+   "population": "all records produced by the model's own actions/observers; nothing hand-built.",
+   "configs": [
+    "evidence/bounded/UpdateP_simA.cfg (MCTypeOK, LogStructure, ElectionSafety, QuorumAccounting, UpdateJointConfigurationShape, UpdateJointSnapshotRecovery, ConfigurationOrigin, VoteDecisionEligibility, LearnerEligibility, ReadyOwnership, ReadyAccounting, AdvanceRetention, AutoLeaveAdvance)",
+    "evidence/bounded/UpdateP_simB.cfg (SnapshotMemberRestore)",
+    "evidence/bounded/UpdateP_focused.cfg (BFS)"
+   ],
+   "coverage_canaries (150 s each, SimCanaries.tla)": {
+    "ReadyNotReached": "reached (witness at depth 8)",
+    "AdvanceNotReached": "reached (witness at depth 39)",
+    "AdvanceWithOutboxNotReached": "NOT reached",
+    "AdvanceWithReadsNotReached": "NOT reached",
+    "LearnerGrantNotReached": "NOT reached",
+    "JointConfigNotReached": "NOT reached",
+    "JointRecoveryNotReached": "NOT reached",
+    "OutgoingMemberSnapNotReached": "NOT reached"
+   }
+  },
+  "old_property": {
+   "claimed": "n/a",
+   "tlc": "n/a (proposed model only)"
+  },
+  "proposed_property": {
+   "claimed": "no violation",
+   "tlc": {
+    "simA": "no violation; 7,533,390 states, 9,755 traces (exit 124 = time box)",
+    "simB": "no violation; 22,186,397 states, 28,713 traces (exit 124)",
+    "bfs": "no violation up to depth 4 (1.89M distinct states; stopped)"
+   }
+  },
+  "code_observation": {
+   "new": "not_representable (model-level regression)",
+   "old": "n/a",
+   "test_file": "n/a",
+   "command": "see logs",
+   "result": "n/a"
+  },
+  "impl_produces": {
+   "value": "unknown",
+   "basis": "model-only run"
+  },
+  "requirement": {
+   "value": "unknown",
+   "citations": [],
+   "basis": "regression control, not a separating witness"
+  },
+  "cell": "either axis unknown -> no edit is based on this record",
+  "requirement_evidence": [],
+  "verdict": "unresolved",
+  "note": "Weak coverage: random simulation never reached joint configs, learner grants, joint recovery, outgoing-member snapshots, or Advance with pending outbox/reads. It only shows the edited properties raise no false positives on ordinary election/Ready/Advance paths. Update-specific evidence is E1-E18. simA used the earlier bag-inclusion form of AdvanceRetention; on the Proposed model AdvanceCore never assigns raft.out, so the equality form holds whenever it does.",
+  "files": {
+   "tla": [
+    "evidence/bounded/Proposed.tla",
+    "evidence/bounded/MCP.tla",
+    "evidence/bounded/UpdateP.tla",
+    "evidence/bounded/SimCanaries.tla"
+   ],
+   "logs": [
+    "evidence/logs/tlc_sim_A.log",
+    "evidence/logs/tlc_sim_B.log",
+    "evidence/logs/tlc_bounded_UpdateP_bfs_timeboxed.log",
+    "evidence/logs/tlc_canary_*.log"
+   ]
+  }
+ }
+]

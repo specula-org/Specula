@@ -1,0 +1,28 @@
+{
+  "scorer": "coordinator (Claude), not blind to arm",
+  "gold": "gold.json V03",
+  "obligations": {
+    "autoleave_effect_and_progress": {
+      "score": "incorrect_change",
+      "note": "AutoLeaveAdvance_new puts the buggy crossing guard (a.oldApplied < a.pendingBefore) into AutoLeaveEligible and its ELSE branch forbids any append, so it forbids the upstream fix's append when applied == pending (wrong_if 1 and 2). The same run also adds AutoLeaveNotStranded (safety proxy) and AutoLeaveProgress (liveness) and names bug B as suspected defect D1, so the progress obligation is kept. The property set contradicts itself: the bug is flagged by one property, and the fix would be flagged by another."
+    },
+    "proposal_phase": {
+      "score": "detected",
+      "note": "RefusedConf covers joint+nonempty and nonjoint+empty; only earlier admitted entries block later ones."
+    },
+    "zero_payload_quota": {
+      "score": "detected",
+      "note": "DropQuota needs w > 0; positive-payload quota rule kept."
+    },
+    "transfer_demotion": {
+      "score": "detected",
+      "note": "Adds TransferTargetVoter, a state invariant over the leader's transferee, which observes the configuration-change side effect."
+    }
+  },
+  "bug_B_named": "yes (D1: leader elected with applied == pendingConfIndex, edge trigger never fires)",
+  "extra_suspected_defects": [
+    "D2 early-Advance ordering",
+    "D3 wantsLeaveJoint vs LeaveJoint mismatch"
+  ],
+  "summary": "3 detected, 1 incorrect (auto-leave guard copied); bug B named"
+}

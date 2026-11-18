@@ -1,0 +1,56 @@
+{
+  "run": "A3-V01-r1",
+  "status": "ok",
+  "entries": 24,
+  "decisions": {
+    "modify": 10,
+    "keep": 11,
+    "unresolved": 3
+  },
+  "edits_without_witness": [],
+  "edits_without_predicate": [],
+  "entries_without_evidence": [],
+  "citations": 49,
+  "bad_citations": [],
+  "top_level_keys": [
+    "phase",
+    "overall_decision",
+    "overall_reason",
+    "entries",
+    "model_migrations_required_not_property_edits",
+    "covered_updated_behaviors",
+    "suspected_defects",
+    "unresolved_obligations"
+  ],
+  "evidence": {
+    "status": "ok",
+    "records": 39,
+    "kinds": {
+      "relaxation": 3,
+      "control": 12,
+      "semantic": 10,
+      "strengthening": 7,
+      "observer": 7
+    },
+    "verdicts": {
+      "accepted": 35,
+      "unresolved": 4
+    },
+    "cells": {
+      "impl produces it / requirement allowed: relaxation justified": 15,
+      "impl does not produce it / requirement forbidden: strengthen": 11,
+      "impl produces it / requirement forbidden: BUG CANDIDATE - ke": 6,
+      "impl does not produce it / requirement allowed: edit may be ": 1,
+      "requirement unknown: unresolved, do not edit toward the impl": 3,
+      "unchanged behaviour: old and new agree": 1,
+      "control: old and new verdicts identical": 1,
+      "control (no separation intended)": 1
+    },
+    "tlc_evaluated": 74,
+    "claim_mismatch": [],
+    "code_observed": 30,
+    "implementation_cited_as_requirement": [
+      "EV38: new/source/confchange/confchange.go:311"
+    ]
+  }
+}

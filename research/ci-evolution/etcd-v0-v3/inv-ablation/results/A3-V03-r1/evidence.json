@@ -1,0 +1,3270 @@
+[
+ {
+  "id": "AL-dup-old",
+  "property": "AutoLeaveAdvance",
+  "kind": "strengthening",
+  "state": "Old-code transition of the regression scenario: leader joint (voters {1}&&{1,2,3}, autoLeave) with joint entry J at 5, foo/bar at 6-7, auto-leave L at 8 already in the log (leaveInFlight=TRUE), pendingConf=5 (old code never bumps), Advance with cursor 7 appends a second leave at 9. Record populated by Proposed!AutoLeaveCheck(r,b,a) (old fields verbatim from base.tla:1130-1132, projection equality checked: DIAG observer projection = TRUE) where r is the mapped pre-Advance raft record (Witness!Mk), b the Ready (cursor, committed) and a = {old|new} model AdvanceCore(r,b,n). Model index = Go index + 2.",
+  "old_property": {
+   "which": "old property (old/spec/base.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvAutoLeaveRegression",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "ADVANCE cursor=5 pendingBefore=3 leaveInFlight=true -> afterLast=7 (second Leave); later PANIC 'n1 apply 1/7 Leave: can't leave a non-joint config'",
+   "new": "single Leave at 6, pendingAfter=6, cursor=5 Advance appends nothing, panics=0",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "no",
+   "basis": "Go new tree: only one leave entry, no panic (logs/go_new_tree.log AL-dup)."
+  },
+  "requirement": {
+   "value": "forbidden",
+   "citations": [
+    "new/source/testdata/confchange_v2_add_double_auto.txt:238-240",
+    "new/source/confchange/testdata/joint_safety.txt:20-22"
+   ],
+   "basis": "Test comment states that transitioning out of the same joint state multiple times was a bug causing a panic; old Go reproduces the panic."
+  },
+  "cell": "impl does not produce / requirement forbids: strengthening justified, accept",
+  "requirement_evidence": [
+   "new/source/testdata/confchange_v2_add_double_auto.txt:238-240",
+   "new/source/confchange/testdata/joint_safety.txt:20-22"
+  ],
+  "verdict": "accepted",
+  "note": "The old property REQUIRED this duplicate (pre-existing property defect); the proposed property rejects it.",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "AL-dup-new",
+  "property": "AutoLeaveAdvance",
+  "kind": "control",
+  "state": "Same point in the new tree: leave L at 8 with pendingConf bumped to 8, cursor 7 < 8: no append. Record populated by Proposed!AutoLeaveCheck(r,b,a) (old fields verbatim from base.tla:1130-1132, projection equality checked: DIAG observer projection = TRUE) where r is the mapped pre-Advance raft record (Witness!Mk), b the Ready (cursor, committed) and a = {old|new} model AdvanceCore(r,b,n). Model index = Go index + 2.",
+  "old_property": {
+   "which": "old property (old/spec/base.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvAutoLeaveRegression",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "n/a (old pre-state differs: pending not bumped)",
+   "new": "ADVANCE cursor=5 pendingBefore=6 afterLast=6 (no append)",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new tree AL-dup cursor=5 line."
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/testdata/confchange_v2_add_double_auto.txt:238-240",
+    "new/source/testdata/confchange_v2_add_double_auto.txt:34-38,51,249-279"
+   ],
+   "basis": "Expected output of the regression test shows a single transition."
+  },
+  "cell": "impl produces / requirement allows: change justified, accept",
+  "requirement_evidence": [
+   "new/source/testdata/confchange_v2_add_double_auto.txt:238-240",
+   "new/source/testdata/confchange_v2_add_double_auto.txt:34-38,51,249-279"
+  ],
+  "verdict": "accepted",
+  "note": "Both properties accept the fixed behaviour.",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "AL-normal-new",
+  "property": "AutoLeaveAdvance",
+  "kind": "control",
+  "state": "Leader applies J (cursor 5 = pendingConf, oldApplied 4): new model appends leave at 8 and sets pendingConf=8. Record populated by Proposed!AutoLeaveCheck(r,b,a) (old fields verbatim from base.tla:1130-1132, projection equality checked: DIAG observer projection = TRUE) where r is the mapped pre-Advance raft record (Witness!Mk), b the Ready (cursor, committed) and a = {old|new} model AdvanceCore(r,b,n). Model index = Go index + 2.",
+  "old_property": {
+   "which": "old property (old/spec/base.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvAutoLeaveRegression",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "ADVANCE cursor=3 appends Leave at 6 with pendingAfter=3 (data len 2)",
+   "new": "ADVANCE cursor=3 appends Leave at 6 with pendingAfter=6 (data len 0)",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new tree AL-dup cursor=3 line."
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/testdata/confchange_v2_add_double_auto.txt:34-38,51,249-279",
+    "new/source/rawnode_test.go:319-331"
+   ],
+   "basis": "Normal auto-leave with the leave index becoming pendingConfIndex."
+  },
+  "cell": "impl produces / requirement allows: change justified, accept",
+  "requirement_evidence": [
+   "new/source/testdata/confchange_v2_add_double_auto.txt:34-38,51,249-279",
+   "new/source/rawnode_test.go:319-331"
+  ],
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "AL-nobump-old",
+  "property": "AutoLeaveAdvance",
+  "kind": "strengthening",
+  "state": "Same pre-state as AL-normal-new but post-state from the OLD model: leave appended, pendingConf stays 5 (not the leave index 8). Record populated by Proposed!AutoLeaveCheck(r,b,a) (old fields verbatim from base.tla:1130-1132, projection equality checked: DIAG observer projection = TRUE) where r is the mapped pre-Advance raft record (Witness!Mk), b the Ready (cursor, committed) and a = {old|new} model AdvanceCore(r,b,n). Model index = Go index + 2.",
+  "old_property": {
+   "which": "old property (old/spec/base.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvAutoLeaveRegression",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "pendingAfter=3 after appending Leave at 6",
+   "new": "pendingAfter=6",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "no",
+   "basis": "Go new tree sets pendingConfIndex to the leave index."
+  },
+  "requirement": {
+   "value": "forbidden",
+   "citations": [
+    "new/source/rawnode_test.go:319-331",
+    "new/source/testdata/confchange_v2_add_double_auto.txt:238-240"
+   ],
+   "basis": "rawnode_test asserts pendingConfIndex == index of the auto-leave entry; not bumping is what enabled duplicates."
+  },
+  "cell": "impl does not produce / requirement forbids: strengthening justified, accept",
+  "requirement_evidence": [
+   "new/source/rawnode_test.go:319-331",
+   "new/source/testdata/confchange_v2_add_double_auto.txt:238-240"
+  ],
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "AL-quota-old",
+  "property": "AutoLeaveAdvance",
+  "kind": "strengthening",
+  "state": "MaxUncommitted=2, leader quota 1, applying JointImplicit entry J at 5; OLD model refuses the 2-weight leave (DropQuota) and sets pendingConf=Len=5. Record populated by Proposed!AutoLeaveCheck(r,b,a) (old fields verbatim from base.tla:1130-1132, projection equality checked: DIAG observer projection = TRUE) where r is the mapped pre-Advance raft record (Witness!Mk), b the Ready (cursor, committed) and a = {old|new} model AdvanceCore(r,b,n). Model index = Go index + 2.",
+  "old_property": {
+   "which": "old property (old/spec/base.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvAutoLeaveQuota (MaxUncommittedEntriesSize=4)",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "ADVANCE cursor=3 uncommittedBefore=8 -> no leave, pendingAfter=3=last; FINAL stays joint autoleave",
+   "new": "ADVANCE cursor=3 -> Leave appended at 4 (data len 0), pendingAfter=4",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "no",
+   "basis": "New code appends a zero-size leave; model AppendQuotaExceeded requires weight>0."
+  },
+  "requirement": {
+   "value": "forbidden",
+   "citations": [
+    "new/source/raft_test.go:251-258",
+    "new/source/raft.go:577 (comment: no way this proposal should be rejected)",
+    "new/source/raft.go:1609,1620-1623 (comments: empty entries always succeed; used for auto-leave)"
+   ],
+   "basis": "Auto-leave append must always succeed; the DropQuota retry branch of the old property is obsolete."
+  },
+  "cell": "impl does not produce / requirement forbids: strengthening justified, accept",
+  "requirement_evidence": [
+   "new/source/raft_test.go:251-258",
+   "new/source/raft.go:577 (comment: no way this proposal should be rejected)",
+   "new/source/raft.go:1609,1620-1623 (comments: empty entries always succeed; used for auto-leave)"
+  ],
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "AL-quota-new",
+  "property": "AutoLeaveAdvance",
+  "kind": "control",
+  "state": "Same pre-state, NEW model: quota reduced first, leave weight 0 appended, pendingConf=6. Record populated by Proposed!AutoLeaveCheck(r,b,a) (old fields verbatim from base.tla:1130-1132, projection equality checked: DIAG observer projection = TRUE) where r is the mapped pre-Advance raft record (Witness!Mk), b the Ready (cursor, committed) and a = {old|new} model AdvanceCore(r,b,n). Model index = Go index + 2.",
+  "old_property": {
+   "which": "old property (old/spec/base.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvAutoLeaveQuota",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "-",
+   "new": "Leave appended at 4, pendingAfter=4",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new AL-quota."
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/raft_test.go:251-258",
+    "new/source/raft.go:1609,1620-1623 (comments: empty entries always succeed; used for auto-leave)"
+   ],
+   "basis": ""
+  },
+  "cell": "impl produces / requirement allows: change justified, accept",
+  "requirement_evidence": [
+   "new/source/raft_test.go:251-258",
+   "new/source/raft.go:1609,1620-1623 (comments: empty entries always succeed; used for auto-leave)"
+  ],
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "AL-newleader-new",
+  "property": "AutoLeaveAdvance",
+  "kind": "control",
+  "state": "BC1: follower n2 applied JointImplicit J (index 5) with applied==lastIndex, old leader down before sending its leave; n2 elected (term 3), pendingConf=5 (lastIndex at election), empty entry 6 committed, Advance cursor 6 with oldApplied 5: new model appends nothing. Record populated by Proposed!AutoLeaveCheck(r,b,a) (old fields verbatim from base.tla:1130-1132, projection equality checked: DIAG observer projection = TRUE) where r is the mapped pre-Advance raft record (Witness!Mk), b the Ready (cursor, committed) and a = {old|new} model AdvanceCore(r,b,n). Model index = Go index + 2.",
+  "old_property": {
+   "which": "old property (old/spec/base.tla)",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvAutoLeaveNewLeader",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "n2 ADVANCE cursor=4 appends Leave at 5; FINAL n2 cfg voters=(1 2 3) learners=(4) (left joint)",
+   "new": "n2 ADVANCE cursor=4..7 never appends; FINAL n2 cfg voters=(1 2 3)&&(1 2 3) learners=(4) autoleave (stuck joint)",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new tree: n2 never auto-leaves (oldApplied < pendingConfIndex is false: raft.go:567, pendingConfIndex=lastIndex at raft.go:752)."
+  },
+  "requirement": {
+   "value": "forbidden",
+   "citations": [
+    "new/source/testdata/confchange_v2_add_double_implicit.txt:4-5",
+    "new/source/raftpb/raft.proto:85-86,111-112,164-168"
+   ],
+   "basis": "Design intent: a new leader must auto-transition out just the same; proto assigns leaving to Raft for Auto/JointImplicit."
+  },
+  "cell": "BUG CANDIDATE: impl produces / requirement forbids: keep the stronger property, record defect",
+  "requirement_evidence": [
+   "new/source/testdata/confchange_v2_add_double_implicit.txt:4-5",
+   "new/source/raftpb/raft.proto:85-86,111-112,164-168"
+  ],
+  "verdict": "accepted",
+  "note": "Both old and proposed property reject: detection kept. Recorded as bug candidate BC1 (regression vs old code).",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "AL-early-miss-a-new",
+  "property": "AutoLeaveAdvance",
+  "kind": "control",
+  "state": "BC2a step 1: Node-style early Advance over J (cursor 5) before ApplyConfChange(J): config not yet joint at Advance, so nothing to leave. Record populated by Proposed!AutoLeaveCheck(r,b,a) (old fields verbatim from base.tla:1130-1132, projection equality checked: DIAG observer projection = TRUE) where r is the mapped pre-Advance raft record (Witness!Mk), b the Ready (cursor, committed) and a = {old|new} model AdvanceCore(r,b,n). Model index = Go index + 2.",
+  "old_property": {
+   "which": "old property (old/spec/base.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvAutoLeaveEarlyAdvanceMiss",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "ADVANCE cursor=3 autoLeave=false (no append)",
+   "new": "ADVANCE cursor=3 autoLeave=false (no append)",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new tree."
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/README.md:122 (Advance may be done any time after step 1)",
+    "new/source/node.go:159-168"
+   ],
+   "basis": "Not yet joint; no leave owed."
+  },
+  "cell": "impl produces / requirement allows: change justified, accept",
+  "requirement_evidence": [
+   "new/source/README.md:122 (Advance may be done any time after step 1)",
+   "new/source/node.go:159-168"
+  ],
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "AL-early-miss-b-new",
+  "property": "AutoLeaveAdvance",
+  "kind": "control",
+  "state": "BC2a step 2: next Advance (cursor 6) after J was applied: joint autoLeave, oldApplied 5 == pendingConf 5, no leave in flight; new model never appends. Record populated by Proposed!AutoLeaveCheck(r,b,a) (old fields verbatim from base.tla:1130-1132, projection equality checked: DIAG observer projection = TRUE) where r is the mapped pre-Advance raft record (Witness!Mk), b the Ready (cursor, committed) and a = {old|new} model AdvanceCore(r,b,n). Model index = Go index + 2.",
+  "old_property": {
+   "which": "old property (old/spec/base.tla)",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvAutoLeaveEarlyAdvanceMiss",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "ADVANCE cursor=4 appends Leave; FINAL voters=(1) learners=(2 3)",
+   "new": "ADVANCE cursor=4,5,6 never append; FINAL voters=(1)&&(1) learners=(2 3) autoleave",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new tree (Advance before ApplyConfChange as Node permits; node.go:388-389 maps Node.Advance to rn.Advance)."
+  },
+  "requirement": {
+   "value": "forbidden",
+   "citations": [
+    "new/source/README.md:122 (Advance may be done any time after step 1)",
+    "new/source/node.go:159-168",
+    "new/source/raftpb/raft.proto:85-86,111-112,164-168"
+   ],
+   "basis": "Early Advance is a documented caller option; Raft must still leave an auto-leave joint config."
+  },
+  "cell": "BUG CANDIDATE: impl produces / requirement forbids: keep the stronger property, record defect",
+  "requirement_evidence": [
+   "new/source/README.md:122 (Advance may be done any time after step 1)",
+   "new/source/node.go:159-168",
+   "new/source/raftpb/raft.proto:85-86,111-112,164-168"
+  ],
+  "verdict": "accepted",
+  "note": "Both properties reject: detection kept. Bug candidate BC2a (regression vs old code).",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "AL-early-dup-new",
+  "property": "AutoLeaveAdvance",
+  "kind": "control",
+  "state": "BC2b: leave L at 6 in log (inFlight), pendingConf=6, J applied (cfgHist through 5), Ready commits L and the caller Advances before ApplyConfChange(L): new model appends a second leave at 7. Record populated by Proposed!AutoLeaveCheck(r,b,a) (old fields verbatim from base.tla:1130-1132, projection equality checked: DIAG observer projection = TRUE) where r is the mapped pre-Advance raft record (Witness!Mk), b the Ready (cursor, committed) and a = {old|new} model AdvanceCore(r,b,n). Model index = Go index + 2.",
+  "old_property": {
+   "which": "old property (old/spec/base.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvAutoLeaveEarlyAdvanceDup",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "second Leave at 5, PANIC 'can't leave a non-joint config'",
+   "new": "ADVANCE cursor=4 pendingBefore=4 leaveInFlight=true -> second Leave at 5; PANIC 'n1 apply 1/5 Leave: can't leave a non-joint config'",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new tree (same in old tree: pre-existing)."
+  },
+  "requirement": {
+   "value": "forbidden",
+   "citations": [
+    "new/source/testdata/confchange_v2_add_double_auto.txt:238-240",
+    "new/source/README.md:122 (Advance may be done any time after step 1)",
+    "new/source/node.go:159-168",
+    "new/source/confchange/testdata/joint_safety.txt:20-22"
+   ],
+   "basis": "Duplicate leave -> panic; early Advance is permitted by README/node.go."
+  },
+  "cell": "BUG CANDIDATE: impl produces / requirement forbids: keep the stronger property, record defect",
+  "requirement_evidence": [
+   "new/source/testdata/confchange_v2_add_double_auto.txt:238-240",
+   "new/source/README.md:122 (Advance may be done any time after step 1)",
+   "new/source/node.go:159-168",
+   "new/source/confchange/testdata/joint_safety.txt:20-22"
+  ],
+  "verdict": "accepted",
+  "note": "Old property accepts this bug; proposed property rejects it. Kept the stronger (proposed) property; bug candidate BC2b (pre-existing, not fixed by the update).",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "PC1-joint-addvoter-new",
+  "property": "ProposalConfigurationDecisions (ProposalContract)",
+  "kind": "semantic",
+  "state": "Joint leader proposes V2 <<AddVoter 4>> Auto; NEW model rewrites to Normal no-op. Record populated by Proposed!ProposalObservation(r,<<RequestEntry(q,2)>>,a,Qs(q)) (old fields identical to base!ProposalObservation; projection checked), where a = {old|new} model Step(r, MsgProp) and r is the mapped single-leader pre-state (Witness!Rj joint explicit voters {1,2,3}&&{1,2,3} learners {4}; Witness!Rn non-joint voters {1,2,3}).",
+  "old_property": {
+   "which": "old property (old/spec/base.tla)",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvAdmission/joint-addvoter-auto",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "appended V2 (admitted), later PANIC can't apply simple config change in joint config",
+   "new": "appended Normal (refused)",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new PC-joint-addvoter-auto appendedKind=Normal."
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/testdata/confchange_v2_add_single_explicit.txt:100-106"
+   ],
+   "basis": "Test requires refusal while joint (empty entry proposed instead)."
+  },
+  "cell": "impl produces / requirement allows: change justified, accept",
+  "requirement_evidence": [
+   "new/source/testdata/confchange_v2_add_single_explicit.txt:100-106"
+  ],
+  "verdict": "accepted",
+  "note": "Old contract demanded admission; changed requirement.",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "PC1-joint-addvoter-old",
+  "property": "ProposalConfigurationDecisions (ProposalContract)",
+  "kind": "strengthening",
+  "state": "Same proposal, OLD model admits it. Record populated by Proposed!ProposalObservation(r,<<RequestEntry(q,2)>>,a,Qs(q)) (old fields identical to base!ProposalObservation; projection checked), where a = {old|new} model Step(r, MsgProp) and r is the mapped single-leader pre-state (Witness!Rj joint explicit voters {1,2,3}&&{1,2,3} learners {4}; Witness!Rn non-joint voters {1,2,3}).",
+  "old_property": {
+   "which": "old property (old/spec/base.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvAdmission/joint-addvoter-auto",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "admitted -> panic at apply",
+   "new": "refused",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "no",
+   "basis": "Go new refuses."
+  },
+  "requirement": {
+   "value": "forbidden",
+   "citations": [
+    "new/source/testdata/confchange_v2_add_single_explicit.txt:100-106",
+    "new/source/confchange/testdata/joint_safety.txt:65"
+   ],
+   "basis": "Admission leads to a change that cannot be applied while joint."
+  },
+  "cell": "impl does not produce / requirement forbids: strengthening justified, accept",
+  "requirement_evidence": [
+   "new/source/testdata/confchange_v2_add_single_explicit.txt:100-106",
+   "new/source/confchange/testdata/joint_safety.txt:65"
+  ],
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "PC2-joint-v1-new",
+  "property": "ProposalConfigurationDecisions (ProposalContract)",
+  "kind": "semantic",
+  "state": "Joint leader proposes legacy AddVoter 4 (EntryConfChange); NEW model rewrites. Record populated by Proposed!ProposalObservation(r,<<RequestEntry(q,2)>>,a,Qs(q)) (old fields identical to base!ProposalObservation; projection checked), where a = {old|new} model Step(r, MsgProp) and r is the mapped single-leader pre-state (Witness!Rj joint explicit voters {1,2,3}&&{1,2,3} learners {4}; Witness!Rn non-joint voters {1,2,3}).",
+  "old_property": {
+   "which": "old property (old/spec/base.tla)",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvAdmission/joint-v1-addnode",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "admitted V1 -> PANIC can't apply simple config change in joint config",
+   "new": "appended Normal",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new."
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/testdata/confchange_v2_add_single_explicit.txt:100-106",
+    "new/source/confchange/testdata/joint_safety.txt:65"
+   ],
+   "basis": ""
+  },
+  "cell": "impl produces / requirement allows: change justified, accept",
+  "requirement_evidence": [
+   "new/source/testdata/confchange_v2_add_single_explicit.txt:100-106",
+   "new/source/confchange/testdata/joint_safety.txt:65"
+  ],
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "PC2-joint-v1-old",
+  "property": "ProposalConfigurationDecisions (ProposalContract)",
+  "kind": "strengthening",
+  "state": "Same, OLD model admits. Record populated by Proposed!ProposalObservation(r,<<RequestEntry(q,2)>>,a,Qs(q)) (old fields identical to base!ProposalObservation; projection checked), where a = {old|new} model Step(r, MsgProp) and r is the mapped single-leader pre-state (Witness!Rj joint explicit voters {1,2,3}&&{1,2,3} learners {4}; Witness!Rn non-joint voters {1,2,3}).",
+  "old_property": {
+   "which": "old property (old/spec/base.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvAdmission/joint-v1-addnode",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "admitted",
+   "new": "refused",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "no",
+   "basis": "Go new refuses."
+  },
+  "requirement": {
+   "value": "forbidden",
+   "citations": [
+    "new/source/testdata/confchange_v2_add_single_explicit.txt:100-106",
+    "new/source/confchange/testdata/joint_safety.txt:65"
+   ],
+   "basis": ""
+  },
+  "cell": "impl does not produce / requirement forbids: strengthening justified, accept",
+  "requirement_evidence": [
+   "new/source/testdata/confchange_v2_add_single_explicit.txt:100-106",
+   "new/source/confchange/testdata/joint_safety.txt:65"
+  ],
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "PC3-joint-leave-new",
+  "property": "ProposalConfigurationDecisions (ProposalContract)",
+  "kind": "control",
+  "state": "Joint leader proposes LeaveJoint (V2, no changes, Auto): admitted. Record populated by Proposed!ProposalObservation(r,<<RequestEntry(q,2)>>,a,Qs(q)) (old fields identical to base!ProposalObservation; projection checked), where a = {old|new} model Step(r, MsgProp) and r is the mapped single-leader pre-state (Witness!Rj joint explicit voters {1,2,3}&&{1,2,3} learners {4}; Witness!Rn non-joint voters {1,2,3}).",
+  "old_property": {
+   "which": "old property (old/spec/base.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvAdmission/joint-leave",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "admitted, leaves joint",
+   "new": "admitted, leaves joint",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new."
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/testdata/confchange_v2_add_single_explicit.txt:108-111,113-147"
+   ],
+   "basis": ""
+  },
+  "cell": "impl produces / requirement allows: change justified, accept",
+  "requirement_evidence": [
+   "new/source/testdata/confchange_v2_add_single_explicit.txt:108-111,113-147"
+  ],
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "PC4-joint-empty-explicit-new",
+  "property": "ProposalConfigurationDecisions (ProposalContract)",
+  "kind": "control",
+  "state": "BC3: joint leader proposes V2 with no changes but Transition=JointExplicit; NEW model (len(Changes)==0) admits it. Record populated by Proposed!ProposalObservation(r,<<RequestEntry(q,2)>>,a,Qs(q)) (old fields identical to base!ProposalObservation; projection checked), where a = {old|new} model Step(r, MsgProp) and r is the mapped single-leader pre-state (Witness!Rj joint explicit voters {1,2,3}&&{1,2,3} learners {4}; Witness!Rn non-joint voters {1,2,3}).",
+  "old_property": {
+   "which": "old property (old/spec/base.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvAdmission/joint-empty-explicit",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "admitted -> PANIC config is already joint",
+   "new": "admitted -> PANIC 'n1 apply 1/4 V2[0 changes,JointExplicit]: config is already joint' (same for JointImplicit)",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new admits (raft.go:1055 wantsLeaveJoint := len(Changes)==0)."
+  },
+  "requirement": {
+   "value": "forbidden",
+   "citations": [
+    "new/source/raftpb/confchange.go:100-102",
+    "new/source/raftpb/confchange.go:71-73",
+    "new/source/confchange/testdata/joint_safety.txt:30-32,55,60",
+    "new/source/testdata/confchange_v2_add_single_explicit.txt:100-106"
+   ],
+   "basis": "A non-zero-transition empty change is EnterJoint, not LeaveJoint; entering joint while joint is an error that panics."
+  },
+  "cell": "BUG CANDIDATE: impl produces / requirement forbids: keep the stronger property, record defect",
+  "requirement_evidence": [
+   "new/source/raftpb/confchange.go:100-102",
+   "new/source/raftpb/confchange.go:71-73",
+   "new/source/confchange/testdata/joint_safety.txt:30-32,55,60",
+   "new/source/testdata/confchange_v2_add_single_explicit.txt:100-106"
+  ],
+  "verdict": "accepted",
+  "note": "Old contract accepts; proposed rejects. Kept stronger property; bug candidate BC3 (pre-existing hazard, update's new gate misclassifies it).",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "PC5-nonjoint-leave-new",
+  "property": "ProposalConfigurationDecisions (ProposalContract)",
+  "kind": "semantic",
+  "state": "Non-joint leader proposes LeaveJoint; NEW model rewrites. Record populated by Proposed!ProposalObservation(r,<<RequestEntry(q,2)>>,a,Qs(q)) (old fields identical to base!ProposalObservation; projection checked), where a = {old|new} model Step(r, MsgProp) and r is the mapped single-leader pre-state (Witness!Rj joint explicit voters {1,2,3}&&{1,2,3} learners {4}; Witness!Rn non-joint voters {1,2,3}).",
+  "old_property": {
+   "which": "old property (old/spec/base.tla)",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvAdmission/nonjoint-leave",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "admitted -> PANIC can't leave a non-joint config",
+   "new": "appended Normal",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new."
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/testdata/confchange_v2_add_single_explicit.txt:165-168"
+   ],
+   "basis": ""
+  },
+  "cell": "impl produces / requirement allows: change justified, accept",
+  "requirement_evidence": [
+   "new/source/testdata/confchange_v2_add_single_explicit.txt:165-168"
+  ],
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "PC5-nonjoint-leave-old",
+  "property": "ProposalConfigurationDecisions (ProposalContract)",
+  "kind": "strengthening",
+  "state": "Same, OLD model admits. Record populated by Proposed!ProposalObservation(r,<<RequestEntry(q,2)>>,a,Qs(q)) (old fields identical to base!ProposalObservation; projection checked), where a = {old|new} model Step(r, MsgProp) and r is the mapped single-leader pre-state (Witness!Rj joint explicit voters {1,2,3}&&{1,2,3} learners {4}; Witness!Rn non-joint voters {1,2,3}).",
+  "old_property": {
+   "which": "old property (old/spec/base.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvAdmission/nonjoint-leave",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "admitted -> panic",
+   "new": "refused",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "no",
+   "basis": "Go new refuses."
+  },
+  "requirement": {
+   "value": "forbidden",
+   "citations": [
+    "new/source/testdata/confchange_v2_add_single_explicit.txt:165-168",
+    "new/source/confchange/testdata/joint_safety.txt:20-22"
+   ],
+   "basis": ""
+  },
+  "cell": "impl does not produce / requirement forbids: strengthening justified, accept",
+  "requirement_evidence": [
+   "new/source/testdata/confchange_v2_add_single_explicit.txt:165-168",
+   "new/source/confchange/testdata/joint_safety.txt:20-22"
+  ],
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "PC6-nonjoint-empty-explicit-new",
+  "property": "ProposalConfigurationDecisions (ProposalContract)",
+  "kind": "relaxation",
+  "state": "Non-joint leader proposes empty JointExplicit V2 (a valid no-op enter-joint); NEW model drops it (rewrite). Record populated by Proposed!ProposalObservation(r,<<RequestEntry(q,2)>>,a,Qs(q)) (old fields identical to base!ProposalObservation; projection checked), where a = {old|new} model Step(r, MsgProp) and r is the mapped single-leader pre-state (Witness!Rj joint explicit voters {1,2,3}&&{1,2,3} learners {4}; Witness!Rn non-joint voters {1,2,3}).",
+  "old_property": {
+   "which": "old property (old/spec/base.tla)",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvAdmission/nonjoint-empty-explicit",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "admitted -> joint voters=(1)&&(1)",
+   "new": "appended Normal (dropped)",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new."
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/node.go:136-139"
+   ],
+   "basis": "Conf changes may be dropped."
+  },
+  "cell": "impl produces / requirement allows: change justified, accept",
+  "requirement_evidence": [
+   "new/source/node.go:136-139"
+  ],
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "PC6-nonjoint-empty-explicit-old",
+  "property": "ProposalConfigurationDecisions (ProposalContract)",
+  "kind": "control",
+  "state": "Same, OLD model admits; final contract treats this as an optional drop. Record populated by Proposed!ProposalObservation(r,<<RequestEntry(q,2)>>,a,Qs(q)) (old fields identical to base!ProposalObservation; projection checked), where a = {old|new} model Step(r, MsgProp) and r is the mapped single-leader pre-state (Witness!Rj joint explicit voters {1,2,3}&&{1,2,3} learners {4}; Witness!Rn non-joint voters {1,2,3}).",
+  "old_property": {
+   "which": "old property (old/spec/base.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvAdmission/nonjoint-empty-explicit",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "admitted, valid joint",
+   "new": "dropped",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "no",
+   "basis": "Go new drops."
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/confchange/testdata/joint_safety.txt:24-27",
+    "new/source/node.go:136-139"
+   ],
+   "basis": "Admitting a valid no-op enter-joint is also allowed."
+  },
+  "cell": "impl does not produce / requirement allows: edit may be unnecessary; keep only with nearby forbidden control",
+  "requirement_evidence": [
+   "new/source/confchange/testdata/joint_safety.txt:24-27",
+   "new/source/node.go:136-139"
+  ],
+  "verdict": "accepted",
+  "note": "Nearby forbidden controls still rejected: PC4 (joint + empty explicit admitted) and PC5-nonjoint-leave-old.",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "PC7-nonjoint-addvoter-new",
+  "property": "ProposalConfigurationDecisions (ProposalContract)",
+  "kind": "control",
+  "state": "Non-joint leader proposes V2 <<AddVoter 4>>: admitted. Record populated by Proposed!ProposalObservation(r,<<RequestEntry(q,2)>>,a,Qs(q)) (old fields identical to base!ProposalObservation; projection checked), where a = {old|new} model Step(r, MsgProp) and r is the mapped single-leader pre-state (Witness!Rj joint explicit voters {1,2,3}&&{1,2,3} learners {4}; Witness!Rn non-joint voters {1,2,3}).",
+  "old_property": {
+   "which": "old property (old/spec/base.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvAdmission/nonjoint-addvoter-auto",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "admitted",
+   "new": "admitted",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new."
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/testdata/confchange_v2_add_single_auto.txt:19-33"
+   ],
+   "basis": ""
+  },
+  "cell": "impl produces / requirement allows: change justified, accept",
+  "requirement_evidence": [
+   "new/source/testdata/confchange_v2_add_single_auto.txt:19-33"
+  ],
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "PC8-quota0-new",
+  "property": "ProposalConfigurationDecisions (ProposalContract)",
+  "kind": "relaxation",
+  "state": "Leader with quota 3 > MaxUncommitted 2 proposes a zero-weight Normal entry; NEW model accepts. Record populated by Proposed!ProposalObservation(r,<<RequestEntry(q,2)>>,a,Qs(q)) (old fields identical to base!ProposalObservation; projection checked), where a = {old|new} model Step(r, MsgProp) and r is the mapped single-leader pre-state (Witness!Rj joint explicit voters {1,2,3}&&{1,2,3} learners {4}; Witness!Rn non-joint voters {1,2,3}).",
+  "old_property": {
+   "which": "old property (old/spec/base.tla)",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvAdmission/(TestEvQuotaZero)",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "weight0: raft proposal dropped",
+   "new": "weight0: err=<nil> (accepted at quota 16 > max 8)",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new QUOTA0."
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/raft_test.go:251-258",
+    "new/source/raft.go:1609,1620-1623 (comments: empty entries always succeed; used for auto-leave)"
+   ],
+   "basis": ""
+  },
+  "cell": "impl produces / requirement allows: change justified, accept",
+  "requirement_evidence": [
+   "new/source/raft_test.go:251-258",
+   "new/source/raft.go:1609,1620-1623 (comments: empty entries always succeed; used for auto-leave)"
+  ],
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "PC8-quota0-old",
+  "property": "ProposalConfigurationDecisions (ProposalContract)",
+  "kind": "strengthening",
+  "state": "Same, OLD model drops it (DropQuota). Record populated by Proposed!ProposalObservation(r,<<RequestEntry(q,2)>>,a,Qs(q)) (old fields identical to base!ProposalObservation; projection checked), where a = {old|new} model Step(r, MsgProp) and r is the mapped single-leader pre-state (Witness!Rj joint explicit voters {1,2,3}&&{1,2,3} learners {4}; Witness!Rn non-joint voters {1,2,3}).",
+  "old_property": {
+   "which": "old property (old/spec/base.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvAdmission/(TestEvQuotaZero)",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "dropped",
+   "new": "accepted",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "no",
+   "basis": "Go new accepts."
+  },
+  "requirement": {
+   "value": "forbidden",
+   "citations": [
+    "new/source/raft_test.go:251-258"
+   ],
+   "basis": "Test fails if the empty proposal returns an error."
+  },
+  "cell": "impl does not produce / requirement forbids: strengthening justified, accept",
+  "requirement_evidence": [
+   "new/source/raft_test.go:251-258"
+  ],
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "PC9-quota1-new",
+  "property": "ProposalConfigurationDecisions (ProposalContract)",
+  "kind": "control",
+  "state": "Nearby forbidden obligation kept: quota 3, weight-1 proposal is dropped by both models. Record populated by Proposed!ProposalObservation(r,<<RequestEntry(q,2)>>,a,Qs(q)) (old fields identical to base!ProposalObservation; projection checked), where a = {old|new} model Step(r, MsgProp) and r is the mapped single-leader pre-state (Witness!Rj joint explicit voters {1,2,3}&&{1,2,3} learners {4}; Witness!Rn non-joint voters {1,2,3}).",
+  "old_property": {
+   "which": "old property (old/spec/base.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvAdmission/(TestEvQuotaZero)",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "weight1 dropped",
+   "new": "weight1 dropped",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new QUOTA0."
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/raft_test.go:236-249"
+   ],
+   "basis": ""
+  },
+  "cell": "impl produces / requirement allows: change justified, accept",
+  "requirement_evidence": [
+   "new/source/raft_test.go:236-249"
+  ],
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "PC9-quota1-bad-control",
+  "property": "ProposalConfigurationDecisions (ProposalContract)",
+  "kind": "control",
+  "state": "Synthetic forbidden mutation of PC9: decision Accepted and entry appended at quota 3 with weight 1. Record populated by Proposed!ProposalObservation(r,<<RequestEntry(q,2)>>,a,Qs(q)) (old fields identical to base!ProposalObservation; projection checked), where a = {old|new} model Step(r, MsgProp) and r is the mapped single-leader pre-state (Witness!Rj joint explicit voters {1,2,3}&&{1,2,3} learners {4}; Witness!Rn non-joint voters {1,2,3}).",
+  "old_property": {
+   "which": "old property (old/spec/base.tla)",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvAdmission/(TestEvQuotaZero)",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "not produced",
+   "new": "not produced",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "no",
+   "basis": "Both Go trees drop it."
+  },
+  "requirement": {
+   "value": "forbidden",
+   "citations": [
+    "new/source/raft_test.go:236-249"
+   ],
+   "basis": ""
+  },
+  "cell": "impl does not produce / requirement forbids: strengthening justified, accept",
+  "requirement_evidence": [
+   "new/source/raft_test.go:236-249"
+  ],
+  "verdict": "accepted",
+  "note": "Relaxation does not erase quota detection.",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "OS1-quota0-new",
+  "property": "OutcomeSoundness",
+  "kind": "relaxation",
+  "state": "Quota 3 > 2, zero-weight Normal proposal accepted. Outcome record built with the verbatim expression of base.tla:906-910 (OutOld uses base!RewriteConf, OutNew uses Proposed!RewriteConf for the weight field); decision from the NEW model Step.",
+  "old_property": {
+   "which": "old property (old/spec/base.tla)",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvQuotaZero",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "dropped",
+   "new": "accepted",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new QUOTA0."
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/raft_test.go:251-258",
+    "new/source/raft.go:1609,1620-1623 (comments: empty entries always succeed; used for auto-leave)"
+   ],
+   "basis": ""
+  },
+  "cell": "impl produces / requirement allows: change justified, accept",
+  "requirement_evidence": [
+   "new/source/raft_test.go:251-258",
+   "new/source/raft.go:1609,1620-1623 (comments: empty entries always succeed; used for auto-leave)"
+  ],
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "OS2-observer-oldweight-vs-new",
+  "property": "OutcomeSoundness",
+  "kind": "observer",
+  "state": "Joint leader with quota 2 proposes V2 <<AddVoter 4>> (weight 1); new code rewrites to a 0-size no-op and accepts. Old column: old property on OLD observer (weight 1 via old RewriteConf) ; new column: proposed property on migrated observer (weight 0). Outcome record built with the verbatim expression of base.tla:906-910 (OutOld uses base!RewriteConf, OutNew uses Proposed!RewriteConf for the weight field); decision from the NEW model Step.",
+  "old_property": {
+   "which": "old property (old/spec/base.tla)",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvAdmission/joint-addvoter-auto",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "admitted V2",
+   "new": "appended Normal (accepted)",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new."
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/testdata/confchange_v2_add_single_explicit.txt:100-106",
+    "new/source/raft.go:1609,1620-1623 (comments: empty entries always succeed; used for auto-leave)"
+   ],
+   "basis": ""
+  },
+  "cell": "impl produces / requirement allows: change justified, accept",
+  "requirement_evidence": [
+   "new/source/testdata/confchange_v2_add_single_explicit.txt:100-106",
+   "new/source/raft.go:1609,1620-1623 (comments: empty entries always succeed; used for auto-leave)"
+  ],
+  "verdict": "accepted",
+  "note": "Shows the observer must compute weight through the migrated admission rule.",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "OS2b-old-property-on-migrated-observer",
+  "property": "OutcomeSoundness",
+  "kind": "observer",
+  "state": "Same as OS2, both columns use the migrated observer: old ExpectedDecision already accepts, isolating the observer migration from the quota-rule change. Outcome record built with the verbatim expression of base.tla:906-910 (OutOld uses base!RewriteConf, OutNew uses Proposed!RewriteConf for the weight field); decision from the NEW model Step.",
+  "old_property": {
+   "which": "old property (old/spec/base.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvAdmission/joint-addvoter-auto",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "-",
+   "new": "accepted",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new."
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/testdata/confchange_v2_add_single_explicit.txt:100-106"
+   ],
+   "basis": ""
+  },
+  "cell": "impl produces / requirement allows: change justified, accept",
+  "requirement_evidence": [
+   "new/source/testdata/confchange_v2_add_single_explicit.txt:100-106"
+  ],
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "OS3-quota1-new",
+  "property": "OutcomeSoundness",
+  "kind": "control",
+  "state": "Quota 3, weight 1: DropQuota in both. Outcome record built with the verbatim expression of base.tla:906-910 (OutOld uses base!RewriteConf, OutNew uses Proposed!RewriteConf for the weight field); decision from the NEW model Step.",
+  "old_property": {
+   "which": "old property (old/spec/base.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvQuotaZero",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "weight1 dropped",
+   "new": "weight1 dropped",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new."
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/raft_test.go:236-249"
+   ],
+   "basis": ""
+  },
+  "cell": "impl produces / requirement allows: change justified, accept",
+  "requirement_evidence": [
+   "new/source/raft_test.go:236-249"
+  ],
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "OS3-quota1-bad-control",
+  "property": "OutcomeSoundness",
+  "kind": "control",
+  "state": "Mutation: weight-1 outcome marked Accepted at quota 3. Outcome record built with the verbatim expression of base.tla:906-910 (OutOld uses base!RewriteConf, OutNew uses Proposed!RewriteConf for the weight field); decision from the NEW model Step.",
+  "old_property": {
+   "which": "old property (old/spec/base.tla)",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvQuotaZero",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "not produced",
+   "new": "not produced",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "no",
+   "basis": "Both trees drop."
+  },
+  "requirement": {
+   "value": "forbidden",
+   "citations": [
+    "new/source/raft_test.go:236-249"
+   ],
+   "basis": ""
+  },
+  "cell": "impl does not produce / requirement forbids: strengthening justified, accept",
+  "requirement_evidence": [
+   "new/source/raft_test.go:236-249"
+  ],
+  "verdict": "accepted",
+  "note": "Relaxation keeps rejecting the forbidden acceptance.",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "TT-demote-oldcode",
+  "property": "LeaderTransferTarget (new)",
+  "kind": "strengthening",
+  "state": "Old-model result of applying leave-joint: transferee 3 is now a learner and transfer stays 3. Old column: no old property exists; the old suite evaluated on this state (TypeOK, JointConfigurationShape, TransferDecisionEligibility, QuorumAccounting, NoUnexpectedFatal) is all TRUE (DIAG transfer). Leader record RT (voters {1,2}&&{1,2,3}, learnersNext {3}, autoLeave, transfer=3) built by Witness!Mk from the history boot,noop,V2<<Remove 3,AddLearner 3>>,leave; post-states RTold/RTnew = {base|Proposed}!ApplyConfCore(RT, leave). Property evaluated with raft <- [Rmap0 EXCEPT ![1]=state].",
+  "old_property": {
+   "which": "no old property (old suite accepts; see note)",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvTransferDemote",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "final transferee=3 cfg voters=(1 2) learners=(3)",
+   "new": "final transferee=0",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "no",
+   "basis": "Go new aborts the transfer."
+  },
+  "requirement": {
+   "value": "forbidden",
+   "citations": [
+    "new/source/raft_test.go:3617-3646 (TestLeaderTransferDemoteNode)",
+    "new/source/raft.go:1568 (comment: abort if removed or demoted)"
+   ],
+   "basis": ""
+  },
+  "cell": "impl does not produce / requirement forbids: strengthening justified, accept",
+  "requirement_evidence": [
+   "new/source/raft_test.go:3617-3646 (TestLeaderTransferDemoteNode)",
+   "new/source/raft.go:1568 (comment: abort if removed or demoted)"
+  ],
+  "verdict": "accepted",
+  "note": "old_property.tlc here is the literal 'no property' value TRUE; old-suite values are in the DIAG transfer line.",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "TT-demote-newcode",
+  "property": "LeaderTransferTarget (new)",
+  "kind": "control",
+  "state": "New-model result: transfer aborted. Leader record RT (voters {1,2}&&{1,2,3}, learnersNext {3}, autoLeave, transfer=3) built by Witness!Mk from the history boot,noop,V2<<Remove 3,AddLearner 3>>,leave; post-states RTold/RTnew = {base|Proposed}!ApplyConfCore(RT, leave). Property evaluated with raft <- [Rmap0 EXCEPT ![1]=state].",
+  "old_property": {
+   "which": "no old property",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvTransferDemote",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "-",
+   "new": "final transferee=0",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new."
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/raft_test.go:3617-3646 (TestLeaderTransferDemoteNode)"
+   ],
+   "basis": ""
+  },
+  "cell": "impl produces / requirement allows: change justified, accept",
+  "requirement_evidence": [
+   "new/source/raft_test.go:3617-3646 (TestLeaderTransferDemoteNode)"
+  ],
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "TT-joint-control",
+  "property": "LeaderTransferTarget (new)",
+  "kind": "control",
+  "state": "Pre-state RT itself: transferee 3 still an outgoing voter (learnersNext) while joint. Leader record RT (voters {1,2}&&{1,2,3}, learnersNext {3}, autoLeave, transfer=3) built by Witness!Mk from the history boot,noop,V2<<Remove 3,AddLearner 3>>,leave; post-states RTold/RTnew = {base|Proposed}!ApplyConfCore(RT, leave). Property evaluated with raft <- [Rmap0 EXCEPT ![1]=state].",
+  "old_property": {
+   "which": "no old property",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvTransferDemote",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "joint transferee=3",
+   "new": "joint transferee=3",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new keeps the transfer while joint."
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/raftpb/raft.proto:107-110",
+    "new/source/raft.go:1568 (comment: abort if removed or demoted)"
+   ],
+   "basis": "Learners-next become learners only when the outgoing config is removed."
+  },
+  "cell": "impl produces / requirement allows: change justified, accept",
+  "requirement_evidence": [
+   "new/source/raftpb/raft.proto:107-110",
+   "new/source/raft.go:1568 (comment: abort if removed or demoted)"
+  ],
+  "verdict": "accepted",
+  "note": "Shows the new invariant does not over-forbid the joint phase.",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "TT-remove-control",
+  "property": "LeaderTransferTarget (new)",
+  "kind": "control",
+  "state": "Transferee 3 removed outright (legacy Remove): both models abort. Old column = proposed property on OLD-model result; new column = on NEW-model result.",
+  "old_property": {
+   "which": "proposed property on old-model post-state",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvTransferDemote",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "remove: transferee=0",
+   "new": "remove: transferee=0",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new."
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/raft_test.go:3598-3615 (TestLeaderTransferRemoveNode)"
+   ],
+   "basis": ""
+  },
+  "cell": "impl produces / requirement allows: change justified, accept",
+  "requirement_evidence": [
+   "new/source/raft_test.go:3598-3615 (TestLeaderTransferRemoveNode)"
+  ],
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "K-ack-normal-new",
+  "property": "AckPreservation (keep)",
+  "kind": "control",
+  "state": "acks record via verbatim base.tla:1122-1128 expression on the AL-normal-new transition (nil-Data leave appended).",
+  "old_property": {
+   "which": "old property (old/spec/base.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvAutoLeaveRegression",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "-",
+   "new": "Leave appended, outputs untouched",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new."
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/testdata/confchange_v2_add_double_auto.txt:34-38,51,249-279"
+   ],
+   "basis": ""
+  },
+  "cell": "impl produces / requirement allows: change justified, accept",
+  "requirement_evidence": [
+   "new/source/testdata/confchange_v2_add_double_auto.txt:34-38,51,249-279"
+  ],
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "K-ack-early-dup-new",
+  "property": "AckPreservation (keep)",
+  "kind": "control",
+  "state": "acks record on the BC2b transition (second leave appended).",
+  "old_property": {
+   "which": "old property (old/spec/base.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvAutoLeaveEarlyAdvanceDup",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "dup",
+   "new": "dup leave + panic",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new."
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/testdata/confchange_v2_add_double_auto.txt:238-240"
+   ],
+   "basis": "AckPreservation's own obligation (outputs, snapshot, cursor preserved; at most one empty V2 appended per Advance) is met; the transition as a whole is forbidden but that obligation belongs to AutoLeaveAdvance', which rejects it (AL-early-dup-new)."
+  },
+  "cell": "impl produces / requirement allows: change justified, accept",
+  "requirement_evidence": [
+   "new/source/testdata/confchange_v2_add_double_auto.txt:238-240"
+  ],
+  "verdict": "accepted",
+  "note": "Kept unchanged: not the responsible property.",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "K-effect-autoleave-new",
+  "property": "RequestCorrelatedConfigurationEffects (keep)",
+  "kind": "control",
+  "state": "EffectObservation(r,e,a,requests) where r = new-model state after AL-normal-new with the leave committed, e = nil-Data leave (id 0), a = Proposed!ApplyConfCore(r,e).",
+  "old_property": {
+   "which": "old property (old/spec/base.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvAutoLeaveRegression",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "-",
+   "new": "leave applied: cfg voters=(1)",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new."
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/testdata/confchange_v2_add_double_auto.txt:66-68"
+   ],
+   "basis": ""
+  },
+  "cell": "impl produces / requirement allows: change justified, accept",
+  "requirement_evidence": [
+   "new/source/testdata/confchange_v2_add_double_auto.txt:66-68"
+  ],
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "K-replication-evidence",
+  "property": "ReplicationEvidence (keep)",
+  "kind": "control",
+  "state": "raft map: node1 = Proposed!ApplyConfCore(leader, AddVoter 4) (peer 4 Next=Last=5, probe MsgApp index 4 sent); node2 = Proposed!Restore(follower, snapshot@5) (self match 4, next 5); node3 = leader after accepting a zero-weight proposal at quota 3 > 2.",
+  "old_property": {
+   "which": "old property (old/spec/base.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvInitProgress/TestEvRestoreSelfProgress/TestEvQuotaZero",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "INITPROG new.next=4 (=last+1) msgs=[]; RESTORE self.match=11 self.next=12",
+   "new": "INITPROG new.next=3 (=last) msgs=[MsgApp->2 idx=2 ents=1]; RESTORE self.match=10 self.next=11; QUOTA0 weight0 accepted",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new INITPROG/RESTORE/QUOTA0 lines; model analogues printed in DIAG progress/restore."
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "update.patch:396-442 (confchange/testdata/simple_safety.txt expectations: next moves from LastIndex+1 to LastIndex)",
+    "new/source/testdata/confchange_v2_add_double_auto.txt:53",
+    "new/source/raft.go:1483 (comment: untested and likely unneeded)",
+    "new/source/raft_test.go:251-258"
+   ],
+   "basis": ""
+  },
+  "cell": "impl produces / requirement allows: change justified, accept",
+  "requirement_evidence": [
+   "update.patch:396-442 (confchange/testdata/simple_safety.txt expectations: next moves from LastIndex+1 to LastIndex)",
+   "new/source/testdata/confchange_v2_add_double_auto.txt:53",
+   "new/source/raft.go:1483 (comment: untested and likely unneeded)",
+   "new/source/raft_test.go:251-258"
+  ],
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "K-typeok",
+  "property": "TypeOK (keep)",
+  "kind": "control",
+  "state": "raft map: node1 = Proposed!ApplyConfCore(leader, AddVoter 4) (peer 4 Next=Last=5, probe MsgApp index 4 sent); node2 = Proposed!Restore(follower, snapshot@5) (self match 4, next 5); node3 = leader after accepting a zero-weight proposal at quota 3 > 2.",
+  "old_property": {
+   "which": "old property (old/spec/base.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvInitProgress/TestEvRestoreSelfProgress/TestEvQuotaZero",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "INITPROG new.next=4 (=last+1) msgs=[]; RESTORE self.match=11 self.next=12",
+   "new": "INITPROG new.next=3 (=last) msgs=[MsgApp->2 idx=2 ents=1]; RESTORE self.match=10 self.next=11; QUOTA0 weight0 accepted",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new INITPROG/RESTORE/QUOTA0 lines; model analogues printed in DIAG progress/restore."
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "update.patch:396-442 (confchange/testdata/simple_safety.txt expectations: next moves from LastIndex+1 to LastIndex)",
+    "new/source/testdata/confchange_v2_add_double_auto.txt:53",
+    "new/source/raft.go:1483 (comment: untested and likely unneeded)",
+    "new/source/raft_test.go:251-258"
+   ],
+   "basis": ""
+  },
+  "cell": "impl produces / requirement allows: change justified, accept",
+  "requirement_evidence": [
+   "update.patch:396-442 (confchange/testdata/simple_safety.txt expectations: next moves from LastIndex+1 to LastIndex)",
+   "new/source/testdata/confchange_v2_add_double_auto.txt:53",
+   "new/source/raft.go:1483 (comment: untested and likely unneeded)",
+   "new/source/raft_test.go:251-258"
+  ],
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "K-logstructure",
+  "property": "LogStructure (keep)",
+  "kind": "control",
+  "state": "raft map: node1 = Proposed!ApplyConfCore(leader, AddVoter 4) (peer 4 Next=Last=5, probe MsgApp index 4 sent); node2 = Proposed!Restore(follower, snapshot@5) (self match 4, next 5); node3 = leader after accepting a zero-weight proposal at quota 3 > 2.",
+  "old_property": {
+   "which": "old property (old/spec/base.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvInitProgress/TestEvRestoreSelfProgress/TestEvQuotaZero",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "INITPROG new.next=4 (=last+1) msgs=[]; RESTORE self.match=11 self.next=12",
+   "new": "INITPROG new.next=3 (=last) msgs=[MsgApp->2 idx=2 ents=1]; RESTORE self.match=10 self.next=11; QUOTA0 weight0 accepted",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new INITPROG/RESTORE/QUOTA0 lines; model analogues printed in DIAG progress/restore."
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "update.patch:396-442 (confchange/testdata/simple_safety.txt expectations: next moves from LastIndex+1 to LastIndex)",
+    "new/source/testdata/confchange_v2_add_double_auto.txt:53",
+    "new/source/raft.go:1483 (comment: untested and likely unneeded)",
+    "new/source/raft_test.go:251-258"
+   ],
+   "basis": ""
+  },
+  "cell": "impl produces / requirement allows: change justified, accept",
+  "requirement_evidence": [
+   "update.patch:396-442 (confchange/testdata/simple_safety.txt expectations: next moves from LastIndex+1 to LastIndex)",
+   "new/source/testdata/confchange_v2_add_double_auto.txt:53",
+   "new/source/raft.go:1483 (comment: untested and likely unneeded)",
+   "new/source/raft_test.go:251-258"
+  ],
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "K-quota-integrity",
+  "property": "QuotaIntegrity (keep)",
+  "kind": "control",
+  "state": "raft map: node1 = Proposed!ApplyConfCore(leader, AddVoter 4) (peer 4 Next=Last=5, probe MsgApp index 4 sent); node2 = Proposed!Restore(follower, snapshot@5) (self match 4, next 5); node3 = leader after accepting a zero-weight proposal at quota 3 > 2.",
+  "old_property": {
+   "which": "old property (old/spec/base.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvInitProgress/TestEvRestoreSelfProgress/TestEvQuotaZero",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "INITPROG new.next=4 (=last+1) msgs=[]; RESTORE self.match=11 self.next=12",
+   "new": "INITPROG new.next=3 (=last) msgs=[MsgApp->2 idx=2 ents=1]; RESTORE self.match=10 self.next=11; QUOTA0 weight0 accepted",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new INITPROG/RESTORE/QUOTA0 lines; model analogues printed in DIAG progress/restore."
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "update.patch:396-442 (confchange/testdata/simple_safety.txt expectations: next moves from LastIndex+1 to LastIndex)",
+    "new/source/testdata/confchange_v2_add_double_auto.txt:53",
+    "new/source/raft.go:1483 (comment: untested and likely unneeded)",
+    "new/source/raft_test.go:251-258"
+   ],
+   "basis": ""
+  },
+  "cell": "impl produces / requirement allows: change justified, accept",
+  "requirement_evidence": [
+   "update.patch:396-442 (confchange/testdata/simple_safety.txt expectations: next moves from LastIndex+1 to LastIndex)",
+   "new/source/testdata/confchange_v2_add_double_auto.txt:53",
+   "new/source/raft.go:1483 (comment: untested and likely unneeded)",
+   "new/source/raft_test.go:251-258"
+  ],
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "K-campaign",
+  "property": "CampaignDecisionEligibility (keep)",
+  "kind": "control",
+  "state": "CampaignObservation(r, Proposed!StepHup(r)) for follower 2 (StepHup is unchanged; vote order is not observed).",
+  "old_property": {
+   "which": "old property (old/spec/base.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvCampaignOrder",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "order=[4 5 1 2]",
+   "new": "order=[1 2 4 5]; identical message multiset",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new."
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/testdata/campaign.txt"
+   ],
+   "basis": ""
+  },
+  "cell": "impl produces / requirement allows: change justified, accept",
+  "requirement_evidence": [
+   "new/source/testdata/campaign.txt"
+  ],
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "CTL-good",
+  "property": "ElectionSafety, LogMatching, LeaderCompleteness, CommittedHistory, AppliedAgreement, QuorumAccounting, ConfigurationTransitionSafety, JointConfigurationShape (unaffected)",
+  "kind": "control",
+  "state": "Non-trivial history: commitUses from base!MaybeCommit on a leader committing an AddVoter entry, one win, one obligation, applied prefixes. Old column: all old values TRUE; new column: proposed values equal old values.",
+  "old_property": {
+   "which": "old property (old/spec/base.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "not_representable": "pure model control; no code path changed"
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "model control"
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [],
+   "basis": ""
+  },
+  "cell": "impl produces / requirement allows: change justified, accept",
+  "requirement_evidence": [],
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "CTL-bad-election",
+  "property": "ElectionSafety (unaffected)",
+  "kind": "control",
+  "state": "Same history plus a second win in term 2 by another node.",
+  "old_property": {
+   "which": "old property (old/spec/base.tla)",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "not_representable": "synthetic forbidden control"
+  },
+  "impl_produces": {
+   "value": "no",
+   "basis": "synthetic"
+  },
+  "requirement": {
+   "value": "forbidden",
+   "citations": [
+    "new/source/raft_paper_test.go:234-236 (each follower votes for at most one candidate per term)"
+   ],
+   "basis": ""
+  },
+  "cell": "impl does not produce / requirement forbids: strengthening justified, accept",
+  "requirement_evidence": [
+   "new/source/raft_paper_test.go:234-236 (each follower votes for at most one candidate per term)"
+  ],
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "PCinit-nonjoint-empty-explicit-old",
+  "property": "ProposalConfigurationDecisions (initial vs final proposal)",
+  "kind": "semantic",
+  "state": "PC6-old state (old-code admission of a valid no-op enter-joint in a non-joint config). Old column: INITIAL frozen deterministic proposal (ProposedInitial.tla); new column: FINAL proposal. Record populated by Proposed!ProposalObservation(r,<<RequestEntry(q,2)>>,a,Qs(q)) (old fields identical to base!ProposalObservation; projection checked), where a = {old|new} model Step(r, MsgProp) and r is the mapped single-leader pre-state (Witness!Rj joint explicit voters {1,2,3}&&{1,2,3} learners {4}; Witness!Rn non-joint voters {1,2,3}).",
+  "old_property": {
+   "which": "initial proposal (evidence/tla/ProposedInitial.tla)",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "which": "final proposal (evidence/tla/Proposed.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvAdmission/nonjoint-empty-explicit",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "admitted, cfg voters=(1)&&(1), no panic",
+   "new": "dropped",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "no",
+   "basis": "New code drops it."
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/confchange/testdata/joint_safety.txt:24-27",
+    "new/source/node.go:136-139"
+   ],
+   "basis": "Both admitting and dropping are allowed; the initial contract forbade admission."
+  },
+  "cell": "impl does not produce / requirement allows: edit may be unnecessary; keep only with nearby forbidden control",
+  "requirement_evidence": [
+   "new/source/confchange/testdata/joint_safety.txt:24-27",
+   "new/source/node.go:136-139"
+  ],
+  "verdict": "revised",
+  "note": "Reason for changed_from_initial on ProposalConfigurationDecisions.",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "PCinit-nonjoint-empty-explicit-new",
+  "property": "ProposalConfigurationDecisions (initial vs final proposal)",
+  "kind": "control",
+  "state": "PC6-new state (drop). Old column: initial proposal; new column: final.",
+  "old_property": {
+   "which": "initial proposal",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "which": "final proposal",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvAdmission/nonjoint-empty-explicit",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "-",
+   "new": "dropped",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new."
+  },
+  "requirement": {
+   "value": "allowed",
+   "citations": [
+    "new/source/node.go:136-139"
+   ],
+   "basis": ""
+  },
+  "cell": "impl produces / requirement allows: change justified, accept",
+  "requirement_evidence": [
+   "new/source/node.go:136-139"
+  ],
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "PCinit-joint-empty-explicit-new",
+  "property": "ProposalConfigurationDecisions (initial vs final proposal)",
+  "kind": "control",
+  "state": "PC4 state (BC3). Old column: initial proposal; new column: final. Detection retained after the revision.",
+  "old_property": {
+   "which": "initial proposal",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "which": "final proposal",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvAdmission/joint-empty-explicit",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "admitted -> panic",
+   "new": "admitted -> panic",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new."
+  },
+  "requirement": {
+   "value": "forbidden",
+   "citations": [
+    "new/source/raftpb/confchange.go:100-102",
+    "new/source/confchange/testdata/joint_safety.txt:30-32,55,60"
+   ],
+   "basis": ""
+  },
+  "cell": "BUG CANDIDATE: impl produces / requirement forbids: keep the stronger property, record defect",
+  "requirement_evidence": [
+   "new/source/raftpb/confchange.go:100-102",
+   "new/source/confchange/testdata/joint_safety.txt:30-32,55,60"
+  ],
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "NUF-BC2b-dup-leave-apply",
+  "property": "NoUnexpectedFatal (keep)",
+  "kind": "control",
+  "state": "Proposed!ApplyConfCore applies the first leave then the duplicate leave from AL-early-dup-new: Fatal 'invalid configuration transition'.",
+  "old_property": {
+   "which": "old property (old/spec/base.tla)",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvAutoLeaveEarlyAdvanceDup",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "PANIC can't leave a non-joint config",
+   "new": "PANIC can't leave a non-joint config",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new."
+  },
+  "requirement": {
+   "value": "forbidden",
+   "citations": [
+    "new/source/testdata/confchange_v2_add_double_auto.txt:238-240",
+    "new/source/confchange/testdata/joint_safety.txt:20-22"
+   ],
+   "basis": ""
+  },
+  "cell": "BUG CANDIDATE: impl produces / requirement forbids: keep the stronger property, record defect",
+  "requirement_evidence": [
+   "new/source/testdata/confchange_v2_add_double_auto.txt:238-240",
+   "new/source/confchange/testdata/joint_safety.txt:20-22"
+  ],
+  "verdict": "accepted",
+  "note": "NoUnexpectedFatal already flags the apply-time consequence, but it is not in the Update cfgs; the Advance-time check is AutoLeaveAdvance'.",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "NUF-BC3-empty-explicit-apply",
+  "property": "NoUnexpectedFatal (keep)",
+  "kind": "control",
+  "state": "Proposed!ApplyConfCore applies the admitted empty JointExplicit entry while joint: Fatal.",
+  "old_property": {
+   "which": "old property (old/spec/base.tla)",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvAdmission/joint-empty-explicit",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "PANIC config is already joint",
+   "new": "PANIC config is already joint",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new."
+  },
+  "requirement": {
+   "value": "forbidden",
+   "citations": [
+    "new/source/confchange/testdata/joint_safety.txt:30-32,55,60",
+    "new/source/raftpb/confchange.go:71-73"
+   ],
+   "basis": ""
+  },
+  "cell": "BUG CANDIDATE: impl produces / requirement forbids: keep the stronger property, record defect",
+  "requirement_evidence": [
+   "new/source/confchange/testdata/joint_safety.txt:30-32,55,60",
+   "new/source/raftpb/confchange.go:71-73"
+  ],
+  "verdict": "accepted",
+  "note": "",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ },
+ {
+  "id": "NUF-BC1-stuck-joint",
+  "property": "NoUnexpectedFatal (keep)",
+  "kind": "control",
+  "state": "BC1 post-state (n2 leader stuck in joint autoLeave config): no fatal.",
+  "old_property": {
+   "which": "old property (old/spec/base.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "which": "proposed property (evidence/tla/Proposed.tla)",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "test_file": "evidence/go/ev_update_test.go",
+   "test": "TestEvAutoLeaveNewLeader",
+   "command": "cd evidence/{old_tree,new_tree} && go test -vet=off -count=1 -v -run 'TestEv' .  (see evidence/run_all.sh)",
+   "old": "-",
+   "new": "stuck joint, no panic",
+   "logs": [
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ]
+  },
+  "impl_produces": {
+   "value": "yes",
+   "basis": "Go new."
+  },
+  "requirement": {
+   "value": "forbidden",
+   "citations": [
+    "new/source/testdata/confchange_v2_add_double_implicit.txt:4-5",
+    "new/source/raftpb/raft.proto:85-86,111-112,164-168"
+   ],
+   "basis": "BC1 is not a crash; only AutoLeaveAdvance detects it (AL-newleader-new)."
+  },
+  "cell": "BUG CANDIDATE: impl produces / requirement forbids: keep the stronger property, record defect",
+  "requirement_evidence": [
+   "new/source/testdata/confchange_v2_add_double_implicit.txt:4-5",
+   "new/source/raftpb/raft.proto:85-86,111-112,164-168"
+  ],
+  "verdict": "accepted",
+  "note": "NoUnexpectedFatal is not responsible for BC1; requirement verdict is carried by AutoLeaveAdvance.",
+  "files": {
+   "tla": [
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/base.tla",
+    "evidence/tla/ProposedInitial.tla",
+    "evidence/tla/Witness.cfg"
+   ],
+   "go": [
+    "evidence/go/ev_update_test.go (copied into evidence/old_tree and evidence/new_tree)"
+   ],
+   "logs": [
+    "evidence/logs/tlc_witness.log",
+    "evidence/logs/tlc_results.json",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log",
+    "evidence/logs/Proposed.diff"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg -workers 1 Witness.tla"
+ }
+]

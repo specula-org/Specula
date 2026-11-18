@@ -1,0 +1,41 @@
+{
+  "run": "A0-V03-r1",
+  "status": "ok",
+  "entries": 48,
+  "decisions": {
+    "keep": 35,
+    "modify": 4,
+    "add": 8,
+    "unresolved": 1
+  },
+  "edits_without_witness": [
+    "AutoLeaveAdvance_new",
+    "UpdateAutoLeaveAdvance",
+    "OutcomeSoundness_new",
+    "ProposalConfigurationDecisions_new",
+    "AutoLeaveUnique",
+    "AutoLeaveNotStranded",
+    "AutoLeaveProgress",
+    "ConfChangeApplicationTotal",
+    "TransferTargetVoter",
+    "ConfigChangeProbes",
+    "LeaderProgressNextBounds",
+    "JointConfRefusalNotReached, EmptyConfRefusalNotReached, ZeroWeightOverQuotaNotReached, AutoLeaveRetriggerSuppressedNotReached, NewPeerProbeNotReached, DemotedTransfereeAbortNotReached"
+  ],
+  "edits_without_predicate": [],
+  "entries_without_evidence": [],
+  "citations": 149,
+  "bad_citations": [],
+  "top_level_keys": [
+    "overall_decision",
+    "reason",
+    "scope",
+    "semantic_changes_in_update",
+    "observer_representation_changes_required",
+    "entries",
+    "covered_updated_behaviors",
+    "suspected_defects",
+    "unresolved_obligations",
+    "cfg_plan"
+  ]
+}

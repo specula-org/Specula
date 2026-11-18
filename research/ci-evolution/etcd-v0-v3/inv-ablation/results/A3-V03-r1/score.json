@@ -1,0 +1,16 @@
+{
+  "scorer": "coordinator (Claude), not blind to arm",
+  "gold": "gold.json V03",
+  "obligations": {
+    "autoleave_effect_and_progress": {"score": "detected", "note": "AutoLeaveDue is level-based (autoLeave /\\ leader /\\ cursor >= pendingBefore /\\ no leave in flight), and an append is allowed only when due. The new-leader witness is classified impl=yes / requirement=forbidden (BUG CANDIDATE cell), so the property was kept and the defect recorded."},
+    "proposal_phase": {"score": "detected", "note": "ProposalContract modified; joint + empty JointExplicit is a bug-candidate cell (BC3) that is kept detectable."},
+    "zero_payload_quota": {"score": "detected", "note": "OutcomeSoundness modified for the s > 0 rule."},
+    "transfer_demotion": {"score": "detected", "note": "LeaderTransferTarget added."}
+  },
+  "bug_B": "named and confirmed by executing real code: BC1, evidence AL-newleader-new. Go TestEvAutoLeaveNewLeader: old tree leaves joint, new tree stays joint. TLC: old and proposed AutoLeaveAdvance both FALSE. Requirement axis cites testdata confchange_v2_add_double_implicit.txt:4-5 and raft.proto comments, not implementation code.",
+  "extra_bug_candidates": ["BC2a early Advance before ApplyConfChange misses the auto-leave (regression)", "BC2b early Advance appends a duplicate leave; apply panics (pre-existing)", "BC3 empty JointExplicit admitted in a joint config; apply panics"],
+  "keep_evidence": "Kept properties touched by the update were checked with executed states (K-* records), as A3 requires.",
+  "format_notes": ["43 path:line citations, none invalid", "4 requirement citations of raft.go:1483 are to the inline TODO comment on that line, so they are allowed (the checker was fixed to accept comment-bearing lines)"],
+  "evidence_stats": {"records": 50, "tlc_truth_values": 100, "claim_mismatches": 0, "code_observations": 48, "cells": {"bug_candidate": 8, "justified_strengthening": 11, "justified_relaxation": 29, "edit_may_be_unneeded": 2}},
+  "summary": "4 detected; bug B confirmed in real code as a bug-candidate cell with non-implementation requirement evidence"
+}

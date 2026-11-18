@@ -1,0 +1,27 @@
+{
+  "run": "A1-V02-r1",
+  "status": "ok",
+  "entries": 38,
+  "decisions": {
+    "modify": 5,
+    "add": 5,
+    "keep": 28
+  },
+  "edits_without_witness": [],
+  "edits_without_predicate": [],
+  "entries_without_evidence": [],
+  "citations": 31,
+  "bad_citations": [],
+  "top_level_keys": [
+    "schema",
+    "scope",
+    "update_summary",
+    "overall_decision",
+    "classification",
+    "entries",
+    "covered_updated_behaviors",
+    "suspected_defects",
+    "cfg_recommendations",
+    "unresolved_obligations"
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "run": "A0-V01-r1",
+  "status": "ok",
+  "entries": 36,
+  "decisions": {
+    "keep": 20,
+    "modify": 10,
+    "add": 4,
+    "unresolved": 2
+  },
+  "edits_without_witness": [
+    "ConfigurationOrigin",
+    "ConfigurationTransitionSafety",
+    "QuorumAccounting",
+    "SnapshotBacking",
+    "AckPreservation",
+    "ReadBasis",
+    "TypeOK",
+    "CampaignDecisionEligibility",
+    "RequestCorrelatedConfigurationEffects",
+    "ProposalConfigurationDecisions",
+    "JointConfigWellFormed",
+    "PendingConfIndexCoverage",
+    "ConfChangeApplicability",
+    "AutoLeaveProgress"
+  ],
+  "edits_without_predicate": [],
+  "entries_without_evidence": [],
+  "citations": 202,
+  "bad_citations": [],
+  "top_level_keys": [
+    "schema",
+    "scope",
+    "update_summary",
+    "overall",
+    "classification_legend",
+    "proposed_helpers",
+    "structural_support",
+    "entries",
+    "cfg_changes",
+    "covered_updated_behaviors",
+    "suspected_defects",
+    "unresolved_obligations"
+  ]
+}

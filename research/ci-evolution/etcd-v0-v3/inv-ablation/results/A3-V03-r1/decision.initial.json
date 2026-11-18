@@ -1,0 +1,150 @@
+{
+  "phase": "initial (frozen, written before any command was executed)",
+  "overall_decision": "modify-and-add",
+  "overall_reason": "The update changes three requirement-bearing mechanisms that the old suite observes: (1) auto-leave in raft.advance becomes edge-triggered, bumps pendingConfIndex to the leave entry, uses nil Data (weight 0) and panics instead of the DropQuota retry; (2) leader proposal admission now also rewrites conf changes to empty normal entries when joint && !leave or !joint && leave, and the uncommitted-size quota never refuses zero-size entries; (3) switchToConfig aborts a leadership transfer when the transferee is demoted (not only removed). Old AutoLeaveAdvance encodes the old duplicate-leave bug (it REQUIRES a leave at every Advance with cursor>=pendingConf) and a DropQuota retry branch that is now forbidden, so it must be modified with an observer migration. ProposalContract/OutcomeSoundness must gain the joint admission rule and the s>0 quota relaxation. A new transfer-target invariant is required for the demotion abort. All other properties are kept; Next=LastIndex initialisation, nil-Data auto-leave weight, probe-on-config-change, sorted vote order, reorder of reduceUncommittedSize are model/representation changes that do not alter any property text.",
+  "entries": [
+    {
+      "property": "AutoLeaveAdvance (and alias Update!UpdateAutoLeaveAdvance)",
+      "decision": "modify",
+      "change_type": "semantic (strengthening + correction of a pre-existing property defect) plus observer migration",
+      "category": "semantic requirement change + repair of pre-existing property defect + observer migration",
+      "evidence": [
+        "update.patch:616-660 / new/source/raft.go:563-583 (edge-triggered oldApplied<pendingConfIndex<=newApplied, Data:nil, panic on refusal, pendingConfIndex=lastIndex after append)",
+        "new/source/testdata/confchange_v2_add_double_auto.txt:238-240 (regression: leader must not transition out of the same joint state multiple times; that caused a panic)",
+        "new/source/rawnode_test.go:319-329 (after an auto-leaving joint change, pendingConfIndex == index of the appended leave entry)",
+        "new/source/raft_test.go:251-253 (an entry with no Data can always be appended; used for auto-transitioning out of joint config)",
+        "new/source/raft.go:1620-1623 comment (s>0 makes empty auto-leave append always succeed)",
+        "new/source/testdata/confchange_v2_add_double_implicit.txt:4-5 (design intent: a new leader must auto-transition out of the joint state just the same)",
+        "new/source/raftpb/raft.proto:85-86,111-112,164-166 (with Auto/JointImplicit the task of leaving is assigned to Raft)",
+        "new/source/node.go:159-168 (Node.Advance may be called before applying the last Ready)",
+        "old/spec/base.tla:1101-1115,1129-1132,1355-1362"
+      ],
+      "old_expression": "\\A a\\in history.autoLeaveChecks: a.eligible => (appended one V2 leave) \\/ (a.decision=\"DropQuota\" /\\ a.pending=Len(a.afterHist)), eligible == r.config.autoLeave /\\ b.cursor>=r.pendingConf /\\ r.role=\"Leader\"",
+      "proposed_expression": "Observer adds autoLeave, leader, cursor, pendingBefore (=r.pendingConf), oldApplied (=r.applied), leaveInFlight (=\\E k\\in Len(r.cfgHist)+1..Last(r): IsLeave(Hist(r)[k])). AutoLeaveAdvance' == \\A a: LET due == a.autoLeave /\\ a.leader /\\ a.cursor>0 /\\ a.cursor>=a.pendingBefore /\\ ~a.leaveInFlight; appended == Len(a.afterHist)=a.beforeLast+1 /\\ last entry is IsLeave with id 0; grew == Len(a.afterHist)>a.beforeLast IN /\\ (due => appended /\\ a.pending=Len(a.afterHist)) /\\ (grew => due). DropQuota disjunct removed.",
+      "disagreement_witnesses": [
+        "W-AL-dup (old code, regression scenario of confchange_v2_add_double_auto.txt): leader joint autoLeave, pendingConf=6 (joint entry), leave already at 9, beforeLast=9, cursor=8 -> old requires a second leave (old TRUE when duplicate appended); proposed FALSE (leaveInFlight forbids append).",
+        "W-AL-quota: eligible Advance with decision=DropQuota, no append, pending=Len(afterHist) -> old TRUE, proposed FALSE.",
+        "W-AL-nobump: leave appended at 9 but pending stays 6 -> old TRUE, proposed FALSE.",
+        "W-AL-newleader (control / suspected bug): new leader whose applied==pendingConf==lastIndex at election, joint autoLeave, next Advance cursor=last+1, no leave appended -> old FALSE and proposed FALSE (both keep detection).",
+        "W-AL-early-dup (suspected bug): early Advance over the leave entry before ApplyConfChange -> new code appends second leave; old TRUE, proposed FALSE."
+      ]
+    },
+    {
+      "property": "ProposalConfigurationDecisions (ProposalContract)",
+      "decision": "modify",
+      "change_type": "semantic (new required rewrites for joint admission; quota relaxation for zero-weight) plus observer migration (ProposalObservation lacks outgoing voters)",
+      "category": "semantic requirement change + observer migration",
+      "evidence": [
+        "update.patch:683-724 / new/source/raft.go:1052-1071",
+        "new/source/testdata/confchange_v2_add_single_explicit.txt:100-106 (membership change refused in joint state; empty entry proposed instead)",
+        "new/source/testdata/confchange_v2_add_single_explicit.txt:165-168 (leave refused when not joint)",
+        "new/source/raft_test.go:251-258 (zero-Data proposal accepted after limit)",
+        "new/source/raft.go:1620-1623 comment",
+        "new/source/raftpb/confchange.go:71-73,100-102 (LeaveJoint means zero ConfChangeV2 except Context; empty change with explicit transition is EnterJoint)",
+        "new/source/node.go:136-139 (conf changes may be dropped)",
+        "new/source/confchange/testdata/joint_safety.txt:32,55,60,65"
+      ],
+      "old_expression": "rewritten = conf entries with pending>applied or an earlier conf in the batch; DropQuota iff quota>0 /\\ quota+weight>MaxUncommitted",
+      "proposed_expression": "Observer adds outgoing |-> r.config.outgoing. AdmittedConf(o,k) == kind\\in ConfKinds /\\ o.pending<=o.applied /\\ ~\\E j<k: AdmittedConf(o,j) /\\ IF o.outgoing#{} THEN IsLeave(e) ELSE e.changes# <<>>; rewritten = conf entries not admitted; DropQuota iff quota>0 /\\ weight>0 /\\ quota+weight>MaxUncommitted.",
+      "disagreement_witnesses": [
+        "W-PC-joint: leader in joint config (outgoing#{}), no pending, proposes V2 <<AddVoter s3>> Auto -> new code appends Normal no-op; old FALSE (content changed), proposed TRUE.",
+        "W-PC-leave-nonjoint: non-joint leader proposes IsLeave V2 -> rewritten; old FALSE, proposed TRUE.",
+        "W-PC-quota0: quota=3>Max=2, proposal weight 0 -> Accepted; old FALSE (expects DropQuota), proposed TRUE.",
+        "W-PC-empty-explicit-joint (suspected bug): joint config, V2 changes=<<>> transition JointExplicit -> new code admits (len(Changes)==0); old TRUE, proposed FALSE.",
+        "Controls: joint + IsLeave admitted (both TRUE); joint + non-leave admitted (proposed FALSE); quota=3, weight 1 Accepted (proposed FALSE)."
+      ]
+    },
+    {
+      "property": "OutcomeSoundness (ExpectedDecision)",
+      "decision": "modify",
+      "change_type": "semantic relaxation (zero-weight proposals never DropQuota) + observer migration (weight computed through the updated rewrite)",
+      "category": "semantic requirement change",
+      "evidence": ["new/source/raft.go:1616-1623", "new/source/raft_test.go:251-258", "old/spec/base.tla:1393-1399,906-910"],
+      "old_expression": "DropQuota iff quota>0 /\\ quota+weight>MaxUncommitted",
+      "proposed_expression": "DropQuota iff quota>0 /\\ weight>0 /\\ quota+weight>MaxUncommitted",
+      "disagreement_witnesses": ["W-OS-quota0: outcome {role Leader, member, transfer 0, quota 3, weight 0, decision Accepted} with MaxUncommitted=2: old FALSE, proposed TRUE; control weight 1 Accepted: both FALSE."]
+    },
+    {
+      "property": "LeaderTransferTarget (new)",
+      "decision": "add",
+      "change_type": "semantic strengthening (new requirement)",
+      "category": "semantic requirement change",
+      "evidence": ["new/source/raft_test.go:3617-3646 (TestLeaderTransferDemoteNode)", "new/source/raft.go:1568-1571", "old/spec/base.tla:582"],
+      "old_expression": "none (ApplyConfCore aborted only when transferee \\notin members; no property observes the transfer target after configuration changes)",
+      "proposed_expression": "\\A n\\in Server: raft[n].alive /\\ raft[n].role=\"Leader\" /\\ Promotable(raft[n]) /\\ raft[n].transfer#0 => raft[n].transfer\\in VoterIDs(raft[n].config)",
+      "disagreement_witnesses": ["W-TT-demote: leader s1, config voters {s1,s2}, learners {s3}, transfer=s3 (old code after demoting s3) -> no old property fails; proposed FALSE. Control: transfer=s2 voter TRUE."]
+    },
+    {
+      "property": "AckPreservation (Update!UpdateAdvanceOutputPreservation)",
+      "decision": "keep",
+      "change_type": "none",
+      "category": "unchanged requirement (touched action)",
+      "evidence": ["old/spec/base.tla:1333-1341"],
+      "proposed_expression": "unchanged",
+      "disagreement_witnesses": ["keep-check: new-code Advance appending a nil-Data leave entry must satisfy the 'exactly one V2 with changes <<>>' disjunct."]
+    },
+    {
+      "property": "RequestCorrelatedConfigurationEffects (EffectContract)",
+      "decision": "keep",
+      "change_type": "none",
+      "category": "unchanged requirement (touched: id-0 auto-leave entries, rewritten refused conf proposals)",
+      "evidence": ["old/spec/base.tla:723-732"],
+      "proposed_expression": "unchanged",
+      "disagreement_witnesses": ["keep-check: application of the auto-leave entry (id 0, IsLeave) on the joint config."]
+    },
+    {
+      "property": "QuotaIntegrity",
+      "decision": "keep",
+      "change_type": "none",
+      "category": "unchanged requirement (touched: quota order in advance, s>0 rule)",
+      "evidence": ["old/spec/base.tla:1385-1391"],
+      "proposed_expression": "unchanged",
+      "disagreement_witnesses": ["keep-check: leader after zero-weight acceptance with quota>Max and after auto-leave append."]
+    },
+    {
+      "property": "ReplicationEvidence, TypeOK, LogStructure",
+      "decision": "keep",
+      "change_type": "none",
+      "category": "unchanged requirement (touched: initProgress Next=LastIndex, probe on config change, restore self progress)",
+      "evidence": ["update.patch:46-65", "new/source/raft.go:1556-1567", "old/spec/base.tla:1322-1327,1418-1437"],
+      "proposed_expression": "unchanged; model ChangeProgress uses Progress(0,last,TRUE)",
+      "disagreement_witnesses": ["keep-check: leader after adding a peer with next=Last(r), match=0."]
+    },
+    {
+      "property": "CampaignDecisionEligibility",
+      "decision": "keep",
+      "change_type": "none",
+      "category": "unchanged requirement (touched: vote requests are now sent in sorted order)",
+      "evidence": ["update.patch:665-682", "old/spec/base.tla:663-698"],
+      "proposed_expression": "unchanged (vote requests compared as a set/bag)",
+      "disagreement_witnesses": ["keep-check optional: CampaignObservation is order-insensitive."]
+    },
+    {
+      "property": "TransferDecisionEligibility, VoteDecisionEligibility, JointConfigurationShape, ConfigurationOrigin, ConfigurationTransitionSafety, QuorumAccounting, LearnerEligibility, JointSnapshotRecovery, JointSnapshotMemberAcceptance, ReadyOwnership, ReadyAccounting, ReadBasis, ReadApplication, ReadCorrelation, PromiseBacking, VoteRecovery, RecoveryBacking, SnapshotBacking, ElectionSafety, LogMatching, LeaderCompleteness, CommittedHistory, AppliedAgreement, NoUnexpectedFatal",
+      "decision": "keep",
+      "change_type": "none",
+      "category": "unchanged requirement / unaffected safety controls",
+      "evidence": ["update.patch has no change to vote/read/restore/persistence semantics; ReadIndex ri refactor and maybeTerm refactor are behaviour-preserving (update.patch:560-582,725-729)"],
+      "proposed_expression": "unchanged",
+      "disagreement_witnesses": ["control: proposed edits must leave these verdicts unchanged on the same witnesses."]
+    }
+  ],
+  "updated_behaviors_already_covered": [
+    {"behavior": "auto-leave entry with nil Data is still a V2 leave appended at most once per Advance", "property": "AckPreservation", "explanation": "first conjunct allows before=after or exactly one appended V2 entry with changes <<>>; nil Data unmarshals to an empty ConfChangeV2."},
+    {"behavior": "entries with id 0 applied as configuration changes must be leave-joint", "property": "RequestCorrelatedConfigurationEffects", "explanation": "EffectContract: e.id=0 /\\ kind#AddVoter => IsLeave(e)."},
+    {"behavior": "commits after configuration change use the joint quorum regardless of probing", "property": "QuorumAccounting, ConfigurationTransitionSafety", "explanation": "commitUses are recorded at MaybeCommit with the current config and matches."},
+    {"behavior": "a new leader that never auto-leaves (applied==pendingConf at election)", "property": "AutoLeaveAdvance (old)", "explanation": "old eligible (cursor>=pendingConf) already demands the append, so the old property detects this case; the proposed one keeps that verdict."},
+    {"behavior": "MsgTransferLeader admission for learners unchanged", "property": "TransferDecisionEligibility", "explanation": "TransferContract ignores learner targets."}
+  ],
+  "suspected_defects_not_to_hide": [
+    {"id": "BC1", "description": "New leader elected while applied==lastIndex in a joint AutoLeave config never auto-leaves: advance requires oldApplied < pendingConfIndex but becomeLeader sets pendingConfIndex=lastIndex==applied (raft.go:567,752).", "requirement_evidence": ["new/source/testdata/confchange_v2_add_double_implicit.txt:4-5", "new/source/raftpb/raft.proto:85-86,111-112,164-166"]},
+    {"id": "BC2", "description": "Node.Advance before ApplyConfChange (allowed by node.go:164-167): (a) advancing over the joint entry before it is applied misses the auto-leave forever; (b) advancing over the leave entry before it is applied appends a duplicate leave which later fails 'can't leave a non-joint config' and panics.", "requirement_evidence": ["new/source/node.go:159-168", "new/source/testdata/confchange_v2_add_double_auto.txt:238-240", "new/source/raftpb/raft.proto:111-112"]},
+    {"id": "BC3", "description": "Admission classifies wantsLeaveJoint by len(Changes)==0, so a ConfChangeV2 with no changes but Transition JointExplicit/JointImplicit is admitted while joint; applyConfChange then calls EnterJoint on a joint config and panics.", "requirement_evidence": ["new/source/raftpb/confchange.go:71-73,100-102", "new/source/confchange/testdata/joint_safety.txt:55-60", "new/source/testdata/confchange_v2_add_single_explicit.txt:100-106"]},
+    {"id": "M1", "description": "Model drift (not a property issue): base!AdvanceCore, RewriteConf, AppendQuotaExceeded, ChangeProgress, ApplyConfCore, Restore, AutoLeaveWeight still describe the old code and must be migrated in the model; self Match after restore becomes s.index-1 in new code (raft.go:1482-1483 with Next=LastIndex)."}
+  ],
+  "unresolved_obligations": [
+    "Eventual auto-leave is a liveness obligation; safety properties only check each Advance.",
+    "Whether dropping an empty-changes JointExplicit V2 in a non-joint config is desired (node.go:136-139 allows drops) - the proposed contract follows the code there.",
+    "Pre-existing: CampaignContract counts V2 entries as pending conf while code/model count only EntryConfChange (raft.go:1652-1660); not update-related, left unchanged."
+  ]
+}

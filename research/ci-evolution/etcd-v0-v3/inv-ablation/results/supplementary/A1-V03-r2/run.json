@@ -1,0 +1,92 @@
+{
+  "run": "A1-V03-r2",
+  "arm": "A1",
+  "transition": "V03",
+  "rep": 2,
+  "model": "claude-opus-5-5",
+  "effort": "xhigh",
+  "tools": "Read,Glob,Grep,Write,Edit",
+  "prompt": "prompts/A1-judge.md",
+  "prompt_sha256": "33fd50b7be690deb70ad6fcc551438a74c84aaccf9f2f7eec3eb4a921eca7036",
+  "packet": {
+    "transition": "V03",
+    "verified": 192,
+    "missing": []
+  },
+  "started_at": "2026-11-13T23:16:18.573475+00:00",
+  "seconds": 1038.4,
+  "exit_code": 0,
+  "subtype": "success",
+  "cost_usd": 4.9030447,
+  "turns": 41,
+  "usage": {
+    "input_tokens": 58,
+    "cache_creation_input_tokens": 242821,
+    "cache_read_input_tokens": 3763250,
+    "output_tokens": 110363,
+    "output_tokens_details": {
+      "thinking_tokens": 82154
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 242821,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 1170,
+        "cache_read_input_tokens": 243786,
+        "cache_creation_input_tokens": 3719,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 3719
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "permission_denials": [],
+  "tool_uses": {
+    "Glob": 5,
+    "Read": 19,
+    "Grep": 14,
+    "Write": 2
+  },
+  "produced": [
+    "decision.json",
+    "decision.md"
+  ],
+  "decision_json_parses": true,
+  "log": "/mydata/bingzhuo/inv-ablation/runs/A1-V03-r2/stream.jsonl",
+  "log_sha256": "c75ea42206f938c6784ef615210211c8309150730f65dc3ffca82b6dca834218",
+  "command": [
+    "claude",
+    "-p",
+    "<prompts/A1-judge.md>",
+    "--model",
+    "claude-opus-5-5",
+    "--effort",
+    "xhigh",
+    "--tools",
+    "Read,Glob,Grep,Write,Edit",
+    "--permission-mode",
+    "acceptEdits",
+    "--strict-mcp-config",
+    "--setting-sources",
+    "",
+    "--no-session-persistence",
+    "--max-budget-usd",
+    "25",
+    "--output-format",
+    "stream-json",
+    "--verbose"
+  ]
+}

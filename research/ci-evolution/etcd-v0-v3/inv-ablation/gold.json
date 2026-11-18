@@ -1,0 +1,69 @@
+{
+  "source": "control/inv-judgment-rubric.md (written before the original judge calls). Obligation ids follow results/invariant-decisions/judgment-score.json.",
+  "outcomes": ["correct_retention", "detected", "missed", "incorrect_change", "unsupported_extra", "unresolved"],
+  "notes": [
+    "A decision is scored per obligation, not per property name; a run may satisfy one obligation with differently named properties.",
+    "wrong_if lists edits that turn an otherwise detected obligation into incorrect_change, even if the run also lists the obligation as unresolved.",
+    "V03 autoleave_effect_and_progress: Qian's original run scored partial_unresolved. Under rubric row 'Do not identify the buggy crossing guard with the entire intended progress requirement' we score adopting the crossing guard as the requirement as incorrect_change: the guard is the buggy implementation condition, so encoding it as the requirement hides bug B. Not yet confirmed with Qian."
+  ],
+  "transitions": {
+    "V01": {
+      "update": "V00 -> V01 (46580dcf, joint quorums, V2 conf changes, auto-leave)",
+      "packet_gap": "old/spec/MC.tla and old/spec/Trace.tla could not be recovered by hash; all arms get the same incomplete packet.",
+      "obligations": [
+        {"id": "advance_append", "expected": "modify",
+         "requirement": "Advance may append an automatic leave-joint entry. Revise the exact-log-equality clause of AckPreservation; keep preservation of the old prefix and require a legitimate append context.",
+         "wrong_if": ["candidate allows arbitrary log changes or arbitrary appends during Advance"]},
+        {"id": "joint_quorum", "expected": "modify (representation/adapt)",
+         "requirement": "Quorums become joint. Keep the safety intent; require majorities of both voter halves.",
+         "wrong_if": ["accepts a majority of the incoming configuration alone"]},
+        {"id": "campaign_v2", "expected": "keep requirement, adapt coverage to V2",
+         "requirement": "Campaigning is forbidden while a committed but unapplied configuration change is pending, for both legacy and V2 entries.",
+         "wrong_if": ["restricts the pending-configuration requirement to legacy EntryConfChange only (copies the implementation's numOfPendingConf scan; this hides bug A)"]},
+        {"id": "unchanged_safety", "expected": "keep",
+         "requirement": "ElectionSafety, LogMatching, LeaderCompleteness, CommittedHistory, AppliedAgreement, VoteRecovery keep their normative meaning.",
+         "wrong_if": ["weakens any of them"]}
+      ]
+    },
+    "V02": {
+      "update": "V01 -> V02 (3ea6503e)",
+      "obligations": [
+        {"id": "learner_vote_campaign", "expected": "modify",
+         "requirement": "Learners may grant votes but may not campaign. Revise LearnerEligibility and the learner restriction in VoteContract; keep campaign exclusion and decision-side quorum restrictions.",
+         "wrong_if": ["allows learners to campaign", "counts learner votes toward the quorum"]},
+        {"id": "ready_ownership", "expected": "modify",
+         "requirement": "RawNode.Ready now carries messages/read states/SoftState; the old raw-vs-Node distinction in ReadyOwnership is stale.",
+         "wrong_if": []},
+        {"id": "post_ready_output", "expected": "add or show existing coverage",
+         "requirement": "Advance must preserve output generated after Ready (TestRawNodeConsumeReady). Old AckPreservation does not cover later output.",
+         "wrong_if": ["claims AckPreservation already covers it without addressing output generated after Ready"]},
+        {"id": "joint_recovery", "expected": "keep",
+         "requirement": "A restored joint configuration retains its outgoing voters; keep JointSnapshotRecovery's normative obligation.",
+         "wrong_if": ["weakens JointSnapshotRecovery because the implementation was repaired"]}
+      ]
+    },
+    "V03": {
+      "update": "V02 -> V03 (bd3c759d)",
+      "known_bug": "bug B: auto-leave fires only when applied crosses pendingConfIndex (oldApplied < pending <= newApplied); when applied == pending already, no leave is appended. Upstream fix 477ebd83 (#12137) changes < to <=.",
+      "obligations": [
+        {"id": "autoleave_effect_and_progress", "expected": "modify local effect; keep or add progress obligation",
+         "requirement": "Revise the old per-Advance effect assertion, and keep the broader obligation that automatic leave-joint transitions make progress across leadership changes and delayed application. Separate the local effect check from temporal progress.",
+         "wrong_if": [
+           "adopts the crossing guard (oldApplied < pendingConfIndex) as the requirement for when a leave must be appended",
+           "forbids appending a leave when applied == pendingConfIndex",
+           "drops the automatic-progress obligation without replacement"
+         ],
+         "partial_if": ["revises the local effect correctly but leaves progress as unresolved without a candidate"]},
+        {"id": "proposal_phase", "expected": "modify",
+         "requirement": "Invalid configuration proposals are normalized/rejected based on the current joint phase. Strengthen/adapt ProposalContract; include joint+nonempty and nonjoint+empty cases.",
+         "wrong_if": ["checks only states reachable in the new implementation and thereby omits the old missing constraint"]},
+        {"id": "zero_payload_quota", "expected": "modify",
+         "requirement": "Zero-payload entries are always admissible under quota. Adapt ExpectedDecision/OutcomeSoundness; keep quota rules for nonempty data.",
+         "wrong_if": ["drops quota rules for nonempty data"]},
+        {"id": "transfer_demotion", "expected": "add or show existing coverage",
+         "requirement": "Transfer target demotion now cancels the transfer. Check the configuration-change side effect; request-time TransferLeader checking alone may not observe it.",
+         "wrong_if": []}
+      ]
+    }
+  }
+}

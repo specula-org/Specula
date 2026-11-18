@@ -1,0 +1,49 @@
+{
+  "run": "A3-V03-r1",
+  "status": "ok",
+  "entries": 12,
+  "decisions": {
+    "modify": 4,
+    "add": 1,
+    "keep": 7
+  },
+  "edits_without_witness": [],
+  "edits_without_predicate": [],
+  "entries_without_evidence": [],
+  "citations": 43,
+  "bad_citations": [],
+  "top_level_keys": [
+    "phase",
+    "overall_decision",
+    "overall_reason",
+    "entries",
+    "updated_behaviors_already_covered",
+    "suspected_defects_not_to_hide",
+    "unresolved_obligations"
+  ],
+  "evidence": {
+    "status": "ok",
+    "records": 50,
+    "kinds": {
+      "strengthening": 8,
+      "control": 33,
+      "semantic": 4,
+      "relaxation": 3,
+      "observer": 2
+    },
+    "verdicts": {
+      "accepted": 49,
+      "revised": 1
+    },
+    "cells": {
+      "impl does not produce / requirement forbids: strengthening j": 11,
+      "impl produces / requirement allows: change justified, accept": 29,
+      "BUG CANDIDATE: impl produces / requirement forbids: keep the": 8,
+      "impl does not produce / requirement allows: edit may be unne": 2
+    },
+    "tlc_evaluated": 100,
+    "claim_mismatch": [],
+    "code_observed": 48,
+    "implementation_cited_as_requirement": []
+  }
+}

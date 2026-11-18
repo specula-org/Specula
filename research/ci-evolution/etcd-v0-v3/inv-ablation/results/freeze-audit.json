@@ -1,0 +1,44 @@
+[
+  {
+    "run": "A2-V01-r1",
+    "initial_tool_index": 21,
+    "bash_before_initial": 17,
+    "executing_before_initial": [],
+    "freeze_held": true
+  },
+  {
+    "run": "A2-V02-r1",
+    "initial_tool_index": 21,
+    "bash_before_initial": 18,
+    "executing_before_initial": [],
+    "freeze_held": true
+  },
+  {
+    "run": "A2-V03-r1",
+    "initial_tool_index": 28,
+    "bash_before_initial": 1,
+    "executing_before_initial": [],
+    "freeze_held": true
+  },
+  {
+    "run": "A3-V01-r1",
+    "initial_tool_index": 32,
+    "bash_before_initial": 0,
+    "executing_before_initial": [],
+    "freeze_held": true
+  },
+  {
+    "run": "A3-V02-r1",
+    "initial_tool_index": 20,
+    "bash_before_initial": 16,
+    "executing_before_initial": [],
+    "freeze_held": true
+  },
+  {
+    "run": "A3-V03-r1",
+    "initial_tool_index": 31,
+    "bash_before_initial": 0,
+    "executing_before_initial": [],
+    "freeze_held": true
+  }
+]

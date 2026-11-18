@@ -1,0 +1,29 @@
+{
+  "scorer": "coordinator (Claude), not blind to arm",
+  "gold": "gold.json V03",
+  "obligations": {
+    "autoleave_effect_and_progress": {
+      "score": "detected",
+      "note": "Keeps the level-based NeedsLeave and says explicitly that it is 'not weakened to the source's edge trigger'. It still requires a leave when a leader is elected with applied == lastIndex. Progress stays unresolved (U1) with a concrete liveness candidate, and the safety form serves as the finite proxy. Bug B is named as D1 with witness W-AL4, caught by AutoLeaveAdvance."
+    },
+    "proposal_phase": {
+      "score": "detected",
+      "note": "PhaseAdmissible covers both phase cases; only earlier admitted conf entries block later ones."
+    },
+    "zero_payload_quota": {
+      "score": "detected",
+      "note": "Weight > 0 is required for DropQuota in both ProposalContract and ExpectedDecision."
+    },
+    "transfer_demotion": {
+      "score": "detected",
+      "note": "Adds LeaderTransferTargetVoter, with a promotable-leader premise justified by switchToConfig's early return."
+    }
+  },
+  "bug_B_named": "yes (D1)",
+  "extra_suspected_defects": [
+    "D2 early-Advance ordering",
+    "D3 wantsLeaveJoint vs LeaveJoint mismatch",
+    "D4 stale config admission under early Advance"
+  ],
+  "summary": "4 detected; bug B named and encoded in AutoLeaveAdvance"
+}

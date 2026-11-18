@@ -1,0 +1,31 @@
+{
+  "scorer": "coordinator (Claude), not blind to arm",
+  "gold": "gold.json V02",
+  "obligations": {
+    "learner_vote_campaign": {
+      "score": "detected",
+      "note": "VoteContract grant no longer excludes learners; LearnerEligibility restricted to campaigns; reachability canary LearnerGrantNotReached added."
+    },
+    "ready_ownership": {
+      "score": "detected",
+      "note": "ReadyOwnership modified: Ready takes the outbox and read states."
+    },
+    "post_ready_output": {
+      "score": "detected",
+      "note": "AdvanceOutboxPreservation added with the observer extension of history.acks."
+    },
+    "joint_recovery": {
+      "score": "correct_retention",
+      "note": "JointSnapshotRecovery replaced by ConfStateRestoreFidelity, which drops the 'outgoing # {} =>' premise: the same equality is required for every configuration. The joint obligation is fully kept, so this is a strengthening justified by new code asserting equivalence for every ConfState and by TestRestore. wrong_if (weakening) not triggered."
+    }
+  },
+  "bug_A": "named (suspected defect D3: numOfPendingConf ignores EntryConfChangeV2; CampaignContract requires blocking; 'never been co-checked with V2 workloads', the F3 cfg gap)",
+  "extra_suspected_defects": [
+    "D1 restore() ignores a joint snapshot for an outgoing-only voter (all four V02 runs found it)",
+    "duplicate auto-leave (AutoLeaveSingleFlight added)"
+  ],
+  "format_notes": [
+    "31 citations, none invalid"
+  ],
+  "summary": "3 detected + 1 correct retention (strengthened); bug A named"
+}

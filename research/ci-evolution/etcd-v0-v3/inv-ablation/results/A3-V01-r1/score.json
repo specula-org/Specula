@@ -1,0 +1,15 @@
+{
+  "scorer": "coordinator (Claude), not blind to arm",
+  "gold": "gold.json V01",
+  "obligations": {
+    "advance_append": {"score": "detected", "note": "AckPreservation modified: a.before = a.after \\/ (AutoLeaveAllowed(a) /\\ a.after = a.before \\o <<LeaveJoint>>), with AutoLeaveAllowed requiring a leader in an autoLeave joint config, cursor > 0 and no unapplied conf entry. Only a single leave is allowed, so B1's duplicate leave stays detectable. A2-V01 missed this obligation."},
+    "joint_quorum": {"score": "detected", "note": "QuorumAccounting via CfgWon(cfg,S) == Won(voters,S) /\\ Won(outgoing,S); helpers and observers migrated."},
+    "campaign_v2": {"score": "detected", "note": "Decision label is 'unresolved', but the property text is kept over ConfKinds including V2 and 'deliberately NOT weakened toward the implementation', so the requirement is preserved and bug A stays detectable. Scored by content; wrong_if not triggered. The label comes from A3's requirement axis: the run found no test or document stating that campaigns must block on pending V2 entries (EV25 requirement=unknown)."},
+    "unchanged_safety": {"score": "correct_retention", "note": "ElectionSafety, LogMatching, LeaderCompleteness, CommittedHistory, AppliedAgreement and VoteRecovery kept."}
+  },
+  "bug_A": "observed by executing real code (EV25, go N7: a node campaigns with a committed unapplied V2 entry) and recorded as suspected defect B4 with requirement 'unknown'. Not called a bug because no non-implementation requirement evidence was found.",
+  "extra_bug_candidates": ["B1 auto-leave does not bump pendingConfIndex; duplicate LeaveJoint; apply panics", "B2 restore/newRaft drop NodesJoint, LearnersNext and AutoLeave", "B3 tracker.Config.Clone omits AutoLeave (Status reports a wrong config)"],
+  "format_notes": ["49 path:line citations, none invalid", "requirement citations: all point at comments (doc.go block comment; ranges such as raft.go:1478-1489 whose comment lines are the evidence); one off by one line (confchange.go:311, the comment is on 310)"],
+  "evidence_stats": {"records": 39, "tlc_truth_values": 74, "claim_mismatches": 0, "code_observations": 30, "cells": {"bug_candidate": 6, "justified_strengthening": 11, "justified_relaxation": 15, "requirement_unknown": 3}},
+  "summary": "3 detected + 1 correct retention; fixed the AckPreservation miss of A2; bug A observed in code but left as requirement-unknown"
+}

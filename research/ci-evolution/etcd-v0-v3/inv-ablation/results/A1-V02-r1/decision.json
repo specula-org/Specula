@@ -1,0 +1,399 @@
+{
+  "schema": "invariant-maintenance-decision/v1",
+  "scope": "old/spec (base.tla, MC.tla, Update.tla, Trace.tla, *.cfg) maintained against update.patch (old/source -> new/source). No tests/TLC executed; no code/spec changed.",
+  "update_summary": [
+    "U-A learners may cast (Pre)Votes: isLearner short-circuit removed from raft.Step (new/source/raft.go:924-960); TestLearnerCannotVote -> TestLearnerCanVote.",
+    "U-B newRaft and raft.restore rebuild the tracker via confchange.Restore(ConfState) and panic unless the result is Equivalent to the input (new/source/raft.go:332-367, 1431-1446; util.go:137-143; confchange/restore.go; raftpb/confstate.go). Joint state (VotersOutgoing, LearnersNext, AutoLeave) now survives restart and snapshot restore; previously only Nodes/Learners were restored.",
+    "U-C RawNode.Ready() now accepts the Ready (clears raft.msgs, readStates, sets prevSoftSt); RawNode.Advance() no longer calls acceptReady (new/source/rawnode.go:119-177; TestRawNodeConsumeReady). node.run uses readyWithoutAccept + acceptReady-at-send + Advance (behaviour identical to old commitReady path).",
+    "U-D ConfState field rename Nodes->Voters, NodesJoint->VotersOutgoing (same proto tags 1..5, same marshal order, so encoded sizes unchanged); ProgressTracker.ConfState() helper.",
+    "U-E ProgressTracker.Visit iterates in sorted id order (tracker/tracker.go:191-210).",
+    "U-F No-semantic refactors: majority.go CommittedIndex slice setup, EnterJoint brace removal, logger mutex, node.Tick warning text, NewRawNode ID==0 check removed (still rejected by Config.validate, raft.go:211-213)."
+  ],
+  "overall_decision": {
+    "decision": "modify",
+    "reason": "Most of the suite still states the right contract and stays as is, including all core safety controls. Two contracts changed semantically: learners may now vote (VoteContract, LearnerEligibility.grants), and RawNode now accepts at Ready instead of Advance (ReadyOwnership, plus a new Advance-preservation obligation). One observer must migrate (ReadyAccounting.lostReads at Advance). The restore-fidelity property only checked joint configs; strengthen it to every restore, matching assertConfStatesEquivalent. The old joint-recovery canary flips role. Three update-related obligations are not expressed by any old property: snapshot admission for VotersOutgoing members, at most one in-flight auto-leave, and non-vacuity canaries for learner grants and joint restores. Two of these are expected to expose implementation defects in new/source. Do not weaken them to make the source pass."
+  },
+  "classification": {
+    "semantic_requirement_changes": [
+      "VoteDecisionEligibility/VoteContract (modify)",
+      "LearnerEligibility grants conjunct (remove conjunct; campaigns conjunct kept)",
+      "ReadyOwnership/UpdateReadyOwnership raw branch (modify)",
+      "AdvanceOutboxPreservation (add; new RawNode contract)"
+    ],
+    "representation_or_observer_migrations": [
+      "ReadyAccounting: lostReads observer at Advance (predicate unchanged)",
+      "ConfState field rename (instrumentation/comment mapping only; model record already uses voters/outgoing)",
+      "Visit ordering (unobservable in bag semantics; no edit)"
+    ],
+    "pre_existing_property_defect_repairs": [
+      "JointSnapshotRecovery/UpdateJointSnapshotRecovery -> ConfStateRestoreFidelity (only joint configs were checked)",
+      "JointRecoveryNotReached role flip (canary for the old defect -> regression invariant) + JointRestoreNotReached canary",
+      "AutoLeaveSingleFlight (add): AutoLeaveAdvance's eligibility is implementation-relative and cannot see duplicate leave appends"
+    ],
+    "new_update_obligations": [
+      "SnapshotAdmission (add; restore now supports joint ConfStates but the admission check ignores VotersOutgoing)",
+      "LearnerGrantNotReached (add canary)",
+      "JointRestoreNotReached (add canary)"
+    ],
+    "unchanged_requirements_and_safety_controls": [
+      "ElectionSafety", "LogMatching", "LeaderCompleteness", "CommittedHistory", "AppliedAgreement",
+      "QuorumAccounting", "PromiseBacking", "VoteRecovery", "RecoveryBacking", "ConfigurationOrigin",
+      "ConfigurationTransitionSafety", "JointConfigurationShape/UpdateJointConfigurationShape",
+      "AutoLeaveAdvance/UpdateAutoLeaveAdvance", "TypeOK/MCTypeOK", "LogStructure", "NoUnexpectedFatal",
+      "CampaignDecisionEligibility", "TransferDecisionEligibility", "RequestCorrelatedConfigurationEffects",
+      "ProposalConfigurationDecisions", "OutcomeSoundness", "AckPreservation", "SnapshotBacking",
+      "ReplicationEvidence", "QuotaIntegrity", "ReadBasis", "ReadApplication", "ReadCorrelation",
+      "JointNotReached", "AutoLeaveNotAppended", "ElectionProgress/CatchupProgress/ManagementProgress/TransferSettlement/ReadProgress"
+    ]
+  },
+  "entries": [
+    {
+      "name": "VoteDecisionEligibility (operator VoteContract)",
+      "action": "modify",
+      "change_kind": "semantic",
+      "evidence": {
+        "source": "old/source/raft.go:922-928 returned without a response when r.isLearner; new/source/raft.go:924-960 removes that branch and applies canVote/isUpToDate to learners, with a comment that this is necessary for a promoted-but-unaware learner.",
+        "tests": "new/source/raft_test.go:381-397 TestLearnerCanVote (renamed from TestLearnerCannotVote). Its final assertion `msg.Type != MsgVoteResp && !msg.Reject` passes for ANY MsgVoteResp, granted or rejected, so the test proves only that a response is emitted. The grant obligation therefore has to live in VoteContract.",
+        "contract": "Learners respond to MsgVote/MsgPreVote exactly as voters do: same lease suppression, stale-term handling, term reset, canVote and log freshness. Only the learner-specific silence goes away."
+      },
+      "old_expression": "grant==~lease /\\ ~stale /\\ ~o.learner /\\ fresh /\\ can ; silence==lease \\/ (stale /\\ m.type=\"MsgVote\") \\/ (~stale /\\ o.learner)",
+      "proposed_expression": "grant==~lease /\\ ~stale /\\ fresh /\\ can ; silence==lease \\/ (stale /\\ m.type=\"MsgVote\") ; all other LET definitions and the IN conjuncts (o.responses=expected /\\ o.afterTerm=t /\\ o.afterVote=IF grant /\\ m.type=\"MsgVote\" THEN m.from ELSE v) unchanged. VoteObservation keeps the learner field as an unused ghost.",
+      "disagreement_witness": {
+        "state_or_transition": "s3 has applied AddLearner(s3) (demotion), so s3 is in raft[s3].config.learners; raft[s3].term=2, vote=0, lead=0, checkQuorum=FALSE. s1 has not applied the demotion, so s3 is in VoterIDs(raft[s1].config). Transition: Receive(MsgVote{from:s1,to:s3,term:3,index:Last(s1),logTerm:Term(s1,Last(s1))}), where s1's log is at least as up to date as s3's.",
+        "old_property": "expects responses={} and afterVote=0, afterTerm=3. The old model's StepVote learner short-circuit satisfies this.",
+        "proposed_property": "expects responses={[type|->\"MsgVoteResp\",term|->3,to|->s1,reject|->FALSE,count|->1]} and afterVote=s1. The new source satisfies this; the unmodified old model violates it."
+      },
+      "expected": {"old_model": "violates proposed (learner silent)", "new_model_after_StepVote_fix": "holds", "new_source": "holds"},
+      "notes": "Also covers MsgPreVote to a learner (grant without a vote change). The stale-PreVote reject path to a learner is identical under both versions and serves as a control."
+    },
+    {
+      "name": "LearnerEligibility",
+      "action": "modify",
+      "change_kind": "semantic (remove the grants conjunct; keep the campaigns conjunct unchanged)",
+      "evidence": {
+        "source": "new/source/raft.go:924-960 (learners grant). promotable() is unchanged (new/source/raft.go:1458-1461) and still gates MsgHup (raft.go:900-903) and MsgTimeoutNow.",
+        "tests": "TestLearnerCanVote replaces TestLearnerCannotVote. TestLearnerPromotion and the campaign tests are unchanged.",
+        "contract": "'Learners never grant' was a design choice, and the update explicitly reverses it. The safety purpose behind it (learner votes must not form a quorum the candidate is not entitled to) is still enforced by QuorumAccounting (JointWon intersects yes with VoterIDs(w.config)) and ElectionSafety, both kept unchanged."
+      },
+      "old_expression": "/\\ \\A x\\in history.grants:~x.learner /\\ \\A x\\in history.campaigns:~x.learner",
+      "proposed_expression": "LearnerEligibility == \\A x\\in history.campaigns:~x.learner",
+      "disagreement_witness": {
+        "state_or_transition": "After the transition in the VoteContract witness on the new model: history.grants contains [node|->s3, learner|->TRUE, term|->3, candidate|->s1, pre|->FALSE].",
+        "old_property": "violated",
+        "proposed_property": "holds"
+      },
+      "control_witness": "history.campaigns contains [node|->s3, learner|->TRUE] (a learner campaigning). Both versions report a violation, so a false edit that drops the campaign clause is observable.",
+      "expected": {"old_model": "holds", "new_model": "holds", "new_source": "holds"},
+      "notes": "Do not replace this with a weaker 'learner grants only to candidates that list it as voter' clause. The observer cannot see the candidate's config, and QuorumAccounting already covers vote counting."
+    },
+    {
+      "name": "ReadyOwnership / UpdateReadyOwnership",
+      "action": "modify",
+      "change_kind": "semantic (RawNode API contract)",
+      "evidence": {
+        "source": "old/source/rawnode.go:130-191: Ready() was read-only and Advance() did acceptReady+commitReady. new/source/rawnode.go:119-146: Ready() = readyWithoutAccept()+acceptReady() ('The returned Ready() *must* be handled and subsequently passed back via Advance()'). new/source/rawnode.go:170-177: Advance only updates prevHardSt and calls raft.advance.",
+        "tests": "new/source/rawnode_test.go:928-960 TestRawNodeConsumeReady: msgs is still set after readyWithoutAccept, cleared after Ready().",
+        "contract": "Both RawNode and Node now move messages and read states out of raft at Ready time. Quota is unchanged by Ready."
+      },
+      "old_expression": "\\A b\\in history.readyChecks: /\\ b.quotaAfter=b.quotaBefore /\\ IF b.raw THEN b.outAfter=b.outBefore /\\ b.readsAfter=b.readsBefore ELSE b.outAfter=EmptyBag /\\ b.readsAfter= <<>>",
+      "proposed_expression": "\\A b\\in history.readyChecks: /\\ b.quotaAfter=b.quotaBefore /\\ b.outAfter=EmptyBag /\\ b.readsAfter= <<>>",
+      "disagreement_witness": {
+        "state_or_transition": "RawNode s1 (s1 in RawNodes) with raft[s1].out={MsgApp s1->s2} and readStates=<<rd>>. Transition: Ready(s1).",
+        "old_property": "requires outAfter={MsgApp}, readsAfter=<<rd>>. The old model satisfies this; the new source violates it.",
+        "proposed_property": "requires outAfter=EmptyBag, readsAfter=<<>>. The new source satisfies this; the unmodified old model violates it."
+      },
+      "expected": {"old_model": "violates proposed for RawNodes", "new_model_after_ProtocolReady_fix": "holds", "new_source": "holds"},
+      "notes": "The Node branch is unchanged. Optional strengthening once the observer records it: prevSS is accepted at Ready for RawNodes too (acceptReady sets prevSoftSt)."
+    },
+    {
+      "name": "AdvanceOutboxPreservation",
+      "action": "add",
+      "change_kind": "semantic (new obligation from the RawNode contract change)",
+      "evidence": {
+        "source": "new/source/rawnode.go:170-177: Advance no longer touches raft.msgs or readStates. old/source/rawnode.go:185-191 commented that acceptReady at Advance 'will clobber potentially newer data'.",
+        "tests": "TestRawNodeConsumeReady: m2, appended after Ready(), must survive Advance().",
+        "contract": "Advance must not drop outgoing messages or read states produced after the Ready was taken. Messages leave raft[n].out only by Ready (moved into the batch) or Crash."
+      },
+      "old_expression": "none (no old property; old AdvanceCore cleared out/readStates for RawNodes)",
+      "proposed_expression": "Observer: extend the history.acks record in ProtocolAdvance with outBefore|->r.out, outAfter|->a.out, readsBefore|->r.readStates, readsAfter|->a.readStates. Property: AdvanceOutboxPreservation == \\A a\\in history.acks: a.outAfter=a.outBefore /\\ a.readsAfter=a.readsBefore",
+      "disagreement_witness": {
+        "state_or_transition": "RawNode follower s2: Ready(s2) takes the batch. Receive(MsgHeartbeat s1->s2) leaves raft[s2].out={MsgHeartbeatResp}. Then Persist/Install/Publish/Queue, then Advance(s2).",
+        "old_property": "none, so silent",
+        "proposed_property": "The old model's AdvanceCore sets out=EmptyBag, which violates the property (the heartbeat response is silently dropped). The new source and model keep it, so the property holds."
+      },
+      "expected": {"old_model": "violated for RawNodes", "new_model_after_AdvanceCore_fix": "holds", "new_source": "holds"},
+      "notes": "Equality is safe because raft.advance (new/source/raft.go:556-593) only appends the auto-leave entry and never sends."
+    },
+    {
+      "name": "ReadyAccounting (history.lostReads observer)",
+      "action": "keep (predicate) + observer migration",
+      "change_kind": "representation/observer",
+      "evidence": {
+        "source": "base.tla:1102-1103 computes lostReads at Advance as SeqSet(r.readStates)\\SeqSet(application[n].reads) for RawNodes, on the assumption that Advance clears readStates. That assumption is false for new/source/rawnode.go:170-177.",
+        "tests": "TestRawNodeConsumeReady",
+        "contract": "Unchanged: no ReadState is discarded without being delivered."
+      },
+      "old_expression": "lostReads' = lostReads \\cup (IF n\\in RawNodes /\\ b.reads# <<>> THEN SeqSet(r.readStates)\\SeqSet(application[n].reads) ELSE {}) ; ReadyAccounting == /\\ history.lostReads={} /\\ ...",
+      "proposed_expression": "lostReads' = lostReads \\cup (SeqSet(r.readStates) \\ (SeqSet(a.readStates) \\cup SeqSet(application[n].reads))) for every n. ReadyAccounting predicate text unchanged.",
+      "disagreement_witness": {
+        "state_or_transition": "RawNode leader s1: ReadIndex#1 gives readStates=<<rd1>>. Ready(s1) delivers rd1 and clears readStates (new semantics). ReadIndex#2 (singleton or acked) gives readStates=<<rd2>>. Then Advance(s1) with b.reads=<<rd1>>.",
+        "old_property": "With the old observer on the new model, lostReads={rd2}, so ReadyAccounting is falsely violated (rd2 is still pending and is delivered by the next Ready).",
+        "proposed_property": "With the migrated observer, lostReads = {rd2} \\ ({rd2} \\cup {rd1}) = {}, so it holds. On the old model both observers yield {rd2}, a true loss."
+      },
+      "expected": {"old_model": "same verdicts as before", "new_model": "holds", "new_source": "holds"}
+    },
+    {
+      "name": "JointSnapshotRecovery / UpdateJointSnapshotRecovery -> ConfStateRestoreFidelity",
+      "action": "modify",
+      "change_kind": "pre-existing property defect repair (strengthening). The joint-config conjuncts are an unchanged requirement.",
+      "evidence": {
+        "source": "new/source/raft.go:360-367 (newRaft) and 1431-1446 (restore) call confchange.Restore and then assertConfStatesEquivalent(cs, switchToConfig(...)) for EVERY ConfState, not only joint ones. util.go:137-143 panics on any mismatch. Old code (old/source/raft.go:~1415-1423 and newRaft) dropped NodesJoint/LearnersNext/AutoLeave; the old model reproduces this with RestoreProjection (base.tla:312-313, 1226).",
+        "tests": "new/source/confchange/restore_test.go TestRestore (round trip for random valid ConfStates including joint, LearnersNext, AutoLeave); raftpb/confstate_test.go; raft_test.go TestRestore*, TestRestoreWithLearner.",
+        "contract": "The restored tracker configuration is equivalent to the persisted or snapshot ConfState: all of voters, outgoing, learners, learnersNext and autoLeave."
+      },
+      "old_expression": "/\\ \\A x\\in history.recovery: x.expectedConfig.outgoing#{} => x.config=x.expectedConfig /\\ \\A n\\in Server: raft[n].alive /\\ ConfigOf(raft[n].cfgHist).outgoing#{} => raft[n].config=ConfigOf(raft[n].cfgHist)",
+      "proposed_expression": "ConfStateRestoreFidelity == /\\ \\A x\\in history.recovery: x.config=x.expectedConfig /\\ \\A n\\in Server: raft[n].alive => raft[n].config=ConfigOf(raft[n].cfgHist) ; UpdateJointSnapshotRecovery == ConfStateRestoreFidelity",
+      "disagreement_witness": {
+        "state_or_transition": "A recovery record x with expectedConfig=[voters|->{s1,s2},outgoing|->{},learners|->{s3},learnersNext|->{},autoLeave|->FALSE] and config=[voters|->{s1,s2},outgoing|->{},learners|->{},learnersNext|->{},autoLeave|->FALSE]. This is a restart that drops a learner from a non-joint config.",
+        "old_property": "holds (premise outgoing#{} is false)",
+        "proposed_property": "violated"
+      },
+      "expected": {"old_model": "violated on joint restore (the known old-source defect; unchanged)", "new_model_after_Restore_fix": "holds", "new_source": "holds (assertConfStatesEquivalent would panic otherwise)"},
+      "notes": "The second conjunct equals ConfigurationOrigin's first conjunct. Snapshot-restore fidelity follows because Restore sets cfgHist=s.hist and SnapshotBacking gives s.config=ConfigOf(s.hist). Do NOT keep RestoreProjection in the new model."
+    },
+    {
+      "name": "JointRecoveryNotReached (Update.tla canary, Update_hunt_recovery.cfg)",
+      "action": "modify (role flip; predicate text unchanged)",
+      "change_kind": "pre-existing defect canary -> regression invariant",
+      "evidence": {
+        "source": "Same as ConfStateRestoreFidelity. The canary was built to demonstrate the old defect (joint config lost on restore). After the update that state must be unreachable.",
+        "tests": "confchange TestRestore",
+        "contract": "No alive node may have a joint ConfigOf(cfgHist) together with a different live config."
+      },
+      "old_expression": "JointRecoveryNotReached == ~\\E n\\in Server: raft[n].alive /\\ ConfigOf(raft[n].cfgHist).outgoing#{} /\\ raft[n].config#ConfigOf(raft[n].cfgHist)   (cfg expects a violation)",
+      "proposed_expression": "Same predicate, expected to HOLD on the new model (rename suggestion: JointRecoveryLossAbsent). The canary role moves to JointRestoreNotReached.",
+      "disagreement_witness": {
+        "state_or_transition": "Joint config C=[voters {s1,s2}, outgoing {s1,s2,s3}, ...] committed and snapshotted. s3 then crashes and restarts from the joint snapshot.",
+        "old_property": "Old model: config=RestoreProjection(C) # C, so the canary fires (expected 'success').",
+        "proposed_property": "New model: config=C, so there is no violation. Under the old cfg semantics the hunt would wrongly read as 'failed to reach'. It must be read as 'regression check passed', and non-vacuity must come from JointRestoreNotReached."
+      },
+      "expected": {"old_model": "violated (witness)", "new_model": "holds", "new_source": "holds"}
+    },
+    {
+      "name": "JointRestoreNotReached",
+      "action": "add (reachability canary; deliberately negated)",
+      "change_kind": "non-vacuity for ConfStateRestoreFidelity / ConfigurationOrigin on the changed restore path",
+      "evidence": {"source": "new/source/raft.go:360-367, 1431-1446", "tests": "confchange TestRestore", "contract": "Joint restore must actually be exercised, or the fidelity properties pass vacuously."},
+      "old_expression": "none",
+      "proposed_expression": "JointRestoreNotReached == ~( (\\E x\\in history.recovery: x.expectedConfig.outgoing#{}) \\/ (\\E n\\in Server: raft[n].alive /\\ raft[n].usnap.index>0 /\\ raft[n].usnap.config.outgoing#{}) )",
+      "disagreement_witness": {
+        "state_or_transition": "Restart of a node whose disk snapshot config is joint, or installation of a MsgSnap carrying a joint config. Use Update_hunt_recovery.cfg bounds.",
+        "old_property": "n/a",
+        "proposed_property": "Violated (reached) in both old and new models. If it is NOT reached, the fidelity checks are vacuous for joint state; report this as a coverage gap."
+      },
+      "expected": {"old_model": "violated (reached)", "new_model": "violated (reached)"}
+    },
+    {
+      "name": "LearnerGrantNotReached",
+      "action": "add (reachability canary; deliberately negated)",
+      "change_kind": "non-vacuity for the VoteContract/LearnerEligibility change",
+      "evidence": {"source": "new/source/raft.go:924-960", "tests": "TestLearnerCanVote", "contract": "The new learner-vote path must be exercised by the model."},
+      "old_expression": "none",
+      "proposed_expression": "LearnerGrantNotReached == ~\\E x\\in history.grants: x.learner",
+      "disagreement_witness": {
+        "state_or_transition": "The VoteContract witness transition (a demoted or not-yet-promoted learner receives MsgVote from a candidate whose config lists it as a voter). Use MC.cfg-like workload (AddLearner/AddVoter or V2 single changes).",
+        "old_property": "n/a",
+        "proposed_property": "Old model holds (unreachable). New model violated (reached)."
+      },
+      "expected": {"old_model": "holds", "new_model": "violated (reached)"}
+    },
+    {
+      "name": "SnapshotAdmission",
+      "action": "add (defect-detecting; expected to FAIL on new/source)",
+      "change_kind": "new update-related obligation",
+      "evidence": {
+        "source": "new/source/raft.go:1398-1420 drops the snapshot if r.id is not in cs.Voters or cs.Learners. It does not check cs.VotersOutgoing, and LearnersNext is a subset of VotersOutgoing (raft.proto ConfState comment). The code comment states the intent: drop only if the 'recipient is not in the config'. The leader keeps Progress for outgoing voters, so it sends them MsgSnap. The update makes joint snapshot restore otherwise functional (confchange.Restore), so this check is now the only gate.",
+        "tests": "none cover a snapshot sent to an outgoing-only voter",
+        "contract": "A follower that is a member of the snapshot's configuration (VoterIDs or learners), receives a non-stale snapshot beyond its commit, and does not already match the snapshot's index/term must install it, with config equal to the snapshot config."
+      },
+      "old_expression": "none",
+      "proposed_expression": "Observer at Receive for m.type=\"MsgSnap\": SnapObservation(r,m,a)==[node|->r.id, role|->r.role, term|->r.term, commit|->r.commit, msgTerm|->m.term, snap|->m.snapshot, matches|->Matches(r,m.snapshot.index,m.snapshot.term), afterUsnap|->a.usnap, afterConfig|->a.config, afterCommit|->a.commit]. SnapshotAdmission == \\A o\\in quality.snapshots: LET s==o.snap IN (o.msgTerm>=o.term /\\ ~(o.role=\"Leader\" /\\ o.msgTerm=o.term) /\\ s.index>o.commit /\\ ~o.matches /\\ o.node\\in VoterIDs(s.config)\\cup s.config.learners) => (o.afterUsnap=s /\\ o.afterConfig=s.config /\\ o.afterCommit=s.index)",
+      "disagreement_witness": {
+        "state_or_transition": "Config {s1,s2,s3}. Leader s1 commits V2 <<Remove s3>> with JointExplicit, giving voters={s1,s2}, outgoing={s1,s2,s3}. s1 creates and compacts a snapshot at the joint index. s3 lags (loss/crash), so s1 sends MsgSnap with s.config joint. s3 is a follower with commit < s.index and ~matches; it receives the MsgSnap.",
+        "old_property": "none, so silent",
+        "proposed_property": "violated: s3 is in VoterIDs(s.config) but new/source ignores the snapshot (afterUsnap unchanged). A source fix that also checks VotersOutgoing satisfies it."
+      },
+      "expected": {"old_model": "violated (same check)", "new_model_source_faithful": "violated", "new_source": "violated (defect D1)"},
+      "notes": "Do not weaken the premise to s.config.voters \\cup s.config.learners to make the source pass. Doing that would encode the defect as the requirement."
+    },
+    {
+      "name": "AutoLeaveSingleFlight",
+      "action": "add (defect-detecting; pre-existing defect whose reach is widened by U-B)",
+      "change_kind": "repair of a pre-existing coverage gap (AutoLeaveAdvance cannot see duplicates)",
+      "evidence": {
+        "source": "new/source/raft.go:556-584 (unchanged by the patch): after a successful auto-leave appendEntry, pendingConfIndex is NOT bumped. Any later Advance with appliedCursor >= pendingConfIndex, while config.AutoLeave is still TRUE (the leave entry is not yet applied), appends another empty ConfChangeV2. Applying the second one runs LeaveJoint on a non-joint config ('can't leave a non-joint config', confchange.go:97-99), which panics in applyConfChange (raft.go:1477-1479). Raft's own invariant (pendingConfIndex comment) is 'only one conf change may be pending'. U-B makes AutoLeave survive restart/snapshot restore, so restarted leaders now also reach this code.",
+        "tests": "none (raft.go:578 'TODO(tbg): test this case')",
+        "contract": "A leader never has more than one unapplied leave-joint entry from its own term."
+      },
+      "old_expression": "none (AutoLeaveAdvance requires an append on every eligible Advance, with eligibility computed from the implementation's own pendingConf, so duplicates satisfy it)",
+      "proposed_expression": "AutoLeaveSingleFlight == \\A n\\in Server: raft[n].alive /\\ raft[n].role=\"Leader\" => Cardinality({k\\in (raft[n].applied+1)..Last(raft[n]): IsLeave(Hist(raft[n])[k]) /\\ Hist(raft[n])[k].term=raft[n].term})<=1",
+      "disagreement_witness": {
+        "state_or_transition": "Leader s1, term T. Log index 5 = V2 enter-joint (autoLeave), index 6 = Normal; commit=6; MaxReadySize paginates the committed entries to [5]. Ready, apply 5, Advance(cursor 5) appends leave@7. Ready [6], apply 6, Advance(cursor 6): autoLeave still TRUE and 6>=pendingConf(5), so it appends leave@8.",
+        "old_property": "AutoLeaveAdvance holds at both Advances",
+        "proposed_property": "violated: leaves at 7 and 8 are both > applied(6) and from term T. When 8 is applied, NoUnexpectedFatal fires ('invalid configuration transition')."
+      },
+      "expected": {"old_model": "violated when pagination/EarlyAdvance reachable", "new_model": "violated", "new_source": "violated (defect D2)"}
+    },
+    {
+      "name": "AutoLeaveAdvance / UpdateAutoLeaveAdvance",
+      "action": "keep",
+      "change_kind": "unchanged requirement (now also reached after restore)",
+      "evidence": {"source": "new/source/raft.go:556-584 unchanged; AutoLeave now survives restore (U-B).", "tests": "rawnode_test.go TestRawNodeProposeAndConfChange (implicit transitions)", "contract": "An eligible Advance either appends leave-joint or records the quota retry."},
+      "old_expression": "\\A a\\in history.autoLeaveChecks: a.eligible => (appended empty V2) \\/ (a.decision=\"DropQuota\" /\\ a.pending=Len(a.afterHist))",
+      "proposed_expression": "unchanged",
+      "disagreement_witness": "none (identical). Control: an eligible Advance that appends nothing and is not DropQuota is a violation under both.",
+      "notes": "Eligibility uses r.pendingConf, so this property is implementation-relative and cannot detect duplicate appends. AutoLeaveSingleFlight is added for that."
+    },
+    {
+      "name": "ConfigurationOrigin",
+      "action": "keep (and enable in the Update cfgs)",
+      "change_kind": "unchanged requirement; already covers U-B",
+      "evidence": {"source": "Restore sets cfgHist:=s.hist (base.tla:321); RestartCore sets cfgHist:=app (base.tla:1228)", "tests": "confchange TestRestore", "contract": "config = ConfigOf(cfgHist) for alive nodes"},
+      "old_expression": "\\A n: raft[n].alive => raft[n].config=ConfigOf(raft[n].cfgHist) /\\ Covers(Hist(raft[n]),raft[n].cfgHist) /\\ Len(raft[n].cfgHist)<=raft[n].commit",
+      "proposed_expression": "unchanged",
+      "disagreement_witness": "none (identical). Control: an alive node after a joint snapshot restore with config=RestoreProjection(s.config) and cfgHist=s.hist is a violation under both. This is exactly the old defect.",
+      "notes": "Currently enabled only in MC_hunt_2/MC_hunt_3/Trace.cfg, none of which use V2 workloads. Add it to Update_full.cfg/Update_focused.cfg."
+    },
+    {
+      "name": "JointConfigurationShape / UpdateJointConfigurationShape",
+      "action": "keep",
+      "change_kind": "unchanged requirement",
+      "evidence": {"source": "confchange.go checkInvariants (unchanged); Restore goes through Simple/EnterJoint which enforce it", "tests": "confchange datadriven + TestRestore", "contract": "tracker.Config shape"},
+      "old_expression": "base.tla:1335-1342",
+      "proposed_expression": "unchanged",
+      "disagreement_witness": "none. Control: config with learnersNext={s3}, outgoing={} violates under both."
+    },
+    {
+      "name": "QuorumAccounting",
+      "action": "keep",
+      "change_kind": "unchanged requirement; safety control for learner votes",
+      "evidence": {"source": "tracker.TallyVotes/JointConfig.VoteResult count only configured voters; majority.go CommittedIndex refactor is behaviour-preserving", "tests": "quorum datadriven tests unchanged", "contract": "Wins and commits are justified by joint majorities of the actor's own config"},
+      "old_expression": "base.tla:1291-1294",
+      "proposed_expression": "unchanged",
+      "disagreement_witness": "none. Control: wins contains [node s1, term 3, config.voters={s1,s2,s3}, outgoing={}, yes={s1,s4}] with s4 a learner. JointWon is FALSE, so it is a violation under both. This catches a false model edit that counts learner votes."
+    },
+    {
+      "name": "PromiseBacking",
+      "action": "keep",
+      "change_kind": "unchanged; now also covers learner grants",
+      "evidence": {"source": "learner grant sets r.Vote (hence HardState) like any voter (new/source/raft.go:962-967)", "tests": "-", "contract": "A published granted MsgVoteResp is backed by durable term/vote"},
+      "old_expression": "base.tla:1276 with PromiseOK base.tla:1042-1048",
+      "proposed_expression": "unchanged",
+      "disagreement_witness": "none. Control: learner s3 publishes MsgVoteResp{reject:FALSE, term 3, to s1} while disk[s3].hs=[term 2, vote 0]. backed=FALSE, so it is a violation under both."
+    },
+    {
+      "name": "VoteRecovery",
+      "action": "keep",
+      "change_kind": "unchanged; covers learner votes across restart",
+      "evidence": {"source": "newRaft loadState unchanged (raft.go:369-371)", "tests": "-", "contract": "durable term/vote survive construction"},
+      "old_expression": "base.tla:1270-1271",
+      "proposed_expression": "unchanged",
+      "disagreement_witness": "none. Control: recovery x with savedTerm 3, savedVote s1, term 3, vote 0 violates under both."
+    },
+    {
+      "name": "TypeOK / MCTypeOK",
+      "action": "keep",
+      "change_kind": "unchanged; covers Progress for outgoing voters after restore",
+      "evidence": {"source": "confchange.Restore creates Progress for every voter, outgoing voter and learner", "tests": "confchange TestRestore", "contract": "DOMAIN prs = Members"},
+      "old_expression": "base.tla:1383-1397",
+      "proposed_expression": "unchanged",
+      "disagreement_witness": "none. Control: after a joint restore, prs domain = voters \\cup learners (outgoing-only s3 missing) violates DOMAIN raft[n].prs=Members(raft[n]) under both."
+    },
+    {
+      "name": "NoUnexpectedFatal",
+      "action": "keep",
+      "change_kind": "unchanged; covers new restore panics and D2's downstream panic",
+      "evidence": {"source": "new raft.go:364-367, 1440-1446 panic on Restore error or non-equivalence; applyConfChange panics on an invalid leave", "tests": "-", "contract": "no fatal paths on legal behaviour"},
+      "old_expression": "\\A n\\in Server: raft[n].fatal=\"\"",
+      "proposed_expression": "unchanged",
+      "disagreement_witness": "none. Control: raft[n].fatal=\"invalid configuration transition\" after a duplicate leave violates under both.",
+      "notes": "Not enabled in Update cfgs; recommend enabling it."
+    },
+    {
+      "name": "CampaignDecisionEligibility (CampaignContract)",
+      "action": "keep",
+      "change_kind": "unchanged requirement",
+      "evidence": {"source": "promotable()/MsgHup unchanged; numOfPendingConf unchanged (raft.go:1605-1611, legacy EntryConfChange only)", "tests": "-", "contract": "Learners/non-voters do not campaign; pending conf blocks campaign"},
+      "old_expression": "base.tla:673-692",
+      "proposed_expression": "unchanged",
+      "disagreement_witness": "none. Control: learner s3 Hup emits MsgVote; expected={} because s3 is not a voter, so it is a violation under both. Separates 'learners vote' from 'learners campaign'.",
+      "notes": "Pre-existing divergence, not touched by this update: the contract treats V2 as pending, while source/model StepHup ignores V2 (defect D3). Never co-checked, because MC cfgs exclude V2 and Update cfgs omit this invariant."
+    },
+    {
+      "name": "ElectionSafety",
+      "action": "keep",
+      "change_kind": "unchanged safety control (critical under U-A)",
+      "evidence": {"source": "new raft.go:947-950 comment admits learner voting is safe only absent etcd issue 7625 (stale-config candidates)", "tests": "-", "contract": "at most one leader per term"},
+      "old_expression": "\\A a,b\\in history.wins: a.term=b.term => a.node=b.node",
+      "proposed_expression": "unchanged",
+      "disagreement_witness": "none. Control: wins={[node s1,term 3],[node s2,term 3]} violates under both. If the learner-voting model ever produces this, it is an implementation defect; do not weaken."
+    },
+    {"name": "LogMatching", "action": "keep", "change_kind": "unchanged safety control", "evidence": {"source": "log paths untouched", "tests": "-", "contract": "Raft log matching"}, "old_expression": "base.tla:1258-1261", "proposed_expression": "unchanged", "disagreement_witness": "none. Control: same index/term at s1,s2 with differing prefixes violates under both."},
+    {"name": "LeaderCompleteness", "action": "keep", "change_kind": "unchanged safety control", "evidence": {"source": "-", "tests": "-", "contract": "Raft leader completeness"}, "old_expression": "base.tla:1262-1263", "proposed_expression": "unchanged", "disagreement_witness": "none. Control: win at term 4 whose hist does not cover a term-3 obligation violates under both."},
+    {"name": "CommittedHistory", "action": "keep", "change_kind": "unchanged safety control", "evidence": {"source": "restore commitTo/loadState unchanged", "tests": "-", "contract": "committed prefixes are never contradicted"}, "old_expression": "base.tla:1264-1267", "proposed_expression": "unchanged", "disagreement_witness": "none. Control: two incompatible obligation histories violate under both."},
+    {"name": "AppliedAgreement", "action": "keep", "change_kind": "unchanged safety control", "evidence": {"source": "-", "tests": "-", "contract": "state-machine safety"}, "old_expression": "base.tla:1268", "proposed_expression": "unchanged", "disagreement_witness": "none. Control: applied histories <<e1>> and <<e1'>> differing at index 1 violate under both."},
+    {"name": "ConfigurationTransitionSafety", "action": "keep", "change_kind": "unchanged", "evidence": {"source": "commit rules unchanged", "tests": "-", "contract": "config entries commit under predecessor config"}, "old_expression": "base.tla:1285-1288", "proposed_expression": "unchanged", "disagreement_witness": "none. Control: commitUse whose config differs from ConfigOf(prefix before a conf entry) violates under both."},
+    {"name": "AckPreservation", "action": "keep", "change_kind": "unchanged", "evidence": {"source": "raft.advance appliedTo/stableTo unchanged; prevHardSt still updated in Advance", "tests": "-", "contract": "Advance moves applied to cursor; only leave-joint may be appended"}, "old_expression": "base.tla:1307-1312", "proposed_expression": "unchanged (the acks record gains observer fields for AdvanceOutboxPreservation only)", "disagreement_witness": "none. Control: ack with cursor 5 and applied 4 violates under both."},
+    {"name": "SnapshotBacking", "action": "keep", "change_kind": "unchanged", "evidence": {"source": "storage CreateSnapshot unchanged (field rename only)", "tests": "storage_test renamed fields", "contract": "snapshot config = ConfigOf(snapshot hist)"}, "old_expression": "base.tla:1302-1306", "proposed_expression": "unchanged", "disagreement_witness": "none. Control: snapshot with config not equal to ConfigOf(hist) violates under both."},
+    {"name": "ReplicationEvidence", "action": "keep", "change_kind": "unchanged", "evidence": {"source": "-", "tests": "-", "contract": "leader Match backed by evidence"}, "old_expression": "base.tla:1296-1301", "proposed_expression": "unchanged", "disagreement_witness": "none. Control: match 3 with evidence length 2 violates under both."},
+    {"name": "QuotaIntegrity", "action": "keep", "change_kind": "unchanged", "evidence": {"source": "reduceUncommittedSize unchanged", "tests": "-", "contract": "quota/inflight bounds"}, "old_expression": "base.tla:1350-1356", "proposed_expression": "unchanged", "disagreement_witness": "none. Control: quota -1 violates under both."},
+    {"name": "RecoveryBacking", "action": "keep", "change_kind": "unchanged", "evidence": {"source": "-", "tests": "-", "contract": "restart commit backed by disk"}, "old_expression": "base.tla:1272-1275", "proposed_expression": "unchanged", "disagreement_witness": "none. Control: recovery commit > Len(diskHist) violates under both."},
+    {"name": "ReadBasis / ReadApplication / ReadCorrelation", "action": "keep", "change_kind": "unchanged (RawNode read-state delivery moved to Ready, contents unchanged)", "evidence": {"source": "read_only.go unchanged", "tests": "-", "contract": "linearizable read basis"}, "old_expression": "base.tla:1366-1379", "proposed_expression": "unchanged", "disagreement_witness": "none. Control: completed read whose confirmAcks are not a joint quorum violates ReadBasis under both."},
+    {"name": "OutcomeSoundness / ProposalConfigurationDecisions / TransferDecisionEligibility / RequestCorrelatedConfigurationEffects", "action": "keep", "change_kind": "unchanged", "evidence": {"source": "stepLeader proposal/transfer paths unchanged; learner transfer target still ignored", "tests": "-", "contract": "decision-time contracts"}, "old_expression": "base.tla:701-759,1358-1364", "proposed_expression": "unchanged", "disagreement_witness": "none. Control: leader accepts transfer to learner s3 (after=s3) violates TransferContract under both."},
+    {"name": "LogStructure", "action": "keep", "change_kind": "unchanged", "evidence": {"source": "-", "tests": "-", "contract": "applied<=commit<=last"}, "old_expression": "base.tla:1398-1402", "proposed_expression": "unchanged", "disagreement_witness": "none. Control: applied > commit violates under both."},
+    {"name": "JointNotReached / AutoLeaveNotAppended (canaries)", "action": "keep", "change_kind": "unchanged reachability canaries", "evidence": {"source": "-", "tests": "-", "contract": "non-vacuity"}, "old_expression": "Update.tla:77-79", "proposed_expression": "unchanged", "disagreement_witness": "none; both expected to be violated (reached) on old and new models."},
+    {"name": "ConfState field rename (Nodes->Voters, NodesJoint->VotersOutgoing)", "action": "keep (no property edit; observer/instrumentation mapping)", "change_kind": "representation", "evidence": {"source": "raftpb/raft.proto, raft.pb.go: tags 1..5 and marshal order unchanged; tracker.ConfState(); node.go:366-378 rename only", "tests": "mechanical test renames", "contract": "Model record fields voters/outgoing/learners/learnersNext/autoLeave map Voters/VotersOutgoing/Learners/LearnersNext/AutoLeave"}, "old_expression": "base.tla comments at 309-311, 1220-1221 reference Nodes/NodesJoint", "proposed_expression": "Update comments and any trace instrumentation to the new names. Encoded size constants (BootstrapEncoded, AutoLeaveEncoded, EmptyEncoded) unchanged.", "disagreement_witness": "none at property level"},
+    {"name": "ProgressTracker.Visit sorted order", "action": "keep (no property edit)", "change_kind": "representation", "evidence": {"source": "tracker/tracker.go:191-210", "tests": "-", "contract": "message/progress effects are per-peer and order-independent"}, "old_expression": "BroadcastAppend/Heartbeat/Votes use CHOOSE over sets and write a bag", "proposed_expression": "unchanged", "disagreement_witness": "none; bag semantics make order unobservable"},
+    {"name": "ElectionProgress / CatchupProgress / ManagementProgress / TransferSettlement / ReadProgress", "action": "keep (unchecked)", "change_kind": "unchanged", "evidence": {"source": "U-A is a liveness motivated change", "tests": "-", "contract": "progress"}, "old_expression": "MC.tla:108-131", "proposed_expression": "unchanged", "disagreement_witness": "none (not model-checked under budgets)"}
+  ],
+  "covered_updated_behaviors": [
+    {"behavior": "Snapshot restore keeps the full joint ConfState (U-B)", "property": "ConfigurationOrigin", "explanation": "Restore sets cfgHist:=s.hist and SnapshotBacking guarantees s.config=ConfigOf(s.hist), so config=ConfigOf(cfgHist) forces config=s.config, including outgoing, learnersNext and autoLeave. The old model's RestoreProjection violates it for joint snapshots; the corrected model satisfies it."},
+    {"behavior": "Restart keeps the full joint ConfState (U-B)", "property": "JointSnapshotRecovery (strengthened to ConfStateRestoreFidelity) and ConfigurationOrigin", "explanation": "The history.recovery record compares the constructed config with expectedConfig (disk snapshot config or ConfigOf(savedApp)); RestartCore sets cfgHist:=app."},
+    {"behavior": "Progress exists for outgoing voters after restore", "property": "TypeOK (DOMAIN raft[n].prs=Members(raft[n]))", "explanation": "Members = voters \\cup outgoing \\cup learners."},
+    {"behavior": "A restored joint config with AutoLeave is auto-left by a new leader", "property": "AutoLeaveAdvance", "explanation": "Eligibility reads r.config.autoLeave, which now survives restore, so Advance must append the leave entry or record the quota retry."},
+    {"behavior": "Restored config shape is valid", "property": "JointConfigurationShape", "explanation": "Checked on every raft[n].config, including after restore."},
+    {"behavior": "Learner votes cannot complete a quorum the candidate is not entitled to (U-A)", "property": "QuorumAccounting + ElectionSafety", "explanation": "Won(voters,yes) counts Cardinality(voters \\cap yes), so learner ids in w.yes never count unless they are voters in the winner's own config."},
+    {"behavior": "Learner grants are durable before publication (U-A)", "property": "PromiseBacking (+ VoteRecovery across restart)", "explanation": "PromiseOK applies to every MsgVoteResp(grant) regardless of the sender's role."},
+    {"behavior": "Learners still never campaign", "property": "LearnerEligibility campaigns conjunct; CampaignDecisionEligibility", "explanation": "campaigns ghost records the learner flag; CampaignContract expects no vote requests from non-voters."},
+    {"behavior": "Node wrapper accept-at-send unchanged (U-C)", "property": "ReadyOwnership non-raw branch", "explanation": "outAfter=EmptyBag /\\ readsAfter=<<>> was already required for Node."},
+    {"behavior": "Restore panics (assertConfStatesEquivalent / Restore error)", "property": "NoUnexpectedFatal", "explanation": "Valid only if the model maps these panics to Fatal; otherwise they are invisible."},
+    {"behavior": "CommittedIndex refactor (U-F)", "property": "QuorumAccounting, CommittedHistory", "explanation": "commitUses must record a joint-majority match set for every commit."}
+  ],
+  "suspected_defects": [
+    {"id": "D1", "kind": "implementation (new/source; also present in old)", "where": "new/source/raft.go:1398-1420", "description": "raft.restore ignores snapshots for nodes in VotersOutgoing only (including LearnersNext members). The leader keeps Progress for them and keeps sending MsgSnap; the follower answers with MsgAppResp(index=committed), and the leader's Progress stays in StateSnapshot. If the outgoing majority depends on such a node, the joint config (including its leave entry) cannot commit. This is a liveness defect; safety is unaffected.", "detected_by": "SnapshotAdmission (add)", "must_not_hide": "Do not restrict the SnapshotAdmission premise to voters \\cup learners."},
+    {"id": "D2", "kind": "implementation (pre-existing; reach widened by U-B)", "where": "new/source/raft.go:563-583", "description": "pendingConfIndex is not bumped after a successful auto-leave append, so a later Advance (pagination via MaxCommittedSizePerReady, or early Advance) appends a second leave-joint. A user leave proposal is also admitted because pendingConf <= applied. Applying the second leave panics (LeaveJoint on a non-joint config).", "detected_by": "AutoLeaveSingleFlight (add); NoUnexpectedFatal downstream", "must_not_hide": "Do not drop AutoLeaveSingleFlight or redefine AutoLeaveAdvance eligibility to accept duplicates as required behaviour."},
+    {"id": "D3", "kind": "implementation vs contract (pre-existing, unchanged)", "where": "new/source/raft.go:1605-1611; base.tla:266-268 vs 678", "description": "numOfPendingConf ignores EntryConfChangeV2, so a node may campaign with an unapplied V2 conf change. CampaignContract requires blocking. This has never been co-checked with V2 workloads.", "detected_by": "CampaignDecisionEligibility (keep) once enabled with V2 workloads", "must_not_hide": "Do not change CampaignContract's pending to LegacyConfKinds."},
+    {"id": "D4", "kind": "implementation (pre-existing; now on the Restore path)", "where": "new/source/confchange/confchange.go:145-147", "description": "Changer.Simple returns (empty Config, empty ProgressMap, nil error) when checkInvariants fails. Restore/newRaft would then panic via assertConfStatesEquivalent, but applyConfChange would silently switch to an empty config. Probably unreachable for valid inputs.", "detected_by": "NoUnexpectedFatal / ConfigurationOrigin if modeled", "must_not_hide": "n/a"},
+    {"id": "M1", "kind": "model defect vs new source", "where": "base.tla:274 StepVote", "description": "The learner short-circuit `IF r.id\\in r.config.learners THEN r` must be removed. Otherwise the modified VoteContract (correctly) flags the model.", "detected_by": "VoteDecisionEligibility (modified); LearnerGrantNotReached canary would also stay unreached"},
+    {"id": "M2", "kind": "model defect vs new source", "where": "base.tla:312-324 (RestoreProjection/Restore), 1222-1231 (RestartCore)", "description": "Use the full config (identity), not RestoreProjection. Build prs over VoterIDs(cfg) \\cup cfg.learners. Keep the source-faithful admission check (voters \\cup learners) so D1 stays visible.", "detected_by": "ConfStateRestoreFidelity, ConfigurationOrigin, TypeOK"},
+    {"id": "M3", "kind": "model defect vs new source", "where": "base.tla:972-976 (ProtocolReady), 1088-1095 (AdvanceCore)", "description": "For RawNodes: clear out and readStates and set prevSS at Ready; do not clear or set them at Advance.", "detected_by": "ReadyOwnership (modified), AdvanceOutboxPreservation"},
+    {"id": "R1", "kind": "risk (not a confirmed defect)", "where": "new/source/raft.go:947-950", "description": "Learner voting is safe only if candidate configs differ by at most a single or joint step. The comment points to etcd issue 7625 (apply-time configs). Any ElectionSafety/LeaderCompleteness violation with learner grants is an implementation defect.", "detected_by": "ElectionSafety (keep)", "must_not_hide": "Do not weaken ElectionSafety/QuorumAccounting."}
+  ],
+  "cfg_recommendations": [
+    "Update_full.cfg / Update_focused.cfg: replace UpdateJointSnapshotRecovery with the strengthened body; add ConfigurationOrigin, NoUnexpectedFatal, VoteDecisionEligibility, LearnerEligibility, PromiseBacking, ReadyAccounting, AdvanceOutboxPreservation, AutoLeaveSingleFlight, SnapshotAdmission. The update cfgs currently check no vote property at all, even though U-A is a vote change.",
+    "Update_hunt_recovery.cfg: JointRecoveryNotReached is now expected to hold; add a hunt cfg for JointRestoreNotReached (expected violated).",
+    "Add an MC hunt (MC.cfg workload with AddLearner/AddVoter, or V2 single changes) with INVARIANT LearnerGrantNotReached (expected violated on the new model, held on the old).",
+    "Keep at least one cfg with RawNodes a strict subset of Server (e.g. MC_hunt_3_node) so the Node branch of ReadyOwnership stays exercised.",
+    "AutoLeaveSingleFlight needs MaxReadySize small enough to paginate committed entries (e.g. EncodedWeights {1,2}, MaxReadySize 3) and/or EarlyAdvance=TRUE."
+  ],
+  "unresolved_obligations": [
+    "U1 Liveness motivation of U-A (a promoted-but-unaware learner's vote is decisive) is a progress property. ElectionProgress exists but is not checked under fault budgets. An optional canary, PromotedLearnerVoteDecisiveNotReached == ~\\E w\\in history.wins, g\\in history.grants: g.learner /\\ ~g.pre /\\ g.candidate=w.node /\\ g.term=w.term /\\ g.node\\in VoterIDs(w.config) /\\ ~JointWon(w.config, w.yes\\{g.node}), may be out of bounds.",
+    "U2 Whether learner voting preserves ElectionSafety under demotion/promotion races must be established by running MC with the corrected StepVote. The result is unknown at decision time (risk R1).",
+    "U3 SnapshotAdmission and AutoLeaveSingleFlight are expected to fail on new/source. The suite owner must decide whether they gate or are tracked as known defects D1/D2. Either way the predicates must not be weakened.",
+    "U4 Trace instrumentation (instrumentation-spec.md is not in the workspace) must rename ConfState fields and emit RawNode Ready-time acceptance. This cannot be verified here; TraceCorrespondence will fail until it is migrated.",
+    "U5 Restore of malformed ConfStates (AutoLeave without outgoing, learners-only, LearnersNext not in outgoing) panics in the source. The model excludes these via ConfigWellFormed/SnapshotValid. The Storage/caller contract for well-formed ConfStates is assumed, not checked.",
+    "U6 RecoveryMode=AppliedAdapter fidelity assumes the adapter returns ConfigOf(savedApp) as InitialState's ConfState, including joint fields. This is a caller-contract assumption.",
+    "U7 ReadyOwnership could additionally require prevSS acceptance at Ready for RawNodes (affects hasSS of the next Ready). The observer does not record it; this is left optional.",
+    "U8 D3 (V2 not counted as a pending conf at Hup) is pre-existing and outside this update. It is listed so that enabling CampaignDecisionEligibility with V2 workloads is not mistaken for an update regression."
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "scorer": "coordinator (Claude), not blind to arm",
+  "gold": "gold.json V01",
+  "obligations": {
+    "advance_append": {"score": "detected", "note": "AckPreservation_new keeps Covers(after, before) (old prefix retained) and allows exactly one auto-leave entry, only for a leader in an autoLeave joint config with cursor >= pendingBefore. Arbitrary appends are still rejected."},
+    "joint_quorum": {"score": "detected", "note": "QuorumAccounting_new uses JointWon(c,S) == Won(incoming,S) /\\ Won(outgoing,S) for both wins and commit uses."},
+    "campaign_v2": {"score": "detected", "note": "CampaignContract_new blocks on any committed unapplied IsConfEntry, and IsConfEntry includes ConfV2. Bug A is named as suspected defect D1 (numOfPendingConf counts only EntryConfChange), with must_not_be_hidden_by: 'Restricting CampaignContract_new.pending to V1 kinds'."},
+    "unchanged_safety": {"score": "correct_retention", "note": "ElectionSafety, LogMatching, LeaderCompleteness, CommittedHistory, AppliedAgreement and VoteRecovery are all kept."}
+  },
+  "bug_A_named": "yes (D1)",
+  "extra_suspected_defects": ["D2 auto-leave append does not bump pendingConfIndex (repeated leave)"],
+  "summary": "3 detected + 1 correct retention; bug A named"
+}

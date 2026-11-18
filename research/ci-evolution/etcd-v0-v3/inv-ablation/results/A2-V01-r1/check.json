@@ -1,0 +1,62 @@
+{
+  "run": "A2-V01-r1",
+  "status": "ok",
+  "entries": 15,
+  "decisions": {
+    "keep": 4,
+    "modify": 9,
+    "add": 2
+  },
+  "edits_without_witness": [],
+  "edits_without_predicate": [
+    "DurableObligations (ghost observer feeding CommittedHistory/LeaderCompleteness)",
+    "QuorumAccounting",
+    "ConfigurationTransitionSafety",
+    "RequestCorrelatedConfigurationEffects / EffectContract",
+    "ConfigurationChangeOverlap (new)",
+    "PendingConfigurationDiscipline (new)",
+    "TypeOK",
+    "CampaignDecisionEligibility / CampaignContract (+ CampaignObservation)",
+    "TransferDecisionEligibility / TransferContract (+ TransferObservation)",
+    "ProposalConfigurationDecisions / ProposalContract (+ ProposalObservation)",
+    "ReadBasis"
+  ],
+  "entries_without_evidence": [],
+  "citations": 0,
+  "bad_citations": [],
+  "top_level_keys": [
+    "phase",
+    "overall_decision",
+    "overall_reason",
+    "representation_proposal",
+    "proposed_spec_file",
+    "entries",
+    "covered_updated_behaviors",
+    "suspected_defects",
+    "unresolved_obligations",
+    "changes_from_initial"
+  ],
+  "evidence": {
+    "status": "ok",
+    "records": 39,
+    "kinds": {
+      "semantic": 10,
+      "control": 10,
+      "strengthening": 9,
+      "relaxation": 6,
+      "observer": 4
+    },
+    "verdicts": {
+      "accepted": 37,
+      "unresolved": 1,
+      "revised": 1
+    },
+    "cells": {
+      "missing": 39
+    },
+    "tlc_evaluated": 36,
+    "claim_mismatch": [],
+    "code_observed": 11,
+    "implementation_cited_as_requirement": []
+  }
+}

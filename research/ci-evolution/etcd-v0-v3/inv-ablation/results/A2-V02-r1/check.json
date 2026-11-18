@@ -1,0 +1,48 @@
+{
+  "run": "A2-V02-r1",
+  "status": "ok",
+  "entries": 11,
+  "decisions": {
+    "modify": 5,
+    "add": 1,
+    "keep": 5
+  },
+  "edits_without_witness": [],
+  "edits_without_predicate": [],
+  "entries_without_evidence": [],
+  "citations": 0,
+  "bad_citations": [],
+  "top_level_keys": [
+    "phase",
+    "overall_decision",
+    "overall_reason",
+    "entries",
+    "model_migrations_not_property_changes",
+    "updated_behaviors_already_covered",
+    "suspected_defects_not_to_hide",
+    "unresolved_obligations",
+    "artifacts"
+  ],
+  "evidence": {
+    "status": "ok",
+    "records": 32,
+    "kinds": {
+      "relaxation": 2,
+      "semantic": 8,
+      "control": 16,
+      "strengthening": 2,
+      "observer": 4
+    },
+    "verdicts": {
+      "accepted": 28,
+      "unresolved": 4
+    },
+    "cells": {
+      "missing": 32
+    },
+    "tlc_evaluated": 37,
+    "claim_mismatch": [],
+    "code_observed": 21,
+    "implementation_cited_as_requirement": []
+  }
+}

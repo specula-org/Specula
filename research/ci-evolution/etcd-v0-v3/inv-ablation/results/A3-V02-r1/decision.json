@@ -1,0 +1,340 @@
+{
+ "phase": "final",
+ "overall_decision": "modify",
+ "overall_reason": "Executed evidence confirms three semantic contract changes (learner voting; RawNode.Ready consumes; Advance must retain post-Ready output) that the old suite encodes the opposite way, one observer migration (lostReads), and that the pre-existing JointSnapshotRecovery/ConfigurationOrigin already express the joint-restore fix (kept; model RestoreProjection becomes identity). Two additions: AdvanceRetention (old suite blind to dropped messages) and SnapshotMemberRestore, which the new implementation violates for outgoing-only members (bug candidate D1, property kept strong). Two refinements versus the initial decision: the canary also covers the MsgSnap path, and AdvanceRetention's outbox conjunct is equality.",
+ "entries": [
+  {
+   "name": "VoteDecisionEligibility (VoteContract)",
+   "decision": "modify",
+   "change_type": "semantic requirement change (both directions)",
+   "evidence": [
+    "new/source/raft.go:933-950",
+    "new/source/raft_test.go:381-397 (exactly one response :390-392)",
+    "new/source/raft.go:925-931 + raft_paper_test.go:820-823 + raft_test.go:1454-1545 (freshness/can-vote still required)"
+   ],
+   "proposed_expression": "VoteContract(o) with grant == ~lease /\\ ~stale /\\ fresh /\\ can and silence == lease \\/ (stale /\\ m.type=\"MsgVote\"); responses/afterTerm/afterVote conjuncts unchanged (evidence/Proposed.tla VoteContract)",
+   "disagreement_state": "Learner 2 (voters {1}, learners {2}), term 1, vote 0, empty log, receives MsgVote{1->2, term 2, index 11, logTerm 11}: new code grants (old FALSE, proposed TRUE); old code is silent (old TRUE, proposed FALSE).",
+   "evidence_ids": [
+    "E1",
+    "E2",
+    "E3"
+   ],
+   "changed_from_initial": false
+  },
+  {
+   "name": "LearnerEligibility",
+   "decision": "modify",
+   "change_type": "semantic requirement change (grants conjunct removed; campaigns conjunct kept)",
+   "evidence": [
+    "new/source/raft.go:933-950",
+    "new/source/raft_test.go:381-397",
+    "new/source/raft_test.go:311-331"
+   ],
+   "proposed_expression": "LearnerEligibility == \\A x \\in history.campaigns : ~x.learner",
+   "disagreement_state": "history.grants = {[node 2, learner TRUE, term 2, candidate 1, pre FALSE]} written by the learner grant: old FALSE, proposed TRUE; forged learner campaign: both FALSE.",
+   "evidence_ids": [
+    "E4",
+    "E5",
+    "E15"
+   ],
+   "changed_from_initial": false
+  },
+  {
+   "name": "ReadyOwnership",
+   "decision": "modify",
+   "change_type": "semantic requirement change (RawNode.Ready() now accepts)",
+   "evidence": [
+    "new/source/rawnode.go:119-127",
+    "new/source/rawnode_test.go:928-952",
+    "new/source/node.go:310-318",
+    "new/source/rawnode.go:135-137"
+   ],
+   "proposed_expression": "ReadyOwnership == \\A b \\in history.readyChecks : b.quotaAfter=b.quotaBefore /\\ b.outAfter=EmptyBag /\\ b.readsAfter= <<>>",
+   "disagreement_state": "RawNode 1 with out={M1}, readStates=<<R1>> executes Ready: new code clears both (old FALSE, proposed TRUE); old code keeps them (old TRUE, proposed FALSE). Node-wrapper failing to accept: both FALSE.",
+   "evidence_ids": [
+    "E6a",
+    "E6b",
+    "E7"
+   ],
+   "changed_from_initial": false
+  },
+  {
+   "name": "ReadyAccounting (lostReads observer at Advance)",
+   "decision": "modify",
+   "change_type": "representation / observer migration (predicate text unchanged)",
+   "evidence": [
+    "new/source/rawnode.go:170-177",
+    "new/source/rawnode_test.go:954-959",
+    "old/spec/base.tla:1102-1103 (old observer)"
+   ],
+   "proposed_expression": "history.lostReads accumulates LostReadsAtAdvance(r,a,application[n].reads) == SeqSet(r.readStates) \\ (SeqSet(a.readStates) \\cup SeqSet(delivered)) for every node; ReadyAccounting text unchanged",
+   "disagreement_state": "RawNode: Ready delivers R1, then MsgReadIndexResp adds R2, then Advance (new code keeps R2 and delivers it next Ready): old observer lostReads={R2} -> FALSE; migrated observer {} -> TRUE. Old-code Advance drops R2: both FALSE.",
+   "evidence_ids": [
+    "E8"
+   ],
+   "changed_from_initial": false
+  },
+  {
+   "name": "AdvanceRetention (new)",
+   "decision": "add",
+   "change_type": "semantic obligation made explicit by the update + observer extension (acks gain outBefore/outAfter/readsBefore/readsAfter via AdvanceAck)",
+   "evidence": [
+    "new/source/rawnode_test.go:954-959",
+    "new/source/rawnode.go:119-122,170-177"
+   ],
+   "proposed_expression": "AdvanceRetention == \\A a \\in history.acks : a.outAfter=a.outBefore /\\ SeqSet(a.readsBefore) \\subseteq SeqSet(a.readsAfter)",
+   "disagreement_state": "RawNode after Ready, heartbeat adds m2, Advance: new code keeps m2 (TRUE); old code clears outbox (FALSE) while the whole old suite (ReadyAccounting, AckPreservation) stays TRUE in the messages-only variant.",
+   "evidence_ids": [
+    "E9",
+    "E18"
+   ],
+   "changed_from_initial": true,
+   "change_reason": "Outbox conjunct tightened from bag-inclusion (outBefore \\sqsubseteq outAfter) to equality, because the requirement evidence (rawnode_test.go:957-959) asserts raft.msgs is exactly [m2] after Advance; TLC verdicts unchanged (new TRUE, old FALSE)."
+  },
+  {
+   "name": "JointSnapshotRecovery",
+   "decision": "keep",
+   "change_type": "unchanged requirement; model edit only (RestoreProjection = identity; prs over VoterIDs(cfg) \\cup learners in Restore and RestartCore)",
+   "evidence": [
+    "new/source/raft.go:322-367,1431-1446",
+    "new/source/confchange/restore.go:111-119",
+    "new/source/confchange/restore_test.go:84-142",
+    "new/source/raftpb/raft.proto:99-114"
+   ],
+   "proposed_expression": "unchanged",
+   "disagreement_state": "Restart / MsgSnap restore of SJ (voters {1,2} & {1,2,3}, learnersNext {3}, autoLeave): new full restore TRUE; old projection FALSE.",
+   "evidence_ids": [
+    "E10",
+    "E11"
+   ],
+   "changed_from_initial": false
+  },
+  {
+   "name": "ConfigurationOrigin",
+   "decision": "keep",
+   "change_type": "unchanged",
+   "evidence": [
+    "as JointSnapshotRecovery"
+   ],
+   "proposed_expression": "unchanged",
+   "disagreement_state": "same states: new TRUE, old projection FALSE",
+   "evidence_ids": [
+    "E10",
+    "E11"
+   ],
+   "changed_from_initial": false
+  },
+  {
+   "name": "JointConfigurationShape",
+   "decision": "keep",
+   "change_type": "unchanged",
+   "evidence": [
+    "new/source/raftpb/raft.proto:107-110"
+   ],
+   "proposed_expression": "unchanged",
+   "disagreement_state": "restored joint config TRUE; note the projected (old) config is also well-formed, so this property is not the projection detector",
+   "evidence_ids": [
+    "E10"
+   ],
+   "changed_from_initial": false
+  },
+  {
+   "name": "SnapshotMemberRestore (new)",
+   "decision": "add",
+   "change_type": "semantic obligation newly reachable (joint snapshots now restorable); BUG CANDIDATE",
+   "evidence": [
+    "new/source/raft.go:1398-1400",
+    "new/source/raft_test.go:2789-2796",
+    "new/source/raftpb/raft.proto:105-110"
+   ],
+   "proposed_expression": "quality.restores = {RestoreObservation(r,m,a)} on Receive(MsgSnap); SnapshotRestoreContract(o) == LET s==o.message.snapshot due== o.message.term>=o.term /\\ ~(o.role=\"Leader\" /\\ o.message.term=o.term) /\\ s.index>o.commit /\\ ~o.matches IN (due /\\ o.node \\in VoterIDs(s.config) \\cup s.config.learners) => (o.afterUsnap=s /\\ o.afterConfig=s.config); SnapshotMemberRestore == \\A o \\in quality.restores : SnapshotRestoreContract(o)",
+   "disagreement_state": "Follower 3 receives MsgSnap SJ (3 in outgoing and learnersNext) or SR (3 only in outgoing): new code ignores it (proposed FALSE) while JointSnapshotRecovery/ConfigurationOrigin stay TRUE.",
+   "evidence_ids": [
+    "E12",
+    "E13"
+   ],
+   "changed_from_initial": false
+  },
+  {
+   "name": "QuorumAccounting",
+   "decision": "keep",
+   "change_type": "unchanged",
+   "evidence": [
+    "new/source/raft.go:936-950",
+    "new/source/quorum/joint.go:17-18"
+   ],
+   "proposed_expression": "unchanged",
+   "disagreement_state": "candidate 3 (voters {1,2,3}) wins with yes {1,3} after learner 1's grant: TRUE; forged win counting a learner outside the candidate's voters: FALSE",
+   "evidence_ids": [
+    "E15"
+   ],
+   "changed_from_initial": false
+  },
+  {
+   "name": "PromiseBacking",
+   "decision": "keep",
+   "change_type": "unchanged",
+   "evidence": [
+    "new/source/README.md:118"
+   ],
+   "proposed_expression": "unchanged",
+   "disagreement_state": "learner grant published after HS{term 2, vote 1} persisted: TRUE; unbacked: FALSE",
+   "evidence_ids": [
+    "E16"
+   ],
+   "changed_from_initial": false
+  },
+  {
+   "name": "CampaignDecisionEligibility",
+   "decision": "keep",
+   "change_type": "unchanged",
+   "evidence": [
+    "new/source/quorum/joint.go:17-18",
+    "new/source/raft_test.go:311-327"
+   ],
+   "proposed_expression": "unchanged",
+   "disagreement_state": "campaign after joint restart sends to {2,3}: TRUE (also TRUE for the old projection's {2}: not a projection detector)",
+   "evidence_ids": [
+    "E17"
+   ],
+   "changed_from_initial": false
+  },
+  {
+   "name": "AutoLeaveAdvance, AckPreservation",
+   "decision": "keep",
+   "change_type": "unchanged",
+   "evidence": [
+    "new/source/raftpb/raft.proto:111-113",
+    "new/source/tracker/tracker.go:29-31"
+   ],
+   "proposed_expression": "unchanged",
+   "disagreement_state": "leader restored into joint auto-leave config Advances past pendingConf: leave-joint appended, eligible check TRUE -> TRUE",
+   "evidence_ids": [
+    "E18",
+    "E8",
+    "E9"
+   ],
+   "changed_from_initial": false
+  },
+  {
+   "name": "JointRecoveryNotReached (Update.tla reachability canary)",
+   "decision": "modify",
+   "change_type": "representation (canary retargeted from the fixed defect to the joint-recovery scenario)",
+   "evidence": [
+    "old/spec/Update.tla:79-81",
+    "old/spec/base.tla:309-311",
+    "new/source/confchange/restore_test.go:84-142"
+   ],
+   "proposed_expression": "JointRecoveryNotReached == /\\ ~\\E x \\in history.recovery : x.expectedConfig.outgoing#{} /\\ ~\\E n \\in Server : raft[n].alive /\\ raft[n].usnap.index>0 /\\ raft[n].usnap.config.outgoing#{}",
+   "disagreement_state": "post-restart (new_restart L2) and post-MsgSnap (new_snap2 L2) joint recoveries: old canary TRUE (misses), revised canary FALSE (witness).",
+   "evidence_ids": [
+    "E14"
+   ],
+   "changed_from_initial": true,
+   "change_reason": "Initial proposal (history.recovery only) evaluated TRUE at new_snap2 L2, i.e. it missed the MsgSnap restore path; added the usnap conjunct."
+  },
+  {
+   "name": "ElectionSafety, LogMatching, LeaderCompleteness, CommittedHistory, AppliedAgreement",
+   "decision": "keep",
+   "change_type": "unchanged safety controls",
+   "evidence": [
+    "new/source/raft.go:947-950"
+   ],
+   "proposed_expression": "unchanged",
+   "disagreement_state": "learner-vote election (E15) keeps ElectionSafety/LeaderCompleteness TRUE; forged double win FALSE; random simulation of the proposed model (E19)",
+   "evidence_ids": [
+    "E15",
+    "E19"
+   ],
+   "changed_from_initial": false
+  },
+  {
+   "name": "TypeOK, LogStructure, MCTypeOK, VoteRecovery, RecoveryBacking, ReplicationEvidence, SnapshotBacking, QuotaIntegrity, OutcomeSoundness, ReadBasis, ReadApplication, ReadCorrelation, NoUnexpectedFatal, TransferDecisionEligibility, RequestCorrelatedConfigurationEffects, ProposalConfigurationDecisions",
+   "decision": "keep",
+   "change_type": "unchanged",
+   "evidence": [
+    "update touches only renames/refactors on their paths (Nodes->Voters, switchToConfig, node holds RawNode, logger mutex, sorted Visit)"
+   ],
+   "proposed_expression": "unchanged",
+   "disagreement_state": "none found; VoteRecovery/RecoveryBacking/SnapshotBacking/TypeOK TRUE on both restart states (E10); TypeOK/LogStructure in simulation (E19)",
+   "evidence_ids": [
+    "E10",
+    "E19"
+   ],
+   "changed_from_initial": false
+  }
+ ],
+ "model_edits_not_property_edits": [
+  "Restore/RestartCore: RestoreProjection(cfg) == cfg; prs domain VoterIDs(cfg) \\cup cfg.learners (raft.go:322-367,1431-1446)",
+  "StepVote: learner early-return removed (raft.go:922-955)",
+  "ProtocolReady: RawNodes accept like Node (out:=EmptyBag, readStates:=<<>>, prevSS:=b.ss) (rawnode.go:119-127)",
+  "AdvanceCore: no clearing of out/readStates/prevSS for RawNodes (rawnode.go:170-177)",
+  "observers: quality.restores (RestoreObservation), acks via AdvanceAck, lostReads via LostReadsAtAdvance"
+ ],
+ "updated_behaviors_already_covered": [
+  {
+   "behavior": "joint ConfState survives restart",
+   "property": "JointSnapshotRecovery (recovery conjunct), ConfigurationOrigin",
+   "explanation": "history.recovery records expectedConfig vs constructed config; E10 TRUE for new, FALSE for old projection"
+  },
+  {
+   "behavior": "joint ConfState survives MsgSnap restore",
+   "property": "JointSnapshotRecovery (live conjunct), ConfigurationOrigin",
+   "explanation": "config must equal ConfigOf(cfgHist) when joint; E11"
+  },
+  {
+   "behavior": "learner votes cannot elect a candidate outside its own voter quorum",
+   "property": "QuorumAccounting",
+   "explanation": "JointWon(w.config, w.yes) intersects with the candidate's voters; E15"
+  },
+  {
+   "behavior": "learner grants must be durable before publication",
+   "property": "PromiseBacking",
+   "explanation": "PromiseOK checks disk hs.vote for every granted MsgVoteResp; E16"
+  },
+  {
+   "behavior": "learners still never campaign",
+   "property": "LearnerEligibility (campaign conjunct), CampaignDecisionEligibility",
+   "explanation": "E5, E17"
+  },
+  {
+   "behavior": "auto-leave after restoring a joint auto-leave config",
+   "property": "AutoLeaveAdvance",
+   "explanation": "eligible check recorded and leave entry appended; E18"
+  }
+ ],
+ "suspected_defects": [
+  {
+   "id": "D1",
+   "kind": "implementation (bug candidate: impl produces / requirement forbids)",
+   "description": "raft.restore() decides membership by scanning only cs.Voters and cs.Learners (new/source/raft.go:1401-1420). A node that is only in VotersOutgoing (being removed, or being demoted via LearnersNext) ignores a joint snapshot and answers MsgAppResp index=commit, so it cannot catch up while the joint config lasts. Contradicts raft.go:1398-1400 intent and raft_test.go:2789-2796. Observed in Go (TestEvOutgoingMemberSnap, both demotion and removal) and in the model (E12). Pre-existing in the old code but only meaningful now that joint ConfStates are restored.",
+   "evidence_ids": [
+    "E12"
+   ],
+   "property_kept_strong": "SnapshotMemberRestore"
+  },
+  {
+   "id": "D2",
+   "kind": "test weakness",
+   "description": "TestLearnerCanVote's check 'msg.Type != pb.MsgVoteResp && !msg.Reject' (new/source/raft_test.go:394) cannot fail for a rejecting MsgVoteResp; only the message-count check (:390-392) and the raft.go:933-950 comment carry the requirement.",
+   "evidence_ids": [
+    "E1"
+   ]
+  },
+  {
+   "id": "D3",
+   "kind": "old model observer",
+   "description": "old lostReads observer (base.tla:1102-1103) assumed Advance clears readStates; it reports a false loss under the new code (E8). Migrated.",
+   "evidence_ids": [
+    "E8"
+   ]
+  }
+ ],
+ "unresolved_obligations": [
+  "ElectionSafety with learners voting under stale candidate configurations (raft.go:948-950 cites etcd issue 7625): no violation in the executed witnesses; the time-boxed random simulation (E19) did not reach learner grants or joint configurations (coverage canaries), so an exhaustive bounded check of these scenarios remains open.",
+  "Message order produced by the now-sorted ProgressTracker.Visit (tracker.go) is not representable (outboxes are bags); no property proposed.",
+  "Trace instrumentation (instrumentation-spec.md, not supplied) must map ConfState.Voters/VotersOutgoing (renamed from Nodes/NodesJoint); the TLA+ field names are unaffected.",
+  "ReadyOwnership quota conjunct: no explicit requirement text found (E7(b)); carried over unchanged.",
+  "PromiseBacking: implementation axis for publication order is caller-side and not executed (E16)."
+ ]
+}
