@@ -2,8 +2,8 @@
 # Adapter: copilot-cli
 # Capabilities: model-select, effort-select, auto-approve, autopilot, background
 # stop-gate: NOT supported — Copilot CLI has no stop-hook mechanism. The
-# generic gate env vars (SPECULA_PHASE/SPECULA_WORK_DIR; see
-# src/specula/stop_gate.py) are simply never read here, so the execution
+# generic gate env vars (SPECULAR_PHASE/SPECULAR_WORK_DIR; see
+# src/specular/stop_gate.py) are simply never read here, so the execution
 # layer fails open by construction; the launcher-side acceptance audit
 # still applies to runs through this adapter.
 #
@@ -40,10 +40,10 @@ RESUME_STATE_SET=false
 system_prompt_file=""
 system_prompt_file_set=false
 BACKGROUND=false
-POLICY_BLOCKED_RC=76  # Keep in sync with src/specula/adapters/utils/policy.py.
+POLICY_BLOCKED_RC=76  # Keep in sync with src/specular/adapters/utils/policy.py.
 PLAIN_POLICY_DIAGNOSTIC_RC=77  # Internal event-stream candidate; never returned to the runner.
-TRANSIENT_FAILURE_RC=74  # Keep in sync with src/specula/adapters/utils/transient.py.
-AUTH_REFRESH_FAILURE_RC=72  # Keep in sync with src/specula/adapters/utils/transient.py.
+TRANSIENT_FAILURE_RC=74  # Keep in sync with src/specular/adapters/utils/transient.py.
+AUTH_REFRESH_FAILURE_RC=72  # Keep in sync with src/specular/adapters/utils/transient.py.
 PLAIN_TRANSIENT_DIAGNOSTIC_RC=78  # Internal event-stream candidate; never returned to the runner.
 RESUME_STATE_FAILURE_RC=79  # Internal event-stream integrity failure; never returned to the runner.
 
@@ -71,7 +71,7 @@ done
 # the environment variable before spawning Copilot so `--model=` can genuinely
 # clear an inherited COPILOT_MODEL and return to settings.json / CLI defaults.
 unset COPILOT_MODEL
-unset SPECULA_RESUME_STATE SPECULA_RESUME_MODEL SPECULA_RESUME_EFFORT
+unset SPECULAR_RESUME_STATE SPECULAR_RESUME_MODEL SPECULAR_RESUME_EFFORT
 
 # ── Validate arguments ──
 
@@ -148,7 +148,7 @@ load_copilot_help() {
 }
 
 ADAPTER_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SPECULA_SRC="$ADAPTER_DIR/../../../src"
+SPECULAR_SRC="$ADAPTER_DIR/../../../src"
 
 # ── Build command ──
 #
@@ -172,7 +172,7 @@ if [[ -n "$RESUME_STATE" ]]; then
     echo "copilot-cli adapter: --resume-state requires Copilot CLI 1.0.51+ exact-session resume semantics; upgrade Copilot CLI" >&2
     exit 1
   fi
-  if ! RESUME_SESSION_ID="$(python3 -I "$SPECULA_SRC/specula/adapters/utils/resume.py" read \
+  if ! RESUME_SESSION_ID="$(python3 -I "$SPECULAR_SRC/specular/adapters/utils/resume.py" read \
     "$RESUME_STATE" copilot-cli "$(pwd -P)" "$MODEL" "$EFFORT")"; then
     exit 1
   fi
@@ -181,11 +181,11 @@ fi
 # Keep the scripting channel free of version-specific stats footers. Provider
 # diagnostics still go to stderr, which is captured below for policy recovery.
 CMD=(copilot -p "$PROMPT" --allow-all --autopilot --silent)
-# Context-control phases (specula.context_control.CONTEXT_CONTROL_PHASES) get the context tools.
-if [[ ( "${SPECULA_PHASE:-}" == "incremental" || "${SPECULA_PHASE:-}" == "main" ) && -n "${SPECULA_CONTEXT_MCP_JSON:-}" ]]; then
-  CMD+=(--additional-mcp-config "$SPECULA_CONTEXT_MCP_JSON")
-elif [[ -n "${SPECULA_TLC_TOOL_JSON:-}" ]]; then
-  CMD+=(--additional-mcp-config "$SPECULA_TLC_TOOL_JSON")
+# Context-control phases (specular.context_control.CONTEXT_CONTROL_PHASES) get the context tools.
+if [[ ( "${SPECULAR_PHASE:-}" == "incremental" || "${SPECULAR_PHASE:-}" == "main" ) && -n "${SPECULAR_CONTEXT_MCP_JSON:-}" ]]; then
+  CMD+=(--additional-mcp-config "$SPECULAR_CONTEXT_MCP_JSON")
+elif [[ -n "${SPECULAR_TLC_TOOL_JSON:-}" ]]; then
+  CMD+=(--additional-mcp-config "$SPECULAR_TLC_TOOL_JSON")
 fi
 
 if [[ -n "$RESUME_SESSION_ID" ]]; then
@@ -222,7 +222,7 @@ if [[ -n "$MAX_TURNS" && "$MAX_TURNS" != "0" ]]; then
   CMD+=(--max-autopilot-continues "$MAX_TURNS")
 fi
 
-ACTIVITY_LOG="${SPECULA_ACTIVITY_LOG:-}"
+ACTIVITY_LOG="${SPECULAR_ACTIVITY_LOG:-}"
 TEMP_ACTIVITY_LOG=""
 USAGE_SESSION_FILE=""
 system_prompt_dir=""
@@ -249,7 +249,7 @@ trap cleanup_temporary_files EXIT
 # AGENTS.md in a private directory appended to any inherited list. Staging
 # failures only lose the system-prompt copy: the rules still lead the prompt.
 if [[ -n "$system_prompt_file" ]]; then
-  if system_prompt_dir="$(mktemp -d "${TMPDIR:-/tmp}/specula-copilot-rules-XXXXXX")" \
+  if system_prompt_dir="$(mktemp -d "${TMPDIR:-/tmp}/specular-copilot-rules-XXXXXX")" \
      && [[ "$system_prompt_dir" != *,* ]] \
      && cp -- "$system_prompt_file" "$system_prompt_dir/AGENTS.md"; then
     export COPILOT_CUSTOM_INSTRUCTIONS_DIRS="${COPILOT_CUSTOM_INSTRUCTIONS_DIRS:+$COPILOT_CUSTOM_INSTRUCTIONS_DIRS,}$system_prompt_dir"
@@ -258,7 +258,7 @@ if [[ -n "$system_prompt_file" ]]; then
   fi
 fi
 if [[ -n "$RESUME_STATE" && -z "$ACTIVITY_LOG" ]]; then
-  if ! TEMP_ACTIVITY_LOG="$(mktemp "${TMPDIR:-/tmp}/specula-copilot-activity-XXXXXX.jsonl")"; then
+  if ! TEMP_ACTIVITY_LOG="$(mktemp "${TMPDIR:-/tmp}/specular-copilot-activity-XXXXXX.jsonl")"; then
     echo "copilot-cli adapter: unable to create temporary activity log for session capture" >&2
     exit 1
   fi
@@ -268,20 +268,20 @@ fi
 collect_usage() {
   local session_id="${1:-}"
   python3 -I -c \
-    'import sys; sys.path.insert(0, sys.argv.pop(1)); from specula.adapters.utils.copilot_usage import main; raise SystemExit(main(sys.argv[1:]))' \
-    "$SPECULA_SRC" "$session_id" "$LOG_FILE"
+    'import sys; sys.path.insert(0, sys.argv.pop(1)); from specular.adapters.utils.copilot_usage import main; raise SystemExit(main(sys.argv[1:]))' \
+    "$SPECULAR_SRC" "$session_id" "$LOG_FILE"
 }
 
 failed_log_is_policy_blocked() {
   python3 -I -c \
-    'import sys; sys.path.insert(0, sys.argv[1]); from pathlib import Path; from specula.adapters.utils.policy import failed_log_has_policy_block; raise SystemExit(0 if failed_log_has_policy_block(Path(sys.argv[2])) else 1)' \
-    "$SPECULA_SRC" "$LOG_FILE"
+    'import sys; sys.path.insert(0, sys.argv[1]); from pathlib import Path; from specular.adapters.utils.policy import failed_log_has_policy_block; raise SystemExit(0 if failed_log_has_policy_block(Path(sys.argv[2])) else 1)' \
+    "$SPECULAR_SRC" "$LOG_FILE"
 }
 
 failed_log_is_transient_failure() {
   python3 -I -c \
-    'import sys; sys.path.insert(0, sys.argv[1]); from pathlib import Path; from specula.adapters.utils.transient import failed_log_has_transient_failure; raise SystemExit(0 if failed_log_has_transient_failure(Path(sys.argv[2])) else 1)' \
-    "$SPECULA_SRC" "$LOG_FILE"
+    'import sys; sys.path.insert(0, sys.argv[1]); from pathlib import Path; from specular.adapters.utils.transient import failed_log_has_transient_failure; raise SystemExit(0 if failed_log_has_transient_failure(Path(sys.argv[2])) else 1)' \
+    "$SPECULAR_SRC" "$LOG_FILE"
 }
 
 if [[ -z "$ACTIVITY_LOG" ]]; then
@@ -325,7 +325,7 @@ fi
 if grep -q -- '--stream' <<< "$COPILOT_HELP"; then
   CMD+=(--stream on)
 fi
-if ! USAGE_SESSION_FILE="$(mktemp "${TMPDIR:-/tmp}/specula-copilot-session-XXXXXX")"; then
+if ! USAGE_SESSION_FILE="$(mktemp "${TMPDIR:-/tmp}/specular-copilot-session-XXXXXX")"; then
   echo "copilot-cli adapter: unable to create temporary session file for usage collection" >&2
   exit 1
 fi
@@ -336,8 +336,8 @@ if [[ -n "$RESUME_STATE" ]]; then
   STREAM_ARGS+=("$RESUME_STATE" "$(pwd -P)" "$MODEL" "$EFFORT")
 fi
 "${CMD[@]}" 2>&1 | python3 -I -c \
-  'import sys; sys.path.insert(0, sys.argv.pop(1)); from specula.adapters.utils.event_stream import main; raise SystemExit(main(sys.argv[1:]))' \
-  "$SPECULA_SRC" "${STREAM_ARGS[@]}"
+  'import sys; sys.path.insert(0, sys.argv.pop(1)); from specular.adapters.utils.event_stream import main; raise SystemExit(main(sys.argv[1:]))' \
+  "$SPECULAR_SRC" "${STREAM_ARGS[@]}"
 PIPELINE_STATUS=("${PIPESTATUS[@]}")
 set -e
 

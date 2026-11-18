@@ -15,9 +15,9 @@ from typing import Any
 
 import pytest
 
-from specula import context_runner as runner
-from specula.adapters.utils.claude_usage import invocation_usage, restored_totals, session_transcript
-from specula.resource_summary import _claude_usage
+from specular import context_runner as runner
+from specular.adapters.utils.claude_usage import invocation_usage, restored_totals, session_transcript
+from specular.resource_summary import _claude_usage
 
 SESSION = "1fff9301-91b4-4eee-a8a1-dfe595f89d92"
 OLD_SESSION = "d96c2822-12df-43af-9d4d-6c6818d5b9a3"

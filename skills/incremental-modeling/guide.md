@@ -23,7 +23,7 @@ Timing guidance adapted from [SelfCompact](https://arxiv.org/html/2606.23525v2#S
 Require:
 
 - the old and new source revisions, or an exact diff plus both source trees;
-- the prior `.specula-output/`, including its modeling brief, analysis report, specs, instrumentation mapping, traces, validation history, findings, and reproductions when present;
+- the prior `.specular-output/`, including its modeling brief, analysis report, specs, instrumentation mapping, traces, validation history, findings, and reproductions when present;
 - a separate working copy for the new artifacts. Never overwrite the prior run.
 
 If prior trace/model validation has unresolved errors, say so in the analysis and treat its conclusions as provisional. Retain its reported coverage limits, including budget-limited model checking.
@@ -122,7 +122,7 @@ Keep required stage evidence current. Before final reporting, briefly check read
 
 If work remains, continue it. If blocked or interrupted, save a brief handoff instead of a final report. On resume, continue from saved progress and any partial report; recheck evidence invalidated by later changes.
 
-Once ready, follow the output contract in the CI task. New runs use [the final-result format](references/final-result.md): write one `spec/final-result.json`, then run `specula ci-result --work=<output-directory>`. The command generates the reports, CI verdict, and persistent findings through the existing issue store. It does not advance the current model. Correct any reported errors before finishing; interrupted runs can be resumed manually.
+Once ready, follow the output contract in the CI task. New runs use [the final-result format](references/final-result.md): write one `spec/final-result.json`, then run `specular ci-result --work=<output-directory>`. The command generates the reports, CI verdict, and persistent findings through the existing issue store. It does not advance the current model. Correct any reported errors before finishing; interrupted runs can be resumed manually.
 
 This final file replaces the separate confirmation report, severity table, summary fragment, CI report/verdict, and persistence proposals for incremental CI. Keep investigation notes, reproductions, and validation evidence in their existing files and reference them. Do not rewrite generated reports. Resource summaries and cost calculation remain tool-owned. Retained runs whose task requests the legacy reports keep that output contract, including the existing Persistent Findings record/reuse commands.
 

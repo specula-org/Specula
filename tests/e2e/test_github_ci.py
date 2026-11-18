@@ -14,7 +14,7 @@ from typing import Any
 import test_cli_pipeline as base_fixtures
 import test_incremental_ci as incremental_fixtures
 
-from specula.ci_store import CIStore
+from specular.ci_store import CIStore
 
 
 class GitHubEvents(unittest.TestCase):
@@ -42,7 +42,12 @@ class GitHubEvents(unittest.TestCase):
             for key, value in os.environ.items()
             if key not in base_fixtures._VOLATILE
             and key
-            not in {"SPECULA_CI_RECEIPT", "SPECULA_CI_BORROW_LEASE", "SPECULA_CI_EVENT_LOCK_FD", "SPECULA_CI_LOCK_FD"}
+            not in {
+                "SPECULAR_CI_RECEIPT",
+                "SPECULAR_CI_BORROW_LEASE",
+                "SPECULAR_CI_EVENT_LOCK_FD",
+                "SPECULAR_CI_LOCK_FD",
+            }
         }
         environment.update(
             {
@@ -57,7 +62,7 @@ class GitHubEvents(unittest.TestCase):
         result = subprocess.run(
             [
                 sys.executable,
-                str(self.root / "src/specula/cli.py"),
+                str(self.root / "src/specular/cli.py"),
                 "ci",
                 f"--ci-dir={self.ci}",
                 f"--artifact={self.source}",
@@ -335,7 +340,7 @@ class GitHubEvents(unittest.TestCase):
         result, reports = self.push()
         self.assertEqual(result.returncode, 75, result.stdout + result.stderr)
         run = self.fixture.latest()
-        resume = f"specula run --ci-dir={self.ci} --run-id={run.name}"
+        resume = f"specular run --ci-dir={self.ci} --run-id={run.name}"
         attempts = list((self.ci / ".github-ci/attempts").glob("*.json"))
         self.assertEqual(len(attempts), 1)
         attempt = json.loads(attempts[0].read_text())

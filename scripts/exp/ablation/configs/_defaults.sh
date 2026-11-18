@@ -21,6 +21,6 @@ MULTI_PHASE=false
 PHASE_PROMPTS=()
 
 # Skill isolation — controls which skills are visible in workspace .claude/skills/
-SPECULA_SKILLS=("ALL")
+SPECULAR_SKILLS=("ALL")
 TLAPLUS_SKILLS=()
 MCP_TOOLS=true

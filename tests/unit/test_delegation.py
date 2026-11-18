@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from specula import delegation, notes
-from specula.prompts import PROMPTS_DIR, render
+from specular import delegation, notes
+from specular.prompts import PROMPTS_DIR, render
 
 WORK = Path("/W")
 

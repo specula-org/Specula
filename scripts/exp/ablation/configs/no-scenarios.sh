@@ -15,6 +15,6 @@ PHASE_PROMPTS=(
   "full-p4.md"             # Phase 4: Bug Confirmation (same as full)
 )
 
-SPECULA_SKILLS=("ALL")
+SPECULAR_SKILLS=("ALL")
 TLAPLUS_SKILLS=()
 MCP_TOOLS=true

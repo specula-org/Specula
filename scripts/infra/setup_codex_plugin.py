@@ -9,10 +9,13 @@ import pathlib
 import shutil
 import subprocess
 
-PLUGIN_NAME = "specula-codex"
+PLUGIN_NAME = "specular-codex"
 PLUGIN_VERSION = "1.2.0"
-MARKETPLACE_NAME = "specula"
+MARKETPLACE_NAME = "specular"
 LEGACY_MCP_NAMES = ("tracedebugger", "spec_analyzer", "inv_checking_tool")
+# The plugin as installed before the Specula -> Specular rename.
+PRE_RENAME_PLUGIN = "specula-codex"
+PRE_RENAME_MARKETPLACE = "specula"
 
 
 def build_plugin_manifest() -> dict:
@@ -86,7 +89,7 @@ def build_mcp_config(project_root: pathlib.Path) -> dict:
             name: {
                 "command": str(project_root / python_path),
                 "args": [str(project_root / server_path)],
-                "env": {"SPECULA_ROOT": str(project_root)},
+                "env": {"SPECULAR_ROOT": str(project_root)},
             }
             for name, (python_path, server_path) in servers.items()
         }
@@ -152,6 +155,8 @@ def install_plugin(plugin_root: pathlib.Path) -> None:
     if shutil.which("codex") is None:
         raise SystemExit("codex is required to install the Specula Codex plugin")
 
+    run(["codex", "plugin", "remove", f"{PRE_RENAME_PLUGIN}@{PRE_RENAME_MARKETPLACE}"], check=False, quiet=True)
+    run(["codex", "plugin", "marketplace", "remove", PRE_RENAME_MARKETPLACE], check=False, quiet=True)
     run(["codex", "plugin", "marketplace", "remove", MARKETPLACE_NAME], check=False, quiet=True)
     run(["codex", "plugin", "marketplace", "add", str(plugin_root)])
 

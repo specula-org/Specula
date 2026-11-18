@@ -2,10 +2,10 @@
 
 Avoid paying again for completed analysis and verification. **As soon as any candidate defect appears, do a lightweight lookup before complex code analysis, counterexample diagnosis, developer-history research, or reproduction work.** This applies to every discovery stage and to both MC and code-review candidates.
 
-Use the target's `.specula-output` as `--work`. Pipeline callers supply `persistent-findings-context.json` once the source checkout is known. If no context is present, initialize it with the source, run ID, and optional historical output directory:
+Use the target's `.specular-output` as `--work`. Pipeline callers supply `persistent-findings-context.json` once the source checkout is known. If no context is present, initialize it with the source, run ID, and optional historical output directory:
 
 ```bash
-specula findings --work /path/to/output --source /path/to/source --run-id current-run --previous /path/to/prior/output init
+specular findings --work /path/to/output --source /path/to/source --run-id current-run --previous /path/to/prior/output init
 ```
 
 Omit `--previous` when no history is available. One-shot runs and CI initialization can select a prior output with `--findings-from=PATH`. Only unresolved records and their selected evidence are imported; work on the current model and source. Without historical records, continue normal analysis and save completed findings. Upstream-only known reports retain their existing treatment.
@@ -13,7 +13,7 @@ Omit `--previous` when no history is available. One-shot runs and CI initializat
 ## Lookup First
 
 ```bash
-specula findings --work /path/to/target/.specula-output lookup --query ReceiveReply --query ReplySafety
+specular findings --work /path/to/target/.specular-output lookup --query ReceiveReply --query ReplySafety
 ```
 
 Use already available source paths/symbols, model Actions, invariant names, and the observed symptom. The helper returns at most five short summaries by default. Read a matched record with `show --id ID`; open only its relevant evidence. Do not load the whole index or read all old reports. A shared ID, invariant, title, or site alone does not establish the same defect. If a quick comparison cannot establish the same mechanism and consequence, proceed with normal analysis rather than turning matching into another investigation.
@@ -23,7 +23,7 @@ For a reliable match, run `check --id ID`. It compares the recorded source/model
 If the same mechanism/consequence and premises still apply:
 
 ```bash
-specula findings --work /path/to/target/.specula-output reuse --id MC-1 --reason 'Same mechanism and consequence; the recorded configuration and reachability premises remain applicable.'
+specular findings --work /path/to/target/.specular-output reuse --id MC-1 --reason 'Same mechanism and consequence; the recorded configuration and reachability premises remain applicable.'
 ```
 
 Replace the example reason with the actual brief applicability basis. Reuse keeps the stable issue ID and the original classification and evidence limits. Skip completed investigation, reproduction development/execution, and repeated classification. The helper writes a run-bound receipt under `spec/finding-reuse/`. The caller validates it against the final source/model and includes the historical conclusion in its report. If later edits invalidate it, remove the receipt and reanalyze that issue.
@@ -34,7 +34,7 @@ After confirmation finishes, persist only unresolved `REPRODUCED`, `ENV_LIMITED`
 
 After confirmation, write a proposal to `spec/issue-input/ID.json`, or to `confirmation/ID/issue.json` in a per-finding worker. The pipeline registers it using the final confirmation verdict, including debate. Standalone callers use `record --input /path/to/proposal.json`. Fill it from the completed analysis; do not launch another investigation to produce metadata. Dependency fingerprints use the source supplied by the caller and the current model; CI supplies its frozen pre-instrumentation source.
 
-Boundary values are exact source lines, including leading whitespace. In a configured run, validate a completed proposal before returning with `specula findings --work /path/to/.specula-output validate --input /path/to/issue.json`; validation reads and fingerprints every dependency and evidence file without modifying the persistent registry.
+Boundary values are exact source lines, including leading whitespace. In a configured run, validate a completed proposal before returning with `specular findings --work /path/to/.specular-output validate --input /path/to/issue.json`; validation reads and fingerprints every dependency and evidence file without modifying the persistent registry.
 
 Allocate an unused ID for a new defect, even when its local MC number collides with an old issue. When reanalysis updates an existing historical issue, include `"revises": "<record_sha256 from show>"` in the proposal to identify that prior record explicitly. Reusing a local number does not establish issue identity.
 

@@ -7,7 +7,7 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 Usage:
-  specula setup
+  specular setup
 
 Install Specula's TLA+ tools, Python environments, agent skills, and MCP integrations.
 
@@ -29,7 +29,7 @@ else
   if [[ "$unexpected" == "-h" || "$unexpected" == "--help" ]]; then
     unexpected="$2"
   fi
-  printf "specula setup: unexpected argument '%s'\n\n" "$unexpected" >&2
+  printf "specular setup: unexpected argument '%s'\n\n" "$unexpected" >&2
   usage >&2
   exit 2
 fi
@@ -92,9 +92,9 @@ ask_scope() {
 ask_codex_install() {
   local answer
   echo "  y: install skills and register MCP servers separately." >&2
-  echo "  plugin: bundle skills and MCP tools as specula-codex@specula for cleaner namespacing and easier removal." >&2
+  echo "  plugin: bundle skills and MCP tools as specular-codex@specular for cleaner namespacing and easier removal." >&2
   echo "          Codex installs plugins for the current profile, making them available across projects." >&2
-  echo "          Rerun specula setup and choose plugin again to update it." >&2
+  echo "          Rerun specular setup and choose plugin again to update it." >&2
   while true; do
     read -rp "$(echo -e "${BLUE}[?]${NC} Install Specula for Codex? (y/n/plugin): ")" answer
     case "$answer" in
@@ -119,7 +119,7 @@ setup_skills() {
 
   print_status "Installing Specula skills into $target_dir..."
   # Isolated mode keeps the caller's CWD and PYTHONPATH from shadowing trusted setup code.
-  if python3 -I "$PROJECT_ROOT/src/specula/skill_install.py" "${install_args[@]}"; then
+  if python3 -I "$PROJECT_ROOT/src/specular/skill_install.py" "${install_args[@]}"; then
     print_success "Skills configured in $target_dir"
   else
     SKILL_SETUP_INCOMPLETE=true
@@ -142,7 +142,7 @@ setup_claude_mcp() {
   set +e
   CLAUDE_CONFIG_DIR="$CLAUDE_USER_CONFIG_DIR" claude mcp add --transport stdio --scope "$scope" \
     "$mcp_name" \
-    --env "SPECULA_ROOT=$project_root" \
+    --env "SPECULAR_ROOT=$project_root" \
     -- \
     "$python_path" \
     "$server_path"
@@ -153,7 +153,7 @@ setup_claude_mcp() {
     print_success "Claude MCP configured: $mcp_name (scope: $scope)"
   else
     print_warning "Claude MCP auto-config failed. Run manually:"
-    echo "  CLAUDE_CONFIG_DIR=$CLAUDE_USER_CONFIG_DIR claude mcp add --transport stdio --scope $scope --env SPECULA_ROOT=$project_root $mcp_name -- $python_path $server_path"
+    echo "  CLAUDE_CONFIG_DIR=$CLAUDE_USER_CONFIG_DIR claude mcp add --transport stdio --scope $scope --env SPECULAR_ROOT=$project_root $mcp_name -- $python_path $server_path"
   fi
 }
 
@@ -166,7 +166,7 @@ setup_codex_mcp() {
   print_status "Configuring $mcp_name MCP for Codex..."
   set +e
   codex mcp add "$mcp_name" \
-    --env "SPECULA_ROOT=$project_root" -- \
+    --env "SPECULAR_ROOT=$project_root" -- \
     "$python_path" \
     "$server_path"
   local rc=$?
@@ -176,7 +176,7 @@ setup_codex_mcp() {
     print_success "Codex MCP configured: $mcp_name"
   else
     print_warning "Codex MCP auto-config failed. Run manually:"
-    echo "  codex mcp add $mcp_name --env SPECULA_ROOT=$project_root -- $python_path $server_path"
+    echo "  codex mcp add $mcp_name --env SPECULAR_ROOT=$project_root -- $python_path $server_path"
   fi
 }
 
@@ -188,8 +188,8 @@ setup_codex_plugin() {
   python3 -I "$SCRIPT_DIR/setup_codex_plugin.py" \
     --project-root "$project_root" \
     --plugin-root "$plugin_root"
-  print_success "Codex plugin configured: specula-codex@specula"
-  print_status "Rerun specula setup and choose 'plugin' again to update the Codex plugin."
+  print_success "Codex plugin configured: specular-codex@specular"
+  print_status "Rerun specular setup and choose 'plugin' again to update the Codex plugin."
 }
 
 setup_python_tool_env() {
@@ -260,7 +260,7 @@ INV_CHECKING_TOOL_VENV="$INV_CHECKING_TOOL_DIR/.venv"
 INV_CHECKING_TOOL_PYTHON="$INV_CHECKING_TOOL_VENV/bin/python"
 INV_CHECKING_TOOL_SERVER="$INV_CHECKING_TOOL_DIR/mcp_server.py"
 SKILLS_SOURCE="$PROJECT_ROOT/skills"
-CODEX_PLUGIN_ROOT="$PROJECT_ROOT/.specula-codex"
+CODEX_PLUGIN_ROOT="$PROJECT_ROOT/.specular-codex"
 # Match the launcher's --claude-alias contract exactly: NAME uses ~/.NAME.
 CLAUDE_USER_CONFIG_DIR="$HOME/.${CLAUDE_ALIAS:-claude}"
 COPILOT_USER_CONFIG_DIR="${COPILOT_HOME:-$HOME/.copilot}"
@@ -447,7 +447,7 @@ case "$codex_install" in
       setup_codex_plugin "$PROJECT_ROOT" "$CODEX_PLUGIN_ROOT"
     else
       print_status "Skipped Codex plugin installation."
-      print_status "For project-local skills, rerun specula setup, choose 'y', then choose 'local'."
+      print_status "For project-local skills, rerun specular setup, choose 'y', then choose 'local'."
     fi
     ;;
   skip)

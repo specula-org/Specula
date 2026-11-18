@@ -5,9 +5,9 @@
 # Sourced by run.sh and eval scripts. Do not execute directly.
 
 ABLATION_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SPECULA_ROOT="$(cd "$ABLATION_DIR/../../.." && pwd)"
-CASE_STUDIES_DIR="$SPECULA_ROOT/case-studies"
-ADAPTER_DIR="$SPECULA_ROOT/scripts/launch/adapters"
+SPECULAR_ROOT="$(cd "$ABLATION_DIR/../../.." && pwd)"
+CASE_STUDIES_DIR="$SPECULAR_ROOT/case-studies"
+ADAPTER_DIR="$SPECULAR_ROOT/scripts/launch/adapters"
 # Results root. Override via RESULTS_BASE_DIR env to retarget a whole experiment
 # (e.g. the §6.5 model-sensitivity runs land under experiments/model-sensitivity/runs).
 RESULTS_BASE_DIR="${RESULTS_BASE_DIR:-$ABLATION_DIR/results}"
@@ -71,7 +71,7 @@ create_workspace() {
 }
 
 # Initialize workspace as isolated Claude Code project.
-# Must be called AFTER load_config sets SPECULA_SKILLS, TLAPLUS_SKILLS, MCP_TOOLS.
+# Must be called AFTER load_config sets SPECULAR_SKILLS, TLAPLUS_SKILLS, MCP_TOOLS.
 init_workspace_isolation() {
   local workspace="$1"
 
@@ -82,22 +82,22 @@ init_workspace_isolation() {
   local skills_dir="$workspace/.claude/skills"
   mkdir -p "$skills_dir"
 
-  local specula_skills_src="$SPECULA_ROOT/.claude/skills"
-  local tlaplus_skills_src="$SPECULA_ROOT/tools/tlaplus-ai-tools/skills"
+  local specular_skills_src="$SPECULAR_ROOT/.claude/skills"
+  local tlaplus_skills_src="$SPECULAR_ROOT/tools/tlaplus-ai-tools/skills"
 
   # Specula skills
-  if [[ ${#SPECULA_SKILLS[@]} -gt 0 ]]; then
-    if [[ "${SPECULA_SKILLS[0]}" == "ALL" ]]; then
-      for d in "$specula_skills_src"/*/; do
+  if [[ ${#SPECULAR_SKILLS[@]} -gt 0 ]]; then
+    if [[ "${SPECULAR_SKILLS[0]}" == "ALL" ]]; then
+      for d in "$specular_skills_src"/*/; do
         [[ -d "$d" ]] && ln -sfn "$d" "$skills_dir/$(basename "$d")"
       done
       # Also link workflow-overview.md if it exists
-      [[ -f "$specula_skills_src/workflow-overview.md" ]] && \
-        ln -sfn "$specula_skills_src/workflow-overview.md" "$skills_dir/workflow-overview.md"
+      [[ -f "$specular_skills_src/workflow-overview.md" ]] && \
+        ln -sfn "$specular_skills_src/workflow-overview.md" "$skills_dir/workflow-overview.md"
     else
-      for name in "${SPECULA_SKILLS[@]}"; do
-        [[ -d "$specula_skills_src/$name" ]] && \
-          ln -sfn "$specula_skills_src/$name" "$skills_dir/$name"
+      for name in "${SPECULAR_SKILLS[@]}"; do
+        [[ -d "$specular_skills_src/$name" ]] && \
+          ln -sfn "$specular_skills_src/$name" "$skills_dir/$name"
       done
     fi
   fi
@@ -127,7 +127,7 @@ init_workspace_isolation() {
 import json, os
 
 # Read project settings to extract MCP config
-proj_settings = '$SPECULA_ROOT/.claude/settings.local.json'
+proj_settings = '$SPECULAR_ROOT/.claude/settings.local.json'
 mcp_config = {}
 if os.path.exists(proj_settings):
     with open(proj_settings) as f:
@@ -138,7 +138,7 @@ if os.path.exists(proj_settings):
         mcp_config['enabledMcpjsonServers'] = d['enabledMcpjsonServers']
 
 # Also copy mcpServers if defined
-mcp_json = os.path.join('$SPECULA_ROOT', '.mcp.json')
+mcp_json = os.path.join('$SPECULAR_ROOT', '.mcp.json')
 if os.path.exists(mcp_json):
     dst = os.path.join('$workspace', '.mcp.json')
     if not os.path.exists(dst):
@@ -194,7 +194,7 @@ link_artifact() {
 
 # Stage the artifact as a PRIVATE COPY (not a symlink) so phases that mutate the
 # source — harness instrumentation, builds — cannot contaminate a shared tree or
-# another run. Used when SPECULA_COPY_ARTIFACT=1 (the full pipeline writes to the
+# another run. Used when SPECULAR_COPY_ARTIFACT=1 (the full pipeline writes to the
 # source, unlike the read-only baselines). Echoes the copied repo path.
 copy_artifact() {
   local workspace="$1" source_repo="$2"

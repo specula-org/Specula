@@ -42,7 +42,7 @@ export async function checkCapability() {
   }
 
   // Ground truth: run `true` through a minimal sandbox and see if it starts.
-  const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'specula-cap-'));
+  const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'specular-cap-'));
   try {
     await SandboxManager.initialize({
       network: {},
@@ -74,11 +74,11 @@ const isCLI = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath
 if (isCLI) {
   checkCapability().then(r => {
     if (r.ok) { process.stdout.write('ok\n'); process.exit(0); }
-    process.stderr.write(`[specula-sandbox] capability check FAILED: ${r.reason}\n`);
-    if (r.hint) process.stderr.write(`[specula-sandbox]   fix: ${r.hint}\n`);
+    process.stderr.write(`[specular-sandbox] capability check FAILED: ${r.reason}\n`);
+    if (r.hint) process.stderr.write(`[specular-sandbox]   fix: ${r.hint}\n`);
     process.exit(1);
   }).catch(e => {
-    process.stderr.write(`[specula-sandbox] capability check error: ${e.message}\n`);
+    process.stderr.write(`[specular-sandbox] capability check error: ${e.message}\n`);
     process.exit(1);
   });
 }

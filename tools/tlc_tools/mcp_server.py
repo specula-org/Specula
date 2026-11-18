@@ -8,9 +8,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 from mcp.server.fastmcp import FastMCP
 
-from specula.tlc_tasks import START_DESCRIPTION, WAIT_DESCRIPTION, start_tlc, wait_tlc
+from specular.tlc_tasks import START_DESCRIPTION, WAIT_DESCRIPTION, start_tlc, wait_tlc
 
-server = FastMCP("specula_tlc")
+server = FastMCP("specular_tlc")
 server.tool(description=START_DESCRIPTION)(start_tlc)
 server.tool(description=WAIT_DESCRIPTION)(wait_tlc)
 

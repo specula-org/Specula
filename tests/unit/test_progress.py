@@ -12,9 +12,9 @@ from collections.abc import Iterator
 from pathlib import Path
 from unittest import mock
 
-from specula import progress
-from specula.adapters.utils.event_stream import parse_events, stream_events
-from specula.adapters.utils.text import readable, summary, tool_summary
+from specular import progress
+from specular.adapters.utils.event_stream import parse_events, stream_events
+from specular.adapters.utils.text import readable, summary, tool_summary
 
 
 class TestProgressParsing(unittest.TestCase):
@@ -369,7 +369,7 @@ class TestProgressParsing(unittest.TestCase):
             output = io.StringIO()
             for tick in (61.0, 301.0, 601.0, 1201.0):
                 with (
-                    mock.patch("specula.progress.time.monotonic", return_value=tick),
+                    mock.patch("specular.progress.time.monotonic", return_value=tick),
                     contextlib.redirect_stdout(output),
                 ):
                     progress.report([agent], progress.ProgressConfig())

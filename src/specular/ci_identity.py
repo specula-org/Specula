@@ -1,0 +1,50 @@
+"""Content identities used to reuse a completed CI result, not semantic grading."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+from functools import lru_cache
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from specular.ci_workflow import CIPipeline
+
+SPECULAR_ROOT = Path(__file__).resolve().parents[2]
+
+
+@lru_cache(maxsize=1)
+def method_digest() -> str:
+    digest = hashlib.sha256()
+    for folder in ("src/specular", "skills", "scripts/launch"):
+        for path in sorted((SPECULAR_ROOT / folder).rglob("*")):
+            if path.is_file() and "__pycache__" not in path.parts and path.suffix in {".py", ".md", ".sh", ".yaml"}:
+                digest.update(path.relative_to(SPECULAR_ROOT).as_posix().encode())
+                digest.update(b"\0")
+                digest.update(path.read_bytes())
+                digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def check_key(pipeline: CIPipeline, guidance: str) -> str | None:
+    selection = pipeline._agent_selection()
+    model, effort = pipeline._resolved_run_tuning(selection)
+    # Unspecified native model defaults can change outside Specula's control,
+    # and so can a Codex profile file's provider/model.
+    if not model or selection.codex_profile is not None:
+        return None
+    document = {
+        "method": method_digest(),
+        "agent": selection.agent,
+        "model": model,
+        "effort": effort,
+        "profile": pipeline.claude_alias,
+        "max_turns": pipeline.max_turns,
+        "guidance": guidance,
+        "memory": pipeline.tlc_memory_limit or os.environ.get("SPECULAR_TLC_MEMORY_LIMIT") or "auto",
+        "workers": pipeline.tlc_worker_limit or os.environ.get("SPECULAR_TLC_WORKER_LIMIT"),
+        "environment": os.environ.get("SPECULAR_CI_ENVIRONMENT", ""),
+    }
+    return hashlib.sha256(json.dumps(document, sort_keys=True).encode()).hexdigest()

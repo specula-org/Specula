@@ -87,7 +87,7 @@ log "Config:  $ABLATION_ID ($ABLATION_GROUP)"
 log "Target:  $TARGET_NAME ($TARGET_LANG, $TARGET_REFERENCE)"
 log "Repo:    $REPO_DIR"
 log "Run ID:  $RUN_ID"
-log "Model:   ${MODEL:-<profile default>}   Sandbox: ${SPECULA_SANDBOX:-0}   CopyArtifact: ${SPECULA_COPY_ARTIFACT:-0}"
+log "Model:   ${MODEL:-<profile default>}   Sandbox: ${SPECULAR_SANDBOX:-0}   CopyArtifact: ${SPECULAR_COPY_ARTIFACT:-0}"
 
 # ── Create workspace ──
 
@@ -95,8 +95,8 @@ WORKSPACE_DIR="$(create_workspace "$RUN_ID" "$ABLATION_ID" "$TARGET_NAME")"
 SPEC_DIR="$WORKSPACE_DIR/spec"
 # Phases that mutate the source (harness/build) need a private copy, not a shared
 # symlink, or parallel runs collide and instrumentation leaks across runs.
-if [[ "${SPECULA_COPY_ARTIFACT:-0}" == "1" ]]; then
-  log "Staging private artifact copy (SPECULA_COPY_ARTIFACT=1)…"
+if [[ "${SPECULAR_COPY_ARTIFACT:-0}" == "1" ]]; then
+  log "Staging private artifact copy (SPECULAR_COPY_ARTIFACT=1)…"
   REPO_DIR="$(copy_artifact "$WORKSPACE_DIR" "$REPO_DIR")"
 else
   REPO_DIR="$(link_artifact "$WORKSPACE_DIR" "$REPO_DIR")"
@@ -333,7 +333,7 @@ write_metadata "$WORKSPACE_DIR" \
   "reference=$TARGET_REFERENCE" \
   "run_id=$RUN_ID" \
   "model=${MODEL:-default}" \
-  "sandbox=${SPECULA_SANDBOX:-0}" \
+  "sandbox=${SPECULAR_SANDBOX:-0}" \
   "max_budget=$MAX_BUDGET" \
   "multi_phase=$MULTI_PHASE" \
   "num_phases=${#PHASE_PROMPTS[@]}" \

@@ -18,10 +18,10 @@ public class RealCFGTest {
         System.out.println();
 
         // Get default path relative to project structure
-        String speculaRoot = System.getenv("SPECULA_ROOT");
+        String specularRoot = System.getenv("SPECULAR_ROOT");
         String defaultPath;
-        if (speculaRoot != null && !speculaRoot.isEmpty()) {
-            defaultPath = speculaRoot + "/tools/cfa/input/test/SimpleCounter.tla";
+        if (specularRoot != null && !specularRoot.isEmpty()) {
+            defaultPath = specularRoot + "/tools/cfa/input/test/SimpleCounter.tla";
         } else {
             // Assume running from project root or tools/cfa directory
             defaultPath = "tools/cfa/input/test/SimpleCounter.tla";

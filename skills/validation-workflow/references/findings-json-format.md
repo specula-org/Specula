@@ -6,7 +6,7 @@ structured mirror of the same findings so a downstream orchestrator can enumerat
 them deterministically (one work item per finding) instead of regex-splitting
 prose.
 
-Path: `spec/findings.json` (relative to `.specula-output/`).
+Path: `spec/findings.json` (relative to `.specular-output/`).
 
 ## Scope
 
@@ -56,7 +56,7 @@ Phase 4 step 0 writes `spec/candidates.json` in this format with `generated_by: 
 - **invariant / config / counterexample** — required for model-checking
   findings. For a liveness config, `invariant` is the cfg's `PROPERTY` name,
   since TLC does not name the violated temporal property. The
-  `counterexample` path is relative to `.specula-output/` and must point at a
+  `counterexample` path is relative to `.specular-output/` and must point at a
   real file saved under `spec/output/`.
 - **affected_code** — list of `file:line` strings, same references cited in the
   bug-report Affected Code section. May be empty if hunting produced no code

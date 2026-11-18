@@ -9,7 +9,7 @@ A **repair request** carries a confirmation-loop back-edge. When reproduction co
 ## Location
 
 ```
-.specula-output/<name>/spec/
+.specular-output/<name>/spec/
 ├── repair-requests/
 │   ├── RR-001.md
 │   ├── RR-002.md

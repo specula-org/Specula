@@ -14,7 +14,7 @@ fixture = Path(__file__).resolve().parents[2] / "scripts/launch/adapters"
 state_file, receipt_file = sys.argv[1:3]
 session = json.loads(Path(state_file).read_text())["session_id"]
 with (fixture / "events.jsonl").open("a") as stream:
-    event = {"kind": "start", "name": "compact", "phase": os.environ.get("SPECULA_PHASE"), "session": session}
+    event = {"kind": "start", "name": "compact", "phase": os.environ.get("SPECULAR_PHASE"), "session": session}
     stream.write(json.dumps({**event, "time": time.time()}) + "\n")
 receipt = Path(receipt_file)
 if (fixture / "block-compact").exists():

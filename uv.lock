@@ -1124,7 +1124,7 @@ wheels = [
 ]
 
 [[package]]
-name = "specula"
+name = "specular"
 version = "1.2.0"
 source = { editable = "." }
 

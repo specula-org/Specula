@@ -21,7 +21,7 @@ from types import ModuleType
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
-SKILL = ROOT / "skills/specula-lite"
+SKILL = ROOT / "skills/specular-lite"
 
 
 def load_module(path: Path) -> ModuleType:
@@ -40,7 +40,7 @@ class LiteSkillTests(unittest.TestCase):
         self.installed = self.root / "installed skill"
         shutil.copytree(SKILL, self.installed, ignore=shutil.ignore_patterns("__pycache__"))
         self.cache = self.root / "cache"
-        self.environment = {**os.environ, "SPECULA_LITE_CACHE": str(self.cache)}
+        self.environment = {**os.environ, "SPECULAR_LITE_CACHE": str(self.cache)}
         self.prepare = load_module(self.installed / "scripts/prepare.py")
 
     @staticmethod
@@ -162,7 +162,7 @@ class LiteSkillTests(unittest.TestCase):
         for override in ("java", str(java), os.path.relpath(java)):
             with (
                 self.subTest(override=override),
-                mock.patch.dict(os.environ, {"PATH": str(bin_dir), "SPECULA_LITE_JAVA": override}),
+                mock.patch.dict(os.environ, {"PATH": str(bin_dir), "SPECULAR_LITE_JAVA": override}),
                 mock.patch.object(self.prepare, "java_works", wraps=self.prepare.java_works) as probe,
             ):
                 resolved = self.prepare.ensure_java()
@@ -180,9 +180,9 @@ class LiteSkillTests(unittest.TestCase):
         for override in ("missing-java", str(java)):
             with (
                 self.subTest(override=override),
-                mock.patch.dict(os.environ, {"PATH": str(self.root), "SPECULA_LITE_JAVA": override}),
+                mock.patch.dict(os.environ, {"PATH": str(self.root), "SPECULAR_LITE_JAVA": override}),
                 mock.patch.object(self.prepare, "download", side_effect=AssertionError("unexpected fallback")),
-                self.assertRaisesRegex(RuntimeError, "SPECULA_LITE_JAVA is not a working Java 21"),
+                self.assertRaisesRegex(RuntimeError, "SPECULAR_LITE_JAVA is not a working Java 21"),
             ):
                 self.prepare.ensure_java()
 
@@ -197,7 +197,7 @@ class LiteSkillTests(unittest.TestCase):
             bundle.addfile(entry, io.BytesIO(executable))
         checksum = hashlib.sha256(archive.read_bytes()).hexdigest()
         with (
-            mock.patch.dict(os.environ, {"SPECULA_LITE_CACHE": str(self.cache), "PATH": ""}, clear=True),
+            mock.patch.dict(os.environ, {"SPECULAR_LITE_CACHE": str(self.cache), "PATH": ""}, clear=True),
             mock.patch.object(self.prepare.platform, "system", return_value="Linux"),
             mock.patch.object(self.prepare.platform, "machine", return_value="x86_64"),
             mock.patch.object(self.prepare, "JAVA_HASHES", {("linux", "x64"): checksum}),

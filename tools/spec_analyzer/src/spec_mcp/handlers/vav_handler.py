@@ -127,8 +127,8 @@ class VAVHandler(BaseHandler):
 
     def _get_search_paths(self) -> list[str]:
         """Get list of paths to search for CFA JAR."""
-        specula_root = os.environ.get("SPECULA_ROOT")
-        if not specula_root:
+        specular_root = os.environ.get("SPECULAR_ROOT")
+        if not specular_root:
             # Calculate relative to this file
             this_file = os.path.abspath(__file__)
             handlers_dir = os.path.dirname(this_file)
@@ -136,13 +136,13 @@ class VAVHandler(BaseHandler):
             src_dir = os.path.dirname(spec_mcp_dir)
             tool_dir = os.path.dirname(src_dir)
             tools_dir = os.path.dirname(tool_dir)
-            specula_root = os.path.dirname(tools_dir)
+            specular_root = os.path.dirname(tools_dir)
 
         return [
             os.path.join(
-                specula_root, "tools", "cfa", "target", "tlaplus-parser-1.0-SNAPSHOT-jar-with-dependencies.jar"
+                specular_root, "tools", "cfa", "target", "tlaplus-parser-1.0-SNAPSHOT-jar-with-dependencies.jar"
             ),
-            os.path.join(specula_root, "tools", "cfa", "target", "tlaplus-parser-1.0-SNAPSHOT.jar"),
+            os.path.join(specular_root, "tools", "cfa", "target", "tlaplus-parser-1.0-SNAPSHOT.jar"),
         ]
 
     def _find_tla_jar(self) -> str:
@@ -154,18 +154,18 @@ class VAVHandler(BaseHandler):
 
     def _get_tla_search_paths(self) -> list[str]:
         """Get list of paths to search for TLA JAR."""
-        specula_root = os.environ.get("SPECULA_ROOT")
-        if not specula_root:
+        specular_root = os.environ.get("SPECULAR_ROOT")
+        if not specular_root:
             this_file = os.path.abspath(__file__)
             handlers_dir = os.path.dirname(this_file)
             spec_mcp_dir = os.path.dirname(handlers_dir)
             src_dir = os.path.dirname(spec_mcp_dir)
             tool_dir = os.path.dirname(src_dir)
             tools_dir = os.path.dirname(tool_dir)
-            specula_root = os.path.dirname(tools_dir)
+            specular_root = os.path.dirname(tools_dir)
 
         return [
-            os.path.join(specula_root, "lib", "tla2tools.jar"),
+            os.path.join(specular_root, "lib", "tla2tools.jar"),
         ]
 
     def _parse_vav_output(self, output: str) -> list[dict[str, Any]]:

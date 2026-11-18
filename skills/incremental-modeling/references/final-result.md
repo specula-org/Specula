@@ -48,7 +48,7 @@ Include every prior unresolved finding, even if no new defect was found. Use `"f
 Generate and validate the final outputs:
 
 ```bash
-specula ci-result --work=/path/to/current/.specula-output
+specular ci-result --work=/path/to/current/.specular-output
 ```
 
 This creates `ci-report.md`, `confirmed-bugs.md`, `bug-severity.md`, `.summary-findings.md`, `ci-verdict.json`, and the existing persistent records. Generated files are overwritten on each invocation; edit only the final result and its evidence. The command returns success even when the valid CI verdict is FAIL. Core input errors return failure with a correction message. After an interruption, use the normal manual resume; no automatic correction loop is added.

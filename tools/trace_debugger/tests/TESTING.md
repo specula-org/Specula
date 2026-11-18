@@ -104,7 +104,7 @@ Expected total runtime: ~3-4 minutes
 - **Java 11+**: Required to run TLC
 - **Python 3.10+**: Required for the test suite
 - **TLA+ Tools**: `tla2tools.jar` and `CommunityModules-deps.jar` in `lib/` directory
-- **Environment variable** (optional): `SPECULA_ROOT` pointing to the specula root directory
+- **Environment variable** (optional): `SPECULAR_ROOT` pointing to the specular root directory
 
 ## Troubleshooting
 
@@ -118,7 +118,7 @@ Expected total runtime: ~3-4 minutes
 
 ### "TLA+ tools JAR not found"
 - **Cause**: Missing `tla2tools.jar` or `CommunityModules-deps.jar`
-- **Solution**: Ensure JAR files are in `$SPECULA_ROOT/lib/` or set paths explicitly
+- **Solution**: Ensure JAR files are in `$SPECULAR_ROOT/lib/` or set paths explicitly
 
 ### Tests hang indefinitely
 - **Cause**: Deadlock in TLC or network issue

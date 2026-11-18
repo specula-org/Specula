@@ -11,11 +11,11 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SPECULA_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
+SPECULAR_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
 RESULTS="$SCRIPT_DIR/../results"
-TEMPLATES="$SPECULA_ROOT/tools/SysMoBench/data/invariant_templates"
-TLA2TOOLS="$SPECULA_ROOT/lib/tla2tools.jar"
-COMMUNITY="$SPECULA_ROOT/lib/CommunityModules-deps.jar"
+TEMPLATES="$SPECULAR_ROOT/tools/SysMoBench/data/invariant_templates"
+TLA2TOOLS="$SPECULAR_ROOT/lib/tla2tools.jar"
+COMMUNITY="$SPECULAR_ROOT/lib/CommunityModules-deps.jar"
 
 declare -A TEMPLATE_MAP=([etcd-raft]=etcd [autobahn]=autobahn [libgomp]=libgomp)
 declare -A RUN_MAP=(

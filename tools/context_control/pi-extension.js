@@ -2,15 +2,15 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 export default function (pi) {
-  // Context-control phases (specula.context_control.CONTEXT_CONTROL_PHASES) get the context tools.
-  if (!["incremental", "main"].includes(process.env.SPECULA_PHASE) || !process.env.SPECULA_CONTEXT_REQUEST) return;
+  // Context-control phases (specular.context_control.CONTEXT_CONTROL_PHASES) get the context tools.
+  if (!["incremental", "main"].includes(process.env.SPECULAR_PHASE) || !process.env.SPECULAR_CONTEXT_REQUEST) return;
   pi.registerTool({
     name: "request_bug_confirmation",
     label: "Request bug confirmation",
     description: "After saving current MC findings and code-review Scenarios, request Specula's parallel confirmation. Follow the returned yield instructions; this is not CI completion.",
     parameters: { type: "object", properties: {}, additionalProperties: false },
     async execute() {
-      const output = execFileSync(process.env.SPECULA_CONTEXT_PYTHON, [
+      const output = execFileSync(process.env.SPECULAR_CONTEXT_PYTHON, [
         fileURLToPath(new URL("request.py", import.meta.url)), "--confirm",
       ], { encoding: "utf8" });
       return { content: [{ type: "text", text: output }], details: {} };
@@ -27,7 +27,7 @@ export default function (pi) {
       additionalProperties: false,
     },
     async execute(_id, params) {
-      const output = execFileSync(process.env.SPECULA_CONTEXT_PYTHON, [
+      const output = execFileSync(process.env.SPECULAR_CONTEXT_PYTHON, [
         fileURLToPath(new URL("request.py", import.meta.url)), params.handoff_path,
       ], { encoding: "utf8" });
       return { content: [{ type: "text", text: output }], details: {} };

@@ -55,7 +55,7 @@ for target in filter(None, os.environ.get("FAULT_BLOCK", "").split(",")):
         owner = getattr(owner, part)
     setattr(owner, attribute, blocking(getattr(owner, attribute), qualname))
 
-from specula import pipelinelib
+from specular import pipelinelib
 
 if os.environ.get("FAULT_QUOTA"):
     real_wait = pipelinelib._wait_for_quota

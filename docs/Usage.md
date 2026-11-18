@@ -12,11 +12,11 @@ When using WSL2, install the prerequisites and agent CLI inside WSL2, then clone
 
 ### Requirements
 
-The dependencies below are not installed by `specula setup`; install them separately as needed.
+The dependencies below are not installed by `specular setup`; install them separately as needed.
 
 | Dependency | Used for |
 |---|---|
-| [uv](https://docs.astral.sh/uv/) | Installing the `specula` command |
+| [uv](https://docs.astral.sh/uv/) | Installing the `specular` command |
 | Python 3.10+ with `pip` and `venv` | CLI, launchers, MCP tool environments |
 | JDK 21+ and Maven | TLC, SANY, and building the CFA tool |
 | Git and Bash | Source/history analysis, worktrees, and launch scripts |
@@ -36,7 +36,7 @@ Model checking can be long-running and memory-intensive. On machines with limite
 
 ### Optional sandbox dependencies
 
-The agent sandbox is **disabled by default** and its dependencies are **not installed** by `specula setup`. Normal runs do not need SRT or Bubblewrap.
+The agent sandbox is **disabled by default** and its dependencies are **not installed** by `specular setup`. Normal runs do not need SRT or Bubblewrap.
 
 To enable the sandbox for Claude Code or Codex, install Node.js 20.11+ and SRT:
 
@@ -53,15 +53,15 @@ Linux and WSL2 also require:
 
 macOS uses the built-in Seatbelt sandbox instead of Bubblewrap. The sandbox is a guardrail rather than a security boundary; its default policy restricts writes but leaves reads and network access open.
 
-Enable it per run with `SPECULA_SANDBOX=on`. A full pipeline also needs write access to the target checkout and its build caches, for example:
+Enable it per run with `SPECULAR_SANDBOX=on`. A full pipeline also needs write access to the target checkout and its build caches, for example:
 
 ```bash
-export SPECULA_SANDBOX=on
-export SPECULA_SANDBOX_EXTRA_WRITE="/path/to/source:$HOME/.cache"
-specula run --artifact=/path/to/source "name|owner/repository|language|reference"
+export SPECULAR_SANDBOX=on
+export SPECULAR_SANDBOX_EXTRA_WRITE="/path/to/source:$HOME/.cache"
+specular run --artifact=/path/to/source "name|owner/repository|language|reference"
 ```
 
-If neither `.specula/sandbox.json` in the launch directory nor `~/.specula/sandbox.json` exists, the first sandboxed run copies the default policy to `~/.specula/sandbox.json`. Review the [sandbox guide](../scripts/launch/sandbox/README.md) before enabling it or tightening read/network access.
+If neither `.specular/sandbox.json` in the launch directory nor `~/.specular/sandbox.json` exists, the first sandboxed run copies the default policy to `~/.specular/sandbox.json`. Review the [sandbox guide](../scripts/launch/sandbox/README.md) before enabling it or tightening read/network access.
 
 Clone Specula, install the CLI, and run its interactive setup:
 
@@ -69,14 +69,14 @@ Clone Specula, install the CLI, and run its interactive setup:
 git clone https://github.com/specula-org/Specula.git
 cd Specula
 uv tool install -e .
-specula setup
+specular setup
 ```
 
-Install with `-e` (editable): the `specula` command dispatches to scripts inside the checkout, so it must stay linked to it.
+Install with `-e` (editable): the `specular` command dispatches to scripts inside the checkout, so it must stay linked to it.
 
 Setup downloads the TLA+ JARs, builds the CFA tool, prepares the MCP tool environments, and offers integration for each supported agent CLI found on `PATH`. It reports and skips any missing agent CLI instead of prompting for it. Setup prompts for global or project-local skill installation when that choice applies.
 
-For Codex, choose `y` to install skills and register MCP servers separately. Choose `plugin` to bundle the skills and MCP tools as `specula-codex@specula`, with cleaner namespacing and easier removal. Codex currently installs plugins into the active Codex profile, making them available across all projects that use that profile; setup asks for confirmation before making this profile-wide change. Codex does not currently support project-scoped plugin installation. Rerun `specula setup` and choose `plugin` again to update it.
+For Codex, choose `y` to install skills and register MCP servers separately. Choose `plugin` to bundle the skills and MCP tools as `specular-codex@specular`, with cleaner namespacing and easier removal. Codex currently installs plugins into the active Codex profile, making them available across all projects that use that profile; setup asks for confirmation before making this profile-wide change. Codex does not currently support project-scoped plugin installation. Rerun `specular setup` and choose `plugin` again to update it.
 
 More precisely, setup manages:
 
@@ -86,25 +86,44 @@ More precisely, setup manages:
 | CFA transformer | Builds it with Maven |
 | MCP Python packages | Creates tool-specific virtual environments and installs `mcp` and `jsonschema` where required |
 | Claude Code | Installs skills and registers all three MCP servers |
-| Codex | `y` installs skills and MCP servers separately; `plugin` generates or updates `specula-codex@specula` for the active Codex profile |
+| Codex | `y` installs skills and MCP servers separately; `plugin` generates or updates `specular-codex@specular` for the active Codex profile |
 | GitHub Copilot CLI | Installs skills and, with Copilot CLI 1.0.21+, registers all three MCP servers |
 
 For Codex, the global/local choice applies only to skills installed separately with `y`; separate MCP registration and plugin installation use the active Codex profile. Copilot MCP registration is user-level and follows `COPILOT_HOME`; its global/local setup choice also controls only where skills are installed. Setup leaves an existing same-named MCP server unchanged and reports the conflict instead of overwriting it. Older Copilot CLI versions still install the skills, but MCP registration is skipped with an upgrade warning.
 
-Setup does **not** install `uv`, Python, a JDK, Maven, Git, `gh`, an agent CLI, target-language dependencies, GNU coreutils, or the optional sandbox dependencies. It does not install the `specula` command either; that is the `uv tool install -e .` step above.
+Setup does **not** install `uv`, Python, a JDK, Maven, Git, `gh`, an agent CLI, target-language dependencies, GNU coreutils, or the optional sandbox dependencies. It does not install the `specular` command either; that is the `uv tool install -e .` step above.
 
 The setup is safe to rerun when updating the checkout. Confirm the CLI afterward:
 
 ```bash
-specula --help
+specular --help
 ```
+
+### Switching from Specula
+
+Specular was formerly Specula. If you installed it under the old name, switch once:
+
+1. Let runs in progress finish first. Runs started before the switch cannot be resumed afterwards.
+2. Rename environment variables from `SPECULA_*` to `SPECULAR_*`, including GitHub Actions repository variables, and replace `specula ci` with `specular ci` in CI workflows. The updated [workflow template](../examples/ci/specular-ci.yml) runs on runners labeled `specular`. Specular stops and lists any old variable names it finds.
+3. If you used the sandbox, move its policy file with `mkdir -p ~/.specular && mv ~/.specula/sandbox.json ~/.specular/` (likewise for a project-level `.specula/sandbox.json`). Sandboxed runs refuse to start until you do.
+4. Update the checkout, replace the command, and refresh the agent integration:
+
+   ```bash
+   git pull
+   uv tool uninstall specula && uv tool install -e .
+   specular setup
+   ```
+
+   Setup also replaces the old Codex plugin. You can delete any leftover broken `specula-lite` skill link.
+
+Existing CI directories keep working. Helper scripts that agents wrote into a CI model may still refer to `.specula-output` or `SPECULA_*`; the first incremental run after the switch updates them.
 
 ### First run
 
 From the Specula checkout, point Specula at the source repository to analyze:
 
 ```bash
-specula run \
+specular run \
   --artifact=/absolute/path/to/source \
   "name|github-owner/repository|language|reference"
 ```
@@ -112,7 +131,7 @@ specula run \
 For example:
 
 ```bash
-specula run \
+specular run \
   --artifact=/work/cometbft \
   "cometbft|cometbft/cometbft|Go|Tendermint BFT"
 ```
@@ -122,7 +141,7 @@ Quote the target descriptor because `|` has special meaning in the shell. Its fi
 For more consistent scope across repeated runs and to focus resources on your highest-priority modules and scenarios, we recommend starting from the [modeling guidance template](./modeling-guidance-template.md) and passing your edited file to a single-target run. See the [completed SONiC linkmgrd example](./modeling-guidance-example.md) for a concrete configuration:
 
 ```bash
-specula run \
+specular run \
   --artifact=/work/cometbft \
   --guidance=/absolute/path/to/cometbft-guidance.md \
   "cometbft|cometbft/cometbft|Go|Tendermint BFT"
@@ -135,7 +154,7 @@ With the default isolated workspace, an external source checkout must be supplie
 Select an agent, model, and reasoning effort when needed:
 
 ```bash
-specula run \
+specular run \
   --agent=codex \
   --model=MODEL_NAME \
   --effort=high \
@@ -154,7 +173,7 @@ Specula maintains a reference model and harness that evolve with your project's 
 Initialization runs the full Specula workflow, focusing on the depth of the core logic and its interactions. Optional `--guidance` supplies your modeling scope and priorities.
 
 ```bash
-specula run --ci-init --ci-dir=/work/project-ci \
+specular run --ci-init --ci-dir=/work/project-ci \
   --artifact=/work/project --guidance=/work/project-guidance.md \
   "name|owner/repository|language|reference"
 ```
@@ -164,7 +183,7 @@ For a long-lived CI baseline, we recommend initializing from source as above.
 To reuse an existing model or verification assets, add [BYOM](#bring-your-own-model-byom):
 
 ```bash
-specula run --ci-init --ci-dir=/work/project-ci \
+specular run --ci-init --ci-dir=/work/project-ci \
   --byom=/work/existing-model-or-assets --artifact=/work/project \
   --guidance=/work/project-guidance.md \
   "name|owner/repository|language|reference"
@@ -179,10 +198,10 @@ Keep the original BYOM files available and unchanged until initialization and an
 For each update, check out the target commit in the source repository and run:
 
 ```bash
-specula run --incremental --ci-dir=/work/project-ci
+specular run --incremental --ci-dir=/work/project-ci
 ```
 
-Specula computes the changes since the current model's source version, then runs a main Agent through the incremental-modeling workflow using the existing model and harness. New MC and code-review candidates use the one-shot confirmation workflow; the main Agent waits for confirmation and resumes with its results. The repository path and user guidance are reused. Use `--agent`, `--model`, and `--effort` for the default Agent, or [hybrid agent configuration](#hybrid-agent-configuration) to select a separate confirmation Agent. See `specula run --incremental --help` for supported options.
+Specula computes the changes since the current model's source version, then runs a main Agent through the incremental-modeling workflow using the existing model and harness. New MC and code-review candidates use the one-shot confirmation workflow; the main Agent waits for confirmation and resumes with its results. The repository path and user guidance are reused. Use `--agent`, `--model`, and `--effort` for the default Agent, or [hybrid agent configuration](#hybrid-agent-configuration) to select a separate confirmation Agent. See `specular run --incremental --help` for supported options.
 
 New incremental runs use the same retry defaults as one-shot runs: `--policy-retries=20` for provider-policy interruptions and `--transient-resumes=20` for temporary provider or transport failures. Each budget applies separately to the main Agent conversation and each confirmation turn. Set either option to a non-negative integer to override its budget; `0` disables that recovery path. Resuming an existing run preserves its saved budgets.
 
@@ -210,22 +229,22 @@ Both completed and unfinished results include `usage`: the run's measured `runti
 Incomplete runs leave the current model unchanged. Resume the original Agent conversation and working directory with:
 
 ```bash
-specula run --ci-dir=/work/project-ci --run-id=<run-id>
+specular run --ci-dir=/work/project-ci --run-id=<run-id>
 ```
 
 For BYOM initialization, the same resume command restores the original BYOM path; you do not need to repeat `--ci-init` or `--byom`. Persistent CI does not support `--fresh-context`. To start over, rerun the initialization or incremental command without `--run-id`. Run checks sharing a CI directory one at a time.
 
 ### Run automatically with GitHub Actions
 
-Install Specula, the selected agent, and the project's build dependencies under the account running a dedicated Linux runner labeled `specula`. Initialize the CI directory under that same account so later runs can reuse its files and Agent sessions.
+Install Specula, the selected agent, and the project's build dependencies under the account running a dedicated Linux runner labeled `specular`. Initialize the CI directory under that same account so later runs can reuse its files and Agent sessions.
 
-Copy the [workflow template](../examples/ci/specula-ci.yml) into your project's `.github/workflows/specula-ci.yml`. Set the repository variables `SPECULA_CI_DIR` and `SPECULA_MODEL`; optionally set `SPECULA_AGENT` and `SPECULA_EFFORT`. Edit the branch filters to suit your repository. Each independently evolving branch needs its own initialized CI directory.
+Copy the [workflow template](../examples/ci/specular-ci.yml) into your project's `.github/workflows/specular-ci.yml`. Set the repository variables `SPECULAR_CI_DIR` and `SPECULAR_MODEL`; optionally set `SPECULAR_AGENT` and `SPECULAR_EFFORT`. Edit the branch filters to suit your repository. Each independently evolving branch needs its own initialized CI directory.
 
 Each push checks the cumulative diff from the last completed model baseline to the pushed version. One check may include several commits; intermediate versions are not checked separately. Scheduled checks use the latest branch version. Once the model reaches that version, delayed events for earlier commits do not repeat the work or move the model backward.
 
 Same-repository PRs check the proposed merged code without changing the branch's current model. When the code is merged, matching completed results are inherited without another Agent run, including squash and rebase merges. Reused results preserve their verdict, including failures and warnings. Changes to the code, model baseline, or check configuration require a new check. External-fork PRs do not run automatically on the runner.
 
-Manual runs are available in the Actions tab. Uncomment `schedule` to enable cron; use `SPECULA_CI_BRANCH` to select a non-default branch for scheduled runs. Change `SPECULA_CI_ENVIRONMENT` when updating the runner's toolchain or external configuration so older check results are not reused under a different setup.
+Manual runs are available in the Actions tab. Uncomment `schedule` to enable cron; use `SPECULAR_CI_BRANCH` to select a non-default branch for scheduled runs. Change `SPECULAR_CI_ENVIRONMENT` when updating the runner's toolchain or external configuration so older check results are not reused under a different setup.
 
 The Actions summary lists each revision's outcome, including the failure category and resume command of an unfinished check, and the runtime and estimated cost of each Agent run it started (`-` for reused, inherited, and already attempted results), with downloadable reports, `ci-result.json`, and usage summaries. Full working files and conversation state stay in the CI directory. Agent calls may recover within their configured retry budgets. Once a check exits with a failure, Actions reports it without automatically rerunning the check; use the existing resume command or request an explicit manual rerun.
 
@@ -234,7 +253,7 @@ The Actions summary lists each revision's outcome, including the failure categor
 Use `--byom` when you already have a TLA+ model or other verification assets:
 
 ```bash
-specula run \
+specular run \
   --byom=/absolute/path/to/model-or-assets \
   --artifact=/absolute/path/to/source \
   "name|owner/repository|language|reference"
@@ -255,18 +274,18 @@ BYOM requires the default isolated layout and conflicts with `--no-isolate` and 
 To carry unresolved findings into a new single-target run, pass the previous target's output directory:
 
 ```bash
-specula run mysys --artifact=/path/to/source \
-  --findings-from=/path/to/previous-run/mysys/.specula-output
+specular run mysys --artifact=/path/to/source \
+  --findings-from=/path/to/previous-run/mysys/.specular-output
 ```
 
-The workflow checks whether a prior finding still describes the same issue and whether its dependencies and assumptions still apply before reusing its evidence. Persistent CI carries this history forward automatically. Active records retain `REPRODUCED`, `ENV_LIMITED`, and `MASKED` findings; fixed findings and false positives are removed. Use `specula findings --help` to inspect the available lookup commands.
+The workflow checks whether a prior finding still describes the same issue and whether its dependencies and assumptions still apply before reusing its evidence. Persistent CI carries this history forward automatically. Active records retain `REPRODUCED`, `ENV_LIMITED`, and `MASKED` findings; fixed findings and false positives are removed. Use `specular findings --help` to inspect the available lookup commands.
 
 ## Confirm bugs during code analysis
 
 Use `--confirm-first` to reproduce the bug candidates from code analysis right away, before any model is built:
 
 ```bash
-specula run --confirm-first=only --artifact=/path/to/source \
+specular run --confirm-first=only --artifact=/path/to/source \
   "name|owner/repository|language|reference"
 ```
 
@@ -280,7 +299,7 @@ The early results are kept in `confirm-first/` in the target's output. `--confir
 Use an agent configuration file to select different agents or models for different pipeline phases:
 
 ```bash
-specula run --agent-config=/abs/path/hybrid-agents.json ...
+specular run --agent-config=/abs/path/hybrid-agents.json ...
 ```
 
 ```json
@@ -361,7 +380,7 @@ runs/<run-id>/
 ├── pipeline.log
 ├── pipeline-summary.md
 └── <name>/
-    ├── .specula-output/
+    ├── .specular-output/
     │   ├── index.md
     │   ├── summary.md       # Per-target results and resource usage
     │   └── ...             # Existing phase outputs stay in place
@@ -369,7 +388,7 @@ runs/<run-id>/
     └── changes.patch   # --keep-original only
 ```
 
-The run-level `index.md` is a compact target chooser with direct links to each target's confirmation and severity reports. Each target link opens its `.specula-output/index.md`, which presents `summary.md` first, followed by the confirmation and severity reports, Supporting Analysis, Confirmation Details, Technical Details, and Troubleshooting. It intentionally omits review artifacts, machine-readable records, state sidecars, caches, and detailed phase logs; those files remain in their existing locations. No existing phase output is moved. `pipeline-summary.md` remains the final run status, and `runs/latest` points to the newest run; no run-level `summary.md` is generated.
+The run-level `index.md` is a compact target chooser with direct links to each target's confirmation and severity reports. Each target link opens its `.specular-output/index.md`, which presents `summary.md` first, followed by the confirmation and severity reports, Supporting Analysis, Confirmation Details, Technical Details, and Troubleshooting. It intentionally omits review artifacts, machine-readable records, state sidecars, caches, and detailed phase logs; those files remain in their existing locations. No existing phase output is moved. `pipeline-summary.md` remains the final run status, and `runs/latest` points to the newest run; no run-level `summary.md` is generated.
 
 Each target's `summary.md` is the primary results report. It presents the run status, confirmed bugs, masked findings, findings that could not be reproduced in the current environment, explicit validation limits, run details, links to the confirmation and severity reports, and resource usage. Run details distinguish the source commit recorded when the run was created from the commit used by the current attempt. Finding descriptions are written during classification from the final confirmation evidence; runtime, token, cost, and configuration fields are filled deterministically. Missing resource values are shown as `-`, and partial resource totals are marked `Total (incomplete)`.
 
@@ -377,7 +396,7 @@ By default, Specula works directly in the source passed through `--artifact`, so
 
 The patch follows project ignore rules while retaining tracked files and trace metadata. Binary and trace contents remain under the private `source/` instead of being inlined. Expect roughly one extra copy of the checkout and Git history. Unsafe layouts such as external symlinks, linked worktrees, submodules, nested repositories, or externally shared Git objects are rejected. Without the optional sandbox, this does not prevent a command from deliberately writing to the original absolute path.
 
-`--keep-original` requires the isolated layout and conflicts with `--no-isolate`. Without it, `--no-isolate` selects the legacy layout: a single target writes step outputs under `$PWD/.specula-output/`, or under `case-studies/<name>/.specula-output/` when that canonical case study exists; multiple targets use `$PWD/<name>/.specula-output/`. A legacy single-target run has only the target-level `.specula-output/index.md`, without a separate run-level target chooser. For a canonical single target, `pipeline.log` remains under the launch directory's `.specula-output/` while the step outputs and summary use the case-study directory.
+`--keep-original` requires the isolated layout and conflicts with `--no-isolate`. Without it, `--no-isolate` selects the legacy layout: a single target writes step outputs under `$PWD/.specular-output/`, or under `case-studies/<name>/.specular-output/` when that canonical case study exists; multiple targets use `$PWD/<name>/.specular-output/`. A legacy single-target run has only the target-level `.specular-output/index.md`, without a separate run-level target chooser. For a canonical single target, `pipeline.log` remains under the launch directory's `.specular-output/` while the step outputs and summary use the case-study directory.
 
 TLC can use substantial memory and temporary disk space during model checking. The bundled `scripts/tlc/run_model_check.sh` stores states under `TMPDIR` (or `/tmp`) by default; set `TLC_STATE_DIR` to a larger or faster filesystem when necessary.
 
@@ -386,19 +405,19 @@ TLC memory is admitted against one aggregate budget per Specula run. By default,
 Set an explicit bound when you want to divide a machine among several independent runs:
 
 ```bash
-specula run --tlc-memory-limit=64G ...
+specular run --tlc-memory-limit=64G ...
 ```
 
-An explicit bound is authoritative and intentionally does not subtract unrelated system use, so leave any desired OS/JVM-native headroom yourself. The bound covers TLC heap and direct memory, not thread stacks, metaspace, JIT, GC, or other native overhead. For an individual phase or interactive agent session, use `SPECULA_TLC_MEMORY_LIMIT=64G`. Direct multi-target phase commands automatically share one command-scoped budget. When invoking the TLC wrapper outside a Specula launcher, calls from the same working directory share the fallback scope; set an absolute, session-specific `SPECULA_TLC_SCOPE` when unrelated sessions use that directory, and reuse it for every concurrent TLC in the same session.
+An explicit bound is authoritative and intentionally does not subtract unrelated system use, so leave any desired OS/JVM-native headroom yourself. The bound covers TLC heap and direct memory, not thread stacks, metaspace, JIT, GC, or other native overhead. For an individual phase or interactive agent session, use `SPECULAR_TLC_MEMORY_LIMIT=64G`. Direct multi-target phase commands automatically share one command-scoped budget. When invoking the TLC wrapper outside a Specula launcher, calls from the same working directory share the fallback scope; set an absolute, session-specific `SPECULAR_TLC_SCOPE` when unrelated sessions use that directory, and reuse it for every concurrent TLC in the same session.
 
-TLC workers remain unbounded by default: `-w auto` uses every CPU visible to each JVM and the wrapper only reports the resulting aggregate. Set `--tlc-worker-limit=N` (or `SPECULA_TLC_WORKER_LIMIT=N`) only when you want an explicit aggregate worker bound; the wrapper rejects rather than silently shrinking an over-budget request.
+TLC workers remain unbounded by default: `-w auto` uses every CPU visible to each JVM and the wrapper only reports the resulting aggregate. Set `--tlc-worker-limit=N` (or `SPECULAR_TLC_WORKER_LIMIT=N`) only when you want an explicit aggregate worker bound; the wrapper rejects rather than silently shrinking an over-budget request.
 
 ## Resuming a Run
 
 Use a stable ID when a run may need to be resumed:
 
 ```bash
-specula run \
+specular run \
   --run-id=my-run \
   --artifact=/path/to/source \
   "name|owner/repository|language|reference"
@@ -407,7 +426,7 @@ specula run \
 If an agent call is interrupted, attach to the same run. Specula restores omitted run settings, returns to the interrupted phase, and resumes the unfinished agent conversation:
 
 ```bash
-specula run --run-id=my-run
+specular run --run-id=my-run
 ```
 
 When a run was created with `--guidance`, an omitted flag on resume reuses the same absolute path and reads its current contents. You may edit that file between invocations, but resuming with a different guidance path is rejected, including with `--fresh-context`.
@@ -419,12 +438,12 @@ If the previous phase or agent is still running, Specula refuses the attach. Wai
 Only unfinished conversations can be resumed. If resume state is unavailable, Specula stops instead of silently starting a new conversation. To keep the run's files but start with a fresh agent context, add `--fresh-context` and use skip flags to choose where to restart:
 
 ```bash
-specula run --run-id=my-run --fresh-context --skip-analysis --skip-specgen --skip-harness
+specular run --run-id=my-run --fresh-context --skip-analysis --skip-specgen --skip-harness
 ```
 
 ## Individual Steps
 
-Most users should run `specula run`, which executes every step in order. The commands below are for running or debugging one step at a time.
+Most users should run `specular run`, which executes every step in order. The commands below are for running or debugging one step at a time.
 
 | Command | What it does | Required input | Main output |
 |---|---|---|---|
@@ -438,34 +457,34 @@ Most users should run `specula run`, which executes every step in order. The com
 For example, run only the code analysis with Codex:
 
 ```bash
-specula analyze \
+specular analyze \
   --agent=codex \
   --artifact=/path/to/source \
   "name|owner/repository|language|reference"
 ```
 
-This writes `.specula-output/modeling-brief.md` and `.specula-output/analysis-report.md` in the current directory. By interface, downstream commands take only the target `name`. Continue passing `--artifact` to `specgen`, `harness`, `validate`, and `confirm` so they can access the source; `classify` reads only the generated report and does not accept `--artifact`:
+This writes `.specular-output/modeling-brief.md` and `.specular-output/analysis-report.md` in the current directory. By interface, downstream commands take only the target `name`. Continue passing `--artifact` to `specgen`, `harness`, `validate`, and `confirm` so they can access the source; `classify` reads only the generated report and does not accept `--artifact`:
 
 ```bash
-specula specgen --agent=codex --artifact=/path/to/source name
+specular specgen --agent=codex --artifact=/path/to/source name
 ```
 
-A single-target individual command uses `.specula-output/` in the current directory; a multi-target command uses `<name>/.specula-output/` for each target. When `SPECULA_RUN_DIR` is set, every target uses `$SPECULA_RUN_DIR/<name>/.specula-output/`. After an adapter exits successfully, each nonterminal step reuses the next step's existing prerequisite check before returning; the downstream command repeats that same check when it starts, so a wait between steps cannot turn an earlier success into an unchecked handoff.
+A single-target individual command uses `.specular-output/` in the current directory; a multi-target command uses `<name>/.specular-output/` for each target. When `SPECULAR_RUN_DIR` is set, every target uses `$SPECULAR_RUN_DIR/<name>/.specular-output/`. After an adapter exits successfully, each nonterminal step reuses the next step's existing prerequisite check before returning; the downstream command repeats that same check when it starts, so a wait between steps cannot turn an earlier success into an unchecked handoff.
 
 Use `--check` to run a lightweight path-level preflight without starting an agent. It checks the paths currently gated by that step, but does not validate file contents; warnings such as zero trace files remain non-fatal:
 
 ```bash
-specula validate --check --artifact=/path/to/source name
+specular validate --check --artifact=/path/to/source name
 ```
 
 ## CLI Reference
 
-### `specula run`
+### `specular run`
 
 Run the complete analysis-to-classification pipeline:
 
 ```bash
-specula run [options] "name|owner/repository|language|reference"
+specular run [options] "name|owner/repository|language|reference"
 ```
 
 | Option | Purpose |
@@ -480,7 +499,7 @@ specula run [options] "name|owner/repository|language|reference"
 | `--guidance=PATH` | Read optional modeling guidance for a single-target run |
 | `--ci-init` | Run full single-target CI initialization and register an unverified baseline |
 | `--ci-dir=PATH` | Store persistent CI state outside the source checkout |
-| `--incremental` | Check source changes against the current CI model; see `specula run --incremental --help` |
+| `--incremental` | Check source changes against the current CI model; see `specular run --incremental --help` |
 | `--findings-from=PATH` | Import unresolved findings from a prior target output into a new single-target run |
 | `--keep-original` | Run against a full private source copy and write `changes.patch` |
 | `--tlc-memory-limit=SIZE` | Set the run-wide aggregate TLC heap + direct-memory budget; default is 80% of effective available memory at the first TLC start |
@@ -495,7 +514,7 @@ specula run [options] "name|owner/repository|language|reference"
 | `--skip-analysis`, `--skip-specgen`, `--skip-harness` | Reuse earlier outputs |
 | `--skip-validate`, `--skip-confirmation`, `--skip-classification` | Reuse later outputs |
 | `--confirm-debate` | Add the adversarial confirmation debate in parallel Phase 4 mode |
-| `--orchestration=MODE` | `phased` (default) runs one agent session per step; `single-session` (experimental) runs analysis through validation and repairs in one agent session per target, with confirmation and classification still in separate sessions. With `--skip-analysis`, the main session starts at spec generation from existing Phase 1 outputs. Single-session runs also pin a short block of hard rules into every prompt and give agents a working-notes area, unless `SPECULA_RULES` or `SPECULA_NOTES` is set. `single-session` does not support `--byom`, `--ci-init`, `--confirm-first`, `--findings-from`, `--enable-reviews`, `--no-isolate`, `--skip-specgen`, `--skip-harness`, `--skip-validate`, or an `--agent-config` that routes `analyze`, `specgen`, `harness`, `validate`, or `repair` to a different profile than the main session |
+| `--orchestration=MODE` | `phased` (default) runs one agent session per step; `single-session` (experimental) runs analysis through validation and repairs in one agent session per target, with confirmation and classification still in separate sessions. With `--skip-analysis`, the main session starts at spec generation from existing Phase 1 outputs. Single-session runs also pin a short block of hard rules into every prompt and give agents a working-notes area, unless `SPECULAR_RULES` or `SPECULAR_NOTES` is set. `single-session` does not support `--byom`, `--ci-init`, `--confirm-first`, `--findings-from`, `--enable-reviews`, `--no-isolate`, `--skip-specgen`, `--skip-harness`, `--skip-validate`, or an `--agent-config` that routes `analyze`, `specgen`, `harness`, `validate`, or `repair` to a different profile than the main session |
 | `--skip-repair-loop` | Disable the confirmation back-edge repair loop |
 | `--max-repair-rounds=N` | Set the global repair-loop round cap (default `10`; `0` means unlimited) |
 | `--skip-analysis`, `--skip-specgen`, `--skip-harness` | Reuse early-phase outputs |
@@ -504,18 +523,18 @@ specula run [options] "name|owner/repository|language|reference"
 | `--fresh-context` | With `--run-id`, abandon unfinished agent contexts and continue from retained files |
 | `--no-isolate` | Use the legacy output layout described above |
 
-`--dry-run` still creates the isolated run metadata, log, and summary files. The confirmation repair loop is enabled by default. `--max-repair-rounds=N` caps rounds across the whole loop, including resumed runs, not attempts per request; when the cap is reached, remaining open requests are deferred. Resuming an unfinished round completes its remaining targets without using another round. For the individual `specula confirm` command, the corresponding debate flags are `--debate` and `--rounds=N` (range `1` through `5`).
+`--dry-run` still creates the isolated run metadata, log, and summary files. The confirmation repair loop is enabled by default. `--max-repair-rounds=N` caps rounds across the whole loop, including resumed runs, not attempts per request; when the cap is reached, remaining open requests are deferred. Resuming an unfinished round completes its remaining targets without using another round. For the individual `specular confirm` command, the corresponding debate flags are `--debate` and `--rounds=N` (range `1` through `5`).
 
-`--byom` is supported only by `specula run`. It conflicts with `--no-isolate`, `--skip-analysis`, `--skip-specgen`, `--skip-harness`, `--skip-validate`, `--skip-confirmation`, `--skip-classification`, and `--skip-repair-loop`.
+`--byom` is supported only by `specular run`. It conflicts with `--no-isolate`, `--skip-analysis`, `--skip-specgen`, `--skip-harness`, `--skip-validate`, `--skip-confirmation`, `--skip-classification`, and `--skip-repair-loop`.
 
-When an interactive `specula run` has no `--guidance`, Specula asks before continuing. Non-interactive and batch runs print a warning and continue without waiting for input, so unattended jobs are not blocked.
+When an interactive `specular run` has no `--guidance`, Specula asks before continuing. Non-interactive and batch runs print a warning and continue without waiting for input, so unattended jobs are not blocked.
 
 Use command-specific help for the authoritative option list:
 
 ```bash
-specula run --help
-specula validate --help
-specula confirm --help
+specular run --help
+specular validate --help
+specular confirm --help
 ```
 
 ## Batch Runs
@@ -530,16 +549,16 @@ beta|owner/beta|Rust|Concurrent queue<TAB>--agent=codex --effort=high
 Run it with:
 
 ```bash
-specula batch --queue /path/to/tasks.queue --workers 3
+specular batch --queue /path/to/tasks.queue --workers 3
 ```
 
-The scheduler clones missing repositories under `case-studies/` and creates an isolated workspace for every task. See all scheduler options with `specula batch --help`.
+The scheduler clones missing repositories under `case-studies/` and creates an isolated workspace for every task. See all scheduler options with `specular batch --help`.
 
 The scheduler owns `--run-id`, `--isolate`, and `--no-isolate` so that each task keeps a separate workspace. Do not include these flags in a queue; Specula rejects the queue and reports the affected line and flag.
 
 ## Progress and Logs
 
-Agent activity is printed during each step and written to its log. Silent periods do not produce inactivity reminders. Set `SPECULA_PROGRESS=off` to disable live reporting. During or after a default isolated run, start with the run-level `index.md` to choose a target and browse its results; for a legacy single-target run, start with `.specula-output/index.md`. Use `pipeline-summary.md` for final deliverable status and `pipeline.log` for troubleshooting.
+Agent activity is printed during each step and written to its log. Silent periods do not produce inactivity reminders. Set `SPECULAR_PROGRESS=off` to disable live reporting. During or after a default isolated run, start with the run-level `index.md` to choose a target and browse its results; for a legacy single-target run, start with `.specular-output/index.md`. Use `pipeline-summary.md` for final deliverable status and `pipeline.log` for troubleshooting.
 
 Starting or resuming a run appends to its existing `pipeline.log`. Each invocation has a unique ID, UTC start and end timestamps, and its final exit code. Previous output is retained without automatic rotation or cleanup.
 

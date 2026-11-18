@@ -2,7 +2,7 @@
 
 The fixture performs no semantic verification and never calls a model. It
 drives the real launcher, context runner, confirmation dispatcher, repair-loop
-machinery, and classification through `specula run`.
+machinery, and classification through `specular run`.
 """
 
 from __future__ import annotations
@@ -19,8 +19,8 @@ from unittest import mock
 
 import test_cli_pipeline as fixtures
 
-from specula.phaselib import _MANUAL_SESSION_RESUME_PROMPT
-from specula.rules import RULES_SEPARATOR, RULES_TITLE
+from specular.phaselib import _MANUAL_SESSION_RESUME_PROMPT
+from specular.rules import RULES_SEPARATOR, RULES_TITLE
 
 FIXTURE = Path(__file__).parent / "fixtures/single_session_adapter.py"
 
@@ -40,7 +40,7 @@ class SingleSessionCLI(unittest.TestCase):
         # SANY checks every handoff: a fake one; no ambient TLA+ tools or strict switch.
         path = f"{self.helper.fake_sany(self.root)}{os.pathsep}{os.environ.get('PATH', '')}"
         patcher = mock.patch.dict(
-            os.environ, {"PATH": path, "SPECULA_ROOT": "", "SPECULA_STRICT_OUTPUTS": "", "SPECULA_DELEGATION": ""}
+            os.environ, {"PATH": path, "SPECULAR_ROOT": "", "SPECULAR_STRICT_OUTPUTS": "", "SPECULAR_DELEGATION": ""}
         )
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -92,13 +92,13 @@ class SingleSessionCLI(unittest.TestCase):
 
     def state(self, run: Path, target: str = "footest") -> dict[str, Any]:
         value: dict[str, Any] = json.loads(
-            (run / target / ".specula-output/.context-control/main-state.json").read_text()
+            (run / target / ".specular-output/.context-control/main-state.json").read_text()
         )
         return value
 
     def request(self, run: Path, target: str = "footest") -> dict[str, Any]:
         value: dict[str, Any] = json.loads(
-            (run / target / ".specula-output/.context-control/confirmation.json").read_text()
+            (run / target / ".specular-output/.context-control/confirmation.json").read_text()
         )
         return value
 
@@ -111,12 +111,12 @@ class SingleSessionCLI(unittest.TestCase):
 
     def assert_complete(self, result: subprocess.CompletedProcess[str], run: Path, target: str = "footest") -> None:
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        work = run / target / ".specula-output"
+        work = run / target / ".specular-output"
         self.assertEqual(self.state(run, target)["stage"], "complete")
         self.assertEqual(self.request(run, target)["status"], "completed")
         self.assertIn("| CR-1 |", (work / "confirmed-bugs.md").read_text())
         self.assertTrue((work / "bug-severity.md").is_file())
-        self.assertEqual(list((run / ".specula-resume/active").glob("*.json")), [])
+        self.assertEqual(list((run / ".specular-resume/active").glob("*.json")), [])
 
     # ── default flow ──
     def run_default_flow(self, adapter: str) -> None:
@@ -138,11 +138,11 @@ class SingleSessionCLI(unittest.TestCase):
         self.assertIn("Orchestration: single-session", result.stdout)
         self.assertEqual(self.prompt(1).count("## Parallel Subagents"), 1)
         self.assertIs(
-            json.loads((run / ".specula-resume/config.json").read_text())["configuration"]["delegation"], True
+            json.loads((run / ".specular-resume/config.json").read_text())["configuration"]["delegation"], True
         )
-        summary = (run / "footest/.specula-output/summary.md").read_text()
+        summary = (run / "footest/.specular-output/summary.md").read_text()
         self.assertIn("| Main session (Phases 1-3) |", summary)
-        self.assertIn("`footest/.specula-output/main.log`", (run / "pipeline-summary.md").read_text())
+        self.assertIn("`footest/.specular-output/main.log`", (run / "pipeline-summary.md").read_text())
 
     def test_default_flow_with_fake_adapter(self) -> None:
         self.run_default_flow("fake")
@@ -166,7 +166,7 @@ class SingleSessionCLI(unittest.TestCase):
         result = self.run_cli("--agent=fake", "footest")
         run = self.run_dir()
         self.assert_complete(result, run)
-        work = run / "footest/.specula-output"
+        work = run / "footest/.specular-output"
         mains = self.main_events()
         self.assertEqual([e["session"] for e in mains], ["main-footest-1"] * 2)
         repair_prompt = self.prompt(2)
@@ -202,7 +202,7 @@ class SingleSessionCLI(unittest.TestCase):
         run = self.run_dir()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(len(self.main_events()), 1)
-        self.assertIn("status: OPEN", (run / "footest/.specula-output/spec/repair-requests/RR-001.md").read_text())
+        self.assertIn("status: OPEN", (run / "footest/.specular-output/spec/repair-requests/RR-001.md").read_text())
         self.assertEqual(self.state(run)["stage"], "complete")
 
     def test_unconsumed_repair_is_rejected_then_resumed_with_the_reason(self) -> None:
@@ -215,7 +215,7 @@ class SingleSessionCLI(unittest.TestCase):
         state = self.state(run)
         self.assertEqual((state["stage"], state["repair_round"], state["auto_resumes"]), ("main", 1, 2))
         self.assertIn("RR-001=OPEN", state["rejection"])
-        self.assertTrue((run / "footest/.specula-output/spec/.repair-phase3-snapshot.json").is_file())
+        self.assertTrue((run / "footest/.specular-output/spec/.repair-phase3-snapshot.json").is_file())
         self.assertIn("RR-001=OPEN", (self.adapters / "tool-refusal.txt").read_text())
         # The repair turn plus two automatic resumes with the reason, all in this run.
         self.assertEqual([e["call"] for e in self.main_events()], [1, 2, 3, 4])
@@ -272,7 +272,7 @@ class SingleSessionCLI(unittest.TestCase):
             result = self.run_cli("--agent=fake", "footest")
         run = self.run_dir()
         self.assert_complete(result, run)
-        work = run / "footest/.specula-output"
+        work = run / "footest/.specular-output"
         for advisory in ("analysis-report.md", "spec/instrumentation-spec.md", "spec/changelog.md"):
             self.assertFalse((work / advisory).exists(), advisory)
         self.assertEqual(
@@ -339,14 +339,14 @@ class SingleSessionCLI(unittest.TestCase):
 
     def test_strict_outputs_restore_the_full_contract_and_survive_an_attach(self) -> None:
         self.flag("minimal")
-        with mock.patch.dict(os.environ, {"SPECULA_STRICT_OUTPUTS": "on"}):
+        with mock.patch.dict(os.environ, {"SPECULAR_STRICT_OUTPUTS": "on"}):
             failed = self.run_cli("--agent=fake", "footest")
         self.assertEqual(failed.returncode, 1, failed.stdout + failed.stderr)
         run = self.run_dir()
-        config = json.loads((run / ".specula-resume/config.json").read_text())["configuration"]
+        config = json.loads((run / ".specular-resume/config.json").read_text())["configuration"]
         self.assertIs(config["strict_outputs"], True)
         self.assertIs(json.loads((run / "run.json").read_text())["resume_configuration"]["strict_outputs"], True)
-        self.assertIn("Outputs:       every phase output is required (SPECULA_STRICT_OUTPUTS=on)", failed.stdout)
+        self.assertIn("Outputs:       every phase output is required (SPECULAR_STRICT_OUTPUTS=on)", failed.stdout)
         first = self.prompt(1)
         self.assertIn("Every output below is required", first)
         self.assertIn("follow it exactly", first.lower())
@@ -360,9 +360,9 @@ class SingleSessionCLI(unittest.TestCase):
         self.flag("fix-on-rejection")
         resumed = self.run_cli(f"--run-id={run.name}")
         self.assert_complete(resumed, run)
-        self.assertIn("SPECULA_STRICT_OUTPUTS: this run was created with strict outputs on", resumed.stdout)
-        self.assertIn("every phase output (SPECULA_STRICT_OUTPUTS) OK", resumed.stdout)
-        work = run / "footest/.specula-output"
+        self.assertIn("SPECULAR_STRICT_OUTPUTS: this run was created with strict outputs on", resumed.stdout)
+        self.assertIn("every phase output (SPECULAR_STRICT_OUTPUTS) OK", resumed.stdout)
+        work = run / "footest/.specular-output"
         self.assertTrue((work / "spec/instrumentation-spec.md").is_file())
         summary = (run / "pipeline-summary.md").read_text()
         self.assertIn("- **Phase 2 (Spec Gen)**: OK (4/4 files", summary)  # the phased lines
@@ -375,7 +375,7 @@ class SingleSessionCLI(unittest.TestCase):
         self.assertEqual(len(self.main_events()), 1)  # accepted at once, not resumed
         self.assertEqual(self.worker_starts("CR-1"), 1)
         self.assertIn("WARN  footest: No execution traces were collected", result.stdout)
-        summary = (run / "footest/.specula-output/summary.md").read_text()
+        summary = (run / "footest/.specular-output/summary.md").read_text()
         coverage = summary.split("## Run coverage", 1)[1].split("\n## ", 1)[0]
         self.assertIn("- No execution traces were collected, so trace validation did not compare the model", coverage)
         pipeline_summary = (run / "pipeline-summary.md").read_text()
@@ -416,14 +416,16 @@ class SingleSessionCLI(unittest.TestCase):
         self.run_cli("--agent=fake", "footest")
         run = self.run_dir()
         failure.unlink()
-        with mock.patch.dict(os.environ, {"SPECULA_RULES": "off", "SPECULA_NOTES": "off", "SPECULA_DELEGATION": "off"}):
+        with mock.patch.dict(
+            os.environ, {"SPECULAR_RULES": "off", "SPECULAR_NOTES": "off", "SPECULAR_DELEGATION": "off"}
+        ):
             resumed = self.run_cli(f"--run-id={run.name}")
         self.assert_complete(resumed, run)
-        self.assertIn("SPECULA_RULES: this run was created with rules on", resumed.stdout)
-        self.assertIn("SPECULA_NOTES: this run was created with notes on", resumed.stdout)
-        self.assertIn("SPECULA_DELEGATION: this run was created with delegation guidance on", resumed.stdout)
+        self.assertIn("SPECULAR_RULES: this run was created with rules on", resumed.stdout)
+        self.assertIn("SPECULAR_NOTES: this run was created with notes on", resumed.stdout)
+        self.assertIn("SPECULAR_DELEGATION: this run was created with delegation guidance on", resumed.stdout)
         self.prompt(2)  # still pinned exactly once
-        self.assertIn("SPECULA_RULES: this run was created", (run / "pipeline.log").read_text())
+        self.assertIn("SPECULAR_RULES: this run was created", (run / "pipeline.log").read_text())
 
     def test_interrupted_confirmation_resumes_without_relaunching_main(self) -> None:
         self.flag("fail-confirm")
@@ -441,8 +443,8 @@ class SingleSessionCLI(unittest.TestCase):
         script = (
             "import sys\nfrom unittest.mock import patch\n"
             f"sys.path.insert(0, {str(self.root / 'src')!r})\n"
-            "from specula import pipelinelib\n"
-            "with patch('specula.single_session.SingleSessionRun._dispatch', side_effect=SystemExit(143)):\n"
+            "from specular import pipelinelib\n"
+            "with patch('specular.single_session.SingleSessionRun._dispatch', side_effect=SystemExit(143)):\n"
             "    raise SystemExit(pipelinelib.main(sys.argv[1:]))\n"
         )
         env = {key: value for key, value in os.environ.items() if key not in fixtures._VOLATILE}
@@ -476,8 +478,8 @@ class SingleSessionCLI(unittest.TestCase):
         script = (
             "import sys\nfrom unittest.mock import patch\n"
             f"sys.path.insert(0, {str(self.root / 'src')!r})\n"
-            "from specula import pipelinelib\n"
-            "with patch('specula.pipelinelib.Pipeline.generate_summary', side_effect=SystemExit(143)):\n"
+            "from specular import pipelinelib\n"
+            "with patch('specular.pipelinelib.Pipeline.generate_summary', side_effect=SystemExit(143)):\n"
             "    raise SystemExit(pipelinelib.main(sys.argv[1:]))\n"
         )
         env = {key: value for key, value in os.environ.items() if key not in fixtures._VOLATILE}
@@ -510,7 +512,7 @@ class SingleSessionCLI(unittest.TestCase):
         failed = self.run_cli("--agent=fake", "footest")
         self.assertEqual(failed.returncode, 9, failed.stdout + failed.stderr)
         run = self.run_dir()
-        work = run / "footest/.specula-output"
+        work = run / "footest/.specular-output"
         (work / "modeling-brief.md").write_text("# Earlier brief\n")
         (self.adapters / "fail-main-1").unlink()
         fresh = self.run_cli(f"--run-id={run.name}", "--fresh-context")
@@ -580,7 +582,7 @@ class SingleSessionCLI(unittest.TestCase):
         self.assertTrue(self.request(run)["skipped"])
         self.assertEqual(self.state(run)["stage"], "complete")
         self.assertEqual(self.worker_starts("CR-1"), 0)
-        self.assertFalse((run / "footest/.specula-output/confirmed-bugs.md").exists())
+        self.assertFalse((run / "footest/.specular-output/confirmed-bugs.md").exists())
 
     def test_unsupported_options_fail_before_storage_and_the_default_stays_phased(self) -> None:
         explicit = self.run_cli("--orchestration=single-session", "--skip-specgen", "--dry-run", "footest")
@@ -604,7 +606,7 @@ class SingleSessionCLI(unittest.TestCase):
 
     # ── starting from existing analysis ──
     def seed_analysis(self, run_id: str, target: str = "footest") -> Path:
-        work = self.root / "runs" / run_id / target / ".specula-output"
+        work = self.root / "runs" / run_id / target / ".specular-output"
         (work / "analysis").mkdir(parents=True)
         (work / "modeling-brief.md").write_text("# Shared brief\n\n## Scenario 1: Candidate one\n")
         (work / "analysis-report.md").write_text("Shared Phase 1 report.\n")
@@ -648,7 +650,7 @@ class SingleSessionCLI(unittest.TestCase):
         self.assertIn("modeling-brief.md is missing or empty for footest", missing.stdout)
         self.assertEqual(self.events(), [])
         run = self.run_dir()
-        self.assertFalse((run / "footest/.specula-output/.context-control/main-state.json").exists())
+        self.assertFalse((run / "footest/.specular-output/.context-control/main-state.json").exists())
         empty = self.seed_analysis("empty")
         (empty / "modeling-brief.md").write_text("\n")
         rejected = self.run_cli("--agent=fake", "--run-id=empty", "--fresh-context", "--skip-analysis", "footest")

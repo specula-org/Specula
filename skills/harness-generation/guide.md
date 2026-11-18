@@ -200,7 +200,7 @@ Write `harness/run.sh` — a single script that:
 4. Collects traces to `traces/`
 5. Reports trace line counts
 
-Must be executable from `.specula-output/`: `cd .specula-output && bash harness/run.sh`
+Must be executable from `.specular-output/`: `cd .specular-output && bash harness/run.sh`
 
 ---
 

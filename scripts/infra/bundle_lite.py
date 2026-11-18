@@ -9,7 +9,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-DESTINATION = ROOT / "skills/specula-lite/assets/shared.zip"
+DESTINATION = ROOT / "skills/specular-lite/assets/shared.zip"
 SKILLS = ("code_analysis", "spec_generation", "tla-checking-workflow", "bug-confirmation", "bug-classification")
 READER_FILES = (
     "__init__.py",

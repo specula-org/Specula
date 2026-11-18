@@ -50,16 +50,16 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "src"))
 
-from specula.context_control import TOKEN_ENV, YIELD_PREFIX, request_compaction, request_confirmation
-from specula.resource_summary import _confirmation_finding_statuses
+from specular.context_control import TOKEN_ENV, YIELD_PREFIX, request_compaction, request_confirmation
+from specular.resource_summary import _confirmation_finding_statuses
 
 here = Path(__file__).resolve().parent
 options = dict(arg[2:].split("=", 1) for arg in sys.argv[1:] if arg.startswith("--") and "=" in arg)
-work = Path(os.environ["SPECULA_WORK_DIR"])
+work = Path(os.environ["SPECULAR_WORK_DIR"])
 log = Path(options["log"])
 resume = Path(options["resume-state"])
 prompt = Path(options["prompt-file"]).read_text()
-phase = os.environ["SPECULA_PHASE"]
+phase = os.environ["SPECULAR_PHASE"]
 target = work.parent.name
 adapter = os.environ.get("FIXTURE_ADAPTER", "fake")
 ANALYSIS_COMPLETE = "1. **Code analysis**: already complete."
@@ -99,7 +99,7 @@ def start_background_job() -> None:
     """Start a long job the way an agent does, through start_background.sh."""
     script = here.parents[1] / "infra/start_background.sh"
     env = {**os.environ, "FIXTURE_JOB_DIR": str(here)}
-    lock = os.environ.get("SPECULA_RUN_LOCK_FD")
+    lock = os.environ.get("SPECULAR_RUN_LOCK_FD")
     started = subprocess.run(
         ["bash", str(script), "-d", str(work), "-o", "job.log", "-s", "MC.tla", "-c", "MC.cfg"],
         env=env,

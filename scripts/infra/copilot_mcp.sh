@@ -81,7 +81,8 @@ matches = (
     and entry.get("type") in (None, "local", "stdio")
     and entry.get("tools") in (None, ["*"])
     and isinstance(env, dict)
-    and env.get("SPECULA_ROOT") == os.environ["COPILOT_MCP_PROJECT_ROOT"]
+    # Registrations made before the Specula -> Specular rename carry SPECULA_ROOT.
+    and (env.get("SPECULAR_ROOT") or env.get("SPECULA_ROOT")) == os.environ["COPILOT_MCP_PROJECT_ROOT"]
 )
 print(("match:" if matches else "conflict:") + source)
 ' <<< "$config_json"
@@ -130,7 +131,7 @@ print_copilot_mcp_add_command() {
   printf '  COPILOT_HOME=%q copilot mcp add %q --env %q -- %q %q\n' \
     "$config_dir" \
     "$mcp_name" \
-    "SPECULA_ROOT=$project_root" \
+    "SPECULAR_ROOT=$project_root" \
     "$python_path" \
     "$server_path"
 }
@@ -184,7 +185,7 @@ setup_copilot_mcp_server() {
   esac
 
   add_output="$(COPILOT_HOME="$config_dir" copilot mcp add "$mcp_name" \
-    --env "SPECULA_ROOT=$project_root" -- \
+    --env "SPECULAR_ROOT=$project_root" -- \
     "$python_path" \
     "$server_path" </dev/null 2>&1)" || add_rc=$?
 

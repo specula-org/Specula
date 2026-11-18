@@ -11,10 +11,10 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from specula.adapters.utils.run_lock import CI_LOCK_FD_ENV, RUN_LOCK_FD_ENV, inherited_run_lock_fds
-from specula.ci_store import CIError, CIStore, asset_hashes, git
-from specula.ci_workflow import CIPipeline
-from specula.pipelinelib import Pipeline
+from specular.adapters.utils.run_lock import CI_LOCK_FD_ENV, RUN_LOCK_FD_ENV, inherited_run_lock_fds
+from specular.ci_store import CIError, CIStore, asset_hashes, git
+from specular.ci_workflow import CIPipeline
+from specular.pipelinelib import Pipeline
 
 
 class StoreTests(unittest.TestCase):
@@ -24,7 +24,7 @@ class StoreTests(unittest.TestCase):
         self.root = Path(directory.name)
         self.store = CIStore(self.root)
         self.run_dir = self.root / "runs/first"
-        self.work = self.run_dir / "project/.specula-output"
+        self.work = self.run_dir / "project/.specular-output"
         (self.work / "spec").mkdir(parents=True)
         (self.work / "harness").mkdir()
         (self.work / "spec/base.tla").write_text("model\n")

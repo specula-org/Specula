@@ -14,6 +14,6 @@ PHASE_PROMPTS=(
   "full-p4.md"              # Phase 4: Bug Confirmation (same as full)
 )
 
-SPECULA_SKILLS=("spec_generation" "harness-generation" "tla-trace-workflow" "tla-checking-workflow" "validation-workflow" "bug-confirmation")
+SPECULAR_SKILLS=("spec_generation" "harness-generation" "tla-trace-workflow" "tla-checking-workflow" "validation-workflow" "bug-confirmation")
 TLAPLUS_SKILLS=()
 MCP_TOOLS=true

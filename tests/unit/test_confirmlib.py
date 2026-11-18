@@ -1,4 +1,4 @@
-"""Unit tests for parallel per-finding bug confirmation (src/specula/confirmlib.py).
+"""Unit tests for parallel per-finding bug confirmation (src/specular/confirmlib.py).
 
 Run in-process: agent turns are monkeypatched (no adapter spawn, no network), so
 these pin the dispatcher's control flow that the phase/pipeline tests don't reach
@@ -26,12 +26,12 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-from specula import confirmlib as C
-from specula import notes, persistent_findings, resumelib, rules
-from specula import phaselib as PhaseLib
-from specula import pipelinelib as PL
-from specula import prompts as P
-from specula.phaselib import Workspace
+from specular import confirmlib as C
+from specular import notes, persistent_findings, resumelib, rules
+from specular import phaselib as PhaseLib
+from specular import pipelinelib as PL
+from specular import prompts as P
+from specular.phaselib import Workspace
 
 EVIDENCE = "The investigation inspected the real call path and captured concrete observed behavior."
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -100,9 +100,9 @@ def _scripted_policy_adapter(root: Path, returncodes: list[int]) -> tuple[Path, 
 
 def _start_new_process(test: unittest.TestCase) -> None:
     """Give later prompts another skill-reference marker, as a real attach in a new process has."""
-    from specula import skill_refs
+    from specular import skill_refs
 
-    prefix = "<!-- specula-skill:" + "f" * 32 + ":"
+    prefix = "<!-- specular-skill:" + "f" * 32 + ":"
     patcher = mock.patch.multiple(
         skill_refs,
         _SKILL_REF_PREFIX=prefix,
@@ -138,15 +138,15 @@ def _git_repo(path: Path) -> Path:
 class ConfirmCase(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.mkdtemp()
-        self._old = os.environ.get("SPECULA_RUN_DIR")
-        os.environ["SPECULA_RUN_DIR"] = self.tmp
+        self._old = os.environ.get("SPECULAR_RUN_DIR")
+        os.environ["SPECULAR_RUN_DIR"] = self.tmp
         self.addCleanup(self._restore)
 
     def _restore(self) -> None:
         if self._old is None:
-            os.environ.pop("SPECULA_RUN_DIR", None)
+            os.environ.pop("SPECULAR_RUN_DIR", None)
         else:
-            os.environ["SPECULA_RUN_DIR"] = self._old
+            os.environ["SPECULAR_RUN_DIR"] = self._old
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def seed(self, name: str, findings: list[dict[str, Any]]) -> Workspace:
@@ -181,7 +181,7 @@ from pathlib import Path
 
 args = dict(arg[2:].split("=", 1) for arg in sys.argv[1:] if arg.startswith("--") and "=" in arg)
 prompt, log, resume = Path(args["prompt-file"]), Path(args["log"]), Path(args["resume-state"])
-capture, work = Path(os.environ["CAPTURE"]), Path(os.environ["SPECULA_WORK_DIR"])
+capture, work = Path(os.environ["CAPTURE"]), Path(os.environ["SPECULAR_WORK_DIR"])
 stem, fdir = prompt.name.removesuffix(".prompt.md"), prompt.parent
 with (capture / "calls").open("a") as calls:
     calls.write(stem + "\\n")
@@ -329,7 +329,7 @@ class TestIssueProposal(ConfirmCase):
         self.assertIn("at most 160 characters", worker_prompt)
         self.assertIn("single exact line", worker_prompt)
         self.assertIn(
-            f"in a configured run, run `specula findings --work {self.work.absolute()} validate", worker_prompt
+            f"in a configured run, run `specular findings --work {self.work.absolute()} validate", worker_prompt
         )
         # The metadata turn cannot change the evidence the verdict was judged on.
         self.assert_judged_evidence()
@@ -814,7 +814,7 @@ class TestConfirmConfigCompatibility(ConfirmCase):
     def test_finding_turn_starts_in_clean_dispatcher_cwd_not_untrusted_repo(self) -> None:
         ws = Workspace(["T"])
         repo = Path(self.tmp) / "repo"
-        for relative in (".specula/sandbox.json", ".codex/hooks.json", ".claude/settings.json"):
+        for relative in (".specular/sandbox.json", ".codex/hooks.json", ".claude/settings.json"):
             path = repo / relative
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("{}\n")
@@ -851,7 +851,7 @@ class TestConfirmConfigCompatibility(ConfirmCase):
         old_cwd = Path.cwd()
         os.chdir(base)
         self.addCleanup(os.chdir, old_cwd)
-        os.environ["SPECULA_RUN_DIR"] = "runs/demo"
+        os.environ["SPECULAR_RUN_DIR"] = "runs/demo"
         ws = Workspace(["T"])
         spec = ws.work_dir("T") / "spec"
         spec.mkdir(parents=True)
@@ -862,7 +862,7 @@ class TestConfirmConfigCompatibility(ConfirmCase):
         repo, _cleanup = C.setup_repo(cfg, finding)
         prompt = C.prompt_reproduce(cfg, finding, repo)
 
-        expected_work = (base / "runs" / "demo" / "T" / ".specula-output").absolute()
+        expected_work = (base / "runs" / "demo" / "T" / ".specular-output").absolute()
         self.assertEqual(finding.fdir, expected_work / "confirmation" / "MC-1")
         self.assertIn(f"Source repo (build/run here): {base / 'repo'}", prompt)
         self.assertIn(f"Spec dir (counterexamples, bug-report): {expected_work / 'spec'}", prompt)
@@ -1197,7 +1197,7 @@ class TestDriver(ConfirmCase):
 
         with (
             mock.patch.object(C, "run_finding_safe", side_effect=worker),
-            mock.patch("specula.confirmlib.wait", side_effect=observe_rate_future_first),
+            mock.patch("specular.confirmlib.wait", side_effect=observe_rate_future_first),
         ):
             rc = C.run_parallel_confirmation(self.cfg(ws, "T", max_parallel=2))
 
@@ -1361,16 +1361,16 @@ class TestDriver(ConfirmCase):
             "HOME": str(home),
             "FAKE_CLAUDE_DIR": str(root),
             "FAKE_CLAUDE_SESSION": session_id,
-            "SPECULA_PROGRESS": "off",
+            "SPECULAR_PROGRESS": "off",
         }
         cfg = self.cfg(ws, "T", adapter=CLAUDE_CODE_ADAPTER, max_parallel=1)
 
         with mock.patch.dict(os.environ, env, clear=False):
             for key in (
-                "SPECULA_SANDBOX",
-                "SPECULA_ACTIVITY_LOG",
-                "SPECULA_MODEL",
-                "SPECULA_EFFORT",
+                "SPECULAR_SANDBOX",
+                "SPECULAR_ACTIVITY_LOG",
+                "SPECULAR_MODEL",
+                "SPECULAR_EFFORT",
                 "CLAUDE_CONFIG_DIR",
                 "CLAUDE_ALIAS",
                 "CLAUDE_MODEL",
@@ -1586,7 +1586,7 @@ class TestDriver(ConfirmCase):
             "esac; done\n"
             'stem=$(basename "$prompt")\n'
             'printf "%s\\n" "$stem" >> "$CAPTURE/calls"\n'
-            'fdir="$SPECULA_WORK_DIR/confirmation/MC-1"\n'
+            'fdir="$SPECULAR_WORK_DIR/confirmation/MC-1"\n'
             'case "$stem" in\n'
             '  turn01_A.prompt.md) printf \'%s\\n\' "$REPRODUCED" > "$log" ;;\n'
             '  turn02_B.prompt.md) printf \'%s\\n\' "$FALSE_POSITIVE" > "$log" ;;\n'
@@ -1881,7 +1881,7 @@ class TestDriver(ConfirmCase):
         self.assertIn("installed Specula skill **validation-workflow**", prompts[0])
         self.assertIn("Each `Scenario N` is a mechanism hypothesis", prompts[0])
         self.assertIn("`scenario`", prompts[0])
-        self.assertIn("<!-- specula-skill:", prompts[0])
+        self.assertIn("<!-- specular-skill:", prompts[0])
         self.assertIn(":validation-workflow -->", prompts[0])
         self.assertNotIn("$validation-workflow", prompts[0])
         self.assertNotIn("/skills/", prompts[0])
@@ -1957,7 +1957,7 @@ class TestDriver(ConfirmCase):
             "CAPTURE": str(root),
             "COUNT": str(root / "consolidate-count"),
             "CANDIDATES": str(spec / "candidates.json"),
-            "SPECULA_SOURCE_SNAPSHOT": "1",
+            "SPECULAR_SOURCE_SNAPSHOT": "1",
             "GIT_DIR": str(original / ".git"),
             "GIT_WORK_TREE": str(original),
         }
@@ -2307,7 +2307,7 @@ class TestDriver(ConfirmCase):
             return (rc, _response("FALSE POSITIVE") if rc == 0 else "")
 
         waits: list[int] = []
-        env = {"SPECULA_RATE_LIMIT_REACTIVE": "1", "SPECULA_RATE_LIMIT_RETRIES": str(retries)}
+        env = {"SPECULAR_RATE_LIMIT_REACTIVE": "1", "SPECULAR_RATE_LIMIT_RETRIES": str(retries)}
         with (
             mock.patch.dict(os.environ, env, clear=False),
             mock.patch.object(C, "run_agent_blocking", agent),
@@ -2403,7 +2403,7 @@ class TestDriver(ConfirmCase):
             with mock.patch.dict(os.environ, env, clear=False):
                 os.environ.pop(resumelib.MANUAL_ENV, None)
                 os.environ.pop(resumelib.FRESH_ENV, None)
-                if attach:  # `specula run --run-id` on the same run
+                if attach:  # `specular run --run-id` on the same run
                     os.environ[resumelib.MANUAL_ENV] = "1"
                 return C.run_parallel_confirmation(self.cfg(ws, "T", adapter=adapter, max_parallel=1))
 
@@ -3077,13 +3077,13 @@ class TestRepairScopedConfirmation(ConfirmCase):
         prior = C.Outcome(finding, "PENDING REPAIR", True, 0, "BASE EVIDENCE")
         first = (
             "## Repair round 1 evidence\n"
-            "<!-- specula-repair-token: 11111111111111111111111111111111 -->\n"
+            "<!-- specular-repair-token: 11111111111111111111111111111111 -->\n"
             "- **Phase 3 result**: first process result"
         )
         prior.body = C._merge_repair_evidence(prior, first, None, 1)
         second = (
             "## Repair round 1 evidence\n"
-            "<!-- specula-repair-token: 22222222222222222222222222222222 -->\n"
+            "<!-- specular-repair-token: 22222222222222222222222222222222 -->\n"
             "- **Phase 3 result**: restarted process result"
         )
 
@@ -3535,7 +3535,7 @@ class TestPromptExtraAndLog(ConfirmCase):
         prompt = C.prompt_reproduce(cfg, f, "/repo")
 
         self.assertIn("installed Specula skill **bug-confirmation**", prompt)
-        self.assertIn("<!-- specula-skill:", prompt)
+        self.assertIn("<!-- specular-skill:", prompt)
         self.assertIn(":bug-confirmation -->", prompt)
         self.assertNotIn("$bug-confirmation", prompt)
         self.assertNotIn("/skills/", prompt)
@@ -3754,7 +3754,7 @@ class TestCacheContracts(ConfirmCase):
         cfg = C.ConfirmConfig(name="T", ws=Workspace(["T"]), adapter=Path("/x/codex.sh"), worktree=False)
         self.assertNotIn("codex_profile", C._tuning_identity(cfg))
         cfg.codex_profile = "glm"
-        self.assertEqual(C._tuning_identity(cfg)["codex_profile"], {"source": "specula", "value": "glm"})
+        self.assertEqual(C._tuning_identity(cfg)["codex_profile"], {"source": "specular", "value": "glm"})
 
     def test_tuning_identity_records_opencode_and_pi_environment_sources(self) -> None:
         cases = (
@@ -4542,7 +4542,7 @@ class TestValidationContracts(ConfirmCase):
         rr_dir = ws.work_dir("T") / "spec" / "repair-requests"
 
         with (
-            mock.patch("specula.confirmlib.os.fsync", side_effect=OSError("disk full")),
+            mock.patch("specular.confirmlib.os.fsync", side_effect=OSError("disk full")),
             self.assertRaisesRegex(OSError, "disk full"),
         ):
             C.allocate_rr(cfg, outcome)
@@ -4752,7 +4752,7 @@ class TestValidationContracts(ConfirmCase):
 
         outcome.bug_no = 1
         with (
-            mock.patch("specula.confirmlib.os.replace", side_effect=OSError("interrupted")),
+            mock.patch("specular.confirmlib.os.replace", side_effect=OSError("interrupted")),
             self.assertRaisesRegex(OSError, "interrupted"),
         ):
             C.allocate_rr(cfg, outcome)
@@ -4872,7 +4872,7 @@ class TestRepoIsolation(ConfirmCase):
 
     def _repo_cfg(self, repo: Path, *, worktree: bool) -> tuple[C.ConfirmConfig, mock.Mock]:
         ws = mock.Mock()
-        ws.work_dir.return_value = repo / ".specula-output"
+        ws.work_dir.return_value = repo / ".specular-output"
         cfg = C.ConfirmConfig(name="T", ws=ws, adapter=Path("/x"), repo_dir=str(repo), worktree=worktree)
         return cfg, ws
 
@@ -4918,7 +4918,7 @@ class TestRepoIsolation(ConfirmCase):
             ws.work_dir("T") / "confirmation" / "MC-1",
         )
         ambient = {
-            "SPECULA_SOURCE_SNAPSHOT": "1",
+            "SPECULAR_SOURCE_SNAPSHOT": "1",
             "GIT_DIR": str(external / ".git"),
             "GIT_WORK_TREE": str(external),
         }
@@ -5176,7 +5176,7 @@ class TestRepoIsolation(ConfirmCase):
         def abbreviated(args: list[str], *rest: Any, **kwargs: Any) -> Any:
             return run([arg for arg in args if arg != "--full-index"], *rest, **kwargs)
 
-        with mock.patch("specula.confirmlib.subprocess.run", side_effect=abbreviated):
+        with mock.patch("specular.confirmlib.subprocess.run", side_effect=abbreviated):
             return C._verdict_fingerprint(cfg, f)
 
     def test_cache_survives_longer_default_abbreviation(self) -> None:
@@ -5274,7 +5274,7 @@ class TestRepoIsolation(ConfirmCase):
                     raise C.RateLimited("quota")
                 finally:
                     failed_remove = mock.Mock(returncode=1, stderr="remove failed")
-                    with mock.patch("specula.confirmlib.subprocess.run", return_value=failed_remove):
+                    with mock.patch("specular.confirmlib.subprocess.run", return_value=failed_remove):
                         cleanup()
         finally:
             subprocess.run(["git", "-C", str(repo), "worktree", "remove", "--force", str(f.fdir / "worktree")])
@@ -5293,7 +5293,7 @@ class TestRepoIsolation(ConfirmCase):
                 raise PermissionError("denied")
             real_rmtree(path, *args, **kwargs)
 
-        with mock.patch("specula.confirmlib.shutil.rmtree", side_effect=fail_stale):
+        with mock.patch("specular.confirmlib.shutil.rmtree", side_effect=fail_stale):
             path, cleanup = C.setup_repo(cfg, f)
         try:
             wt = Path(path)

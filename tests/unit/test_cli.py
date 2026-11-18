@@ -1,4 +1,4 @@
-"""Unit tests for specula.cli — the `specula` dispatcher (migration step 7).
+"""Unit tests for specular.cli — the `specular` dispatcher (migration step 7).
 
 The dispatcher was ported from the repo-root bash launcher; the help text and
 the exit codes below were captured from that bash before the cutover and are
@@ -18,13 +18,13 @@ import subprocess
 import unittest
 from pathlib import Path
 
-from specula import cli
+from specular import cli
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # Public help retains the dispatcher layout as commands are added.
 BASH_HELP = """\
-usage: specula <command> [options] "name|github|lang|reference" [...]
+usage: specular <command> [options] "name|github|lang|reference" [...]
 
 A framework for finding deep bugs in system code using TLA+.
 
@@ -44,7 +44,7 @@ commands:
   setup      Install Specula agent skills + MCP tools
 
 Every argument after <command> is forwarded verbatim to the underlying
-launch script. Run 'specula <command> --help' for a command's full flag set.
+launch script. Run 'specular <command> --help' for a command's full flag set.
 """
 
 
@@ -81,12 +81,12 @@ class TestHelp(CaptureExec):
         rc, out, err = self._main(["bogus"])
         self.assertEqual(rc, 2)
         self.assertEqual(out, "")
-        self.assertEqual(err, "specula: unknown command 'bogus'\n\n" + BASH_HELP)
+        self.assertEqual(err, "specular: unknown command 'bogus'\n\n" + BASH_HELP)
         self.assertEqual(self.execs, [])
 
     def test_version(self) -> None:
         rc, out, err = self._main(["--version"])
-        self.assertEqual((rc, out, err), (0, "specula 1.2.0\n", ""))
+        self.assertEqual((rc, out, err), (0, "specular 1.2.0\n", ""))
         self.assertEqual(self.execs, [])
 
 
@@ -123,7 +123,7 @@ class TestDispatch(CaptureExec):
 class TestShim(unittest.TestCase):
     def test_root_launcher_delegates_to_cli(self) -> None:
         r = subprocess.run(
-            ["bash", str(REPO_ROOT / "specula"), "--help"],
+            ["bash", str(REPO_ROOT / "specular"), "--help"],
             capture_output=True,
             text=True,
         )
@@ -135,13 +135,13 @@ class TestShim(unittest.TestCase):
                 continue  # setup's full public path is exercised hermetically in test_setup_security.py
             with self.subTest(command=command):
                 r = subprocess.run(
-                    ["bash", str(REPO_ROOT / "specula"), command, "--help"],
+                    ["bash", str(REPO_ROOT / "specular"), command, "--help"],
                     capture_output=True,
                     text=True,
                     timeout=10,
                 )
                 self.assertEqual((r.returncode, r.stderr), (0, ""), r.stdout)
-                self.assertIn(f"specula {command}", r.stdout)
+                self.assertIn(f"specular {command}", r.stdout)
                 self.assertNotIn("bash scripts/", r.stdout)
                 self.assertNotIn("launch_", r.stdout)
                 self.assertNotIn("Claude Code agent", r.stdout)
@@ -149,8 +149,8 @@ class TestShim(unittest.TestCase):
 
     def test_root_launcher_prints_version(self) -> None:
         r = subprocess.run(
-            ["bash", str(REPO_ROOT / "specula"), "--version"],
+            ["bash", str(REPO_ROOT / "specular"), "--version"],
             capture_output=True,
             text=True,
         )
-        self.assertEqual((r.returncode, r.stdout, r.stderr), (0, "specula 1.2.0\n", ""))
+        self.assertEqual((r.returncode, r.stdout, r.stderr), (0, "specular 1.2.0\n", ""))

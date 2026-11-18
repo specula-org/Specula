@@ -10,16 +10,16 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "src"))
 
-from specula import persistent_findings
-from specula.context_control import CONFIRMATION_REQUEST, TOKEN_ENV, YIELD_PREFIX, request_confirmation
+from specular import persistent_findings
+from specular.context_control import CONFIRMATION_REQUEST, TOKEN_ENV, YIELD_PREFIX, request_confirmation
 
 options = dict(arg[2:].split("=", 1) for arg in sys.argv[1:] if arg.startswith("--") and "=" in arg)
-work = Path(os.environ["SPECULA_WORK_DIR"])
-run = Path(os.environ["SPECULA_RUN_DIR"])
+work = Path(os.environ["SPECULAR_WORK_DIR"])
+run = Path(os.environ["SPECULAR_RUN_DIR"])
 log = Path(options["log"])
 resume = Path(options["resume-state"])
 prompt = Path(options["prompt-file"]).read_text()
-phase = os.environ["SPECULA_PHASE"]
+phase = os.environ["SPECULAR_PHASE"]
 repair_enabled = (Path(__file__).parent / "repair-confirmation").exists()
 reconfirm_model = (Path(__file__).parent / "reconfirm-model-dependency").exists()
 name = "main" if phase == "incremental" else log.parent.name
@@ -187,7 +187,7 @@ if phase == "incremental":
                 }
             )
         )
-        log.write_text("SPECULA_INCREMENTAL_COMPLETE " + run.name + "\n")
+        log.write_text("SPECULAR_INCREMENTAL_COMPLETE " + run.name + "\n")
 elif issue_fix:
     proposal = log.parent / "issue.json"
     document = json.loads(proposal.read_text())

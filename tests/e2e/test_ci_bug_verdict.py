@@ -12,7 +12,7 @@ from unittest import mock
 import test_github_ci as fixtures
 import test_incremental_ci as incremental_fixtures
 
-from specula.ci_store import CIStore
+from specular.ci_store import CIStore
 
 
 class InitializationVerdict(unittest.TestCase):
@@ -42,8 +42,8 @@ class InitializationVerdict(unittest.TestCase):
         script = fixture.adapter.read_text().replace(
             "esac\n",
             "esac\n"
-            'if [ "$SPECULA_PHASE" = bug_classification ]; then\n'
-            f'  python3 {shlex.quote(str(helper))} "$SPECULA_WORK_DIR"\n'
+            'if [ "$SPECULAR_PHASE" = bug_classification ]; then\n'
+            f'  python3 {shlex.quote(str(helper))} "$SPECULAR_WORK_DIR"\n'
             "fi\n",
         )
         fixture.adapter.write_text(script)

@@ -5,7 +5,7 @@ Continue the normal Specula workflow from user-provided verification artifacts. 
 ## Shared Rules
 
 1. Inspect the supplied path and the target-specific instructions. Identify only the assets that belong to the current target; if ownership is ambiguous, stop and explain what the user must clarify.
-2. Never modify the original supplied path. Copy adopted artifacts into the target's `.specula-output/` workspace and make later changes only there.
+2. Never modify the original supplied path. Copy adopted artifacts into the target's `.specular-output/` workspace and make later changes only there.
 3. Reuse every supplied artifact that already performs the required job. Verify that it is usable, but do not recreate it merely to match Specula's usual implementation style.
 4. During the initial inventory and Scenario analysis, do not make semantic changes to supplied artifacts. Add missing artifacts or adapters around them. Once the normal validation and repair workflows begin, they may revise workspace copies as usual.
 5. Do not require a manifest or fixed input layout. Infer relationships from the artifacts, target source, and user instructions. Record uncertainty instead of guessing.
@@ -37,7 +37,7 @@ This skill changes how the current pipeline phase reuses supplied artifacts. It 
 
 ## Final Modification Report
 
-Only when the launcher explicitly assigns the final reporting responsibility, compare the original supplied path with the final target workspace and write `.specula-output/byom-modification-report.md` after confirmation, repair, and classification finish.
+Only when the launcher explicitly assigns the final reporting responsibility, compare the original supplied path with the final target workspace and write `.specular-output/byom-modification-report.md` after confirmation, repair, and classification finish.
 
 Keep the report short and include:
 

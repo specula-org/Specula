@@ -54,8 +54,8 @@ Other strong coding agents may work, but we do not test them regularly during ou
 
 ```bash
 git clone https://github.com/specula-org/Specula.git && cd Specula
-uv tool install -e .   # installs the `specula` command
-specula setup          # installs the agent skills and MCP tools, builds the bundled tools
+uv tool install -e .   # installs the `specular` command
+specular setup          # installs the agent skills and MCP tools, builds the bundled tools
 ```
 
 <details>
@@ -77,19 +77,19 @@ cd ../..  # return to the Specula repository root
 # for Claude Code
 claude mcp add --transport stdio --scope project \
     tracedebugger \
-    --env "SPECULA_ROOT=$PWD" -- \
+    --env "SPECULAR_ROOT=$PWD" -- \
     "$PWD/tools/trace_debugger/.venv/bin/python" \
     "$PWD/tools/trace_debugger/mcp_server.py"
 
 # for Codex
 codex mcp add tracedebugger \
-	--env "SPECULA_ROOT=$PWD" -- \
+	--env "SPECULAR_ROOT=$PWD" -- \
 	"$PWD/tools/trace_debugger/.venv/bin/python" \
 	"$PWD/tools/trace_debugger/mcp_server.py"
 
 # for GitHub Copilot CLI 1.0.21+
 copilot mcp add tracedebugger \
-    --env "SPECULA_ROOT=$PWD" -- \
+    --env "SPECULAR_ROOT=$PWD" -- \
     "$PWD/tools/trace_debugger/.venv/bin/python" \
     "$PWD/tools/trace_debugger/mcp_server.py"
 ```
@@ -101,7 +101,7 @@ Automatic MCP configuration is skipped for older Copilot CLI versions; upgrade t
 ## Auto Mode
 
 ```bash
-specula run mysys \
+specular run mysys \
   --artifact=/path/to/repo \
   --guidance=/absolute/path/to/mysys-guidance.md
 ```
@@ -128,9 +128,9 @@ The detailed usage and configurations can be found in the [Usage Guide](./docs/U
 Initialize a persistent model and harness, then check later source changes incrementally:
 
 ```bash
-specula run --ci-init --ci-dir=/work/mysys-ci \
+specular run --ci-init --ci-dir=/work/mysys-ci \
   --artifact=/path/to/repo --guidance=/path/to/mysys-guidance.md mysys
-specula run --incremental --ci-dir=/work/mysys-ci
+specular run --incremental --ci-dir=/work/mysys-ci
 ```
 
 Keep the CI directory outside the source checkout. See [Add Specula to CI](docs/Usage.md#add-specula-to-ci) for setup, results, and the GitHub Actions workflow. Existing TLA+ models and verification assets can be imported with [Bring Your Own Model](docs/Usage.md#bring-your-own-model-byom).
@@ -141,7 +141,7 @@ Open your coding agent in the Specula directory. The workflow is a sequence of s
 
 `code-analysis` → `spec-generation` → `harness-generation` → `validation-workflow` → `bug-confirmation`
 
-(Codex uses `$code-analysis`, `$spec-generation`, etc. after choosing `y` in `specula setup`, or `$specula-codex:code-analysis`, `$specula-codex:spec-generation`, etc. in plugin mode.)
+(Codex uses `$code-analysis`, `$spec-generation`, etc. after choosing `y` in `specular setup`, or `$specular-codex:code-analysis`, `$specular-codex:spec-generation`, etc. in plugin mode.)
 
 To start, tell the agent your target and invoke the first skill:
 
@@ -150,7 +150,7 @@ This project is a Go implementation of Tendermint BFT consensus (cometbft/cometb
 The reference algorithm is the Tendermint paper (arXiv:1807.04938). Run /code-analysis.
 ```
 
-Each skill produces output files (e.g., `modeling-brief.md`, `base.tla`, traces) in `.specula-output` that the next skill will consume. 
+Each skill produces output files (e.g., `modeling-brief.md`, `base.tla`, traces) in `.specular-output` that the next skill will consume. 
 When one skill completes, invoke the next. You can also run any skill independently, e.g., `validation-workflow` on an existing spec.
 
 ## Changelog

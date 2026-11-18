@@ -19,11 +19,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ABLATION_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-SPECULA_ROOT="$(cd "$ABLATION_DIR/../../.." && pwd)"
+SPECULAR_ROOT="$(cd "$ABLATION_DIR/../../.." && pwd)"
 RESULTS_DIR="$ABLATION_DIR/results"
 
-TLA2TOOLS="$SPECULA_ROOT/lib/tla2tools.jar"
-COMMUNITY="$SPECULA_ROOT/lib/CommunityModules-deps.jar"
+TLA2TOOLS="$SPECULAR_ROOT/lib/tla2tools.jar"
+COMMUNITY="$SPECULAR_ROOT/lib/CommunityModules-deps.jar"
 
 FORMAT="table"
 DO_EVAL=false

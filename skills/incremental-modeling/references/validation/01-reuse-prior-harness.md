@@ -1,6 +1,6 @@
 # Validation 1: Reuse the Prior Harness
 
-Treat the previous harness as a validated CI asset, not scaffolding to regenerate. Work in the new run; keep the prior `.specula-output/` immutable.
+Treat the previous harness as a validated CI asset, not scaffolding to regenerate. Work in the new run; keep the prior `.specular-output/` immutable.
 
 ## 1. Establish Provenance
 
@@ -12,6 +12,8 @@ Treat the previous harness as a validated CI asset, not scaffolding to regenerat
 ## 2. Rebase, Do Not Regenerate
 
 Copy the prior `harness/` and reusable scenario definitions into the current run. Reapply its patch or copy-and-patch recipe to the new source using symbol/context evidence rather than stale line numbers.
+
+If the prior harness predates the Specula → Specular rename, replace `.specula-output`, `SPECULA_`, and `specula` with `.specular-output`, `SPECULAR_`, and `specular` in the copy.
 
 Preserve working components unless the update invalidates them:
 

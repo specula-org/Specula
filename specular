@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+#
+# specular — unified command-line entrypoint for the Specular pipeline.
+# Thin shim → Python dispatcher (src/specular/cli.py); after `pip install -e .`
+# the same dispatcher is on PATH as the `specular` console script. Every
+# argument is forwarded verbatim and the exit code propagates via exec.
+set -euo pipefail
+
+# Resolve this script's real directory, following symlinks so it keeps working
+# when symlinked onto PATH. Kept portable (no `readlink -f`, which is non-POSIX).
+SOURCE="${BASH_SOURCE[0]}"
+while [ -h "$SOURCE" ]; do
+  src_dir="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  if [[ "$SOURCE" != /* ]]; then SOURCE="$src_dir/$SOURCE"; fi
+done
+SPECULAR_ROOT="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+
+exec python3 "$SPECULAR_ROOT/src/specular/cli.py" "$@"

@@ -10,10 +10,10 @@ from typing import Any
 
 import pytest
 
-from specula import ci_init, ci_result, ci_verdict
-from specula import persistent_findings as issues
-from specula.ci_store import CIError, write_json
-from specula.resource_summary import _confirmation_finding_statuses, findings_fragment_issue
+from specular import ci_init, ci_result, ci_verdict
+from specular import persistent_findings as issues
+from specular.ci_store import CIError, write_json
+from specular.resource_summary import _confirmation_finding_statuses, findings_fragment_issue
 
 
 def finding(fid: str = "CR-3", status: str = "REPRODUCED") -> dict[str, Any]:

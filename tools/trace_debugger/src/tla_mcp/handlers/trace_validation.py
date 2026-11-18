@@ -79,9 +79,9 @@ class TraceValidationHandler(BaseHandler):
         community_jar = args.get("community_jar")
 
         if tla_jar is None or community_jar is None:
-            specula_root = os.environ.get("SPECULA_ROOT")
-            if specula_root:
-                default_lib = os.path.join(specula_root, "lib")
+            specular_root = os.environ.get("SPECULAR_ROOT")
+            if specular_root:
+                default_lib = os.path.join(specular_root, "lib")
             else:
                 # Calculate relative to this file
                 this_file = os.path.abspath(__file__)
@@ -90,8 +90,8 @@ class TraceValidationHandler(BaseHandler):
                 src_dir = os.path.dirname(tla_mcp_dir)
                 tool_dir = os.path.dirname(src_dir)
                 tools_dir = os.path.dirname(tool_dir)
-                specula_root = os.path.dirname(tools_dir)
-                default_lib = os.path.join(specula_root, "lib")
+                specular_root = os.path.dirname(tools_dir)
+                default_lib = os.path.join(specular_root, "lib")
 
             tla_jar = tla_jar or os.path.join(default_lib, "tla2tools.jar")
             community_jar = community_jar or os.path.join(default_lib, "CommunityModules-deps.jar")

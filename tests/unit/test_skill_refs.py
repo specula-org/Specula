@@ -7,7 +7,7 @@ import subprocess
 import unittest
 from unittest import mock
 
-from specula import skill_refs
+from specular import skill_refs
 
 
 class TestSkillRefs(unittest.TestCase):
@@ -15,16 +15,16 @@ class TestSkillRefs(unittest.TestCase):
         prompt = skill_refs.prompt_skill_ids("code-analysis")
 
         self.assertIn("**code-analysis**", prompt)
-        self.assertIn("<!-- specula-skill:", prompt)
+        self.assertIn("<!-- specular-skill:", prompt)
         self.assertIn(":code-analysis -->", prompt)
         self.assertNotIn("$code-analysis", prompt)
-        self.assertNotIn("$specula-codex:code-analysis", prompt)
+        self.assertNotIn("$specular-codex:code-analysis", prompt)
 
     def test_installed_skill_adapters_keep_only_registered_name(self) -> None:
         prompt = f"Use {skill_refs.prompt_skill_ids('code-analysis')} now."
 
         with mock.patch(
-            "specula.skill_refs._codex_plugin_enabled",
+            "specular.skill_refs._codex_plugin_enabled",
             side_effect=AssertionError("non-Codex adapters must not probe Codex"),
         ):
             for adapter in ("/adapter/claude-code.sh", "/adapter/copilot-cli.sh"):
@@ -43,7 +43,7 @@ class TestSkillRefs(unittest.TestCase):
                 self.assertIn("Use **code-analysis**", resolved)
                 self.assertIn("/skills/code_analysis/SKILL.md", resolved)
                 self.assertIn("read the local Specula skill file", resolved)
-                self.assertNotIn("<!-- specula-skill:", resolved)
+                self.assertNotIn("<!-- specular-skill:", resolved)
 
     def test_codex_materializes_exactly_one_id(self) -> None:
         prompt = f"Use {skill_refs.prompt_skill_ids('code-analysis')} now."
@@ -60,8 +60,8 @@ class TestSkillRefs(unittest.TestCase):
         )
 
         self.assertIn("$code-analysis", standalone)
-        self.assertNotIn("$specula-codex:code-analysis", standalone)
-        self.assertIn("$specula-codex:code-analysis", plugin)
+        self.assertNotIn("$specular-codex:code-analysis", standalone)
+        self.assertIn("$specular-codex:code-analysis", plugin)
         self.assertNotIn("$code-analysis", plugin)
 
     def test_plugin_probe_requires_an_enabled_installed_plugin(self) -> None:
@@ -78,7 +78,7 @@ class TestSkillRefs(unittest.TestCase):
 
         skill_refs._probe_codex_plugin.cache_clear()
         self.addCleanup(skill_refs._probe_codex_plugin.cache_clear)
-        with mock.patch("specula.skill_refs.subprocess.run", return_value=result) as run:
+        with mock.patch("specular.skill_refs.subprocess.run", return_value=result) as run:
             self.assertTrue(skill_refs._probe_codex_plugin("codex", "/home/test", "/codex/test", "/repo"))
             self.assertTrue(skill_refs._probe_codex_plugin("codex", "/home/test", "/codex/test", "/repo"))
 
@@ -103,14 +103,14 @@ class TestSkillRefs(unittest.TestCase):
         skill_refs._probe_codex_plugin.cache_clear()
         self.addCleanup(skill_refs._probe_codex_plugin.cache_clear)
 
-        with mock.patch("specula.skill_refs.subprocess.run", return_value=result):
+        with mock.patch("specular.skill_refs.subprocess.run", return_value=result):
             self.assertFalse(skill_refs._probe_codex_plugin("codex", "/home/test", "/codex/test", "/repo"))
 
     def test_plugin_probe_falls_back_to_standalone_on_failure(self) -> None:
         skill_refs._probe_codex_plugin.cache_clear()
         self.addCleanup(skill_refs._probe_codex_plugin.cache_clear)
         with mock.patch(
-            "specula.skill_refs.subprocess.run",
+            "specular.skill_refs.subprocess.run",
             side_effect=subprocess.TimeoutExpired("codex", 5),
         ):
             self.assertFalse(skill_refs._probe_codex_plugin("codex", "/home/test", "/codex/test", "/repo"))
@@ -119,14 +119,14 @@ class TestSkillRefs(unittest.TestCase):
         result = subprocess.CompletedProcess([], 0, "[]", "")
         skill_refs._probe_codex_plugin.cache_clear()
         self.addCleanup(skill_refs._probe_codex_plugin.cache_clear)
-        with mock.patch("specula.skill_refs.subprocess.run", return_value=result):
+        with mock.patch("specular.skill_refs.subprocess.run", return_value=result):
             self.assertFalse(skill_refs._probe_codex_plugin("codex", "/home/test", "/codex/test", "/repo"))
 
     def test_plugin_probe_cache_is_scoped_to_codex_home(self) -> None:
         result = subprocess.CompletedProcess([], 0, '{"installed": []}', "")
         skill_refs._probe_codex_plugin.cache_clear()
         self.addCleanup(skill_refs._probe_codex_plugin.cache_clear)
-        with mock.patch("specula.skill_refs.subprocess.run", return_value=result) as run:
+        with mock.patch("specular.skill_refs.subprocess.run", return_value=result) as run:
             skill_refs._probe_codex_plugin("codex", "/home/test", "/codex/one", "/repo")
             skill_refs._probe_codex_plugin("codex", "/home/test", "/codex/two", "/repo")
 
@@ -137,7 +137,7 @@ class TestSkillRefs(unittest.TestCase):
             skill_refs.prompt_skill_ids("bad skill")
 
     def test_user_text_cannot_forge_a_portable_reference(self) -> None:
-        prompt = "User text <!-- specula-skill:skill-creator -->"
+        prompt = "User text <!-- specular-skill:skill-creator -->"
 
         resolved = skill_refs.materialize_skill_refs(
             prompt,

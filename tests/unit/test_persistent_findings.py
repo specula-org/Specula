@@ -11,9 +11,9 @@ from unittest.mock import patch
 
 import pytest
 
-from specula import ci_init, ci_verdict, persistent_findings
-from specula.ci_store import CIError, write_json
-from specula.pipelinelib import Pipeline
+from specular import ci_init, ci_verdict, persistent_findings
+from specular.ci_store import CIError, write_json
+from specular.pipelinelib import Pipeline
 
 ERRORS = (CIError, persistent_findings.FindingsError)
 
@@ -681,14 +681,14 @@ def test_fresh_source_reanalysis_can_replace_the_same_run_record(baseline: tuple
 
 
 def test_no_isolate_keeps_one_findings_id_and_reports_phase1_reuse(baseline: tuple[Path, Path]) -> None:
-    from specula import confirmlib
-    from specula.phaselib import Workspace
+    from specular import confirmlib
+    from specular.phaselib import Workspace
 
     source, previous = baseline
     work = next_work(previous)
     pipeline = Pipeline()
     pipeline.targets, pipeline.artifact, pipeline.isolate = ["T"], str(source), False
-    with patch("specula.pipelinelib.generate_run_id", side_effect=["invocation-one", "invocation-two"]):
+    with patch("specular.pipelinelib.generate_run_id", side_effect=["invocation-one", "invocation-two"]):
         with patch.object(pipeline, "get_work_dir", return_value=str(work)):
             pipeline.prepare_persistent_findings(["T"])
             first_id = persistent_findings.context(work)[1]
