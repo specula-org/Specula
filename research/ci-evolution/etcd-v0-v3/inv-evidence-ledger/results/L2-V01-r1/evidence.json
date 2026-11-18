@@ -1,0 +1,2463 @@
+[
+ {
+  "id": "E-ACK-1",
+  "property": "AckPreservation_LogUnchanged",
+  "kind": "relaxation",
+  "state": "history.acks = {[before |-> <<n1,cc2>>, after |-> <<n1,cc2,leave3>>, cursor 2, applied 2, leader TRUE, autoLeave TRUE, pendingConf 2]} where n1 = Normal(t1,i1), cc2 = V2(t1,i2,id1,<<AddLearner 2>>,JointImplicit), leave3 = auto-leave V2(t1,i3,id0,<<>>,Auto). Populated from Go G1 (TestEvAutoLeaveAppend, new code): log before/after rn.Advance, rd.appliedCursor(), raft.state, prs.AutoLeave, pendingConfIndex before Advance. Other history fields empty.",
+  "old_property": {
+   "definition": "base!AckPreservation_LogUnchanged",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "definition": "Proposed!AckPreservation_LogUnchanged",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "new_behavior": "G1: Ready commits cc2 (JointImplicit), app applies it -> config (1)&&(1) learners=(2) autoleave; Advance(cursor 2) appends exactly one entry [3 t1 V2-leave].",
+   "old_behavior": "not_representable: old API has no ConfChangeV2 / joint config; old Advance only calls appliedTo/stableTo/stableSnapTo and never appends.",
+   "test_file": "evidence/go/new/zz_evidence_test.go",
+   "command": "cd evidence/go/new && go test -vet=off -run TestEv -v .",
+   "result": "PASS; see EVIDENCE G1 lines",
+   "logs": [
+    "evidence/logs/go_new_evidence.log"
+   ]
+  },
+  "requirement_evidence": [
+   "raftpb/raft.proto:85-86 JointImplicit \"transition out of them automatically (by proposing a zero configuration change)\"",
+   "raftpb/raft.proto:111-112 auto_leave \"Raft will automatically transition into the final config\"",
+   "rawnode_test.go:341-350 TestRawNodeProposeAndConfChange \"expected exactly one more entry\" (zero ConfChangeV2)",
+   "history ee0757a9b + log_test.go:481 TestStableTo (no lost/reverted entries: requirement clause kept)"
+  ],
+  "verdict": "accepted",
+  "note": "Old impl-abstraction clause (full log equality) rejects the documented/tested auto-leave append; revised property accepts it.",
+  "tlc_label": "E-ACK witness G1 (single auto-leave) LogUnchanged",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-ACK-1b",
+  "property": "AckPreservation",
+  "kind": "relaxation",
+  "state": "history.acks = {[before |-> <<n1,cc2>>, after |-> <<n1,cc2,leave3>>, cursor 2, applied 2, leader TRUE, autoLeave TRUE, pendingConf 2]} where n1 = Normal(t1,i1), cc2 = V2(t1,i2,id1,<<AddLearner 2>>,JointImplicit), leave3 = auto-leave V2(t1,i3,id0,<<>>,Auto). Populated from Go G1 (TestEvAutoLeaveAppend, new code): log before/after rn.Advance, rd.appliedCursor(), raft.state, prs.AutoLeave, pendingConfIndex before Advance. Other history fields empty.",
+  "old_property": {
+   "definition": "base!AckPreservation",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "definition": "Proposed!AckPreservation",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "new_behavior": "G1: Ready commits cc2 (JointImplicit), app applies it -> config (1)&&(1) learners=(2) autoleave; Advance(cursor 2) appends exactly one entry [3 t1 V2-leave].",
+   "old_behavior": "not_representable: old API has no ConfChangeV2 / joint config; old Advance only calls appliedTo/stableTo/stableSnapTo and never appends.",
+   "test_file": "evidence/go/new/zz_evidence_test.go",
+   "command": "cd evidence/go/new && go test -vet=off -run TestEv -v .",
+   "result": "PASS; see EVIDENCE G1 lines",
+   "logs": [
+    "evidence/logs/go_new_evidence.log"
+   ]
+  },
+  "requirement_evidence": [
+   "raftpb/raft.proto:85-86 JointImplicit \"transition out of them automatically (by proposing a zero configuration change)\"",
+   "raftpb/raft.proto:111-112 auto_leave \"Raft will automatically transition into the final config\"",
+   "rawnode_test.go:341-350 TestRawNodeProposeAndConfChange \"expected exactly one more entry\" (zero ConfChangeV2)",
+   "history ee0757a9b + log_test.go:481 TestStableTo (no lost/reverted entries: requirement clause kept)"
+  ],
+  "verdict": "accepted",
+  "note": "The model-internal conjunction inherits the relaxation unchanged.",
+  "tlc_label": "E-ACK witness G1 AckPreservation (conjunction)",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-ACK-C0",
+  "property": "AckPreservation_LogUnchanged",
+  "kind": "control",
+  "state": "Ack record as in E-ACK-1 except: after = before (no auto-leave). Hand-built neighbour of the G1 record.",
+  "old_property": {
+   "definition": "base!AckPreservation_LogUnchanged",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "definition": "Proposed!AckPreservation_LogUnchanged",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "new_behavior": "not executed (forbidden neighbour of G1; new code only appends the zero ConfChangeV2 at a leader, G1)",
+   "old_behavior": "not_representable",
+   "logs": []
+  },
+  "requirement_evidence": [
+   "requirement clause: no change is always allowed"
+  ],
+  "verdict": "accepted",
+  "note": "Control for the relaxation: the nearby forbidden/allowed observation keeps the expected verdict.",
+  "tlc_label": "E-ACK control unchanged log",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-ACK-C1",
+  "property": "AckPreservation_LogUnchanged",
+  "kind": "control",
+  "state": "Ack record as in E-ACK-1 except: after = <<n1>> (cc2 lost). Hand-built neighbour of the G1 record.",
+  "old_property": {
+   "definition": "base!AckPreservation_LogUnchanged",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "definition": "Proposed!AckPreservation_LogUnchanged",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "new_behavior": "not executed (forbidden neighbour of G1; new code only appends the zero ConfChangeV2 at a leader, G1)",
+   "old_behavior": "not_representable",
+   "logs": []
+  },
+  "requirement_evidence": [
+   "requirement clause (no lost entries) still rejected"
+  ],
+  "verdict": "accepted",
+  "note": "Control for the relaxation: the nearby forbidden/allowed observation keeps the expected verdict.",
+  "tlc_label": "E-ACK control lost entry",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-ACK-C2",
+  "property": "AckPreservation_LogUnchanged",
+  "kind": "control",
+  "state": "Ack record as in E-ACK-1 except: after = before \\o <<Normal(t1,i3)>>. Hand-built neighbour of the G1 record.",
+  "old_property": {
+   "definition": "base!AckPreservation_LogUnchanged",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "definition": "Proposed!AckPreservation_LogUnchanged",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "new_behavior": "not executed (forbidden neighbour of G1; new code only appends the zero ConfChangeV2 at a leader, G1)",
+   "old_behavior": "not_representable",
+   "logs": []
+  },
+  "requirement_evidence": [
+   "only an auto-leave entry may be appended"
+  ],
+  "verdict": "accepted",
+  "note": "Control for the relaxation: the nearby forbidden/allowed observation keeps the expected verdict.",
+  "tlc_label": "E-ACK control appended Normal entry",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-ACK-C3",
+  "property": "AckPreservation_LogUnchanged",
+  "kind": "control",
+  "state": "Ack record as in E-ACK-1 except: same as G1 with leader FALSE. Hand-built neighbour of the G1 record.",
+  "old_property": {
+   "definition": "base!AckPreservation_LogUnchanged",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "definition": "Proposed!AckPreservation_LogUnchanged",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "new_behavior": "not executed (forbidden neighbour of G1; new code only appends the zero ConfChangeV2 at a leader, G1)",
+   "old_behavior": "not_representable",
+   "logs": []
+  },
+  "requirement_evidence": [
+   "advance() requires r.state == StateLeader"
+  ],
+  "verdict": "accepted",
+  "note": "Control for the relaxation: the nearby forbidden/allowed observation keeps the expected verdict.",
+  "tlc_label": "E-ACK control auto-leave at non-leader",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-ACK-C4",
+  "property": "AckPreservation_LogUnchanged",
+  "kind": "control",
+  "state": "Ack record as in E-ACK-1 except: same as G1 with autoLeave FALSE. Hand-built neighbour of the G1 record.",
+  "old_property": {
+   "definition": "base!AckPreservation_LogUnchanged",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "definition": "Proposed!AckPreservation_LogUnchanged",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "new_behavior": "not executed (forbidden neighbour of G1; new code only appends the zero ConfChangeV2 at a leader, G1)",
+   "old_behavior": "not_representable",
+   "logs": []
+  },
+  "requirement_evidence": [
+   "explicit joint configs are left by the application"
+  ],
+  "verdict": "accepted",
+  "note": "Control for the relaxation: the nearby forbidden/allowed observation keeps the expected verdict.",
+  "tlc_label": "E-ACK control auto-leave without autoLeave config",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-ACK-C5",
+  "property": "AckPreservation_LogUnchanged",
+  "kind": "control",
+  "state": "Ack record as in E-ACK-1 except: same as G1 with cursor 1 < pendingConf 2. Hand-built neighbour of the G1 record.",
+  "old_property": {
+   "definition": "base!AckPreservation_LogUnchanged",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "definition": "Proposed!AckPreservation_LogUnchanged",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "new_behavior": "not executed (forbidden neighbour of G1; new code only appends the zero ConfChangeV2 at a leader, G1)",
+   "old_behavior": "not_representable",
+   "logs": []
+  },
+  "requirement_evidence": [
+   "advance() requires index >= pendingConfIndex"
+  ],
+  "verdict": "accepted",
+  "note": "Control for the relaxation: the nearby forbidden/allowed observation keeps the expected verdict.",
+  "tlc_label": "E-ACK control auto-leave before pending conf applied (cursor<pendingConf)",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-ACK-C6",
+  "property": "AckPreservation_LogUnchanged",
+  "kind": "control",
+  "state": "Ack record as in E-ACK-1 except: after = <<n1, Normal(t2,i2), leave(t2,i3)>> (cc2 replaced). Hand-built neighbour of the G1 record.",
+  "old_property": {
+   "definition": "base!AckPreservation_LogUnchanged",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "definition": "Proposed!AckPreservation_LogUnchanged",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "new_behavior": "not executed (forbidden neighbour of G1; new code only appends the zero ConfChangeV2 at a leader, G1)",
+   "old_behavior": "not_representable",
+   "logs": []
+  },
+  "requirement_evidence": [
+   "prefix must be preserved"
+  ],
+  "verdict": "accepted",
+  "note": "Control for the relaxation: the nearby forbidden/allowed observation keeps the expected verdict.",
+  "tlc_label": "E-ACK control replaced last entry by auto-leave (same length+1 but prefix changed)",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-ONE-1a",
+  "property": "AckPreservation_LogUnchanged",
+  "kind": "control",
+  "state": "history.acks = {[before |-> <<n1,cc2,n3,leave4>>, after |-> before \\o <<leave5>>, cursor 3, applied 3, leader TRUE, autoLeave TRUE, pendingConf 2]}. Populated from Go G2 step 3 (TestEvDoubleAutoLeave, new code, MaxCommittedSizePerReady=1): log before/after Advance, cursor, AutoLeave and pendingConfIndex before Advance.",
+  "old_property": {
+   "definition": "base!AckPreservation_LogUnchanged",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "definition": "Proposed!AckPreservation_LogUnchanged",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "new_behavior": "G2: step 2 Advance(cursor 2) appends leave@4; step 3 Advance(cursor 3) appends a SECOND leave@5 while leave@4 is unapplied (pendingConfIndex stays 2); step 4 applies leave@4 (config voters=(1) learners=(2)); step 5 ApplyConfChange(leave@5) panics \"can't leave a non-joint config\".",
+   "old_behavior": "not_representable (no auto-leave in old code)",
+   "test_file": "evidence/go/new/zz_evidence_test.go",
+   "command": "cd evidence/go/new && go test -vet=off -run TestEv -v .",
+   "result": "PASS (panic recovered and logged); see EVIDENCE G2 lines",
+   "logs": [
+    "evidence/logs/go_new_evidence.log"
+   ]
+  },
+  "requirement_evidence": [
+   "raftpb/raft.proto:85-86 JointImplicit \"transition out of them automatically (by proposing a zero configuration change)\"",
+   "raftpb/raft.proto:111-112 auto_leave \"Raft will automatically transition into the final config\"",
+   "rawnode_test.go:341-350 TestRawNodeProposeAndConfChange \"expected exactly one more entry\" (zero ConfChangeV2)",
+   "history ee0757a9b + log_test.go:481 TestStableTo (no lost/reverted entries: requirement clause kept)"
+  ],
+  "verdict": "revised",
+  "note": "Shows the AckPreservation_LogUnchanged relaxation ALONE accepts the double auto-leave (a.cursor>=pendingConf still holds) -> the relaxation must be paired with AutoLeaveOnePending.",
+  "tlc_label": "E-ONE G2 step 3 (second auto-leave) old LogUnchanged / new LogUnchanged",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-ONE-1",
+  "property": "AckPreservation_LogUnchanged (old) vs AutoLeaveOnePending (proposed)",
+  "kind": "strengthening",
+  "state": "history.acks = {[before |-> <<n1,cc2,n3,leave4>>, after |-> before \\o <<leave5>>, cursor 3, applied 3, leader TRUE, autoLeave TRUE, pendingConf 2]}. Populated from Go G2 step 3 (TestEvDoubleAutoLeave, new code, MaxCommittedSizePerReady=1): log before/after Advance, cursor, AutoLeave and pendingConfIndex before Advance.",
+  "old_property": {
+   "definition": "base!AckPreservation_LogUnchanged (nearest old check; AutoLeaveOnePending is new)",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "definition": "Proposed!AutoLeaveOnePending",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "new_behavior": "G2: step 2 Advance(cursor 2) appends leave@4; step 3 Advance(cursor 3) appends a SECOND leave@5 while leave@4 is unapplied (pendingConfIndex stays 2); step 4 applies leave@4 (config voters=(1) learners=(2)); step 5 ApplyConfChange(leave@5) panics \"can't leave a non-joint config\".",
+   "old_behavior": "not_representable (no auto-leave in old code)",
+   "test_file": "evidence/go/new/zz_evidence_test.go",
+   "command": "cd evidence/go/new && go test -vet=off -run TestEv -v .",
+   "result": "PASS (panic recovered and logged); see EVIDENCE G2 lines",
+   "logs": [
+    "evidence/logs/go_new_evidence.log"
+   ]
+  },
+  "requirement_evidence": [
+   "node.go:137-139 ProposeConfChange doc \"configuration changes are dropped unless the leader has certainty that there is no prior unapplied configuration change in its log\"",
+   "raft.go:280-284 \"Only one conf change may be pending (in the log, but not yet applied) at a time\"",
+   "README.md:195 one membership change at a time",
+   "raft.proto:111-112 auto_leave \"when this is safe\"",
+   "rawnode_test.go:343 exactly one auto-leave entry"
+  ],
+  "verdict": "accepted",
+  "note": "New property rejects the observed implementation behaviour; old suite also rejects but only because it rejects every auto-leave (non-discriminating, see E-ONE-C1). Suspected implementation defect, not grounds to weaken.",
+  "tlc_label": "E-ONE G2 step 3 (second auto-leave) old LogUnchanged / new AutoLeaveOnePending",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-ONE-C1",
+  "property": "AckPreservation_LogUnchanged (old) vs AutoLeaveOnePending (proposed)",
+  "kind": "control",
+  "state": "history.acks = {[before |-> <<n1,cc2,n3>>, after |-> before \\o <<leave4>>, cursor 2, applied 2, leader, autoLeave, pendingConf 2]} from Go G2 step 2.",
+  "old_property": {
+   "definition": "base!AckPreservation_LogUnchanged (nearest old check; AutoLeaveOnePending is new)",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "definition": "Proposed!AutoLeaveOnePending",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "new_behavior": "G2: step 2 Advance(cursor 2) appends leave@4; step 3 Advance(cursor 3) appends a SECOND leave@5 while leave@4 is unapplied (pendingConfIndex stays 2); step 4 applies leave@4 (config voters=(1) learners=(2)); step 5 ApplyConfChange(leave@5) panics \"can't leave a non-joint config\".",
+   "old_behavior": "not_representable (no auto-leave in old code)",
+   "test_file": "evidence/go/new/zz_evidence_test.go",
+   "command": "cd evidence/go/new && go test -vet=off -run TestEv -v .",
+   "result": "PASS (panic recovered and logged); see EVIDENCE G2 lines",
+   "logs": [
+    "evidence/logs/go_new_evidence.log"
+   ]
+  },
+  "requirement_evidence": [
+   "node.go:137-139 ProposeConfChange doc \"configuration changes are dropped unless the leader has certainty that there is no prior unapplied configuration change in its log\"",
+   "raft.go:280-284 \"Only one conf change may be pending (in the log, but not yet applied) at a time\"",
+   "README.md:195 one membership change at a time",
+   "raft.proto:111-112 auto_leave \"when this is safe\"",
+   "rawnode_test.go:343 exactly one auto-leave entry"
+  ],
+  "verdict": "accepted",
+  "note": "Legitimate first auto-leave is allowed by the new property (old suite rejects it).",
+  "tlc_label": "E-ONE control G2 step 2 (first auto-leave) old LogUnchanged / new AutoLeaveOnePending",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-ONE-C2",
+  "property": "AckPreservation_LogUnchanged (old) vs AutoLeaveOnePending (proposed)",
+  "kind": "control",
+  "state": "history.acks = {[before |-> <<n1,cc2>>, after |-> <<n1,cc2,leave3>>, cursor 2, applied 2, leader TRUE, autoLeave TRUE, pendingConf 2]} where n1 = Normal(t1,i1), cc2 = V2(t1,i2,id1,<<AddLearner 2>>,JointImplicit), leave3 = auto-leave V2(t1,i3,id0,<<>>,Auto). Populated from Go G1 (TestEvAutoLeaveAppend, new code): log before/after rn.Advance, rd.appliedCursor(), raft.state, prs.AutoLeave, pendingConfIndex before Advance. Other history fields empty.",
+  "old_property": {
+   "definition": "base!AckPreservation_LogUnchanged (nearest old check; AutoLeaveOnePending is new)",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "definition": "Proposed!AutoLeaveOnePending",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "new_behavior": "G1: Ready commits cc2 (JointImplicit), app applies it -> config (1)&&(1) learners=(2) autoleave; Advance(cursor 2) appends exactly one entry [3 t1 V2-leave].",
+   "old_behavior": "not_representable: old API has no ConfChangeV2 / joint config; old Advance only calls appliedTo/stableTo/stableSnapTo and never appends.",
+   "test_file": "evidence/go/new/zz_evidence_test.go",
+   "command": "cd evidence/go/new && go test -vet=off -run TestEv -v .",
+   "result": "PASS; see EVIDENCE G1 lines",
+   "logs": [
+    "evidence/logs/go_new_evidence.log"
+   ]
+  },
+  "requirement_evidence": [
+   "node.go:137-139 ProposeConfChange doc \"configuration changes are dropped unless the leader has certainty that there is no prior unapplied configuration change in its log\"",
+   "raft.go:280-284 \"Only one conf change may be pending (in the log, but not yet applied) at a time\"",
+   "README.md:195 one membership change at a time",
+   "raft.proto:111-112 auto_leave \"when this is safe\"",
+   "rawnode_test.go:343 exactly one auto-leave entry"
+  ],
+  "verdict": "accepted",
+  "note": "Legitimate single auto-leave (G1) allowed.",
+  "tlc_label": "E-ONE control G1 old LogUnchanged / new AutoLeaveOnePending",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-EFF-DEMOTE-1",
+  "property": "RequestCorrelatedConfigurationEffects",
+  "kind": "semantic",
+  "state": "quality.effects = {[node 1, entry AddLearner(3) id 1 (t2,i5), before voters {1,2,3}, after voters {1,2} learners {3}, committed = boot(1,2,3) \\o <<Normal(t2,i4), entry>>, request handed-off AddLearner 3]}; old evaluated on the 2-field projection [voters,learners], new on the joint record. before/after taken from Go G3new.",
+  "old_property": {
+   "definition": "base!RequestCorrelatedConfigurationEffects",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "definition": "Proposed!RequestCorrelatedConfigurationEffects",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "new_behavior": "G3new: applyConfChange(AddLearnerNode 3) on voters=(1 2 3) -> voters=(1 2) learners=(3), Progress[3].IsLearner=true",
+   "old_behavior": "G3old: applyConfChange(AddLearnerNode 3) on voters=(1 2 3) -> unchanged voters=(1 2 3), IsLearner=false (\"ignored addLearner\")",
+   "test_file": [
+    "evidence/go/new/zz_evidence_test.go",
+    "evidence/go/old/zz_evidence_test.go"
+   ],
+   "command": [
+    "cd evidence/go/new && go test -vet=off -run TestEv -v .",
+    "cd evidence/go/old && go test -vet=off -run TestEv -v ."
+   ],
+   "result": "PASS both; see EVIDENCE G3new / G3old",
+   "logs": [
+    "evidence/logs/go_new_evidence.log",
+    "evidence/logs/go_old_evidence.log"
+   ]
+  },
+  "requirement_evidence": [
+   "raft_test.go:3120 TestAddLearner \"// Demote r.\" asserts the demoted node is a learner",
+   "confchange/testdata/simple_promote_demote.txt:34 \"# Can demote a voter.\"",
+   "old ledger: the no-op clause was impl-abstraction (raft.go:1412 \"TODO(tbg): why?\")"
+  ],
+  "verdict": "accepted",
+  "note": "impl-abstraction clause revised to the new, test-backed behaviour.",
+  "tlc_label": "E-EFF-DEMOTE G3 (demotion)",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-EFF-DEMOTE-C1",
+  "property": "RequestCorrelatedConfigurationEffects",
+  "kind": "control",
+  "state": "quality.effects = {[node 1, entry AddLearner(3) id 1 (t2,i5), before voters {1,2,3}, after = before (no-op, as old code G3old), committed = boot(1,2,3) \\o <<Normal(t2,i4), entry>>, request handed-off AddLearner 3]}; old evaluated on the 2-field projection [voters,learners], new on the joint record. before/after taken from Go G3new.",
+  "old_property": {
+   "definition": "base!RequestCorrelatedConfigurationEffects",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "definition": "Proposed!RequestCorrelatedConfigurationEffects",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "new_behavior": "G3new: applyConfChange(AddLearnerNode 3) on voters=(1 2 3) -> voters=(1 2) learners=(3), Progress[3].IsLearner=true",
+   "old_behavior": "G3old: applyConfChange(AddLearnerNode 3) on voters=(1 2 3) -> unchanged voters=(1 2 3), IsLearner=false (\"ignored addLearner\")",
+   "test_file": [
+    "evidence/go/new/zz_evidence_test.go",
+    "evidence/go/old/zz_evidence_test.go"
+   ],
+   "command": [
+    "cd evidence/go/new && go test -vet=off -run TestEv -v .",
+    "cd evidence/go/old && go test -vet=off -run TestEv -v ."
+   ],
+   "result": "PASS both; see EVIDENCE G3new / G3old",
+   "logs": [
+    "evidence/logs/go_new_evidence.log",
+    "evidence/logs/go_old_evidence.log"
+   ]
+  },
+  "requirement_evidence": [
+   "raft_test.go:3120 TestAddLearner \"// Demote r.\" asserts the demoted node is a learner",
+   "confchange/testdata/simple_promote_demote.txt:34 \"# Can demote a voter.\"",
+   "old ledger: the no-op clause was impl-abstraction (raft.go:1412 \"TODO(tbg): why?\")"
+  ],
+  "verdict": "accepted",
+  "note": "Strengthening control: the old behaviour is now rejected (demotion is required by new tests).",
+  "tlc_label": "E-EFF-DEMOTE control no-op (old code G3old behaviour)",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-EFF-DEMOTE-C2",
+  "property": "RequestCorrelatedConfigurationEffects",
+  "kind": "control",
+  "state": "quality.effects = {[node 1, entry AddLearner(3) id 1 (t2,i5), before voters {1,2,3}, after voters {1,2} learners {}, committed = boot(1,2,3) \\o <<Normal(t2,i4), entry>>, request handed-off AddLearner 3]}; old evaluated on the 2-field projection [voters,learners], new on the joint record. before/after taken from Go G3new.",
+  "old_property": {
+   "definition": "base!RequestCorrelatedConfigurationEffects",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "definition": "Proposed!RequestCorrelatedConfigurationEffects",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "new_behavior": "not executed (forbidden neighbour)",
+   "old_behavior": "not_representable",
+   "logs": []
+  },
+  "requirement_evidence": [
+   "raft_test.go:3120 TestAddLearner \"// Demote r.\" asserts the demoted node is a learner",
+   "confchange/testdata/simple_promote_demote.txt:34 \"# Can demote a voter.\"",
+   "old ledger: the no-op clause was impl-abstraction (raft.go:1412 \"TODO(tbg): why?\")"
+  ],
+  "verdict": "accepted",
+  "note": "Wrong effect still rejected by both.",
+  "tlc_label": "E-EFF-DEMOTE control voter removed instead of demoted",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-EFF-AUTO-1",
+  "property": "RequestCorrelatedConfigurationEffects",
+  "kind": "relaxation",
+  "state": "quality.effects = {[entry auto-leave V2(t2,i6,id0,<<>>,Auto), before joint voters {1,2} outgoing {1,2,3} autoLeave, after voters {1,2}, committed = boot \\o <<Normal(t2,i4), V2(t2,i5,id1,<<Remove 3>>,JointImplicit), leave>>, request = none (not handed off)]}. Shape from Go G1/G2 (auto-leave has no request id; applied to joint autoleave config) and G6 (Remove 3 joint).",
+  "old_property": {
+   "definition": "base!RequestCorrelatedConfigurationEffects",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "definition": "Proposed!RequestCorrelatedConfigurationEffects",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "new_behavior": "G1/G2: the auto-leave entry is created by raft.advance with no proposal; applying it to a joint autoLeave config yields the incoming config (G2 step 4: voters=(1) learners=(2)).",
+   "old_behavior": "not_representable",
+   "test_file": "evidence/go/new/zz_evidence_test.go",
+   "command": "cd evidence/go/new && go test -vet=off -run TestEv -v .",
+   "result": "PASS",
+   "logs": [
+    "evidence/logs/go_new_evidence.log"
+   ]
+  },
+  "requirement_evidence": [
+   "raft.proto:85-86 (JointImplicit: raft proposes the zero change)",
+   "raft.proto:111-112 (auto_leave)",
+   "rawnode_test.go:341-357 (zero ConfChangeV2 leaves the joint config)"
+  ],
+  "verdict": "accepted",
+  "note": "Old requirement clause (id 0 => bootstrap AddVoter) changed by new non-impl evidence: raft itself originates auto-leave entries.",
+  "tlc_label": "E-EFF-AUTO auto-leave applied to joint autoLeave config (incoming projection)",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-EFF-AUTO-2",
+  "property": "RequestCorrelatedConfigurationEffects",
+  "kind": "relaxation",
+  "state": "quality.effects = {[entry auto-leave V2(t2,i6,id0,<<>>,Auto), before joint voters {1,2} outgoing {1,2,3} autoLeave, after voters {1,2}, committed = boot \\o <<Normal(t2,i4), V2(t2,i5,id1,<<Remove 3>>,JointImplicit), leave>>, request = none (not handed off)]}. Shape from Go G1/G2 (auto-leave has no request id; applied to joint autoleave config) and G6 (Remove 3 joint). Old evaluated on the union (VoterNodes) projection.",
+  "old_property": {
+   "definition": "base!RequestCorrelatedConfigurationEffects",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "definition": "Proposed!RequestCorrelatedConfigurationEffects",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "new_behavior": "G1/G2: the auto-leave entry is created by raft.advance with no proposal; applying it to a joint autoLeave config yields the incoming config (G2 step 4: voters=(1) learners=(2)).",
+   "old_behavior": "not_representable",
+   "test_file": "evidence/go/new/zz_evidence_test.go",
+   "command": "cd evidence/go/new && go test -vet=off -run TestEv -v .",
+   "result": "PASS",
+   "logs": [
+    "evidence/logs/go_new_evidence.log"
+   ]
+  },
+  "requirement_evidence": [
+   "raft.proto:85-86 (JointImplicit: raft proposes the zero change)",
+   "raft.proto:111-112 (auto_leave)",
+   "rawnode_test.go:341-357 (zero ConfChangeV2 leaves the joint config)"
+  ],
+  "verdict": "accepted",
+  "note": "Same verdict under the other old projection.",
+  "tlc_label": "E-EFF-AUTO same, union projection for old",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-EFF-AUTO-C1",
+  "property": "RequestCorrelatedConfigurationEffects",
+  "kind": "control",
+  "state": "auto-leave entry applied to non-joint config voters {1,2} (after = before, Changer error leaves config unchanged); mirrors Go G2 step 5.",
+  "old_property": {
+   "definition": "base!RequestCorrelatedConfigurationEffects",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "definition": "Proposed!RequestCorrelatedConfigurationEffects",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "new_behavior": "G2: step 2 Advance(cursor 2) appends leave@4; step 3 Advance(cursor 3) appends a SECOND leave@5 while leave@4 is unapplied (pendingConfIndex stays 2); step 4 applies leave@4 (config voters=(1) learners=(2)); step 5 ApplyConfChange(leave@5) panics \"can't leave a non-joint config\".",
+   "old_behavior": "not_representable (no auto-leave in old code)",
+   "test_file": "evidence/go/new/zz_evidence_test.go",
+   "command": "cd evidence/go/new && go test -vet=off -run TestEv -v .",
+   "result": "PASS (panic recovered and logged); see EVIDENCE G2 lines",
+   "logs": [
+    "evidence/logs/go_new_evidence.log"
+   ]
+  },
+  "requirement_evidence": [
+   "raft.proto:85-86 (JointImplicit: raft proposes the zero change)",
+   "raft.proto:111-112 (auto_leave)",
+   "rawnode_test.go:341-357 (zero ConfChangeV2 leaves the joint config)",
+   "node.go:137-139 ProposeConfChange doc \"configuration changes are dropped unless the leader has certainty that there is no prior unapplied configuration change in its log\"",
+   "raft.go:280-284 \"Only one conf change may be pending (in the log, but not yet applied) at a time\"",
+   "README.md:195 one membership change at a time",
+   "raft.proto:111-112 auto_leave \"when this is safe\"",
+   "rawnode_test.go:343 exactly one auto-leave entry"
+  ],
+  "verdict": "accepted",
+  "note": "Relaxation is bounded: an auto-leave applied outside a joint autoLeave config is still rejected (catches the double auto-leave defect).",
+  "tlc_label": "E-EFF-AUTO control: second auto-leave applied to non-joint config (G2 step 5)",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-EFF-AUTO-C2",
+  "property": "RequestCorrelatedConfigurationEffects",
+  "kind": "control",
+  "state": "as E-EFF-AUTO-1 but before.autoLeave = FALSE (JointExplicit).",
+  "old_property": {
+   "definition": "base!RequestCorrelatedConfigurationEffects",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "definition": "Proposed!RequestCorrelatedConfigurationEffects",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "new_behavior": "not executed",
+   "old_behavior": "not_representable",
+   "logs": []
+  },
+  "requirement_evidence": [
+   "raft.proto:85-86 (JointImplicit: raft proposes the zero change)",
+   "raft.proto:111-112 (auto_leave)",
+   "rawnode_test.go:341-357 (zero ConfChangeV2 leaves the joint config)"
+  ],
+  "verdict": "accepted",
+  "note": "Explicit joint configs must be left by an application request.",
+  "tlc_label": "E-EFF-AUTO control: id-0 leave applied to explicit joint config (autoLeave=FALSE)",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-EFF-AUTO-C3",
+  "property": "RequestCorrelatedConfigurationEffects",
+  "kind": "control",
+  "state": "user V2 leave with request id 2 (handed off, kind V2, empty changes) applied to explicit joint config.",
+  "old_property": {
+   "definition": "base!RequestCorrelatedConfigurationEffects",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "definition": "Proposed!RequestCorrelatedConfigurationEffects",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "new_behavior": "rawnode_test.go TestRawNodeProposeAndConfChange explicit cases propose ConfChangeV2{Context:\"manual\"} to leave (PASS in evidence/logs/go_new_existing_tests.log)",
+   "old_behavior": "not_representable",
+   "test_file": "evidence/go/new/zz_evidence_test.go",
+   "command": "cd evidence/go/new && go test -vet=off -run TestEv -v .",
+   "logs": [
+    "evidence/logs/go_new_existing_tests.log"
+   ]
+  },
+  "requirement_evidence": [
+   "raft.proto:85-86 (JointImplicit: raft proposes the zero change)",
+   "raft.proto:111-112 (auto_leave)",
+   "rawnode_test.go:341-357 (zero ConfChangeV2 leaves the joint config)"
+  ],
+  "verdict": "accepted",
+  "note": "Legitimate explicit leave accepted (old accepts by coincidence of the incoming projection).",
+  "tlc_label": "E-EFF-AUTO control: user explicit leave (request 2) of explicit joint config",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-EFF-C4",
+  "property": "RequestCorrelatedConfigurationEffects",
+  "kind": "control",
+  "state": "AddVoter 4 (request 1) on {1,2,3} -> {1,2,3,4}.",
+  "old_property": {
+   "definition": "base!RequestCorrelatedConfigurationEffects",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "definition": "Proposed!RequestCorrelatedConfigurationEffects",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "new_behavior": "TestAddNode PASS (existing test)",
+   "old_behavior": "not_representable",
+   "logs": []
+  },
+  "requirement_evidence": [
+   "raft_test.go TestAddNode"
+  ],
+  "verdict": "accepted",
+  "note": "Unchanged behaviour stays accepted.",
+  "tlc_label": "E-EFF control: unchanged AddVoter effect (both representations)",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-EFF-C5",
+  "property": "RequestCorrelatedConfigurationEffects",
+  "kind": "control",
+  "state": "AddVoter entry whose request kind is Remove.",
+  "old_property": {
+   "definition": "base!RequestCorrelatedConfigurationEffects",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "definition": "Proposed!RequestCorrelatedConfigurationEffects",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "new_behavior": "not executed",
+   "old_behavior": "not_representable",
+   "logs": []
+  },
+  "requirement_evidence": [
+   "README.md:172-178 request correlation"
+  ],
+  "verdict": "accepted",
+  "note": "Correlation clause not weakened.",
+  "tlc_label": "E-EFF control: request kind mismatch still rejected",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-OVL-1",
+  "property": "RequestCorrelatedConfigurationEffects (old) vs ConfigurationTransitionOverlap (proposed)",
+  "kind": "strengthening",
+  "state": "quality.effects = {[entry V2(t2,i5,id1,<<r2,r3,v4,v5>>,Auto), before voters {1,2,3}, after NON-joint voters {1,4,5}]} (unsafe one-step swap). Old suite has no overlap property; old column = old EffectContract (nearest check).",
+  "old_property": {
+   "definition": "base!RequestCorrelatedConfigurationEffects (nearest old check; the old suite has no overlap property)",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "definition": "Proposed!ConfigurationTransitionOverlap",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "new_behavior": "G10: Changer.Simple(r2 r3 v4 v5) -> error \"more than one voter changed without entering joint config\"; Changer.EnterJoint(same) -> voters=(1 4 5)&&(1 2 3).",
+   "old_behavior": "not_representable (no multi-change entries)",
+   "test_file": "evidence/go/new/zz_evidence_test.go",
+   "command": "cd evidence/go/new && go test -vet=off -run TestEv -v .",
+   "result": "PASS; see EVIDENCE G10",
+   "logs": [
+    "evidence/logs/go_new_evidence.log"
+   ]
+  },
+  "requirement_evidence": [
+   "confchange.go:129-131 Simple \"mutates the incoming majority config Voters[0] by at most one\"",
+   "confchange/testdata/simple_safety.txt:23 \"more than one voter changed without entering joint config\"",
+   "confchange.go:36-44 EnterJoint copies incoming into outgoing (C_old -> C_new,old)",
+   "raft.proto:155-166 joint consensus doc",
+   "raft_test.go:3183 \"Removing the remaining voter will panic.\""
+  ],
+  "verdict": "accepted",
+  "note": "Unsafe transition rejected by the new property. The old EffectContract also returns FALSE, but it returns FALSE for every V2 effect including the legitimate one (E-OVL-C1), so it does not express the obligation.",
+  "tlc_label": "E-OVL unsafe one-step swap {1,2,3}->{1,4,5} (old EffectContract / new Overlap)",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-OVL-1b",
+  "property": "RequestCorrelatedConfigurationEffects",
+  "kind": "control",
+  "state": "quality.effects = {[entry V2(t2,i5,id1,<<r2,r3,v4,v5>>,Auto), before voters {1,2,3}, after NON-joint voters {1,4,5}]} (unsafe one-step swap). Old suite has no overlap property; old column = old EffectContract (nearest check).",
+  "old_property": {
+   "definition": "base!RequestCorrelatedConfigurationEffects",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "definition": "Proposed!RequestCorrelatedConfigurationEffects",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "new_behavior": "G10: Changer.Simple(r2 r3 v4 v5) -> error \"more than one voter changed without entering joint config\"; Changer.EnterJoint(same) -> voters=(1 4 5)&&(1 2 3).",
+   "old_behavior": "not_representable (no multi-change entries)",
+   "test_file": "evidence/go/new/zz_evidence_test.go",
+   "command": "cd evidence/go/new && go test -vet=off -run TestEv -v .",
+   "result": "PASS; see EVIDENCE G10",
+   "logs": [
+    "evidence/logs/go_new_evidence.log"
+   ]
+  },
+  "requirement_evidence": [
+   "confchange.go:129-131 Simple \"mutates the incoming majority config Voters[0] by at most one\"",
+   "confchange/testdata/simple_safety.txt:23 \"more than one voter changed without entering joint config\"",
+   "confchange.go:36-44 EnterJoint copies incoming into outgoing (C_old -> C_new,old)",
+   "raft.proto:155-166 joint consensus doc",
+   "raft_test.go:3183 \"Removing the remaining voter will panic.\""
+  ],
+  "verdict": "accepted",
+  "note": "The revised EffectContract (via the Changer-mirroring ConfigAfter) also rejects it, so the overlap property is partly redundant; it is kept as a helper-independent check (it does not depend on ConfigAfter being right).",
+  "tlc_label": "E-OVL unsafe one-step swap: new EffectContract (Changer mirror)",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-OVL-C1",
+  "property": "RequestCorrelatedConfigurationEffects (old) vs ConfigurationTransitionOverlap (proposed)",
+  "kind": "control",
+  "state": "quality.effects = {[entry V2(t2,i5,id1,<<r2,r3,v4,v5>>,Auto), before voters {1,2,3}, after joint voters {1,4,5} outgoing {1,2,3} autoLeave (G10/G5 result)]} (unsafe one-step swap). Old suite has no overlap property; old column = old EffectContract (nearest check).",
+  "old_property": {
+   "definition": "base!RequestCorrelatedConfigurationEffects",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "definition": "Proposed!ConfigurationTransitionOverlap",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "new_behavior": "G10: Changer.Simple(r2 r3 v4 v5) -> error \"more than one voter changed without entering joint config\"; Changer.EnterJoint(same) -> voters=(1 4 5)&&(1 2 3).",
+   "old_behavior": "not_representable (no multi-change entries)",
+   "test_file": "evidence/go/new/zz_evidence_test.go",
+   "command": "cd evidence/go/new && go test -vet=off -run TestEv -v .",
+   "result": "PASS; see EVIDENCE G10",
+   "logs": [
+    "evidence/logs/go_new_evidence.log"
+   ]
+  },
+  "requirement_evidence": [
+   "confchange.go:129-131 Simple \"mutates the incoming majority config Voters[0] by at most one\"",
+   "confchange/testdata/simple_safety.txt:23 \"more than one voter changed without entering joint config\"",
+   "confchange.go:36-44 EnterJoint copies incoming into outgoing (C_old -> C_new,old)",
+   "raft.proto:155-166 joint consensus doc",
+   "raft_test.go:3183 \"Removing the remaining voter will panic.\""
+  ],
+  "verdict": "accepted",
+  "note": "Legitimate joint entry allowed; old EffectContract rejects it (old representation cannot express V2).",
+  "tlc_label": "E-OVL control legit enter-joint (G10: (1 4 5)&&(1 2 3)) old EffectContract / new Overlap",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-OVL-C1b",
+  "property": "RequestCorrelatedConfigurationEffects",
+  "kind": "control",
+  "state": "as E-OVL-C1 (old column is a constant TRUE placeholder, not evaluated)",
+  "old_property": {
+   "definition": "none (no old counterpart; TLC tuple slot holds the constant TRUE placeholder)",
+   "claimed": "n/a",
+   "tlc": "n/a (placeholder TRUE)"
+  },
+  "proposed_property": {
+   "definition": "Proposed!RequestCorrelatedConfigurationEffects",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "new_behavior": "G10: Changer.Simple(r2 r3 v4 v5) -> error \"more than one voter changed without entering joint config\"; Changer.EnterJoint(same) -> voters=(1 4 5)&&(1 2 3).",
+   "old_behavior": "not_representable (no multi-change entries)",
+   "test_file": "evidence/go/new/zz_evidence_test.go",
+   "command": "cd evidence/go/new && go test -vet=off -run TestEv -v .",
+   "result": "PASS; see EVIDENCE G10",
+   "logs": [
+    "evidence/logs/go_new_evidence.log"
+   ]
+  },
+  "requirement_evidence": [
+   "confchange.go:129-131 Simple \"mutates the incoming majority config Voters[0] by at most one\"",
+   "confchange/testdata/simple_safety.txt:23 \"more than one voter changed without entering joint config\"",
+   "confchange.go:36-44 EnterJoint copies incoming into outgoing (C_old -> C_new,old)",
+   "raft.proto:155-166 joint consensus doc",
+   "raft_test.go:3183 \"Removing the remaining voter will panic.\""
+  ],
+  "verdict": "accepted",
+  "note": "Revised EffectContract agrees with Changer result (G10).",
+  "tlc_label": "E-OVL control legit enter-joint: new EffectContract",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-OVL-C2",
+  "property": "ConfigurationTransitionOverlap",
+  "kind": "control",
+  "state": "old column = new Overlap on the auto-leave effect of E-EFF-AUTO-1; new column = new Overlap on the demotion effect of E-EFF-DEMOTE-1 (both proposed definition).",
+  "old_property": {
+   "definition": "Proposed!ConfigurationTransitionOverlap on the auto-leave effect of E-EFF-AUTO-1 (slot reused; no old counterpart)",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "definition": "Proposed!ConfigurationTransitionOverlap on the demotion effect of E-EFF-DEMOTE-1",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "new_behavior": "G2 step 4 / G3new",
+   "old_behavior": "not_representable",
+   "logs": []
+  },
+  "requirement_evidence": [
+   "confchange.go:129-131 Simple \"mutates the incoming majority config Voters[0] by at most one\"",
+   "confchange/testdata/simple_safety.txt:23 \"more than one voter changed without entering joint config\"",
+   "confchange.go:36-44 EnterJoint copies incoming into outgoing (C_old -> C_new,old)",
+   "raft.proto:155-166 joint consensus doc",
+   "raft_test.go:3183 \"Removing the remaining voter will panic.\""
+  ],
+  "verdict": "accepted",
+  "note": "Legitimate leave and demotion transitions allowed (both columns are Proposed!ConfigurationTransitionOverlap).",
+  "tlc_label": "E-OVL control leave-joint / demotion / simple add (new Overlap)",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-OVL-C3",
+  "property": "RequestCorrelatedConfigurationEffects (old) vs ConfigurationTransitionOverlap (proposed)",
+  "kind": "strengthening",
+  "state": "effect Remove(1) on voters {1} -> voters {} (what old code G12old produced).",
+  "old_property": {
+   "definition": "base!RequestCorrelatedConfigurationEffects",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "definition": "Proposed!ConfigurationTransitionOverlap",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "new_behavior": "G12new: removing the last voter panics \"removed all voters\"",
+   "old_behavior": "G12old: removing the last voter succeeds, config voters=()",
+   "test_file": [
+    "evidence/go/new/zz_evidence_test.go",
+    "evidence/go/old/zz_evidence_test.go"
+   ],
+   "command": [
+    "cd evidence/go/new && go test -vet=off -run TestEv -v .",
+    "cd evidence/go/old && go test -vet=off -run TestEv -v ."
+   ],
+   "result": "PASS both",
+   "logs": [
+    "evidence/logs/go_new_evidence.log",
+    "evidence/logs/go_old_evidence.log"
+   ]
+  },
+  "requirement_evidence": [
+   "confchange.go:129-131 Simple \"mutates the incoming majority config Voters[0] by at most one\"",
+   "confchange/testdata/simple_safety.txt:23 \"more than one voter changed without entering joint config\"",
+   "confchange.go:36-44 EnterJoint copies incoming into outgoing (C_old -> C_new,old)",
+   "raft.proto:155-166 joint consensus doc",
+   "raft_test.go:3183 \"Removing the remaining voter will panic.\""
+  ],
+  "verdict": "accepted",
+  "note": "Old suite accepted an empty voter set; new tests require the change to be refused.",
+  "tlc_label": "E-OVL control remove last voter {1}->{} (G12old effect) old EffectContract / new Overlap",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-OVL-C4",
+  "property": "ConfigurationTransitionOverlap",
+  "kind": "control",
+  "state": "enter-joint effect {1,2,3} -> (1 4 5)&&(1 2) (outgoing not a copy of the old incoming). Old column is a TRUE placeholder.",
+  "old_property": {
+   "definition": "none (no old counterpart; TLC tuple slot holds the constant TRUE placeholder)",
+   "claimed": "n/a",
+   "tlc": "n/a (placeholder TRUE)"
+  },
+  "proposed_property": {
+   "definition": "Proposed!ConfigurationTransitionOverlap",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "new_behavior": "not executed; Changer.EnterJoint always copies incoming (confchange.go:162-164)",
+   "old_behavior": "not_representable",
+   "logs": []
+  },
+  "requirement_evidence": [
+   "confchange.go:129-131 Simple \"mutates the incoming majority config Voters[0] by at most one\"",
+   "confchange/testdata/simple_safety.txt:23 \"more than one voter changed without entering joint config\"",
+   "confchange.go:36-44 EnterJoint copies incoming into outgoing (C_old -> C_new,old)",
+   "raft.proto:155-166 joint consensus doc",
+   "raft_test.go:3183 \"Removing the remaining voter will panic.\""
+  ],
+  "verdict": "accepted",
+  "note": "Forbidden joint entry rejected.",
+  "tlc_label": "E-OVL control enter-joint whose outgoing is not the old voter set",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-QA-1",
+  "property": "QuorumAccounting",
+  "kind": "strengthening",
+  "state": "history.commitUses = {[hist <<n1,n2>>, voters V, outgoing O, matches {1,2,3}, term 1, oldCommit 0]}; old: V={1,2,3,4,5} (VoterNodes union, outgoing ignored); new: V={1,4,5}, O={1,2,3}. Config and matches from Go G5.",
+  "old_property": {
+   "definition": "base!QuorumAccounting",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "definition": "Proposed!QuorumAccounting",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "new_behavior": "G5: leader 1, config voters=(1 4 5)&&(1 2 3) autoleave, Match{1,2,3}=2, Match{4,5}=0 -> maybeCommit leaves committed=0; with Match[4]=2 committed=2.",
+   "old_behavior": "not_representable (joint config unreachable through the old API)",
+   "test_file": "evidence/go/new/zz_evidence_test.go",
+   "command": "cd evidence/go/new && go test -vet=off -run TestEv -v .",
+   "result": "PASS; see EVIDENCE G5",
+   "logs": [
+    "evidence/logs/go_new_evidence.log"
+   ]
+  },
+  "requirement_evidence": [
+   "raft.proto:155-156 \"quorum requires a majority of both the pre-changes and post-changes configuration\"",
+   "quorum/joint.go:46-47 \"jointly committed if it is committed in both constituent majorities\"",
+   "Raft-paper \u00a75.2"
+  ],
+  "verdict": "accepted",
+  "note": "A flattened (union) quorum would accept this commit; the code refuses it, the revised property rejects it.",
+  "tlc_label": "E-QA union projection: commit by {1,2,3} in (1 4 5)&&(1 2 3) (G5: code does not commit)",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-QA-2",
+  "property": "QuorumAccounting",
+  "kind": "strengthening",
+  "state": "as E-QA-1 with matches {1,4,5}; old sees voters={1,4,5} only.",
+  "old_property": {
+   "definition": "base!QuorumAccounting",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "definition": "Proposed!QuorumAccounting",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "new_behavior": "G5: leader 1, config voters=(1 4 5)&&(1 2 3) autoleave, Match{1,2,3}=2, Match{4,5}=0 -> maybeCommit leaves committed=0; with Match[4]=2 committed=2.",
+   "old_behavior": "not_representable (joint config unreachable through the old API)",
+   "test_file": "evidence/go/new/zz_evidence_test.go",
+   "command": "cd evidence/go/new && go test -vet=off -run TestEv -v .",
+   "result": "PASS; see EVIDENCE G5",
+   "logs": [
+    "evidence/logs/go_new_evidence.log"
+   ]
+  },
+  "requirement_evidence": [
+   "raft.proto:155-156 \"quorum requires a majority of both the pre-changes and post-changes configuration\"",
+   "quorum/joint.go:46-47 \"jointly committed if it is committed in both constituent majorities\"",
+   "Raft-paper \u00a75.2"
+  ],
+  "verdict": "accepted",
+  "note": "Incoming-only observer misses the outgoing majority requirement.",
+  "tlc_label": "E-QA incoming projection: commit by {1,4,5} in (1 4 5)&&(1 2 3)",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-QA-C1",
+  "property": "QuorumAccounting",
+  "kind": "control",
+  "state": "matches {1,2,3,4} (G5 control, code commits to 2).",
+  "old_property": {
+   "definition": "base!QuorumAccounting",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "definition": "Proposed!QuorumAccounting",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "new_behavior": "G5: leader 1, config voters=(1 4 5)&&(1 2 3) autoleave, Match{1,2,3}=2, Match{4,5}=0 -> maybeCommit leaves committed=0; with Match[4]=2 committed=2.",
+   "old_behavior": "not_representable (joint config unreachable through the old API)",
+   "test_file": "evidence/go/new/zz_evidence_test.go",
+   "command": "cd evidence/go/new && go test -vet=off -run TestEv -v .",
+   "result": "PASS; see EVIDENCE G5",
+   "logs": [
+    "evidence/logs/go_new_evidence.log"
+   ]
+  },
+  "requirement_evidence": [
+   "raft.proto:155-156 \"quorum requires a majority of both the pre-changes and post-changes configuration\"",
+   "quorum/joint.go:46-47 \"jointly committed if it is committed in both constituent majorities\"",
+   "Raft-paper \u00a75.2"
+  ],
+  "verdict": "accepted",
+  "note": "Legitimate joint commit accepted.",
+  "tlc_label": "E-QA control G5 commit by {1,2,3,4} (code commits)",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-QA-C2",
+  "property": "QuorumAccounting",
+  "kind": "control",
+  "state": "non-joint voters {1,2,3}, matches {1}.",
+  "old_property": {
+   "definition": "base!QuorumAccounting",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "definition": "Proposed!QuorumAccounting",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "new_behavior": "not executed",
+   "old_behavior": "not_representable",
+   "logs": []
+  },
+  "requirement_evidence": [
+   "raft.proto:155-156 \"quorum requires a majority of both the pre-changes and post-changes configuration\"",
+   "quorum/joint.go:46-47 \"jointly committed if it is committed in both constituent majorities\"",
+   "Raft-paper \u00a75.2"
+  ],
+  "verdict": "accepted",
+  "note": "Unchanged non-joint rule.",
+  "tlc_label": "E-QA control non-joint minority commit rejected",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-QA-3",
+  "property": "QuorumAccounting",
+  "kind": "strengthening",
+  "state": "history.wins = {[voters {1,2}, outgoing {1,3,4} (old ignores), yes {1,2}]}.",
+  "old_property": {
+   "definition": "base!QuorumAccounting",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "definition": "Proposed!QuorumAccounting",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "new_behavior": "not executed; quorum/joint.go VoteResult requires both halves",
+   "old_behavior": "not_representable",
+   "logs": []
+  },
+  "requirement_evidence": [
+   "raft.proto:155-156 \"quorum requires a majority of both the pre-changes and post-changes configuration\"",
+   "quorum/joint.go:46-47 \"jointly committed if it is committed in both constituent majorities\"",
+   "Raft-paper \u00a75.2"
+  ],
+  "verdict": "accepted",
+  "note": "Same strengthening for elections.",
+  "tlc_label": "E-QA win by incoming majority only in (1 2)&&(1 3 4)",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-CAMP-OUT-1",
+  "property": "CampaignDecisionEligibility",
+  "kind": "semantic",
+  "state": "quality.campaigns = {[node 3, voters (incoming) {1,2}, outgoing {1,2,3}, role Follower, pre FALSE, term 0, applied 0, commit 0, first 1, hist <<>>, trigger Hup, voteRequests {MsgVote 3->1, 3->2 term 1 index 0 logTerm 0}, afterRole Candidate, afterTerm 1]}. From Go G6.",
+  "old_property": {
+   "definition": "base!CampaignDecisionEligibility",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "definition": "Proposed!CampaignDecisionEligibility",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "new_behavior": "G6: node 3 in voters=(1 2)&&(1 2 3), promotable=true; MsgHup -> StateCandidate term 1, MsgVote to 1 and 2.",
+   "old_behavior": "not_representable",
+   "test_file": "evidence/go/new/zz_evidence_test.go",
+   "command": "cd evidence/go/new && go test -vet=off -run TestEv -v .",
+   "result": "PASS; see EVIDENCE G6",
+   "logs": [
+    "evidence/logs/go_new_evidence.log"
+   ]
+  },
+  "requirement_evidence": [
+   "raft.go:796 campaign iterates r.prs.Voters.IDs() (impl)",
+   "Raft thesis \u00a74.3 (outgoing voters remain voters in C_old,new)",
+   "raft.go:126 learners do not campaign (requirement unchanged)"
+  ],
+  "verdict": "accepted",
+  "note": "Representation migration (AllVoters): incoming-only voters field would forbid legitimate campaigns by outgoing voters.",
+  "tlc_label": "E-CAMP-OUT G6 outgoing-only voter campaigns (incoming projection)",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-CAMP-OUT-2",
+  "property": "CampaignDecisionEligibility",
+  "kind": "control",
+  "state": "quality.campaigns = {[node 3, voters (incoming) {1,2}, outgoing {1,2,3}, role Follower, pre FALSE, term 0, applied 0, commit 0, first 1, hist <<>>, trigger Hup, voteRequests {MsgVote 3->1, 3->2 term 1 index 0 logTerm 0}, afterRole Candidate, afterTerm 1]}. From Go G6. Old evaluated with voters={1,2,3}.",
+  "old_property": {
+   "definition": "base!CampaignDecisionEligibility",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "definition": "Proposed!CampaignDecisionEligibility",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "new_behavior": "G6: node 3 in voters=(1 2)&&(1 2 3), promotable=true; MsgHup -> StateCandidate term 1, MsgVote to 1 and 2.",
+   "old_behavior": "not_representable",
+   "test_file": "evidence/go/new/zz_evidence_test.go",
+   "command": "cd evidence/go/new && go test -vet=off -run TestEv -v .",
+   "result": "PASS; see EVIDENCE G6",
+   "logs": [
+    "evidence/logs/go_new_evidence.log"
+   ]
+  },
+  "requirement_evidence": [
+   "raft.go:796 campaign iterates r.prs.Voters.IDs() (impl)",
+   "Raft thesis \u00a74.3 (outgoing voters remain voters in C_old,new)",
+   "raft.go:126 learners do not campaign (requirement unchanged)"
+  ],
+  "verdict": "accepted",
+  "note": "Under the VoterNodes projection the old text agrees.",
+  "tlc_label": "E-CAMP-OUT G6 (union projection for old)",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-CAMP-OUT-C1",
+  "property": "CampaignDecisionEligibility",
+  "kind": "control",
+  "state": "node 1 sends MsgVote only to 2 (omits outgoing voter 3).",
+  "old_property": {
+   "definition": "base!CampaignDecisionEligibility",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "definition": "Proposed!CampaignDecisionEligibility",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "new_behavior": "not executed (G6 shows code sends to all Voters.IDs())",
+   "old_behavior": "not_representable",
+   "logs": []
+  },
+  "requirement_evidence": [
+   "raft.go:796 campaign iterates r.prs.Voters.IDs() (impl)",
+   "Raft thesis \u00a74.3 (outgoing voters remain voters in C_old,new)",
+   "raft.go:126 learners do not campaign (requirement unchanged)"
+  ],
+  "verdict": "accepted",
+  "note": "Strengthening: request recipients must cover both halves.",
+  "tlc_label": "E-CAMP-OUT control: votes sent to incoming only (missing outgoing voter 3) from node 1 in (1 2)&&(1 2 3)",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-CAMP-OUT-C2",
+  "property": "CampaignDecisionEligibility",
+  "kind": "control",
+  "state": "node 4 (in no half) sends MsgVote to 1,2,3.",
+  "old_property": {
+   "definition": "base!CampaignDecisionEligibility",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "definition": "Proposed!CampaignDecisionEligibility",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "new_behavior": "not executed; promotable() false for untracked nodes",
+   "old_behavior": "not_representable",
+   "logs": []
+  },
+  "requirement_evidence": [
+   "raft.go:796 campaign iterates r.prs.Voters.IDs() (impl)",
+   "Raft thesis \u00a74.3 (outgoing voters remain voters in C_old,new)",
+   "raft.go:126 learners do not campaign (requirement unchanged)"
+  ],
+  "verdict": "accepted",
+  "note": "Non-voter ignore clause still enforced.",
+  "tlc_label": "E-CAMP-OUT control: removed node (not in either half) campaigning",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-CAMP-V2-1",
+  "property": "CampaignDecisionEligibility",
+  "kind": "strengthening",
+  "state": "quality.campaigns = {[node 1, voters {1,2,3}, hist <<V2(t1,i1,id1,<<AddVoter 4>>,Auto)>>, commit 1, applied 0, term 1, Hup, voteRequests {MsgVote 1->2, 1->3 term 2 index 1 logTerm 1}, afterRole Candidate, afterTerm 2]}. From Go G4 (EntryConfChangeV2 case).",
+  "old_property": {
+   "definition": "base!CampaignDecisionEligibility",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "definition": "Proposed!CampaignDecisionEligibility",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "new_behavior": "G4: committed=1 applied=0; with an EntryConfChange entry MsgHup is ignored (StateFollower); with an EntryConfChangeV2 entry the node becomes StateCandidate term 2 and sends MsgVote to 2,3 (numOfPendingConf counts only EntryConfChange).",
+   "old_behavior": "not_representable for V2; V1 case identical to new (blocked)",
+   "test_file": "evidence/go/new/zz_evidence_test.go",
+   "command": "cd evidence/go/new && go test -vet=off -run TestEv -v .",
+   "result": "PASS; see EVIDENCE G4",
+   "logs": [
+    "evidence/logs/go_new_evidence.log"
+   ]
+  },
+  "requirement_evidence": [
+   "history 9392e5d3b node.go:141 \"it MUST apply all pending configuration changes if there is any\" (pending-conf clause: requirement)",
+   "raft.proto:15 EntryConfChangeV2 is a configuration change entry type"
+  ],
+  "verdict": "accepted",
+  "note": "The proposed property (ConfKinds includes V2) rejects the new implementation: suspected defect in numOfPendingConf; requirement not weakened.",
+  "tlc_label": "E-CAMP-V2 G4 committed unapplied V2 entry, node campaigns (as new code does)",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-CAMP-V2-C1",
+  "property": "CampaignDecisionEligibility",
+  "kind": "control",
+  "state": "quality.campaigns = {[node 1, voters {1,2,3}, hist <<AddVoter(t1,i1,id1,4) (V1)>>, commit 1, applied 0, term 1, Hup, voteRequests {}, afterRole Follower, afterTerm 1]}. From Go G4 (EntryConfChangeV2 case).",
+  "old_property": {
+   "definition": "base!CampaignDecisionEligibility",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "definition": "Proposed!CampaignDecisionEligibility",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "new_behavior": "G4: committed=1 applied=0; with an EntryConfChange entry MsgHup is ignored (StateFollower); with an EntryConfChangeV2 entry the node becomes StateCandidate term 2 and sends MsgVote to 2,3 (numOfPendingConf counts only EntryConfChange).",
+   "old_behavior": "not_representable for V2; V1 case identical to new (blocked)",
+   "test_file": "evidence/go/new/zz_evidence_test.go",
+   "command": "cd evidence/go/new && go test -vet=off -run TestEv -v .",
+   "result": "PASS; see EVIDENCE G4",
+   "logs": [
+    "evidence/logs/go_new_evidence.log"
+   ]
+  },
+  "requirement_evidence": [
+   "history 9392e5d3b node.go:141 \"it MUST apply all pending configuration changes if there is any\" (pending-conf clause: requirement)",
+   "raft.proto:15 EntryConfChangeV2 is a configuration change entry type"
+  ],
+  "verdict": "accepted",
+  "note": "Unchanged V1 behaviour accepted by both.",
+  "tlc_label": "E-CAMP-V2 control G4 V1 pending: node stays follower",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-CAMP-V2-C2",
+  "property": "CampaignDecisionEligibility",
+  "kind": "control",
+  "state": "quality.campaigns = {[node 1, voters {1,2,3}, hist <<V2(t1,i1,id1,<<AddVoter 4>>,Auto)>>, commit 1, applied 0, term 1, Hup, voteRequests {}, afterRole Follower, afterTerm 1]}. From Go G4 (EntryConfChangeV2 case).",
+  "old_property": {
+   "definition": "base!CampaignDecisionEligibility",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "definition": "Proposed!CampaignDecisionEligibility",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "new_behavior": "not the behaviour of the new code (see G4); this is the required behaviour",
+   "old_behavior": "not_representable",
+   "logs": []
+  },
+  "requirement_evidence": [
+   "history 9392e5d3b node.go:141 \"it MUST apply all pending configuration changes if there is any\" (pending-conf clause: requirement)",
+   "raft.proto:15 EntryConfChangeV2 is a configuration change entry type"
+  ],
+  "verdict": "accepted",
+  "note": "The behaviour the requirement asks for is allowed by the proposed property.",
+  "tlc_label": "E-CAMP-V2 control V2 pending: node stays follower (required behaviour)",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-CTS-1",
+  "property": "ConfigurationTransitionSafety",
+  "kind": "strengthening",
+  "state": "history.commitUses = {[hist boot(1,2,3) \\o <<Normal(t2,i4), V2(t2,i5,id1,<<AddLearner 4>>,JointImplicit), Normal(t2,i6), leave(t2,i7), leave(t2,i8)>>, voters {1,2,3}, outgoing {1,2,3}, oldCommit 6, matches {1,2,3}, term 2]}. Shape of Go G2 (two auto-leave entries appended while joint; single-node leader commits both under the joint config) with bootstrap entries added so ConfigOf yields the config.",
+  "old_property": {
+   "definition": "base!ConfigurationTransitionSafety",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "definition": "Proposed!ConfigurationTransitionSafety",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "new_behavior": "G2: step 2 Advance(cursor 2) appends leave@4; step 3 Advance(cursor 3) appends a SECOND leave@5 while leave@4 is unapplied (pendingConfIndex stays 2); step 4 applies leave@4 (config voters=(1) learners=(2)); step 5 ApplyConfChange(leave@5) panics \"can't leave a non-joint config\".",
+   "old_behavior": "not_representable (no auto-leave in old code)",
+   "test_file": "evidence/go/new/zz_evidence_test.go",
+   "command": "cd evidence/go/new && go test -vet=off -run TestEv -v .",
+   "result": "PASS (panic recovered and logged); see EVIDENCE G2 lines",
+   "logs": [
+    "evidence/logs/go_new_evidence.log"
+   ]
+  },
+  "requirement_evidence": [
+   "README.md:193 committed under the old membership",
+   "raft.go:280 one pending conf change",
+   "node.go:137-139"
+  ],
+  "verdict": "accepted",
+  "note": "Old exemption id=0 skipped raft-generated entries; narrowed exemption (IsBootstrapEntry) checks them.",
+  "tlc_label": "E-CTS second auto-leave committed under joint config (G2 double leave)",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-CTS-C1",
+  "property": "ConfigurationTransitionSafety",
+  "kind": "control",
+  "state": "as E-CTS-1 but hist ends at leave(t2,i7).",
+  "old_property": {
+   "definition": "base!ConfigurationTransitionSafety",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "definition": "Proposed!ConfigurationTransitionSafety",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "new_behavior": "G1: Ready commits cc2 (JointImplicit), app applies it -> config (1)&&(1) learners=(2) autoleave; Advance(cursor 2) appends exactly one entry [3 t1 V2-leave].",
+   "old_behavior": "not_representable: old API has no ConfChangeV2 / joint config; old Advance only calls appliedTo/stableTo/stableSnapTo and never appends.",
+   "test_file": "evidence/go/new/zz_evidence_test.go",
+   "command": "cd evidence/go/new && go test -vet=off -run TestEv -v .",
+   "result": "PASS; see EVIDENCE G1 lines",
+   "logs": [
+    "evidence/logs/go_new_evidence.log"
+   ]
+  },
+  "requirement_evidence": [
+   "README.md:193"
+  ],
+  "verdict": "accepted",
+  "note": "Legitimate auto-leave commit accepted.",
+  "tlc_label": "E-CTS control single auto-leave committed under joint config",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-CTS-2",
+  "property": "ConfigurationTransitionSafety",
+  "kind": "strengthening",
+  "state": "commitUse hist boot \\o <<Normal(t2,i4), V2(t2,i5,id1,<<Remove 3>>,JointExplicit), V2(t2,i6,id2,<<>>,Auto)>>, voters {1,2}, outgoing {} (as after G7 restore), oldCommit 5.",
+  "old_property": {
+   "definition": "base!ConfigurationTransitionSafety",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "definition": "Proposed!ConfigurationTransitionSafety",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "new_behavior": "G7: restore/newRaft from ConfState{Nodes:[1 2] NodesJoint:[1 2 3] AutoLeave:true} -> config voters=(1 2) (outgoing dropped); subsequent LeaveJoint panics",
+   "old_behavior": "not_representable",
+   "test_file": "evidence/go/new/zz_evidence_test.go",
+   "command": "cd evidence/go/new && go test -vet=off -run TestEv -v .",
+   "result": "PASS; see EVIDENCE G7",
+   "logs": [
+    "evidence/logs/go_new_evidence.log"
+   ]
+  },
+  "requirement_evidence": [
+   "README.md:193",
+   "quorum/joint.go:46-47",
+   "raft.proto ConfState nodes_joint \"The voters in the outgoing config.\""
+  ],
+  "verdict": "accepted",
+  "note": "Comparing only incoming voters hides a commit decided without the outgoing majority.",
+  "tlc_label": "E-CTS leave entry committed by a leader that lost the outgoing half (restore defect)",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-CTS-C2",
+  "property": "ConfigurationTransitionSafety",
+  "kind": "control",
+  "state": "as E-CTS-2 but new outgoing {1,2,3}; old (no outgoing field) same as E-CTS-2.",
+  "old_property": {
+   "definition": "base!ConfigurationTransitionSafety",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "definition": "Proposed!ConfigurationTransitionSafety",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "new_behavior": "not executed",
+   "old_behavior": "not_representable",
+   "logs": []
+  },
+  "requirement_evidence": [
+   "README.md:193"
+  ],
+  "verdict": "accepted",
+  "note": "Legitimate joint commit accepted.",
+  "tlc_label": "E-CTS control leave entry committed under the joint config",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-CTS-C3",
+  "property": "ConfigurationTransitionSafety",
+  "kind": "control",
+  "state": "commitUse over boot(1,2,3) only, voters {}.",
+  "old_property": {
+   "definition": "base!ConfigurationTransitionSafety",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "definition": "Proposed!ConfigurationTransitionSafety",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "new_behavior": "bootstrap.go appends AddNode V1 entries term 1 (unchanged shape)",
+   "old_behavior": "not_representable",
+   "logs": []
+  },
+  "requirement_evidence": [
+   "node.go:211"
+  ],
+  "verdict": "accepted",
+  "note": "Narrowed exemption still exempts bootstrap entries.",
+  "tlc_label": "E-CTS control bootstrap entries exempt",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-ORIG-1",
+  "property": "ConfigurationOrigin",
+  "kind": "control",
+  "state": "raft[2] = [alive, cfgHist = boot(1,2,3) \\o <<V2(t2,i4,id1,<<Remove 3>>,JointImplicit)>>, commit 4, usnap with that hist, config C]; other servers dead. C = voters {1,2} non-joint (as restored by the code).",
+  "old_property": {
+   "definition": "base!ConfigurationOrigin",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "definition": "Proposed!ConfigurationOrigin",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "new_behavior": "G7: restore and restart from ConfState{Nodes:[1 2] NodesJoint:[1 2 3] AutoLeave:true} both yield voters=(1 2), non-joint; applying LeaveJoint afterwards panics \"can't leave a non-joint config\".",
+   "old_behavior": "not_representable",
+   "test_file": "evidence/go/new/zz_evidence_test.go",
+   "command": "cd evidence/go/new && go test -vet=off -run TestEv -v .",
+   "result": "PASS; see EVIDENCE G7",
+   "logs": [
+    "evidence/logs/go_new_evidence.log"
+   ]
+  },
+  "requirement_evidence": [
+   "README.md:193",
+   "node.go ApplyConfChange doc \"Returns an opaque non-nil ConfState protobuf which must be recorded in snapshots\"",
+   "raft.proto:98-113 ConfState nodes_joint / learners_next / auto_leave"
+  ],
+  "verdict": "accepted",
+  "note": "Unchanged predicate (with migrated ConfigOf) flags the restore/newRaft defect; must not be weakened.",
+  "tlc_label": "E-ORIG restored from joint snapshot, NodesJoint dropped (G7)",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-ORIG-2",
+  "property": "ConfigurationOrigin",
+  "kind": "observer",
+  "state": "raft[2] = [alive, cfgHist = boot(1,2,3) \\o <<V2(t2,i4,id1,<<Remove 3>>,JointImplicit)>>, commit 4, usnap with that hist, config C]; other servers dead. C = (1 2)&&(1 2 3) autoLeave (correct).",
+  "old_property": {
+   "definition": "base!ConfigurationOrigin",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "definition": "Proposed!ConfigurationOrigin",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "new_behavior": "G6/G13 configs show the correct joint state after applyConfChange",
+   "old_behavior": "not_representable",
+   "logs": []
+  },
+  "requirement_evidence": [
+   "README.md:193",
+   "node.go ApplyConfChange doc \"Returns an opaque non-nil ConfState protobuf which must be recorded in snapshots\"",
+   "raft.proto:98-113 ConfState nodes_joint / learners_next / auto_leave"
+  ],
+  "verdict": "accepted",
+  "note": "Same predicate text, different helper meaning: old ConfigOf ignores V2 entries and rejects the correct joint state.",
+  "tlc_label": "E-ORIG correct joint state (incoming projection for old)",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-ORIG-3",
+  "property": "ConfigurationOrigin",
+  "kind": "observer",
+  "state": "raft[2] = [alive, cfgHist = boot(1,2,3) \\o <<V2(t2,i4,id1,<<Remove 3>>,JointImplicit)>>, commit 4, usnap with that hist, config C]; other servers dead. C correct; old evaluated with voters = union.",
+  "old_property": {
+   "definition": "base!ConfigurationOrigin",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "definition": "Proposed!ConfigurationOrigin",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "new_behavior": "not_representable",
+   "old_behavior": "not_representable",
+   "logs": []
+  },
+  "requirement_evidence": [
+   "README.md:193",
+   "node.go ApplyConfChange doc \"Returns an opaque non-nil ConfState protobuf which must be recorded in snapshots\"",
+   "raft.proto:98-113 ConfState nodes_joint / learners_next / auto_leave"
+  ],
+  "verdict": "accepted",
+  "note": "Old accepts only by coincidence (V2 ignored, union equals boot config).",
+  "tlc_label": "E-ORIG correct joint state (union projection for old)",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-ORIG-C1",
+  "property": "ConfigurationOrigin",
+  "kind": "control",
+  "state": "raft[2] with cfgHist = boot(1,2,3), config {1,2,3}.",
+  "old_property": {
+   "definition": "base!ConfigurationOrigin",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "definition": "Proposed!ConfigurationOrigin",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "new_behavior": "not_representable",
+   "old_behavior": "not_representable",
+   "logs": []
+  },
+  "requirement_evidence": [
+   "README.md:193",
+   "node.go ApplyConfChange doc \"Returns an opaque non-nil ConfState protobuf which must be recorded in snapshots\"",
+   "raft.proto:98-113 ConfState nodes_joint / learners_next / auto_leave"
+  ],
+  "verdict": "accepted",
+  "note": "Unchanged case.",
+  "tlc_label": "E-ORIG control non-joint boot config",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-PROP-1",
+  "property": "ProposalConfigurationDecisions",
+  "kind": "observer",
+  "state": "quality.proposals = {[leader 1, voters {1,2}, pending 6 > applied 0, before <<Normal(t1,i1)>>, entries <<V2(id1,<<AddLearner 3>>)>>, after <<Normal(t1,i1), Normal(t1,i2)>>, decision Accepted]}. From Go G9.",
+  "old_property": {
+   "definition": "base!ProposalConfigurationDecisions",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "definition": "Proposed!ProposalConfigurationDecisions",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "new_behavior": "G9: pendingConfIndex=6 > applied=0; MsgProp with EntryConfChangeV2 appended as [2 t1 Normal].",
+   "old_behavior": "not_representable",
+   "test_file": "evidence/go/new/zz_evidence_test.go",
+   "command": "cd evidence/go/new && go test -vet=off -run TestEv -v .",
+   "result": "PASS; see EVIDENCE G9",
+   "logs": [
+    "evidence/logs/go_new_evidence.log"
+   ]
+  },
+  "requirement_evidence": [
+   "raft.go:1016-1020 rewrite includes EntryConfChangeV2",
+   "node.go:137-139",
+   "raft.go:280"
+  ],
+  "verdict": "accepted",
+  "note": "ConfKinds widening (representation) needed.",
+  "tlc_label": "E-PROP G9 V2 proposal rewritten to Normal while pending",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-PROP-C1",
+  "property": "ProposalConfigurationDecisions",
+  "kind": "control",
+  "state": "as E-PROP-1 but after appends the V2 entry unchanged.",
+  "old_property": {
+   "definition": "base!ProposalConfigurationDecisions",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "definition": "Proposed!ProposalConfigurationDecisions",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "new_behavior": "not the behaviour of the code (G9)",
+   "old_behavior": "not_representable",
+   "logs": []
+  },
+  "requirement_evidence": [
+   "raft.go:280"
+  ],
+  "verdict": "accepted",
+  "note": "One-pending rule enforced for V2.",
+  "tlc_label": "E-PROP control V2 appended unchanged while pending",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "E-TRANSFER-1",
+  "property": "TransferDecisionEligibility",
+  "kind": "observer",
+  "state": "quality.transfers = {[node 1, target 3, voters (old {1,2} / new AllVoters {1,2,3}), learners {}, old 0, after 3, elapsed 0, caughtUp FALSE, responses {}]}. From Go G13.",
+  "old_property": {
+   "definition": "base!TransferDecisionEligibility",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "definition": "Proposed!TransferDecisionEligibility",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "new_behavior": "G13: leader in voters=(1 2)&&(1 2 3); MsgTransferLeader from 3 -> leadTransferee=3, electionElapsed=0, MsgApp->3.",
+   "old_behavior": "not_representable",
+   "test_file": "evidence/go/new/zz_evidence_test.go",
+   "command": "cd evidence/go/new && go test -vet=off -run TestEv -v .",
+   "result": "PASS; see EVIDENCE G13",
+   "logs": [
+    "evidence/logs/go_new_evidence.log"
+   ]
+  },
+  "requirement_evidence": [
+   "raft_test.go TestLeaderTransferToNonExistingNode (unknown targets ignored; outgoing voters are known)"
+  ],
+  "verdict": "accepted",
+  "note": "Observer migration voters := AllVoters.",
+  "tlc_label": "E-TRANSFER target in outgoing half only (incoming observer vs AllVoters observer)",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "CTRL-ES-1",
+  "property": "ElectionSafety",
+  "kind": "control",
+  "state": "history.wins with nodes 1 and 2 both in term 2.",
+  "old_property": {
+   "definition": "base!ElectionSafety",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "definition": "Proposed!ElectionSafety",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "new_behavior": "not_representable",
+   "old_behavior": "not_representable",
+   "logs": []
+  },
+  "requirement_evidence": [
+   "Raft \u00a75.2"
+  ],
+  "verdict": "accepted",
+  "note": "Unaffected safety control: unchanged definition rejects.",
+  "tlc_label": "CTRL ElectionSafety two winners same term",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "CTRL-ES-2",
+  "property": "ElectionSafety",
+  "kind": "control",
+  "state": "wins in terms 2 and 3.",
+  "old_property": {
+   "definition": "base!ElectionSafety",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "definition": "Proposed!ElectionSafety",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "new_behavior": "not_representable",
+   "old_behavior": "not_representable",
+   "logs": []
+  },
+  "requirement_evidence": [
+   "Raft \u00a75.2"
+  ],
+  "verdict": "accepted",
+  "note": "Unaffected safety control.",
+  "tlc_label": "CTRL ElectionSafety distinct terms",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "CTRL-VR-1",
+  "property": "VoteRecovery",
+  "kind": "control",
+  "state": "history.recovery = {[savedTerm 5, savedVote 2, term 1, vote 0]} from G8old.",
+  "old_property": {
+   "definition": "base!VoteRecovery",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "definition": "Proposed!VoteRecovery",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "new_behavior": "G8new: HardState{Term 5, Vote 2}, empty log -> NewRawNode term 5 vote 2",
+   "old_behavior": "G8old: same storage -> NewRawNode(cfg,nil) term 1 vote 0 (re-bootstrap)",
+   "test_file": [
+    "evidence/go/new/zz_evidence_test.go",
+    "evidence/go/old/zz_evidence_test.go"
+   ],
+   "command": [
+    "cd evidence/go/new && go test -vet=off -run TestEv -v .",
+    "cd evidence/go/old && go test -vet=off -run TestEv -v ."
+   ],
+   "result": "PASS both",
+   "logs": [
+    "evidence/logs/go_new_evidence.log",
+    "evidence/logs/go_old_evidence.log"
+   ]
+  },
+  "requirement_evidence": [
+   "node.go:599 term/vote persistent"
+  ],
+  "verdict": "accepted",
+  "note": "Unchanged requirement; the old code violated it on this input, the new code (CTRL-VR-2) satisfies it.",
+  "tlc_label": "CTRL VoteRecovery old-code restart (G8old: term 5/vote 2 -> 1/0)",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "CTRL-VR-2",
+  "property": "VoteRecovery",
+  "kind": "control",
+  "state": "history.recovery = {[savedTerm 5, savedVote 2, term 5, vote 2]} from G8new.",
+  "old_property": {
+   "definition": "base!VoteRecovery",
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "definition": "Proposed!VoteRecovery",
+   "claimed": true,
+   "tlc": true
+  },
+  "code_observation": {
+   "new_behavior": "G8new: HardState{Term 5, Vote 2}, empty log -> NewRawNode term 5 vote 2",
+   "old_behavior": "G8old: same storage -> NewRawNode(cfg,nil) term 1 vote 0 (re-bootstrap)",
+   "test_file": [
+    "evidence/go/new/zz_evidence_test.go",
+    "evidence/go/old/zz_evidence_test.go"
+   ],
+   "command": [
+    "cd evidence/go/new && go test -vet=off -run TestEv -v .",
+    "cd evidence/go/old && go test -vet=off -run TestEv -v ."
+   ],
+   "result": "PASS both",
+   "logs": [
+    "evidence/logs/go_new_evidence.log",
+    "evidence/logs/go_old_evidence.log"
+   ]
+  },
+  "requirement_evidence": [
+   "node.go:599"
+  ],
+  "verdict": "accepted",
+  "note": "Kept unchanged.",
+  "tlc_label": "CTRL VoteRecovery new-code restart (G8new: term 5/vote 2 -> 5/2)",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "CTRL-AC-1",
+  "property": "AckPreservation_AppliedCursor",
+  "kind": "control",
+  "state": "ack with cursor 2, applied 1.",
+  "old_property": {
+   "definition": "base!AckPreservation_AppliedCursor",
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "definition": "Proposed!AckPreservation_AppliedCursor",
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "new_behavior": "G1/G2 show applied == cursor after Advance",
+   "old_behavior": "not_representable",
+   "logs": []
+  },
+  "requirement_evidence": [
+   "node.go:112,149"
+  ],
+  "verdict": "accepted",
+  "note": "Unaffected requirement still enforced.",
+  "tlc_label": "CTRL AckPreservation_AppliedCursor wrong applied",
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg Compare.tla",
+  "files": [
+   "evidence/tla/Compare.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/tla/base.tla",
+   "evidence/logs/tlc_compare.log",
+   "evidence/logs/tlc_compare_summary.txt"
+  ]
+ },
+ {
+  "id": "OBS-CONFIGAFTER",
+  "property": "helper ConfigAfter/ConfigOf/ValidChange (used by EffectContract, ConfigurationOrigin, ConfigurationTransitionSafety, SnapshotBacking, ReadBasis)",
+  "kind": "observer",
+  "state": "Constant configs and entries reproducing the inputs of new/source/confchange/testdata/{joint_idempotency,joint_learners_next,joint_safety,joint_autoleave,simple_promote_demote,simple_idempotency,simple_safety,zero,update}.txt, TestRawNodeProposeAndConfChange and Go G3/G5/G6/G10/G11/G12.",
+  "old_property": {
+   "definition": "base!ConfigAfter",
+   "claimed": "not evaluated (old helper cannot represent V2/joint)",
+   "tlc": null
+  },
+  "proposed_property": {
+   "definition": "Proposed!ConfigAfter / Proposed!ValidChange",
+   "claimed": "all 22 equal the expected Changer outputs",
+   "tlc": true
+  },
+  "code_observation": {
+   "new_behavior": "go test ./confchange/ -run TestConfChange PASS (datadriven expectations used as oracle); G-series configs",
+   "old_behavior": "not_representable",
+   "command": "cd evidence/go/new && go test -vet=off -run TestConfChange ./confchange/",
+   "logs": [
+    "evidence/logs/go_new_existing_tests.log"
+   ]
+  },
+  "requirement_evidence": [
+   "confchange/testdata/*.txt expected outputs",
+   "rawnode_test.go TestRawNodeProposeAndConfChange expected ConfStates"
+  ],
+  "verdict": "accepted",
+  "note": "Validates the observer/helper migration separately from the properties: match=TRUE joint_idempotency enter; match=TRUE joint_idempotency leave; match=TRUE joint_learners_next enter; match=TRUE joint_learners_next leave; match=TRUE joint_safety enter; match=TRUE joint_safety enter while joint is invalid; match=TRUE joint_safety leave non-joint invalid; match=TRUE joint_safety zero-voter joint invalid; match=TRUE joint_safety simple in joint invalid; match=TRUE joint_autoleave; match=TRUE raft Auto >1 change = implicit joint (G5); match=TRUE simple demote l2 (G3); match=TRUE simple promote v2; match=TRUE simple remove unknown r4 (G11new); match=TRUE simple remove last voter invalid (G12new); match=TRUE simple l1 on empty invalid; match=TRUE simple v2 l3 via one V2 Auto change each: v2; match=TRUE zero ids ignored; match=TRUE update no-op; match=TRUE G6 remove 3 explicit; match=TRUE rawnode_test v2 l1 l3; match=TRUE rawnode_test v2 l1 l3 leave",
+  "files": [
+   "evidence/tla/HelperCheck.tla",
+   "evidence/tla/Compare.cfg",
+   "evidence/tla/Proposed.tla",
+   "evidence/logs/tlc_helpercheck.log",
+   "evidence/logs/tlc_helpercheck_summary.txt"
+  ],
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Compare.cfg HelperCheck.tla"
+ }
+]

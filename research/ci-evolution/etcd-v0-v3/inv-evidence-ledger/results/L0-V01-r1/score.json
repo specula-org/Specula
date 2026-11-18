@@ -1,0 +1,24 @@
+{
+  "scorer": "coordinator (Claude), not blind to arm",
+  "gold": "gold.json V01",
+  "obligations": {
+    "advance_append": {
+      "score": "detected",
+      "note": "Ledger status mixed was followed clause by clause. AckPreservation_LogUnchanged becomes AckPreservation_LogPreserved: Covers(after,before), at most one appended entry, which must be an auto-leave of the current term by a leader in an autoLeave joint config with applied >= pendingBefore and no unapplied conf entry. The impl-abstraction clause (full equality) was relaxed; the requirement clause was kept. Arbitrary appends are still rejected. watch_touched=true."
+    },
+    "joint_quorum": {
+      "score": "detected",
+      "note": "QuorumAccounting_new uses JointWon (both halves) for wins and commit uses; ReadBasis migrated the same way."
+    },
+    "campaign_v2": {
+      "score": "detected",
+      "note": "CampaignContract pending scan uses IsConfEntry, which includes V2. Bug A named as suspected defect D1 (numOfPendingConf counts only EntryConfChange). watch_touched=false: the watched numOfPendingConf is not in update.patch, which is exactly the omission."
+    },
+    "unchanged_safety": {
+      "score": "correct_retention",
+      "note": "ElectionSafety, LogMatching, LeaderCompleteness, CommittedHistory, AppliedAgreement, VoteRecovery kept, each with ledger_status requirement."
+    }
+  },
+  "bug_A": "named (D1)",
+  "summary": "3 detected + 1 correct retention; bug A named"
+}

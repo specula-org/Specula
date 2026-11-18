@@ -1,0 +1,24 @@
+{
+  "scorer": "coordinator (Claude), not blind to arm",
+  "gold": "gold.json V01",
+  "obligations": {
+    "advance_append": {
+      "score": "detected",
+      "note": "AckPreservation_LogUnchanged modified: a.after=a.before \\/ (leader /\\ autoLeave /\\ cursor>0 /\\ cursor>=pendingConf /\\ exactly one appended auto-leave entry with the old prefix kept). change_kind says the impl-abstraction clause was relaxed and the requirement clause kept. This is the cell A2-V01-r1 missed (kept AckPreservation unchanged)."
+    },
+    "joint_quorum": {
+      "score": "detected",
+      "note": "QuorumAccounting uses JointWon over voters and outgoing for wins and commit uses."
+    },
+    "campaign_v2": {
+      "score": "detected",
+      "note": "CampaignContract pending uses ConfKinds including V2. Bug A confirmed in Go (E-CAMP-V2-1: V1 pending stays follower, V2 pending becomes candidate)."
+    },
+    "unchanged_safety": {
+      "score": "correct_retention",
+      "note": "All six kept unchanged with ledger_status requirement."
+    }
+  },
+  "bug_A": "confirmed by execution (E-CAMP-V2-1)",
+  "summary": "3 detected + 1 correct retention; bug A confirmed in code; A2's missed cell fixed"
+}

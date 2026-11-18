@@ -1,0 +1,102 @@
+{
+ "base.tla": [
+  {
+   "property": "VoteDecisionEligibility",
+   "old": "requirement",
+   "clauses": [
+    "impl-abstraction",
+    "requirement"
+   ]
+  },
+  {
+   "property": "CampaignDecisionEligibility",
+   "old": "requirement",
+   "clauses": [
+    "impl-abstraction",
+    "model-internal",
+    "requirement"
+   ]
+  },
+  {
+   "property": "TransferDecisionEligibility",
+   "old": "requirement",
+   "clauses": [
+    "impl-abstraction",
+    "requirement"
+   ]
+  },
+  {
+   "property": "RequestCorrelatedConfigurationEffects",
+   "old": "requirement",
+   "clauses": [
+    "impl-abstraction",
+    "requirement"
+   ]
+  },
+  {
+   "property": "ProposalConfigurationDecisions",
+   "old": "requirement",
+   "clauses": [
+    "impl-abstraction",
+    "requirement"
+   ]
+  },
+  {
+   "property": "QuorumAccounting",
+   "old": "requirement",
+   "clauses": [
+    "model-internal",
+    "requirement",
+    "unknown"
+   ]
+  },
+  {
+   "property": "AckPreservation_LogUnchanged",
+   "old": "requirement",
+   "clauses": [
+    "impl-abstraction"
+   ]
+  },
+  {
+   "property": "QuotaIntegrity",
+   "old": "requirement",
+   "clauses": [
+    "impl-abstraction",
+    "requirement"
+   ]
+  },
+  {
+   "property": "OutcomeSoundness",
+   "old": "requirement",
+   "clauses": [
+    "impl-abstraction",
+    "requirement"
+   ]
+  },
+  {
+   "property": "ReadBasis",
+   "old": "requirement",
+   "clauses": [
+    "impl-abstraction",
+    "requirement",
+    "unknown"
+   ]
+  },
+  {
+   "property": "NoUnexpectedFatal",
+   "old": "requirement",
+   "clauses": [
+    "requirement",
+    "unknown"
+   ]
+  },
+  {
+   "property": "TypeOK",
+   "old": "model-internal",
+   "clauses": [
+    "model-internal",
+    "requirement"
+   ]
+  }
+ ]
+}

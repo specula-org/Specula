@@ -1,0 +1,106 @@
+{
+  "run": "L0-V03-r1",
+  "arm": "L0",
+  "transition": "V03",
+  "rep": 1,
+  "model": "claude-opus-5-5",
+  "effort": "xhigh",
+  "tools": "Read,Glob,Grep,Write,Edit",
+  "sandboxed": false,
+  "prompt": "/mydata/bingzhuo/src/Specula/research/ci-evolution/etcd-v0-v3/inv-evidence-ledger/prompts/L0.md",
+  "prompt_sha256": "9c077c5e8a35c4ad32c2d4b0b84df1823edddf09a4d8053845c9041be77a4bb7",
+  "packet": {
+    "transition": "V03",
+    "verified": 192,
+    "missing": [],
+    "ledger_overlay": {
+      "source": "annotated/V02-model/spec-final",
+      "files": {
+        "MC.tla": "739a01f60f94375afff425244d4a64d03dc46d6716bd650c7a6385d9525af8e0",
+        "Trace.tla": "648b970d9771a11d1b5f09e509689e75da1b49d6bd4d515e454681b89a2dd086",
+        "Update.tla": "5bfc3013ec4e80a904f8d3c36b52f32ea4169a86f4f71472b9b08e85bdee6bc6",
+        "base.tla": "ec7d35a01a789c750c94ddae7113d799c77ae72a2b2dc1e9ce8f7a10d7624bc1"
+      }
+    }
+  },
+  "started_at": "2026-11-17T15:54:10.304534+00:00",
+  "attempt": 1,
+  "seconds": 1618.2,
+  "exit_code": 0,
+  "subtype": "success",
+  "cost_usd": 8.584911400000001,
+  "turns": 71,
+  "usage": {
+    "input_tokens": 68,
+    "cache_creation_input_tokens": 409890,
+    "cache_read_input_tokens": 7929343,
+    "output_tokens": 185968,
+    "output_tokens_details": {
+      "thinking_tokens": 117772
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 409890,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 1562,
+        "cache_read_input_tokens": 409648,
+        "cache_creation_input_tokens": 4049,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 4049
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "permission_denials": [],
+  "tool_uses": {
+    "Glob": 2,
+    "Read": 34,
+    "Grep": 28,
+    "Write": 2,
+    "Edit": 4
+  },
+  "produced": [
+    "decision.json",
+    "decision.md"
+  ],
+  "evidence_files": 0,
+  "audit": null,
+  "decision_json_parses": true,
+  "log": "/mydata/bingzhuo/inv-evidence-ledger/runs/L0-V03-r1/stream.jsonl",
+  "log_sha256": "d95db011d23a017e4aa91443d8b9d564c07c08a612c62d8cbe4310b38fdd66df",
+  "command": [
+    "claude",
+    "-p",
+    "</mydata/bingzhuo/src/Specula/research/ci-evolution/etcd-v0-v3/inv-evidence-ledger/prompts/L0.md>",
+    "--model",
+    "claude-opus-5-5",
+    "--effort",
+    "xhigh",
+    "--tools",
+    "Read,Glob,Grep,Write,Edit",
+    "--permission-mode",
+    "acceptEdits",
+    "--strict-mcp-config",
+    "--setting-sources",
+    "",
+    "--no-session-persistence",
+    "--max-budget-usd",
+    "25",
+    "--output-format",
+    "stream-json",
+    "--verbose"
+  ]
+}

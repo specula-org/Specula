@@ -1,0 +1,24 @@
+{
+  "scorer": "coordinator (Claude), not blind to arm",
+  "gold": "gold.json V03",
+  "obligations": {
+    "autoleave_effect_and_progress": {
+      "score": "detected",
+      "note": "AutoLeaveAdvance_V03 uses the level eligibility (leader, autoLeave, cursor>0, cursor>=pendingConf) plus ~leavePending; the crossing guard oldApplied < pendingBefore is not adopted (it appears only in the canary AutoLeaveLeaderChangeNotReached, which targets the leader-change case). Appending is required when applied == pending. Progress kept as a new liveness property AutoLeaveProgress (autoLeave ~> outgoing={}) under fairness, recorded as unchecked under finite budgets (U8). Bug B named as D1. This is the cell A0-V03-r1 got wrong."
+    },
+    "proposal_phase": {
+      "score": "detected",
+      "note": "ProposalContract_V03 adds both refusal reasons: a non-leave change while joint and a leave while not joint; an earlier refused entry no longer blocks later ones. Cites confchange_v2_add_single_explicit.txt as new non-implementation evidence. Empty non-Auto V2 in a joint config is required to be refused (D7)."
+    },
+    "zero_payload_quota": {
+      "score": "detected",
+      "note": "OutcomeSoundness_V03 / DecisionV03 drop for quota only when the effective payload is non-zero; quota rules for nonempty data kept (cites TestUncommittedEntryLimit)."
+    },
+    "transfer_demotion": {
+      "score": "detected",
+      "note": "New TransfereeIsVoter safety property plus canary TransfereeDemotionAbortNotReached."
+    }
+  },
+  "bug_B": "named (D1)",
+  "summary": "4 detected; bug B named; A0's incorrect cell fixed"
+}

@@ -1,0 +1,15 @@
+# Intermediate annotation passes; spec-final/ is the stage-2 input, and
+# review/decisions.md and relabel.json record what changed between passes.
+annotated/*/spec-annotated/
+annotated/*/spec-reviewed/
+# spec-final/ keeps only the annotated modules; its .cfg files are unchanged copies of the input.
+annotated/*/spec-final/*.cfg
+# Rendered prompts (prompts/annotate.md with paths filled in), SANY logs, annotator notes on the model.
+annotated/*/TASK.rendered.md
+annotated/**/check.md
+annotated/*/concerns.md
+# Raw evidence written by L2 (TLC configs and logs, trace dumps, Go probes); evidence.json summarizes it.
+results/*/evidence/
+# The agent's closing message; decision.md holds the same content in full.
+results/*/final.md
+__pycache__/

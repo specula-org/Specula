@@ -1,0 +1,251 @@
+{
+  "phase": "initial (written before any command was executed; frozen)",
+  "overall_decision": "modify",
+  "overall_reason": "The update introduces ConfChangeV2 / joint consensus (incoming+outgoing voter sets, LearnersNext, AutoLeave), Changer-based applyConfChange (demotion allowed, removal of unknown peer ignored, removing last voter rejected), raft-initiated auto-leave entries appended inside Advance, and RawNode/Node Ready/Advance refactoring. Most old properties stay as requirements but their observers/helpers (config record, Members, Won, ConfigOf, ConfKinds) must migrate to a joint representation, otherwise identical predicate text silently checks only the incoming majority. Semantic edits: EffectContract (demotion becomes required behaviour; raft-generated auto-leave entries are a legitimate id=0 origin), AckPreservation_LogUnchanged (impl-abstraction clause: Advance may now append exactly one auto-leave entry), ConfigurationTransitionSafety (joint voters; bootstrap exemption narrowed so auto-leave entries are checked), QuorumAccounting (joint majority). New obligations: one pending conf change also for raft-generated auto-leave entries, and quorum-overlap of every applied configuration transition. Several suspected implementation defects must stay visible (V2 entries not counted by numOfPendingConf; auto-leave not bumping pendingConfIndex; restore/newRaft ignore joint ConfState fields).",
+  "representation_basis": {
+    "config_record": "[voters |-> incoming (Voters[0]), outgoing |-> Voters[1], learners |-> Learners, learnersNext |-> LearnersNext, autoLeave |-> AutoLeave]",
+    "helpers": {
+      "IsJoint(c)": "c.outgoing # {}",
+      "AllVoters(c)": "c.voters \\cup c.outgoing  (= Voters.IDs())",
+      "JointWon(c,yes)": "Won(c.voters,yes) /\\ Won(c.outgoing,yes)  (quorum/joint.go VoteResult/CommittedIndex; empty majority wins by convention)",
+      "Members(r)": "AllVoters(r.config) \\cup r.config.learners  (= DOMAIN prs; learnersNext \\subseteq outgoing)",
+      "ConfKinds": "{AddVoter,AddLearner,Remove,Update} \\cup {\"V2\"}; V2 entries carry changes (seq of [kind,target]) and transition in {Auto,JointImplicit,JointExplicit}",
+      "IsAutoLeaveEntry(e)": "e.kind=\"V2\" /\\ e.changes=<<>> /\\ e.transition=\"Auto\" /\\ e.id=0",
+      "ConfigAfter/ConfigOf": "mirror confchange.Changer: LeaveJoint for empty V2; EnterJoint(autoLeave = transition#JointExplicit) when transition#Auto or >1 change; Simple otherwise; makeVoter/makeLearner(LearnersNext when target in outgoing)/remove(ignore unknown); invalid transitions leave cfg unchanged and are reported by ValidChange"
+    }
+  },
+  "entries": [
+    {
+      "name": "RequestCorrelatedConfigurationEffects",
+      "decision": "modify",
+      "change_kind": "semantic (impl-abstraction clause revised to new behaviour; requirement clause extended by new non-impl evidence) + representation (joint config, V2 entries)",
+      "ledger_status": "mixed: add/remove/cancel effect=requirement; AddLearner-of-voter no-op=impl-abstraction; committed=requirement; request correlation/bootstrap shape=requirement",
+      "watch_touched": true,
+      "evidence": [
+        "new raft_test.go TestAddLearner: 'Demote r.' asserts AddLearnerNode on a voter makes it a learner (and promote back)",
+        "new confchange/testdata/simple_promote_demote.txt '# Can demote a voter.'",
+        "new confchange/testdata/joint_learners_next.txt: demotion of an outgoing voter goes to learners_next, becomes learner on leave-joint",
+        "new raftpb/raft.proto ConfChangeTransitionJointImplicit: 'transition out of them automatically (by proposing a zero configuration change)'; ConfState.auto_leave: 'Raft will automatically transition into the final config'",
+        "new confchange/testdata/simple_idempotency.txt / joint_idempotency.txt: removing an absent node is a no-op",
+        "new raft_test.go TestRemoveNode: 'Removing the remaining voter will panic.'"
+      ],
+      "proposed_expression": "EffectContract(o) == LET e==o.entry b==o.before q==o.request IN /\\ o.after=ConfigAfter(b,e) /\\ e.index\\in DOMAIN o.committed /\\ o.committed[e.index]=e /\\ IF e.id=0 THEN (e.kind=\"AddVoter\" /\\ e.term=1 /\\ e.target\\in SeqSet(BootPeers)) \\/ (IsAutoLeaveEntry(e) /\\ IsJoint(b) /\\ b.autoLeave) ELSE e.id\\in RequestId /\\ q.handoff /\\ q.kind=e.kind /\\ q.target=e.target /\\ (e.kind=\"V2\" => q.changes=e.changes /\\ q.transition=e.transition)",
+      "disagreement_witness": "before=[voters {1,2,3}], entry AddLearner(3) id=1 handed off, after=[voters {1,2}, learners {3}]: old FALSE (expects no-op), new TRUE. Auto-leave: before joint {1,2}&&{1,2,3} autoLeave, entry V2 empty id=0, after {1,2}: old FALSE, new TRUE. Controls: demotion leaving config unchanged -> new FALSE; id=0 empty V2 applied to non-joint config or joint without autoLeave -> new FALSE.",
+      "note": "old formula still encoded the no-op although its intent had dropped it."
+    },
+    {
+      "name": "AckPreservation_LogUnchanged",
+      "decision": "modify",
+      "change_kind": "semantic relaxation of the impl-abstraction clause (log equality); requirement clause (stableTo term match / no lost entries) kept",
+      "ledger_status": "mixed: requirement (stableTo term-match) + impl-abstraction (full log equality)",
+      "watch_touched": true,
+      "evidence": [
+        "new raft.go advance(): appends an empty EntryConfChangeV2 when AutoLeave && applied>=pendingConfIndex && leader",
+        "new rawnode_test.go TestRawNodeProposeAndConfChange: after the auto-leave joint config applies, the next Ready has 'exactly one more entry', a zero ConfChangeV2",
+        "new raft.proto ConfState.auto_leave / ConfChangeTransitionJointImplicit doc"
+      ],
+      "proposed_expression": "\\A a\\in history.acks: \\/ a.after=a.before \\/ (a.leader /\\ a.autoLeave /\\ a.cursor>0 /\\ a.cursor>=a.pendingConf /\\ Len(a.after)=Len(a.before)+1 /\\ Prefix(a.after,Len(a.before))=a.before /\\ IsAutoLeaveEntry(a.after[Len(a.after)]))  -- acks observer gains leader, autoLeave, pendingConf fields",
+      "disagreement_witness": "ack with before=<<n1,cc2(V2 enter joint implicit)>>, cursor=2, leader, autoLeave, pendingConf=2, after=before \\o <<autoLeave entry>>: old FALSE, new TRUE. Controls: after drops an entry, or appends a Normal entry, or appends when not leader/not autoLeave -> new FALSE."
+    },
+    {
+      "name": "AutoLeaveOnePending",
+      "decision": "add",
+      "change_kind": "semantic (new obligation from update: one-pending-conf rule must also cover raft-generated auto-leave entries)",
+      "ledger_status": "requirement (new block)",
+      "watch_touched": true,
+      "evidence": [
+        "new node.go ProposeConfChange doc: 'configuration changes are dropped unless the leader has certainty that there is no prior unapplied configuration change in its log'",
+        "raft.go:279-284 comment 'Only one conf change may be pending (in the log, but not yet applied) at a time'",
+        "README.md:195 'any proposed membership change is simply disallowed while any uncommitted change appears'",
+        "new rawnode_test.go TestRawNodeProposeAndConfChange expects exactly one auto-leave entry"
+      ],
+      "proposed_expression": "AutoLeaveOnePending == \\A a\\in history.acks: Len(a.after)>Len(a.before) => \\A k\\in (a.applied+1)..Len(a.before): a.before[k].kind\\notin ConfKinds",
+      "disagreement_witness": "Advance with cursor=3 while before[4] is an earlier unapplied auto-leave entry and after appends a second auto-leave: AckPreservation_LogUnchanged(new) TRUE, AutoLeaveOnePending FALSE. Old suite: AckPreservation_LogUnchanged FALSE but also FALSE for the legitimate single auto-leave (no discrimination).",
+      "note": "suspected to be violated by the new implementation (advance() does not set pendingConfIndex when appendEntry succeeds)."
+    },
+    {
+      "name": "ConfigurationTransitionOverlap",
+      "decision": "add",
+      "change_kind": "semantic (new safety obligation: a single entry can now change many voters)",
+      "ledger_status": "requirement (new block)",
+      "watch_touched": true,
+      "evidence": [
+        "new confchange.go Simple doc: 'mutates the incoming majority config Voters[0] by at most one. This method will return an error if that is not the case'",
+        "new confchange/testdata/simple_safety.txt 'more than one voter changed without entering joint config', 'removed all voters'",
+        "new confchange.go EnterJoint doc (C_old -> C_{new,old} with outgoing = copy of incoming) and LeaveJoint doc (C_{new,old} -> C_new)",
+        "new raft.proto ConfChangeV2 doc: joint consensus 'in which quorum requires a majority of both'"
+      ],
+      "proposed_expression": "ConfigurationTransitionOverlap == \\A o\\in quality.effects: SafeTransition(o.before,o.after); SafeTransition(b,a) == (AllVoters(a)={} => AllVoters(b)={}) /\\ ( (a.voters=b.voters /\\ a.outgoing=b.outgoing) \\/ (~IsJoint(b) /\\ ~IsJoint(a) /\\ a.voters#{} /\\ Cardinality((a.voters\\b.voters)\\cup(b.voters\\a.voters))<=1) \\/ (~IsJoint(b) /\\ IsJoint(a) /\\ a.outgoing=b.voters /\\ a.voters#{}) \\/ (IsJoint(b) /\\ ~IsJoint(a) /\\ a.voters=b.voters) )",
+      "disagreement_witness": "effect before {1,2,3} after {1,4,5} non-joint (two voters swapped in one simple step): no old property rejects it (old EffectContract would if the entry were a single V1 change, but V2 with transition Auto/1 change cannot express it; old suite had no overlap check); new FALSE. Control: enter-joint {1,2,3} -> {1,4,5}&&{1,2,3} new TRUE."
+    },
+    {
+      "name": "QuorumAccounting",
+      "decision": "modify",
+      "change_kind": "representation (observer gains outgoing set; Won -> JointWon) — strengthening relative to an incoming-only or union projection",
+      "ledger_status": "mixed: majority clause=requirement; voters#{}=unknown (kept unchanged on incoming); matches\\subseteq voters=model-internal (now AllVoters)",
+      "watch_touched": true,
+      "evidence": [
+        "new raft.proto ConfChangeV2: 'quorum requires a majority of both the pre-changes and post-changes configuration'",
+        "quorum/joint.go CommittedIndex 'jointly committed if it is committed in both constituent majorities'; VoteResult",
+        "Raft thesis §4.3 (cited by confchange.go)"
+      ],
+      "proposed_expression": "/\\ \\A w\\in history.wins: w.voters#{} /\\ JointWon([voters|->w.voters,outgoing|->w.outgoing],w.yes) /\\ \\A c\\in history.commitUses: c.voters#{} /\\ c.matches\\subseteq (c.voters\\cup c.outgoing) /\\ JointWon([voters|->c.voters,outgoing|->c.outgoing],c.matches)",
+      "disagreement_witness": "commitUse in joint {1,2}&&{3,4} with matches {1,2}: old (voters=incoming) TRUE, new FALSE. Union projection voters={1,2,3,4}, outgoing ignored, matches {2,3,4} in joint {1,2}&&{1,3,4}: old TRUE, new FALSE. Control: matches {1,2,3} new TRUE."
+    },
+    {
+      "name": "CampaignDecisionEligibility",
+      "decision": "modify",
+      "change_kind": "representation (voters -> AllVoters, singleton -> JointWon(cfg,{self}), ConfKinds includes V2). Pending-conf requirement clause unchanged in meaning.",
+      "ledger_status": "mixed: non-voter ignore=requirement; pending-conf block=requirement; vote requests=requirement; pre-vote term=requirement; singleton=requirement; tick arithmetic=impl-abstraction; compacted-slice fatal=model-internal",
+      "watch_touched": false,
+      "evidence": [
+        "raft.go campaign iterates r.prs.Voters.IDs() (both halves) and wins via joint TallyVotes; promotable = progress exists and not learner (outgoing-only voters promotable)",
+        "history 9392e5d3b node.go:141 'MUST apply all pending configuration changes' (pending clause)",
+        "new raft.proto: EntryConfChangeV2 is a configuration change entry type"
+      ],
+      "proposed_expression": "CampaignContract with o.voters := AllVoters(cfg), singleton := JointWon(cfg,{o.node}), pending := \\E k: o.hist[k].kind\\in ConfKinds (incl. V2); observation adds outgoing",
+      "disagreement_witness": "node 3 in joint {1,2}&&{1,2,3} (outgoing only) times out and sends MsgVote to {1,2}: old (incoming) FALSE, new TRUE. Node with committed unapplied V2 entry campaigns: old TRUE (V2 not a ConfKind), new FALSE.",
+      "note": "watch list itself not edited by the patch, but numOfPendingConf should have been (suspected defect)."
+    },
+    {
+      "name": "ConfigurationTransitionSafety",
+      "decision": "modify",
+      "change_kind": "representation (compare joint voter configuration) + repair/strengthening of bootstrap exemption (id=0 alone no longer identifies bootstrap entries)",
+      "ledger_status": "requirement",
+      "watch_touched": true,
+      "evidence": [
+        "README.md:193 'committed under the old membership instead of the new'",
+        "raft.go:279 one pending conf change",
+        "new raft.go advance(): auto-leave entries are appended with no request id (id 0 in the model)"
+      ],
+      "proposed_expression": "\\A c\\in history.commitUses: \\A k\\in (c.oldCommit+1)..Len(c.hist): (c.hist[k].kind\\in ConfKinds /\\ ~IsBootstrapEntry(c.hist[k])) => (c.voters=ConfigOf(Prefix(c.hist,k-1)).voters /\\ c.outgoing=ConfigOf(Prefix(c.hist,k-1)).outgoing); IsBootstrapEntry(e)==e.id=0 /\\ e.kind=\"AddVoter\" /\\ e.term=1",
+      "disagreement_witness": "commit of a second auto-leave entry (id 0) under the joint config while its prefix already contains the first leave: old TRUE (id 0 skipped), new FALSE. Joint commit with incoming matching but outgoing differing: old TRUE, new FALSE."
+    },
+    {
+      "name": "ConfigurationOrigin",
+      "decision": "keep (helper ConfigOf migrated)",
+      "change_kind": "representation only (ConfigOf/config record); predicate text unchanged",
+      "ledger_status": "requirement",
+      "watch_touched": true,
+      "evidence": ["README.md:193", "new node.go ApplyConfChange doc 'Returns an opaque non-nil ConfState protobuf which must be recorded in snapshots'", "new raft.proto ConfState fields nodes_joint/learners_next/auto_leave"],
+      "proposed_expression": "unchanged text: raft[n].config=ConfigOf(raft[n].cfgHist) /\\ Covers(...) /\\ Len(cfgHist)<=commit, with joint ConfigOf",
+      "disagreement_witness": "correct joint state (config {1,2}&&{1,2,3}, cfgHist ends with V2 entry): old ConfigOf ignores V2 -> old FALSE under incoming projection; new TRUE. Restored-from-joint-snapshot state where restore dropped NodesJoint: new FALSE (defect).",
+      "note": "suspected defect: raft.restore and newRaft apply only ConfState.Nodes/Learners and ignore NodesJoint/LearnersNext/AutoLeave."
+    },
+    {
+      "name": "TypeOK",
+      "decision": "modify",
+      "change_kind": "representation of the requirement clause (voters\\cap learners = {} must cover both voter halves) + model-internal shape clauses for new fields",
+      "ledger_status": "mixed: disjointness=requirement; rest model-internal",
+      "watch_touched": true,
+      "evidence": ["tracker.go:30 'Invariant: Learners and Voters does not intersect'", "new tracker.go Config comment on LearnersNext (cannot add learner while still a voter)", "confchange checkInvariants"],
+      "proposed_expression": "... /\\ AllVoters(cfg)\\cap cfg.learners={} /\\ cfg.learnersNext\\subseteq cfg.outgoing /\\ (~IsJoint(cfg) => cfg.learnersNext={} /\\ ~cfg.autoLeave) /\\ DOMAIN prs=Members(r)",
+      "disagreement_witness": "config learners {3}, outgoing {1,2,3}: old TRUE (checks incoming only), new FALSE."
+    },
+    {
+      "name": "ProposalConfigurationDecisions",
+      "decision": "keep (ConfKinds widened)",
+      "change_kind": "representation (V2 entries are configuration entries)",
+      "ledger_status": "mixed: conf rewrite=requirement; drop conditions=requirement; precedence/acceptance=impl-abstraction; content=requirement",
+      "watch_touched": true,
+      "evidence": ["new raft.go stepLeader rewrites EntryConfChange || EntryConfChangeV2", "new node.go ProposeConfChange doc (dropped unless no prior unapplied conf change)"],
+      "proposed_expression": "unchanged text with ConfKinds \\cup {\"V2\"}",
+      "disagreement_witness": "V2 proposal while pendingConf>applied appended as Normal no-op: old FALSE (expects V2 kept), new TRUE."
+    },
+    {
+      "name": "OutcomeSoundness",
+      "decision": "keep",
+      "change_kind": "representation only (weight uses RewriteConf with widened ConfKinds)",
+      "ledger_status": "mixed (drop branches requirement; precedence impl-abstraction)",
+      "watch_touched": true,
+      "evidence": ["stepLeader MsgProp drop logic unchanged apart from V2 rewrite"],
+      "proposed_expression": "unchanged",
+      "disagreement_witness": "none expected beyond ConfKinds widening"
+    },
+    {
+      "name": "TransferDecisionEligibility",
+      "decision": "keep (observer voters := AllVoters)",
+      "change_kind": "representation",
+      "ledger_status": "mixed",
+      "watch_touched": true,
+      "evidence": ["stepLeader MsgTransferLeader branch unchanged: ignores learners (pr.IsLearner) and unknown peers"],
+      "proposed_expression": "TransferObservation.voters := AllVoters(r.config)",
+      "disagreement_witness": "target in outgoing only: code admits; incoming-only observer would call it unknown (old FALSE), migrated TRUE."
+    },
+    {
+      "name": "ReadBasis",
+      "decision": "keep (Won -> JointWon on confirmConfig; leader \\in AllVoters)",
+      "change_kind": "representation",
+      "ledger_status": "mixed (quorum confirmation requirement; leader-in-voters unknown; singleton impl-abstraction)",
+      "watch_touched": true,
+      "evidence": ["raft.go MsgHeartbeatResp uses r.prs.Voters.VoteResult (joint)", "IsSingleton = |Voters[0]|=1 /\\ Voters[1] empty"],
+      "proposed_expression": "r.leader\\in AllVoters(r.confirmConfig) /\\ r.confirmConfig.voters#{} /\\ JointWon(r.confirmConfig,r.confirmAcks) /\\ (rest unchanged)",
+      "disagreement_witness": "read confirmed by incoming majority only in joint config: incoming-only projection TRUE, migrated FALSE."
+    },
+    {
+      "name": "ReplicationEvidence",
+      "decision": "keep (Members includes outgoing)",
+      "change_kind": "representation",
+      "ledger_status": "requirement",
+      "watch_touched": true,
+      "evidence": ["design.md:7,48; progress.go MaybeUpdate unchanged; confchange keeps Progress of outgoing voters and demoted voters"],
+      "proposed_expression": "unchanged text with joint Members",
+      "disagreement_witness": "outgoing-only peer with match>0 and no evidence: old Members skips it (TRUE), migrated FALSE."
+    },
+    {
+      "name": "SnapshotBacking",
+      "decision": "keep (ConfigOf/config migrated)",
+      "change_kind": "representation",
+      "ledger_status": "requirement",
+      "watch_touched": true,
+      "evidence": ["storage.go:189-191", "new raft.proto ConfState joint fields"],
+      "proposed_expression": "unchanged text",
+      "disagreement_witness": "snapshot taken in joint config recording only incoming voters: migrated FALSE."
+    },
+    {"name": "VoteDecisionEligibility", "decision": "keep", "change_kind": "none", "ledger_status": "mixed", "watch_touched": false, "evidence": ["raft.go Step MsgVote/MsgPreVote unchanged; learner = r.isLearner = pr.IsLearner (LearnersNext members are still outgoing voters and may vote)"], "proposed_expression": "unchanged", "disagreement_witness": "none"},
+    {"name": "ElectionSafety", "decision": "keep", "change_kind": "none (unaffected control)", "ledger_status": "requirement", "watch_touched": false, "evidence": ["Raft §5.2; TallyVotes/VoteResult bodies unchanged (majority.go only gained Slice)"], "proposed_expression": "unchanged", "disagreement_witness": "control: two wins in one term rejected by both"},
+    {"name": "LogMatching", "decision": "keep", "change_kind": "none (unaffected control)", "ledger_status": "requirement", "watch_touched": true, "evidence": ["handleAppendEntries change is a log message only"], "proposed_expression": "unchanged", "disagreement_witness": "control"},
+    {"name": "LeaderCompleteness", "decision": "keep", "change_kind": "none (DurableObligations observer should use JointWon; representation only)", "ledger_status": "requirement", "watch_touched": false, "evidence": ["Raft §5.4"], "proposed_expression": "unchanged", "disagreement_witness": "none"},
+    {"name": "CommittedHistory", "decision": "keep", "change_kind": "none", "ledger_status": "requirement", "watch_touched": true, "evidence": ["restore change is AsV2 only"], "proposed_expression": "unchanged", "disagreement_witness": "none"},
+    {"name": "AppliedAgreement", "decision": "keep", "change_kind": "none", "ledger_status": "requirement", "watch_touched": true, "evidence": ["node.run now delegates to rn.acceptReady/commitReady; appliedTo semantics unchanged"], "proposed_expression": "unchanged", "disagreement_witness": "none"},
+    {"name": "VoteRecovery", "decision": "keep", "change_kind": "none (implementation now satisfies it better: NewRawNode no longer resets term to 1 on an empty log)", "ledger_status": "requirement", "watch_touched": true, "evidence": ["new rawnode.go NewRawNode: no becomeFollower(1,None); prevHardSt=r.hardState()"], "proposed_expression": "unchanged", "disagreement_witness": "control: old code with empty log + HardState term 5 -> term 1 (violates), new -> term 5"},
+    {"name": "RecoveryBacking", "decision": "keep", "change_kind": "none", "ledger_status": "requirement", "watch_touched": true, "evidence": ["loadState unchanged"], "proposed_expression": "unchanged", "disagreement_witness": "none"},
+    {"name": "PromiseBacking", "decision": "keep", "change_kind": "none", "ledger_status": "requirement", "watch_touched": true, "evidence": ["msgs now cleared in acceptReady; HardState-before-messages contract unchanged"], "proposed_expression": "unchanged", "disagreement_witness": "none"},
+    {"name": "LearnerEligibility", "decision": "keep", "change_kind": "none", "ledger_status": "requirement", "watch_touched": true, "evidence": ["applyConfChange still sets r.isLearner = ok && pr.IsLearner; promotable unchanged; demoted voters now become learners and must stop campaigning/voting"], "proposed_expression": "unchanged", "disagreement_witness": "none"},
+    {"name": "AckPreservation_SnapshotRetained", "decision": "keep", "change_kind": "none", "ledger_status": "unknown", "watch_touched": true, "evidence": ["new advance(): stableSnapTo only when rd.Snapshot non-empty, with that index; no conflict with the unknown property"], "proposed_expression": "unchanged", "disagreement_witness": "none (update does not conflict)"},
+    {"name": "AckPreservation_AppliedCursor", "decision": "keep", "change_kind": "none", "ledger_status": "requirement", "watch_touched": true, "evidence": ["advance(): appliedTo(rd.appliedCursor()) unchanged"], "proposed_expression": "unchanged", "disagreement_witness": "none"},
+    {"name": "AckPreservation", "decision": "keep", "change_kind": "none (conjunction picks up revised part)", "ledger_status": "model-internal", "watch_touched": false, "evidence": [], "proposed_expression": "unchanged", "disagreement_witness": "inherits LogUnchanged relaxation"},
+    {"name": "ReadyAccounting", "decision": "keep", "change_kind": "none (environment: RawNode must not be stepped between Ready and Advance, new rawnode.go Ready doc)", "ledger_status": "requirement", "watch_touched": true, "evidence": ["new rawnode.go Ready doc", "acceptReady clears readStates only if rd.ReadStates non-empty"], "proposed_expression": "unchanged", "disagreement_witness": "none"},
+    {"name": "QuotaIntegrity", "decision": "keep", "change_kind": "none (reduction moved to Advance; model action migration only)", "ledger_status": "mixed", "watch_touched": true, "evidence": ["advance() reduceUncommittedSize(rd.CommittedEntries) together with appliedTo"], "proposed_expression": "unchanged", "disagreement_witness": "none"},
+    {"name": "ReadApplication", "decision": "keep", "change_kind": "none", "ledger_status": "requirement", "watch_touched": false, "evidence": [], "proposed_expression": "unchanged", "disagreement_witness": "none"},
+    {"name": "ReadCorrelation", "decision": "keep", "change_kind": "none", "ledger_status": "requirement", "watch_touched": false, "evidence": [], "proposed_expression": "unchanged", "disagreement_witness": "none"},
+    {"name": "NoUnexpectedFatal", "decision": "keep", "change_kind": "none in predicate; remove-unknown-peer trigger disappears (confchange.remove ignores unknown peers); new Changer error panics are unknown clauses; raft-generated auto-leave panic is a requirement violation", "ledger_status": "mixed", "watch_touched": true, "evidence": ["RemoveAny deleted; simple_idempotency.txt r4 no-op", "applyConfChange 'TODO(tbg): return the error to the caller.' panic(err)"], "proposed_expression": "unchanged", "disagreement_witness": "none in predicate"},
+    {"name": "LogStructure_CommitBounds", "decision": "keep", "change_kind": "none", "ledger_status": "requirement", "watch_touched": false, "evidence": [], "proposed_expression": "unchanged", "disagreement_witness": "none"},
+    {"name": "LogStructure_Indexing", "decision": "keep", "change_kind": "none", "ledger_status": "model-internal", "watch_touched": false, "evidence": [], "proposed_expression": "unchanged", "disagreement_witness": "none"},
+    {"name": "LogStructure", "decision": "keep", "change_kind": "none", "ledger_status": "model-internal", "watch_touched": false, "evidence": [], "proposed_expression": "unchanged", "disagreement_witness": "none"}
+  ],
+  "updated_behaviors_already_covered": [
+    {"behavior": "joint quorum for commit/election", "covered_by": "ElectionSafety/LeaderCompleteness/CommittedHistory are quorum-agnostic end-to-end checks; they would detect unsafe joint commits only via their consequences, hence QuorumAccounting migration"},
+    {"behavior": "conf change V2 rewrite to no-op while pending", "covered_by": "ProposalConfigurationDecisions once ConfKinds includes V2"},
+    {"behavior": "demoted node stops voting/campaigning", "covered_by": "LearnerEligibility (grants/campaigns record learner = id in learners)"},
+    {"behavior": "Advance still applies the Ready cursor and term-checked stableTo", "covered_by": "AckPreservation_AppliedCursor and the requirement clause of AckPreservation_LogUnchanged"},
+    {"behavior": "NewRawNode no longer re-bootstraps a non-empty HardState", "covered_by": "VoteRecovery (unchanged)"}
+  ],
+  "suspected_defects": [
+    "numOfPendingConf counts only EntryConfChange, not EntryConfChangeV2: a node with a committed but unapplied V2 change (enter-joint, leave-joint, auto-leave) may campaign (violates CampaignDecisionEligibility pending clause).",
+    "raft.advance appends the auto-leave entry without setting pendingConfIndex on success: a later Advance (applied index still >= pendingConfIndex, AutoLeave still true) appends a second auto-leave entry; applying it panics 'can't leave a non-joint config' (violates AutoLeaveOnePending, ConfigurationTransitionSafety, EffectContract, NoUnexpectedFatal).",
+    "raft.restore and newRaft rebuild the configuration from ConfState.Nodes and Learners only; NodesJoint, LearnersNext and AutoLeave are dropped, so a node restored/restarted in a joint config loses the outgoing majority (violates ConfigurationOrigin, and later LeaveJoint panics).",
+    "confchange.Simple returns (empty Config, empty ProgressMap, nil error) when checkInvariants fails after apply (error swallowed); probably unreachable because checkAndCopy validated the input, recorded only."
+  ],
+  "unresolved_obligations": [
+    "Whether committed-but-invalid user ConfChangeV2 entries (e.g. enter-joint while joint, removing the last voter) should be prevented at proposal time or are a caller error: only impl/TODO evidence ('return the error to the caller'); NoUnexpectedFatal clauses for these new Changer panics stay unknown.",
+    "QuorumAccounting voters#{} clause stays unknown; new tests show the Changer refuses to create zero-voter configs, which removes reachable counterexamples but does not settle the empty-config election convention.",
+    "Liveness: the proto says Raft will leave the joint config automatically 'when this is safe'; no safety property forces the auto-leave to be proposed."
+  ],
+  "model_migrations_not_property_edits": [
+    "ConfigAfter/ConfigOf/ApplyConfCore follow the Changer (joint, demotion, ignore unknown removal, Fatal on Changer errors).",
+    "AdvanceCore appends the auto-leave entry; quota reduction moves from Ready to Advance; RawNode msgs cleared at Advance.",
+    "RestartCore: RawNode no longer re-bootstraps (fresh branch removed); restore/restart lose joint fields (as implemented) to keep the defect observable.",
+    "Environment: RawNode not stepped between Ready and Advance."
+  ]
+}

@@ -1,0 +1,1299 @@
+[
+ {
+  "id": "EV-AL-1",
+  "property": "AutoLeaveAdvance",
+  "kind": "semantic",
+  "state": {
+   "witness": "WA1: node 2 leader term 2; log = boot(1..3, AddVoter) + P(4, term1, V2 AddLearner 4 JointImplicit) + E(5, term2, empty normal); commit 5, applied 4, pendingConf 4 (lastIndex at election); cfgHist=prefix 4 -> config voters {1,2,3} && {1,2,3}, learners {4}, autoLeave; Ready=base!NewReady -> committed <<E5>>, cursor 5",
+   "records": "Pre-state built with base!InitialRaft/Store/Progress/ConfigOf (Witness.tla Leader); the transition is computed by the actual model operator of the old model (base!AdvanceCore / base!Step / base!ApplyConfCore / base!MaybeCommit) and of the proposed model (Proposed!...); the history/quality record is built from (pre, Ready, post) with the old observer (base formula) and the migrated observer (Proposed!AutoLeaveObservation / Proposed!ProposalObservation / outcome with Proposed!RewriteConf); the properties are evaluated through INSTANCE base/Proposed WITH history <- {that record}. The pre-state mirrors the Go scenario named in code_observation.",
+   "behaviors": [
+    "new code (Proposed!AdvanceCore): no append",
+    "old code (base!AdvanceCore): appends leave at 6, pending stays 4",
+    "hypothetical fixed trigger: append + pending 6"
+   ]
+  },
+  "old_property": {
+   "new_code": {
+    "claimed": false,
+    "tlc": false
+   },
+   "old_code": {
+    "claimed": true,
+    "tlc": true
+   },
+   "fixed": {
+    "claimed": true,
+    "tlc": true
+   }
+  },
+  "proposed_property": {
+   "new_code": {
+    "claimed": false,
+    "tlc": false
+   },
+   "old_code": {
+    "claimed": false,
+    "tlc": false
+   },
+   "fixed": {
+    "claimed": true,
+    "tlc": true
+   }
+  },
+  "code_observation": {
+   "test": "TestEvFreshLeaderJointAutoLeave (G2)",
+   "command": "cd evidence/go/<old_tree|new_tree> && go test -vet=off -count=1 -v -run 'TestEv' .",
+   "old": "node 2 elected at term 2 with applied=last=3; appends LEAVE at 5; final config voters=(1 2 3) learners=(4)",
+   "new": "node 2 elected with applied=last=3, pendingConf=3; no LEAVE ever appended (also after 5 ticks and another proposal); config stays voters=(1 2 3)&&(1 2 3) learners=(4) autoleave",
+   "result": "new code never auto-leaves (suspected defect D1)"
+  },
+  "requirement_evidence": "raft.proto:111-112 (Raft automatically leaves when safe); testdata/confchange_v2_add_double_auto.txt:238-240 (repeated auto-leave was a bug that panicked); raft.go:282-287 (pendingConfIndex >= latest pending conf index); rawnode_test.go:319-331 (pendingConfIndex == auto-leave index)",
+  "verdict": "accepted",
+  "note": "Agreement case: both old and proposed definitions reject the new code here, so keeping the level-based eligibility (not the source's edge trigger) keeps D1 visible. The proposed property additionally rejects the old code's first auto-leave because pendingConf is not advanced.",
+  "files": {
+   "tla": [
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Witness.cfg",
+    "evidence/tla/base.tla (copy of old/spec/base.tla)"
+   ],
+   "logs": [
+    "evidence/logs/witness_tlc.log",
+    "evidence/logs/witness_tlc.compact.txt",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go (copied verbatim into evidence/go/old_tree and evidence/go/new_tree)",
+    "evidence/go/old_tree",
+    "evidence/go/new_tree"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg Witness.tla"
+ },
+ {
+  "id": "EV-AL-2",
+  "property": "AutoLeaveAdvance",
+  "kind": "strengthening",
+  "state": {
+   "witness": "WA2: node 1 leader term 1; log boot + P(4); commit 4, applied 3, pendingConf 4, cfgHist prefix 4 (application applied P); Ready committed <<P>>, cursor 4",
+   "records": "Pre-state built with base!InitialRaft/Store/Progress/ConfigOf (Witness.tla Leader); the transition is computed by the actual model operator of the old model (base!AdvanceCore / base!Step / base!ApplyConfCore / base!MaybeCommit) and of the proposed model (Proposed!...); the history/quality record is built from (pre, Ready, post) with the old observer (base formula) and the migrated observer (Proposed!AutoLeaveObservation / Proposed!ProposalObservation / outcome with Proposed!RewriteConf); the properties are evaluated through INSTANCE base/Proposed WITH history <- {that record}. The pre-state mirrors the Go scenario named in code_observation."
+  },
+  "old_property": {
+   "new_code": {
+    "claimed": true,
+    "tlc": true
+   },
+   "old_code": {
+    "claimed": true,
+    "tlc": true
+   }
+  },
+  "proposed_property": {
+   "new_code": {
+    "claimed": true,
+    "tlc": true
+   },
+   "old_code": {
+    "claimed": false,
+    "tlc": false
+   }
+  },
+  "code_observation": {
+   "test": "TestEvDuplicateAutoLeave (G1, line 'after-P-applied')",
+   "command": "cd evidence/go/<old_tree|new_tree> && go test -vet=off -count=1 -v -run 'TestEv' .",
+   "old": "LEAVE appended at 6, pendingConf=3 (index of P)",
+   "new": "LEAVE appended at 6, pendingConf=6",
+   "result": "matches the model: only the new code advances pendingConfIndex to the auto-leave index"
+  },
+  "requirement_evidence": "raft.go:282-287; rawnode_test.go:319-331 (new assertion pendingConfIndex == lastIndex+1 for auto-leave)",
+  "verdict": "accepted",
+  "note": "Legitimate control (new behavior accepted by both); the old behavior is newly forbidden by the pending>=leave-index clause.",
+  "files": {
+   "tla": [
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Witness.cfg",
+    "evidence/tla/base.tla (copy of old/spec/base.tla)"
+   ],
+   "logs": [
+    "evidence/logs/witness_tlc.log",
+    "evidence/logs/witness_tlc.compact.txt",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go (copied verbatim into evidence/go/old_tree and evidence/go/new_tree)",
+    "evidence/go/old_tree",
+    "evidence/go/new_tree"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg Witness.tla"
+ },
+ {
+  "id": "EV-AL-3",
+  "property": "AutoLeaveAdvance",
+  "kind": "strengthening",
+  "state": {
+   "witness": "WA3: old-code reachable state: log boot + P(4) + N5 + N6 + L7(auto-leave, unapplied); commit 6, applied 4, pendingConf 4 (old code), cfgHist prefix 4; Ready committed <<N5,N6>>, cursor 6. New-code mapped state: same but pendingConf 7",
+   "records": "Pre-state built with base!InitialRaft/Store/Progress/ConfigOf (Witness.tla Leader); the transition is computed by the actual model operator of the old model (base!AdvanceCore / base!Step / base!ApplyConfCore / base!MaybeCommit) and of the proposed model (Proposed!...); the history/quality record is built from (pre, Ready, post) with the old observer (base formula) and the migrated observer (Proposed!AutoLeaveObservation / Proposed!ProposalObservation / outcome with Proposed!RewriteConf); the properties are evaluated through INSTANCE base/Proposed WITH history <- {that record}. The pre-state mirrors the Go scenario named in code_observation."
+  },
+  "old_property": {
+   "old_code_duplicate": {
+    "claimed": true,
+    "tlc": true
+   },
+   "new_code_mapped": {
+    "claimed": true,
+    "tlc": true
+   }
+  },
+  "proposed_property": {
+   "old_code_duplicate": {
+    "claimed": false,
+    "tlc": false
+   },
+   "new_code_mapped": {
+    "claimed": true,
+    "tlc": true
+   }
+  },
+  "code_observation": {
+   "test": "TestEvDuplicateAutoLeave (G1)",
+   "command": "cd evidence/go/<old_tree|new_tree> && go test -vet=off -count=1 -v -run 'TestEv' .",
+   "old": "after foo/bar applied: two LEAVE entries (6,7); full stabilization panics 'can't leave a non-joint config'",
+   "new": "single LEAVE (6), no panic, final config voters=(1)",
+   "result": "old code reproduces the regression documented in testdata/confchange_v2_add_double_auto.txt:238-240"
+  },
+  "requirement_evidence": "testdata/confchange_v2_add_double_auto.txt:238-240",
+  "verdict": "accepted",
+  "note": "The old property accepts the duplicate auto-leave; the proposed 'no append unless due' clause rejects it.",
+  "files": {
+   "tla": [
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Witness.cfg",
+    "evidence/tla/base.tla (copy of old/spec/base.tla)"
+   ],
+   "logs": [
+    "evidence/logs/witness_tlc.log",
+    "evidence/logs/witness_tlc.compact.txt",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go (copied verbatim into evidence/go/old_tree and evidence/go/new_tree)",
+    "evidence/go/old_tree",
+    "evidence/go/new_tree"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg Witness.tla"
+ },
+ {
+  "id": "EV-AL-4",
+  "property": "AutoLeaveAdvance",
+  "kind": "strengthening",
+  "state": {
+   "witness": "WA4: leader, log boot + P(4, weight 3), commit 4, applied 3, pending 4, quota 3, MaxUncommitted 4; Ready committed <<P>>. Old leave weight 2 (refused: 3+2>4) -> DropQuota, pending=4; new: quota released first and leave weight 0 -> appended, pending 5",
+   "records": "Pre-state built with base!InitialRaft/Store/Progress/ConfigOf (Witness.tla Leader); the transition is computed by the actual model operator of the old model (base!AdvanceCore / base!Step / base!ApplyConfCore / base!MaybeCommit) and of the proposed model (Proposed!...); the history/quality record is built from (pre, Ready, post) with the old observer (base formula) and the migrated observer (Proposed!AutoLeaveObservation / Proposed!ProposalObservation / outcome with Proposed!RewriteConf); the properties are evaluated through INSTANCE base/Proposed WITH history <- {that record}. The pre-state mirrors the Go scenario named in code_observation."
+  },
+  "old_property": {
+   "old_code_DropQuota": {
+    "claimed": true,
+    "tlc": true
+   },
+   "new_code": {
+    "claimed": true,
+    "tlc": true
+   }
+  },
+  "proposed_property": {
+   "old_code_DropQuota": {
+    "claimed": false,
+    "tlc": false
+   },
+   "new_code": {
+    "claimed": true,
+    "tlc": true
+   }
+  },
+  "code_observation": {
+   "test": "TestEvEmptyProposalOverQuota (G3)",
+   "command": "cd evidence/go/<old_tree|new_tree> && go test -vet=off -count=1 -v -run 'TestEv' .",
+   "old": "auto-leave entry payload 2 bytes / encoded 10; an empty proposal is dropped when uncommitted(20)>max(10)",
+   "new": "auto-leave entry payload 0 / encoded 6; the empty proposal is accepted at uncommitted 20>10; a 1-byte proposal is still dropped",
+   "result": "the old refusal path is real; the new entry cannot be refused. The old auto-leave refusal inside advance itself was not driven in Go (indirect observation)"
+  },
+  "requirement_evidence": "raft.go:567-579 ('appendEntry can never refuse it', panic on refusal); raft.go:1616-1623 (s>0); raft_test.go:251-258",
+  "verdict": "accepted",
+  "note": "Removes the impl-abstraction quota-retry disjunct; the new comments state the refusal must be impossible.",
+  "files": {
+   "tla": [
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Witness.cfg",
+    "evidence/tla/base.tla (copy of old/spec/base.tla)"
+   ],
+   "logs": [
+    "evidence/logs/witness_tlc.log",
+    "evidence/logs/witness_tlc.compact.txt",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go (copied verbatim into evidence/go/old_tree and evidence/go/new_tree)",
+    "evidence/go/old_tree",
+    "evidence/go/new_tree"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg Witness.tla"
+ },
+ {
+  "id": "EV-AL-5",
+  "property": "AutoLeaveAdvance",
+  "kind": "strengthening",
+  "state": {
+   "witness": "WA5 (EarlyAdvance): leader, log boot + P(4) + L5 (auto-leave), commit 5, applied 4, pendingConf 5, cfgHist prefix 4 (application has not yet applied L); Ready committed <<L5>>, cursor 5; new code appends a second leave L6",
+   "records": "Pre-state built with base!InitialRaft/Store/Progress/ConfigOf (Witness.tla Leader); the transition is computed by the actual model operator of the old model (base!AdvanceCore / base!Step / base!ApplyConfCore / base!MaybeCommit) and of the proposed model (Proposed!...); the history/quality record is built from (pre, Ready, post) with the old observer (base formula) and the migrated observer (Proposed!AutoLeaveObservation / Proposed!ProposalObservation / outcome with Proposed!RewriteConf); the properties are evaluated through INSTANCE base/Proposed WITH history <- {that record}. The pre-state mirrors the Go scenario named in code_observation."
+  },
+  "old_property": {
+   "new_code": {
+    "claimed": true,
+    "tlc": true
+   }
+  },
+  "proposed_property": {
+   "new_code": {
+    "claimed": false,
+    "tlc": false
+   }
+  },
+  "code_observation": {
+   "test": "TestEvEarlyAdvanceDuplicateLeave (G6)",
+   "command": "cd evidence/go/<old_tree|new_tree> && go test -vet=off -count=1 -v -run 'TestEv' .",
+   "old": "two LEAVE entries, panic 'can't leave a non-joint config'",
+   "new": "two LEAVE entries (4,5), panic 'can't leave a non-joint config'",
+   "result": "suspected defect D2a in both revisions; only the proposed property flags it"
+  },
+  "requirement_evidence": "node.go:162-167 allows Advance while applying; testdata/confchange_v2_add_double_auto.txt:238-240 forbids a second leave",
+  "verdict": "accepted",
+  "note": "Whether Advance before ApplyConfChange is a supported pattern for conf changes is unresolved (U1); the property is not weakened for it.",
+  "files": {
+   "tla": [
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Witness.cfg",
+    "evidence/tla/base.tla (copy of old/spec/base.tla)"
+   ],
+   "logs": [
+    "evidence/logs/witness_tlc.log",
+    "evidence/logs/witness_tlc.compact.txt",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go (copied verbatim into evidence/go/old_tree and evidence/go/new_tree)",
+    "evidence/go/old_tree",
+    "evidence/go/new_tree"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg Witness.tla"
+ },
+ {
+  "id": "EV-AL-6",
+  "property": "AutoLeaveAdvance",
+  "kind": "semantic",
+  "state": {
+   "witness": "WA6 (EarlyAdvance): leader, log boot + P(4) + N5, commit 5, applied 4 (raft applied P before ApplyConfChange), pendingConf 4, cfgHist prefix 4 (now joint auto-leave); Ready committed <<N5>>",
+   "records": "Pre-state built with base!InitialRaft/Store/Progress/ConfigOf (Witness.tla Leader); the transition is computed by the actual model operator of the old model (base!AdvanceCore / base!Step / base!ApplyConfCore / base!MaybeCommit) and of the proposed model (Proposed!...); the history/quality record is built from (pre, Ready, post) with the old observer (base formula) and the migrated observer (Proposed!AutoLeaveObservation / Proposed!ProposalObservation / outcome with Proposed!RewriteConf); the properties are evaluated through INSTANCE base/Proposed WITH history <- {that record}. The pre-state mirrors the Go scenario named in code_observation."
+  },
+  "old_property": {
+   "new_code": {
+    "claimed": false,
+    "tlc": false
+   },
+   "old_code": {
+    "claimed": true,
+    "tlc": true
+   }
+  },
+  "proposed_property": {
+   "new_code": {
+    "claimed": false,
+    "tlc": false
+   },
+   "old_code": {
+    "claimed": false,
+    "tlc": false
+   }
+  },
+  "code_observation": {
+   "test": "TestEvEarlyAdvanceMissedEdge (G7)",
+   "command": "cd evidence/go/<old_tree|new_tree> && go test -vet=off -count=1 -v -run 'TestEv' .",
+   "old": "LEAVE appended at the next Advance; config leaves to voters=(1)",
+   "new": "no LEAVE ever; config stays voters=(1)&&(1) autoleave",
+   "result": "suspected defect D2b (new code)"
+  },
+  "requirement_evidence": "raft.proto:111-112",
+  "verdict": "accepted",
+  "note": "Old code passes the old property but fails the proposed one only through the pending clause (it appends but leaves pendingConf=4).",
+  "files": {
+   "tla": [
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Witness.cfg",
+    "evidence/tla/base.tla (copy of old/spec/base.tla)"
+   ],
+   "logs": [
+    "evidence/logs/witness_tlc.log",
+    "evidence/logs/witness_tlc.compact.txt",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go (copied verbatim into evidence/go/old_tree and evidence/go/new_tree)",
+    "evidence/go/old_tree",
+    "evidence/go/new_tree"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg Witness.tla"
+ },
+ {
+  "id": "EV-AL-7",
+  "property": "AutoLeaveAdvance (rejected alternative: eligibility narrowed to the source edge trigger appliedBefore<pendingBefore<=cursor)",
+  "kind": "relaxation",
+  "state": {
+   "witness": "WN1/WN3/WN5/WN6 = the records of WA1 (new), WA3 (old duplicate), WA5 (new), WA6 (new)",
+   "records": "Pre-state built with base!InitialRaft/Store/Progress/ConfigOf (Witness.tla Leader); the transition is computed by the actual model operator of the old model (base!AdvanceCore / base!Step / base!ApplyConfCore / base!MaybeCommit) and of the proposed model (Proposed!...); the history/quality record is built from (pre, Ready, post) with the old observer (base formula) and the migrated observer (Proposed!AutoLeaveObservation / Proposed!ProposalObservation / outcome with Proposed!RewriteConf); the properties are evaluated through INSTANCE base/Proposed WITH history <- {that record}. The pre-state mirrors the Go scenario named in code_observation. The narrowed predicate is Witness.tla NarrowedAutoLeaveAdvance over the migrated record."
+  },
+  "old_property": {
+   "note": "n/a"
+  },
+  "proposed_property": {
+   "WN1": {
+    "claimed": false,
+    "tlc": false
+   },
+   "WN3": {
+    "claimed": false,
+    "tlc": false
+   },
+   "WN5": {
+    "claimed": false,
+    "tlc": false
+   },
+   "WN6": {
+    "claimed": false,
+    "tlc": false
+   },
+   "narrowed_candidate": {
+    "WN1": {
+     "claimed": true,
+     "tlc": true
+    },
+    "WN3": {
+     "claimed": true,
+     "tlc": true
+    },
+    "WN5": {
+     "claimed": true,
+     "tlc": true
+    },
+    "WN6": {
+     "claimed": true,
+     "tlc": true
+    }
+   }
+  },
+  "code_observation": {
+   "test": "G1, G2, G6, G7",
+   "result": "each of these four behaviors is observed in code and is forbidden by the requirement evidence"
+  },
+  "requirement_evidence": "raft.proto:111-112 (Raft automatically leaves when safe); testdata/confchange_v2_add_double_auto.txt:238-240 (repeated auto-leave was a bug that panicked); raft.go:282-287 (pendingConfIndex >= latest pending conf index); rawnode_test.go:319-331 (pendingConfIndex == auto-leave index)",
+  "verdict": "rejected",
+  "note": "Matching the property to the new implementation would hide D1, D2a, D2b and even the old duplicate; this candidate was not adopted.",
+  "files": {
+   "tla": [
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Witness.cfg",
+    "evidence/tla/base.tla (copy of old/spec/base.tla)"
+   ],
+   "logs": [
+    "evidence/logs/witness_tlc.log",
+    "evidence/logs/witness_tlc.compact.txt",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go (copied verbatim into evidence/go/old_tree and evidence/go/new_tree)",
+    "evidence/go/old_tree",
+    "evidence/go/new_tree"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg Witness.tla"
+ },
+ {
+  "id": "EV-AL-8",
+  "property": "AutoLeaveAdvance / AutoLeaveWeight / AutoLeaveEncoded",
+  "kind": "observer",
+  "state": {
+   "witness": "WEIGHTS row; observer AutoLeaveObservation used in every WA row (legacy field 'eligible' retained with the old formula)",
+   "records": "constant evaluation"
+  },
+  "old_property": {
+   "old leave weight/encoded": [
+    2,
+    10
+   ]
+  },
+  "proposed_property": {
+   "new leave weight/encoded": [
+    0,
+    6
+   ]
+  },
+  "code_observation": {
+   "test": "TestEvEmptyProposalOverQuota (G3) sizes line",
+   "command": "cd evidence/go/<old_tree|new_tree> && go test -vet=off -count=1 -v -run 'TestEv' .",
+   "old": "marshaled empty ConfChangeV2: payload=2, encoded=10",
+   "new": "nil Data: payload=0, encoded=6",
+   "result": "matches Proposed.tla AutoLeaveWeight==0, AutoLeaveEncoded 6"
+  },
+  "requirement_evidence": "raft.go:567-574 (nil Data)",
+  "verdict": "accepted",
+  "note": "Representation migration; the old property evaluates the legacy fields of the migrated record identically (all WA rows).",
+  "files": {
+   "tla": [
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Witness.cfg",
+    "evidence/tla/base.tla (copy of old/spec/base.tla)"
+   ],
+   "logs": [
+    "evidence/logs/witness_tlc.log",
+    "evidence/logs/witness_tlc.compact.txt",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go (copied verbatim into evidence/go/old_tree and evidence/go/new_tree)",
+    "evidence/go/old_tree",
+    "evidence/go/new_tree"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg Witness.tla"
+ },
+ {
+  "id": "EV-PC-1",
+  "property": "ProposalConfigurationDecisions",
+  "kind": "semantic",
+  "state": {
+   "witness": "WP1: leader 1, log boot + PX(4, V2 AddLearner 4 JointExplicit), commit=applied=pendingConf=4, cfgHist prefix 4 -> explicit joint; MsgProp of request 2 = V2 <<AddVoter 4>> Auto, weight 1",
+   "records": "Pre-state built with base!InitialRaft/Store/Progress/ConfigOf (Witness.tla Leader); the transition is computed by the actual model operator of the old model (base!AdvanceCore / base!Step / base!ApplyConfCore / base!MaybeCommit) and of the proposed model (Proposed!...); the history/quality record is built from (pre, Ready, post) with the old observer (base formula) and the migrated observer (Proposed!AutoLeaveObservation / Proposed!ProposalObservation / outcome with Proposed!RewriteConf); the properties are evaluated through INSTANCE base/Proposed WITH history <- {that record}. The pre-state mirrors the Go scenario named in code_observation."
+  },
+  "old_property": {
+   "new_code (rewritten to empty normal)": {
+    "claimed": false,
+    "tlc": false
+   },
+   "old_code (V2 appended)": {
+    "claimed": true,
+    "tlc": true
+   }
+  },
+  "proposed_property": {
+   "new_code (rewritten to empty normal)": {
+    "claimed": true,
+    "tlc": true
+   },
+   "old_code (V2 appended)": {
+    "claimed": false,
+    "tlc": false
+   }
+  },
+  "code_observation": {
+   "test": "TestEvJointAdmission (G4 case a)",
+   "command": "cd evidence/go/<old_tree|new_tree> && go test -vet=off -count=1 -v -run 'TestEv' .",
+   "old": "V2{AddNode 3} appended at 4; applying it panics 'can't apply simple config change in joint config'",
+   "new": "EntryNormal appended at 4; no panic",
+   "result": "matches"
+  },
+  "requirement_evidence": "testdata/confchange_v2_add_single_explicit.txt:100-106 and 165-168 (new tests); confchange/confchange.go:55,78-98 (EnterJoint on joint / LeaveJoint on non-joint are errors -> panic); raft.go:1616-1623 + raft_test.go:251-258 (empty payload never dropped)",
+  "verdict": "accepted",
+  "note": "Observer gains joint |-> r.config.outgoing#{}.",
+  "files": {
+   "tla": [
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Witness.cfg",
+    "evidence/tla/base.tla (copy of old/spec/base.tla)"
+   ],
+   "logs": [
+    "evidence/logs/witness_tlc.log",
+    "evidence/logs/witness_tlc.compact.txt",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go (copied verbatim into evidence/go/old_tree and evidence/go/new_tree)",
+    "evidence/go/old_tree",
+    "evidence/go/new_tree"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg Witness.tla"
+ },
+ {
+  "id": "EV-PC-2",
+  "property": "ProposalConfigurationDecisions",
+  "kind": "semantic",
+  "state": {
+   "witness": "WP2: non-joint leader (boot config, term 2), commit=applied=4, pendingConf 3; MsgProp V2 <<>> Auto (leave)",
+   "records": "Pre-state built with base!InitialRaft/Store/Progress/ConfigOf (Witness.tla Leader); the transition is computed by the actual model operator of the old model (base!AdvanceCore / base!Step / base!ApplyConfCore / base!MaybeCommit) and of the proposed model (Proposed!...); the history/quality record is built from (pre, Ready, post) with the old observer (base formula) and the migrated observer (Proposed!AutoLeaveObservation / Proposed!ProposalObservation / outcome with Proposed!RewriteConf); the properties are evaluated through INSTANCE base/Proposed WITH history <- {that record}. The pre-state mirrors the Go scenario named in code_observation."
+  },
+  "old_property": {
+   "new_code": {
+    "claimed": false,
+    "tlc": false
+   },
+   "old_code": {
+    "claimed": true,
+    "tlc": true
+   }
+  },
+  "proposed_property": {
+   "new_code": {
+    "claimed": true,
+    "tlc": true
+   },
+   "old_code": {
+    "claimed": false,
+    "tlc": false
+   }
+  },
+  "code_observation": {
+   "test": "TestEvJointAdmission (G4 case b)",
+   "command": "cd evidence/go/<old_tree|new_tree> && go test -vet=off -count=1 -v -run 'TestEv' .",
+   "old": "empty V2 appended; applying it panics 'can't leave a non-joint config'",
+   "new": "EntryNormal appended; no panic",
+   "result": "matches"
+  },
+  "requirement_evidence": "testdata/confchange_v2_add_single_explicit.txt:100-106 and 165-168 (new tests); confchange/confchange.go:55,78-98 (EnterJoint on joint / LeaveJoint on non-joint are errors -> panic); raft.go:1616-1623 + raft_test.go:251-258 (empty payload never dropped)",
+  "verdict": "accepted",
+  "files": {
+   "tla": [
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Witness.cfg",
+    "evidence/tla/base.tla (copy of old/spec/base.tla)"
+   ],
+   "logs": [
+    "evidence/logs/witness_tlc.log",
+    "evidence/logs/witness_tlc.compact.txt",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go (copied verbatim into evidence/go/old_tree and evidence/go/new_tree)",
+    "evidence/go/old_tree",
+    "evidence/go/new_tree"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg Witness.tla"
+ },
+ {
+  "id": "EV-PC-3",
+  "property": "ProposalConfigurationDecisions",
+  "kind": "control",
+  "state": {
+   "witness": "WP3: (i) joint leader proposes leave V2 <<>> Auto; (ii) forged rewrite of that leave; (iii) non-joint leader proposes simple V2 <<AddVoter 4>>; (iv) forged rewrite of it. Forged states via base!AppendEntry of an empty normal entry.",
+   "records": "Pre-state built with base!InitialRaft/Store/Progress/ConfigOf (Witness.tla Leader); the transition is computed by the actual model operator of the old model (base!AdvanceCore / base!Step / base!ApplyConfCore / base!MaybeCommit) and of the proposed model (Proposed!...); the history/quality record is built from (pre, Ready, post) with the old observer (base formula) and the migrated observer (Proposed!AutoLeaveObservation / Proposed!ProposalObservation / outcome with Proposed!RewriteConf); the properties are evaluated through INSTANCE base/Proposed WITH history <- {that record}. The pre-state mirrors the Go scenario named in code_observation."
+  },
+  "old_property": {
+   "(i)": {
+    "claimed": true,
+    "tlc": true
+   },
+   "(ii)": {
+    "claimed": false,
+    "tlc": false
+   },
+   "(iii)": {
+    "claimed": true,
+    "tlc": true
+   },
+   "(iv)": {
+    "claimed": false,
+    "tlc": false
+   }
+  },
+  "proposed_property": {
+   "(i)": {
+    "claimed": true,
+    "tlc": true
+   },
+   "(ii)": {
+    "claimed": false,
+    "tlc": false
+   },
+   "(iii)": {
+    "claimed": true,
+    "tlc": true
+   },
+   "(iv)": {
+    "claimed": false,
+    "tlc": false
+   }
+  },
+  "code_observation": {
+   "test": "TestEvJointAdmission (G4 case c)",
+   "command": "cd evidence/go/<old_tree|new_tree> && go test -vet=off -count=1 -v -run 'TestEv' .",
+   "old": "joint leave appended and applied; config voters=(1)",
+   "new": "same",
+   "result": "legitimate behavior accepted, forged over-rewrites rejected"
+  },
+  "requirement_evidence": "testdata/confchange_v2_add_single_explicit.txt:100-106 and 165-168 (new tests); confchange/confchange.go:55,78-98 (EnterJoint on joint / LeaveJoint on non-joint are errors -> panic); raft.go:1616-1623 + raft_test.go:251-258 (empty payload never dropped)",
+  "verdict": "accepted",
+  "note": "Shows the extension does not over-rewrite.",
+  "files": {
+   "tla": [
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Witness.cfg",
+    "evidence/tla/base.tla (copy of old/spec/base.tla)"
+   ],
+   "logs": [
+    "evidence/logs/witness_tlc.log",
+    "evidence/logs/witness_tlc.compact.txt",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go (copied verbatim into evidence/go/old_tree and evidence/go/new_tree)",
+    "evidence/go/old_tree",
+    "evidence/go/new_tree"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg Witness.tla"
+ },
+ {
+  "id": "EV-PC-4",
+  "property": "ProposalConfigurationDecisions",
+  "kind": "semantic",
+  "state": {
+   "witness": "WP4: non-joint leader with quota 5 > MaxUncommitted 4; MsgProp Normal weight 0 (and control weight 1; forged acceptance of weight 1)",
+   "records": "Pre-state built with base!InitialRaft/Store/Progress/ConfigOf (Witness.tla Leader); the transition is computed by the actual model operator of the old model (base!AdvanceCore / base!Step / base!ApplyConfCore / base!MaybeCommit) and of the proposed model (Proposed!...); the history/quality record is built from (pre, Ready, post) with the old observer (base formula) and the migrated observer (Proposed!AutoLeaveObservation / Proposed!ProposalObservation / outcome with Proposed!RewriteConf); the properties are evaluated through INSTANCE base/Proposed WITH history <- {that record}. The pre-state mirrors the Go scenario named in code_observation."
+  },
+  "old_property": {
+   "new_code w0 Accepted": {
+    "claimed": false,
+    "tlc": false
+   },
+   "old_code w0 DropQuota": {
+    "claimed": true,
+    "tlc": true
+   },
+   "w1 DropQuota": {
+    "claimed": true,
+    "tlc": true
+   },
+   "forged w1 Accepted": {
+    "claimed": false,
+    "tlc": false
+   }
+  },
+  "proposed_property": {
+   "new_code w0 Accepted": {
+    "claimed": true,
+    "tlc": true
+   },
+   "old_code w0 DropQuota": {
+    "claimed": false,
+    "tlc": false
+   },
+   "w1 DropQuota": {
+    "claimed": true,
+    "tlc": true
+   },
+   "forged w1 Accepted": {
+    "claimed": false,
+    "tlc": false
+   }
+  },
+  "code_observation": {
+   "test": "TestEvEmptyProposalOverQuota (G3)",
+   "command": "cd evidence/go/<old_tree|new_tree> && go test -vet=off -count=1 -v -run 'TestEv' .",
+   "old": "empty proposal: 'raft proposal dropped'; 1-byte: dropped",
+   "new": "empty proposal: accepted (last 2->3); 1-byte: dropped",
+   "result": "matches"
+  },
+  "requirement_evidence": "raft.go:1616-1623; raft_test.go:251-258",
+  "verdict": "accepted",
+  "note": "Relaxation of the quota drop is bounded: the nearby non-empty overflow is still required to drop.",
+  "files": {
+   "tla": [
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Witness.cfg",
+    "evidence/tla/base.tla (copy of old/spec/base.tla)"
+   ],
+   "logs": [
+    "evidence/logs/witness_tlc.log",
+    "evidence/logs/witness_tlc.compact.txt",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go (copied verbatim into evidence/go/old_tree and evidence/go/new_tree)",
+    "evidence/go/old_tree",
+    "evidence/go/new_tree"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg Witness.tla"
+ },
+ {
+  "id": "EV-OS-1",
+  "property": "OutcomeSoundness",
+  "kind": "semantic",
+  "state": {
+   "witness": "WP4 outcome records (built as in ProtocolPropose; weight from RewriteConf)",
+   "records": "Pre-state built with base!InitialRaft/Store/Progress/ConfigOf (Witness.tla Leader); the transition is computed by the actual model operator of the old model (base!AdvanceCore / base!Step / base!ApplyConfCore / base!MaybeCommit) and of the proposed model (Proposed!...); the history/quality record is built from (pre, Ready, post) with the old observer (base formula) and the migrated observer (Proposed!AutoLeaveObservation / Proposed!ProposalObservation / outcome with Proposed!RewriteConf); the properties are evaluated through INSTANCE base/Proposed WITH history <- {that record}. The pre-state mirrors the Go scenario named in code_observation."
+  },
+  "old_property": {
+   "new_code w0 Accepted": {
+    "claimed": false,
+    "tlc": false
+   },
+   "old_code w0 DropQuota": {
+    "claimed": true,
+    "tlc": true
+   },
+   "w1 DropQuota": {
+    "claimed": true,
+    "tlc": true
+   },
+   "forged w1 Accepted": {
+    "claimed": false,
+    "tlc": false
+   }
+  },
+  "proposed_property": {
+   "new_code w0 Accepted": {
+    "claimed": true,
+    "tlc": true
+   },
+   "old_code w0 DropQuota": {
+    "claimed": false,
+    "tlc": false
+   },
+   "w1 DropQuota": {
+    "claimed": true,
+    "tlc": true
+   },
+   "forged w1 Accepted": {
+    "claimed": false,
+    "tlc": false
+   }
+  },
+  "code_observation": {
+   "test": "TestEvEmptyProposalOverQuota (G3)",
+   "command": "cd evidence/go/<old_tree|new_tree> && go test -vet=off -count=1 -v -run 'TestEv' .",
+   "old": "empty dropped",
+   "new": "empty accepted",
+   "result": "matches"
+  },
+  "requirement_evidence": "raft.go:1609,1616-1623; raft_test.go:251-258",
+  "verdict": "accepted",
+  "files": {
+   "tla": [
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Witness.cfg",
+    "evidence/tla/base.tla (copy of old/spec/base.tla)"
+   ],
+   "logs": [
+    "evidence/logs/witness_tlc.log",
+    "evidence/logs/witness_tlc.compact.txt",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go (copied verbatim into evidence/go/old_tree and evidence/go/new_tree)",
+    "evidence/go/old_tree",
+    "evidence/go/new_tree"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg Witness.tla"
+ },
+ {
+  "id": "EV-OS-2",
+  "property": "OutcomeSoundness",
+  "kind": "observer",
+  "state": {
+   "witness": "WP5: explicit-joint leader with quota 5; MsgProp V2 <<AddVoter 4>> weight 3 (rewritten by the new admission, so effective weight 0)",
+   "records": "Pre-state built with base!InitialRaft/Store/Progress/ConfigOf (Witness.tla Leader); the transition is computed by the actual model operator of the old model (base!AdvanceCore / base!Step / base!ApplyConfCore / base!MaybeCommit) and of the proposed model (Proposed!...); the history/quality record is built from (pre, Ready, post) with the old observer (base formula) and the migrated observer (Proposed!AutoLeaveObservation / Proposed!ProposalObservation / outcome with Proposed!RewriteConf); the properties are evaluated through INSTANCE base/Proposed WITH history <- {that record}. The pre-state mirrors the Go scenario named in code_observation. Additionally the proposed ExpectedDecision was evaluated on the OLD outcome record (weight from base!RewriteConf)."
+  },
+  "old_property": {
+   "new_code Accepted": {
+    "claimed": false,
+    "tlc": false
+   },
+   "old_code DropQuota": {
+    "claimed": true,
+    "tlc": true
+   }
+  },
+  "proposed_property": {
+   "new_code Accepted": {
+    "claimed": true,
+    "tlc": true
+   },
+   "old_code DropQuota": {
+    "claimed": false,
+    "tlc": false
+   },
+   "proposed definition + old observer, new_code": {
+    "claimed": false,
+    "tlc": false
+   }
+  },
+  "code_observation": {
+   "test": "G4 case a + G3",
+   "result": "the code rewrites the joint non-leave entry to an empty entry (G4a) and never drops an empty payload (G3); combined case not driven separately (not needed: both mechanisms observed)"
+  },
+  "requirement_evidence": "raft.go:1036-1072, raft.go:1616-1623",
+  "verdict": "accepted",
+  "note": "Without migrating the outcome weight to the new rewrite rules the proposed definition raises a false alarm; the migration is required.",
+  "files": {
+   "tla": [
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Witness.cfg",
+    "evidence/tla/base.tla (copy of old/spec/base.tla)"
+   ],
+   "logs": [
+    "evidence/logs/witness_tlc.log",
+    "evidence/logs/witness_tlc.compact.txt",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go (copied verbatim into evidence/go/old_tree and evidence/go/new_tree)",
+    "evidence/go/old_tree",
+    "evidence/go/new_tree"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg Witness.tla"
+ },
+ {
+  "id": "EV-CTS-1",
+  "property": "ConfigurationTransitionSafety",
+  "kind": "strengthening",
+  "state": {
+   "witness": "WC1: commitUses record from base!MaybeCommit on old-code leader: log boot + P(4) + N5 + N6 + L7 + L8 (duplicate auto-leave, id 0), config joint, commit 6 -> 8",
+   "records": "record produced by base!MaybeCommit (ghost commitUses) on the constructed leader with all voters matching 8"
+  },
+  "old_property": {
+   "claimed": true,
+   "tlc": true
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "test": "TestEvDuplicateAutoLeave (G1)",
+   "command": "cd evidence/go/<old_tree|new_tree> && go test -vet=off -count=1 -v -run 'TestEv' .",
+   "old": "both LEAVE entries committed (commit=7) then panic applying the second",
+   "new": "single LEAVE",
+   "result": "the duplicate is committed under the joint config while ConfigOf(prefix) is already non-joint"
+  },
+  "requirement_evidence": "README.md:193; testdata/confchange_v2_add_double_auto.txt:238-240",
+  "verdict": "accepted",
+  "note": "Repair of the pre-existing id=0 exclusion that hid Raft-originated auto-leave entries.",
+  "files": {
+   "tla": [
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Witness.cfg",
+    "evidence/tla/base.tla (copy of old/spec/base.tla)"
+   ],
+   "logs": [
+    "evidence/logs/witness_tlc.log",
+    "evidence/logs/witness_tlc.compact.txt",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go (copied verbatim into evidence/go/old_tree and evidence/go/new_tree)",
+    "evidence/go/old_tree",
+    "evidence/go/new_tree"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg Witness.tla"
+ },
+ {
+  "id": "EV-CTS-2",
+  "property": "ConfigurationTransitionSafety",
+  "kind": "control",
+  "state": {
+   "witness": "WC2: new-code single auto-leave committed (commit 6 -> 7); WC3: bootstrap commit record (hist = boot, config = BootConfig, oldCommit 0)",
+   "records": "WC2 from base!MaybeCommit; WC3 constructed record"
+  },
+  "old_property": {
+   "WC2": {
+    "claimed": true,
+    "tlc": true
+   },
+   "WC3": {
+    "claimed": true,
+    "tlc": true
+   }
+  },
+  "proposed_property": {
+   "WC2": {
+    "claimed": true,
+    "tlc": true
+   },
+   "WC3": {
+    "claimed": true,
+    "tlc": true
+   }
+  },
+  "code_observation": "not_representable (bootstrap ghost record); WC2 corresponds to G1 new",
+  "requirement_evidence": "bootstrap.go:51-60 (bootstrap entries are constructor axioms)",
+  "verdict": "accepted",
+  "note": "Bootstrap entries must stay excluded (ConfigOf(<<>>) is empty), legitimate auto-leave is accepted.",
+  "files": {
+   "tla": [
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Witness.cfg",
+    "evidence/tla/base.tla (copy of old/spec/base.tla)"
+   ],
+   "logs": [
+    "evidence/logs/witness_tlc.log",
+    "evidence/logs/witness_tlc.compact.txt",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go (copied verbatim into evidence/go/old_tree and evidence/go/new_tree)",
+    "evidence/go/old_tree",
+    "evidence/go/new_tree"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg Witness.tla"
+ },
+ {
+  "id": "EV-CTS-3",
+  "property": "ConfigurationTransitionSafety (already covers the pendingConfIndex fix)",
+  "kind": "control",
+  "state": {
+   "witness": "WC4: old-code leader: log boot + P(4) + L5 (auto-leave, unapplied, pendingConf not advanced) + U6 (request 2, V2 AddVoter 4); commit 4 -> 6 under the joint config",
+   "records": "base!MaybeCommit"
+  },
+  "old_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "proposed_property": {
+   "claimed": false,
+   "tlc": false
+  },
+  "code_observation": {
+   "test": "G1 old (pendingConf stays at P after the auto-leave, so a user change would be admitted)",
+   "result": "mechanism observed; the user change itself was not proposed in Go"
+  },
+  "requirement_evidence": "README.md:193-195; raft.go:282-287",
+  "verdict": "accepted",
+  "note": "The existing property already flags the consequence of the old pendingConf bug; the new code prevents it (pendingConf = L).",
+  "files": {
+   "tla": [
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Witness.cfg",
+    "evidence/tla/base.tla (copy of old/spec/base.tla)"
+   ],
+   "logs": [
+    "evidence/logs/witness_tlc.log",
+    "evidence/logs/witness_tlc.compact.txt",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go (copied verbatim into evidence/go/old_tree and evidence/go/new_tree)",
+    "evidence/go/old_tree",
+    "evidence/go/new_tree"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg Witness.tla"
+ },
+ {
+  "id": "EV-PTV-1",
+  "property": "PendingTransferVoter (new)",
+  "kind": "strengthening",
+  "state": {
+   "witness": "WT1: leader 1 (config {1,2,3}) with transfer=3 applies V1 AddLearner(3) (entry 5) via base!ApplyConfCore and Proposed!ApplyConfCore",
+   "records": "raft state after ApplyConfCore substituted for raft[1]; other nodes InitialRaft"
+  },
+  "old_property": {
+   "absent": "no old property constrains it; closest old TransferDecisionEligibility evaluates TRUE (vacuous, no transfer requests)"
+  },
+  "proposed_property": {
+   "old_code (transfer stays 3, 3 is learner)": {
+    "claimed": false,
+    "tlc": false
+   },
+   "new_code (transfer aborted)": {
+    "claimed": true,
+    "tlc": true
+   }
+  },
+  "code_observation": {
+   "test": "TestEvTransferDemote (G5, joint=false)",
+   "command": "cd evidence/go/<old_tree|new_tree> && go test -vet=off -count=1 -v -run 'TestEv' .",
+   "old": "final transferee=3 with learners=[3]",
+   "new": "final transferee=0",
+   "result": "matches"
+  },
+  "requirement_evidence": "raft_test.go:3617-3647 TestLeaderTransferDemoteNode; raft.go:1568",
+  "verdict": "accepted",
+  "files": {
+   "tla": [
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Witness.cfg",
+    "evidence/tla/base.tla (copy of old/spec/base.tla)"
+   ],
+   "logs": [
+    "evidence/logs/witness_tlc.log",
+    "evidence/logs/witness_tlc.compact.txt",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go (copied verbatim into evidence/go/old_tree and evidence/go/new_tree)",
+    "evidence/go/old_tree",
+    "evidence/go/new_tree"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg Witness.tla"
+ },
+ {
+  "id": "EV-PTV-2",
+  "property": "PendingTransferVoter (new)",
+  "kind": "control",
+  "state": {
+   "witness": "WT2: transferee 3 demoted inside a joint change (Remove 3, AddLearner 3) -> 3 in outgoing and learnersNext; WT3: then the leave-joint entry is applied -> 3 becomes a learner",
+   "records": "ApplyConfCore chain (old and proposed)"
+  },
+  "old_property": {
+   "absent": "TransferDecisionEligibility TRUE (vacuous)"
+  },
+  "proposed_property": {
+   "WT2 old_code": {
+    "claimed": true,
+    "tlc": true
+   },
+   "WT2 new_code": {
+    "claimed": true,
+    "tlc": true
+   },
+   "WT3 old_code": {
+    "claimed": false,
+    "tlc": false
+   },
+   "WT3 new_code": {
+    "claimed": true,
+    "tlc": true
+   }
+  },
+  "code_observation": {
+   "test": "TestEvTransferDemote (G5, joint=true) = new TestLeaderTransferDemoteNode",
+   "command": "cd evidence/go/<old_tree|new_tree> && go test -vet=off -count=1 -v -run 'TestEv' .",
+   "old": "transferee 3 after entering joint, still 3 after leaving (learner)",
+   "new": "3 after entering joint (still an outgoing voter), 0 after leaving",
+   "result": "matches"
+  },
+  "requirement_evidence": "raft_test.go:3617-3647; raft.go:1568",
+  "verdict": "accepted",
+  "note": "Legitimate control: a transfer may stay pending while the demoted node is still an outgoing voter.",
+  "files": {
+   "tla": [
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Witness.cfg",
+    "evidence/tla/base.tla (copy of old/spec/base.tla)"
+   ],
+   "logs": [
+    "evidence/logs/witness_tlc.log",
+    "evidence/logs/witness_tlc.compact.txt",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go (copied verbatim into evidence/go/old_tree and evidence/go/new_tree)",
+    "evidence/go/old_tree",
+    "evidence/go/new_tree"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg Witness.tla"
+ },
+ {
+  "id": "EV-CTL-1",
+  "property": "AckPreservation, ReplicationEvidence, QuotaIntegrity (unchanged controls); immediate probe / Next=LastIndex",
+  "kind": "control",
+  "state": {
+   "witness": "every WA row (AckPreservation); WT4: V1 AddLearner(4) applied by leader 1 (old vs proposed ApplyConfCore)",
+   "records": "Pre-state built with base!InitialRaft/Store/Progress/ConfigOf (Witness.tla Leader); the transition is computed by the actual model operator of the old model (base!AdvanceCore / base!Step / base!ApplyConfCore / base!MaybeCommit) and of the proposed model (Proposed!...); the history/quality record is built from (pre, Ready, post) with the old observer (base formula) and the migrated observer (Proposed!AutoLeaveObservation / Proposed!ProposalObservation / outcome with Proposed!RewriteConf); the properties are evaluated through INSTANCE base/Proposed WITH history <- {that record}. The pre-state mirrors the Go scenario named in code_observation."
+  },
+  "old_property": {
+   "AckPreservation (all WA rows, old and new behaviors)": {
+    "claimed": true,
+    "tlc": true
+   },
+   "WT4 ReplicationEvidence/QuotaIntegrity": {
+    "claimed": true,
+    "tlc": true
+   }
+  },
+  "proposed_property": {
+   "AckPreservation (all WA rows)": {
+    "claimed": true,
+    "tlc": true
+   },
+   "WT4 ReplicationEvidence/QuotaIntegrity": {
+    "claimed": true,
+    "tlc": true
+   }
+  },
+  "code_observation": {
+   "note": "new testdata/confchange_v2_add_double_auto.txt:53-62 shows the immediate probe; model WT4: old sends nothing to 4 (next=6), proposed sends MsgApp index 4 with entry 5 (next=5)"
+  },
+  "requirement_evidence": "no safety requirement involved (latency improvement); CatchupProgress (liveness) unchanged",
+  "verdict": "accepted",
+  "note": "Unchanged properties are unaffected by the model migrations.",
+  "files": {
+   "tla": [
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Witness.cfg",
+    "evidence/tla/base.tla (copy of old/spec/base.tla)"
+   ],
+   "logs": [
+    "evidence/logs/witness_tlc.log",
+    "evidence/logs/witness_tlc.compact.txt",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go (copied verbatim into evidence/go/old_tree and evidence/go/new_tree)",
+    "evidence/go/old_tree",
+    "evidence/go/new_tree"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg Witness.tla"
+ },
+ {
+  "id": "EV-D3",
+  "property": "NoUnexpectedFatal (kept) / ProposalConfigurationDecisions (proposed)",
+  "kind": "control",
+  "state": {
+   "witness": "WD3: explicit-joint leader proposes V2 <<>> JointExplicit; Proposed!Step admits it (emptiness rule); Proposed!ApplyConfCore on it -> Fatal 'invalid configuration transition'",
+   "records": "Pre-state built with base!InitialRaft/Store/Progress/ConfigOf (Witness.tla Leader); the transition is computed by the actual model operator of the old model (base!AdvanceCore / base!Step / base!ApplyConfCore / base!MaybeCommit) and of the proposed model (Proposed!...); the history/quality record is built from (pre, Ready, post) with the old observer (base formula) and the migrated observer (Proposed!AutoLeaveObservation / Proposed!ProposalObservation / outcome with Proposed!RewriteConf); the properties are evaluated through INSTANCE base/Proposed WITH history <- {that record}. The pre-state mirrors the Go scenario named in code_observation."
+  },
+  "old_property": {
+   "ProposalConfigurationDecisions": {
+    "claimed": true,
+    "tlc": true
+   },
+   "NoUnexpectedFatal after apply": {
+    "claimed": false,
+    "tlc": false
+   }
+  },
+  "proposed_property": {
+   "ProposalConfigurationDecisions": {
+    "claimed": true,
+    "tlc": true
+   },
+   "NoUnexpectedFatal after apply": {
+    "claimed": false,
+    "tlc": false
+   }
+  },
+  "code_observation": {
+   "test": "TestEvJointAdmission (G4 case d)",
+   "command": "cd evidence/go/<old_tree|new_tree> && go test -vet=off -count=1 -v -run 'TestEv' .",
+   "old": "admitted, panic 'config is already joint'",
+   "new": "admitted, panic 'config is already joint'",
+   "result": "suspected defect D3 (both revisions) is caught by the kept NoUnexpectedFatal"
+  },
+  "requirement_evidence": "raftpb/confchange.go:100-107 LeaveJoint requires a zero Transition; confchange.go:55",
+  "verdict": "unresolved",
+  "note": "Whether admission should use LeaveJoint() (refuse) is not settled by non-implementation evidence; the proposed contract keeps the emptiness rule as an impl-abstraction clause.",
+  "files": {
+   "tla": [
+    "evidence/tla/Proposed.tla",
+    "evidence/tla/Witness.tla",
+    "evidence/tla/Witness.cfg",
+    "evidence/tla/base.tla (copy of old/spec/base.tla)"
+   ],
+   "logs": [
+    "evidence/logs/witness_tlc.log",
+    "evidence/logs/witness_tlc.compact.txt",
+    "evidence/logs/go_old_tree.log",
+    "evidence/logs/go_new_tree.log"
+   ],
+   "go": [
+    "evidence/go/zz_evidence_test.go (copied verbatim into evidence/go/old_tree and evidence/go/new_tree)",
+    "evidence/go/old_tree",
+    "evidence/go/new_tree"
+   ]
+  },
+  "tlc_command": "cd evidence/tla && java -cp /tmp/tools/tla2tools.jar:/tmp/tools/CommunityModules-deps.jar tlc2.TLC -config Witness.cfg Witness.tla"
+ },
+ {
+  "id": "EV-HUNT",
+  "property": "AutoLeaveAdvance, ProposalConfigurationDecisions, OutcomeSoundness, ConfigurationTransitionSafety, PendingTransferVoter, NoUnexpectedFatal, JointConfigurationShape, QuotaIntegrity, AckPreservation",
+  "kind": "control",
+  "state": {
+   "witness": "reachable-state attempts: BFS on old/spec/Update_hunt_autoleave.cfg constants (UpdateOld.tla = old behavior + migrated observer; UpdateP.tla = proposed), random simulation depth 120, and BFS on a 1-voter+1-joining configuration",
+   "records": "model-generated"
+  },
+  "old_property": {
+   "result": "no violation found"
+  },
+  "proposed_property": {
+   "result": "no violation found"
+  },
+  "code_observation": "unknown",
+  "requirement_evidence": "n/a",
+  "verdict": "unresolved",
+  "note": "Inconclusive: canary AutoLeaveNotAppended was never violated (26,429 random traces; small BFS reached depth 8, 15.8M states, in 10 min), so the auto-leave paths were not reached and these runs give no evidence for AutoLeaveAdvance. The proposed-model simulation (55,667 traces) found no violation of the other listed properties, but coverage of the edited paths is not shown.",
+  "files": {
+   "tla": [
+    "evidence/tla/OldObs.tla",
+    "evidence/tla/MCOld.tla",
+    "evidence/tla/UpdateOld.tla",
+    "evidence/tla/MCP.tla",
+    "evidence/tla/UpdateP.tla",
+    "evidence/tla/HuntOld.cfg",
+    "evidence/tla/HuntP.cfg",
+    "evidence/tla/CanaryP.cfg",
+    "evidence/tla/SmallCanaryP.cfg",
+    "evidence/tla/SmallBase.cfg.in"
+   ],
+   "logs": [
+    "evidence/logs/hunt_old_model.log",
+    "evidence/logs/hunt_proposed_model.log",
+    "evidence/logs/sim_old_model.log",
+    "evidence/logs/sim_proposed_model.log",
+    "evidence/logs/sim_canary_proposed.log",
+    "evidence/logs/small_canary_proposed.log"
+   ]
+  },
+  "tlc_command": "tlc2.TLC [-simulate -depth 120] -config <cfg> <UpdateOld|UpdateP>.tla (timeouts 5-25 min)"
+ }
+]

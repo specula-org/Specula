@@ -1,0 +1,24 @@
+{
+  "scorer": "coordinator (Claude), not blind to arm",
+  "gold": "gold.json V03",
+  "obligations": {
+    "autoleave_effect_and_progress": {
+      "score": "detected",
+      "note": "AutoLeaveDue is level-based (autoLeave, leader, cursor>0, cursor>=pendingBefore, no auto-leave pending); no crossing guard; requires the append when applied == pending. Bug B confirmed in Go (G2) and TLC (WA1), flagged by AutoLeaveAdvance. Borderline on progress: no auto-leave liveness candidate is written and it is not listed as unresolved; the other progress properties are kept as 'liveness, unchecked'. Scored detected for consistency with A2-V03-r1, which had the same pattern; under a strict reading of partial_if this cell is partial_unresolved."
+    },
+    "proposal_phase": {
+      "score": "detected",
+      "note": "ProposalJointMismatch covers joint+non-leave and non-joint+leave."
+    },
+    "zero_payload_quota": {
+      "score": "detected",
+      "note": "DropQuota only if quota>0 /\\ weight>0 /\\ quota+weight>MaxUncommitted; nonempty rules kept."
+    },
+    "transfer_demotion": {
+      "score": "detected",
+      "note": "New PendingTransferVoter property."
+    }
+  },
+  "bug_B": "confirmed by execution (D1: Go G2, TLC WA1)",
+  "summary": "4 detected (progress borderline); bug B confirmed in code"
+}

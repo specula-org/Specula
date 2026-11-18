@@ -1,0 +1,136 @@
+{
+ "base.tla": [
+  {
+   "property": "VoteDecisionEligibility",
+   "old": "requirement",
+   "clauses": [
+    "impl-abstraction",
+    "requirement"
+   ]
+  },
+  {
+   "property": "CampaignDecisionEligibility",
+   "old": "requirement",
+   "clauses": [
+    "impl-abstraction",
+    "requirement"
+   ]
+  },
+  {
+   "property": "TransferDecisionEligibility",
+   "old": "requirement",
+   "clauses": [
+    "impl-abstraction",
+    "requirement"
+   ]
+  },
+  {
+   "property": "RequestCorrelatedConfigurationEffects",
+   "old": "requirement",
+   "clauses": [
+    "impl-abstraction",
+    "model-internal",
+    "requirement"
+   ]
+  },
+  {
+   "property": "ProposalConfigurationDecisions",
+   "old": "requirement",
+   "clauses": [
+    "model-internal",
+    "requirement"
+   ]
+  },
+  {
+   "property": "RecoveryBacking",
+   "old": "requirement",
+   "clauses": [
+    "model-internal",
+    "requirement"
+   ]
+  },
+  {
+   "property": "PromiseBacking",
+   "old": "requirement",
+   "clauses": [
+    "requirement",
+    "unknown"
+   ]
+  },
+  {
+   "property": "SnapshotBacking",
+   "old": "requirement",
+   "clauses": [
+    "model-internal",
+    "requirement"
+   ]
+  },
+  {
+   "property": "AckPreservation_OutputPreserved",
+   "old": "requirement",
+   "clauses": [
+    "impl-abstraction",
+    "unknown"
+   ]
+  },
+  {
+   "property": "AutoLeaveAdvance",
+   "old": "requirement",
+   "clauses": [
+    "impl-abstraction",
+    "requirement"
+   ]
+  },
+  {
+   "property": "JointSnapshotMemberAcceptance",
+   "old": "requirement",
+   "clauses": [
+    "impl-abstraction",
+    "requirement"
+   ]
+  },
+  {
+   "property": "QuotaIntegrity",
+   "old": "requirement",
+   "clauses": [
+    "impl-abstraction",
+    "requirement"
+   ]
+  },
+  {
+   "property": "OutcomeSoundness",
+   "old": "requirement",
+   "clauses": [
+    "impl-abstraction",
+    "requirement",
+    "unknown"
+   ]
+  },
+  {
+   "property": "ReadBasis",
+   "old": "requirement",
+   "clauses": [
+    "model-internal",
+    "requirement",
+    "unknown"
+   ]
+  },
+  {
+   "property": "NoUnexpectedFatal",
+   "old": "unknown",
+   "clauses": [
+    "model-internal",
+    "requirement",
+    "unknown"
+   ]
+  },
+  {
+   "property": "TypeOK",
+   "old": "model-internal",
+   "clauses": [
+    "model-internal",
+    "requirement"
+   ]
+  }
+ ]
+}
