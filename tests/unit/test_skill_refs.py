@@ -1,4 +1,4 @@
-"""Tests for adapter-specific Specula skill references."""
+"""Tests for adapter-specific Specular skill references."""
 
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ class TestSkillRefs(unittest.TestCase):
 
                 self.assertIn("Use **code-analysis**", resolved)
                 self.assertIn("/skills/code_analysis/SKILL.md", resolved)
-                self.assertIn("read the local Specula skill file", resolved)
+                self.assertIn("read the local Specular skill file", resolved)
                 self.assertNotIn("<!-- specular-skill:", resolved)
 
     def test_codex_materializes_exactly_one_id(self) -> None:

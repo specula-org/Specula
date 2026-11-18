@@ -10,7 +10,7 @@ from debugger import Breakpoint, DebugSession
 
 
 def get_specular_root():
-    """Auto-detect Specula root directory."""
+    """Auto-detect Specular root directory."""
     specular_root = os.environ.get("SPECULAR_ROOT")
     if specular_root:
         return specular_root
@@ -19,7 +19,7 @@ def get_specular_root():
     tests_dir = os.path.dirname(this_file)  # .../tests
     trace_debugger_dir = os.path.dirname(tests_dir)  # .../trace_debugger
     tools_dir = os.path.dirname(trace_debugger_dir)  # .../tools
-    return os.path.dirname(tools_dir)  # .../Specula
+    return os.path.dirname(tools_dir)  # .../Specular
 
 
 specular_root = get_specular_root()

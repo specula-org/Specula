@@ -11,7 +11,7 @@ methodology is the single-bug skill (`guide.md`) applied to each candidate.
 - Spec directory: {{spec_dir}}
 
 ## Methodology (single-finding — apply to EACH candidate)
-Use the installed Specula skill {{bug_confirmation_skill}}. Read it in full and
+Use the installed Specular skill {{bug_confirmation_skill}}. Read it in full and
 follow it exactly.
 
 ## 1. Consolidate

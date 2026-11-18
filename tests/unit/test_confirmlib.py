@@ -1878,7 +1878,7 @@ class TestDriver(ConfirmCase):
 
         self.assertEqual(len(prompts), 1)
         self.assertEqual(retry_budgets, [100])
-        self.assertIn("installed Specula skill **validation-workflow**", prompts[0])
+        self.assertIn("installed Specular skill **validation-workflow**", prompts[0])
         self.assertIn("Each `Scenario N` is a mechanism hypothesis", prompts[0])
         self.assertIn("`scenario`", prompts[0])
         self.assertIn("<!-- specular-skill:", prompts[0])
@@ -3534,7 +3534,7 @@ class TestPromptExtraAndLog(ConfirmCase):
 
         prompt = C.prompt_reproduce(cfg, f, "/repo")
 
-        self.assertIn("installed Specula skill **bug-confirmation**", prompt)
+        self.assertIn("installed Specular skill **bug-confirmation**", prompt)
         self.assertIn("<!-- specular-skill:", prompt)
         self.assertIn(":bug-confirmation -->", prompt)
         self.assertNotIn("$bug-confirmation", prompt)

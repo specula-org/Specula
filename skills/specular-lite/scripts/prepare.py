@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare Specula Lite's local resources and user-local TLA+ runtime."""
+"""Prepare Specular Lite's local resources and user-local TLA+ runtime."""
 
 from __future__ import annotations
 
@@ -61,7 +61,7 @@ def fetch(url: str, destination: Path, accept: Callable[[Path], bool], rejection
     """Download url and install it at destination only if accept() approves it."""
     destination.parent.mkdir(parents=True, exist_ok=True)
     print(f"Preparing {destination.name}...", file=sys.stderr, flush=True)
-    request = urllib.request.Request(url, headers={"User-Agent": "Specula-Lite"})
+    request = urllib.request.Request(url, headers={"User-Agent": "Specular-Lite"})
     with tempfile.NamedTemporaryFile(dir=destination.parent, delete=False) as stream:
         temporary = Path(stream.name)
         try:
@@ -238,5 +238,5 @@ if __name__ == "__main__":
     try:
         print(json.dumps(prepare(), indent=2))
     except (OSError, RuntimeError, ValueError, tarfile.TarError, zipfile.BadZipFile) as error:
-        print(f"Specula Lite preparation failed: {error}", file=sys.stderr)
+        print(f"Specular Lite preparation failed: {error}", file=sys.stderr)
         raise SystemExit(1) from error

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Full Specula pipeline: Code Analysis → Spec Generation → Harness Generation → Validation + Bug Hunting.
+# Full Specular pipeline: Code Analysis → Spec Generation → Harness Generation → Validation + Bug Hunting.
 # Thin shim → Python pipeline orchestrator (src/specular/pipelinelib.py). Same CLI; every
 # argument is forwarded verbatim and the exit code propagates via exec. The
 # original bash implementation is in git history; the behavior is pinned by

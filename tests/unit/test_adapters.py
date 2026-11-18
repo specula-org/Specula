@@ -2136,7 +2136,7 @@ class OpenCodeAdapter(AdapterCase):
 
     def test_external_specular_and_artifact_paths_are_allowed(self) -> None:
         base = self.sandbox()
-        specular_root = base / "Specula"
+        specular_root = base / "Specular"
         target_repo = base / "target"
         work_dir = base / "run" / "kilo" / ".specular-output"
         result = self.invoke(
@@ -2185,7 +2185,7 @@ class OpenCodeAdapter(AdapterCase):
         result = self.invoke(
             self.base_flags(base),
             env_extra={
-                "SPECULAR_ROOT": str(base / "Specula"),
+                "SPECULAR_ROOT": str(base / "Specular"),
                 "OPENCODE_PERMISSION": json.dumps(
                     {
                         "bash": "deny",
@@ -2200,11 +2200,11 @@ class OpenCodeAdapter(AdapterCase):
         self.assertEqual(permission["bash"], "deny")
         self.assertEqual(permission["external_directory"]["*"], "deny")
         self.assertEqual(permission["external_directory"]["/keep-denied"], "deny")
-        self.assertEqual(permission["external_directory"][str(base / "Specula")], "allow")
+        self.assertEqual(permission["external_directory"][str(base / "Specular")], "allow")
 
     def test_native_specific_rules_win_by_opencode_last_match_order(self) -> None:
         base = self.sandbox()
-        specular_root = base / "Specula"
+        specular_root = base / "Specular"
         private = specular_root / "private"
         exception = private / "allowed"
         result = self.invoke(
@@ -2236,7 +2236,7 @@ class OpenCodeAdapter(AdapterCase):
 
     def test_native_rule_order_and_same_pattern_are_preserved(self) -> None:
         base = self.sandbox()
-        specular_root = base / "Specula"
+        specular_root = base / "Specular"
         unrelated = base / "unrelated"
         target_pattern = f"{specular_root}/**"
         native_rules = {
@@ -2271,7 +2271,7 @@ class OpenCodeAdapter(AdapterCase):
         result = self.invoke(
             self.base_flags(base),
             env_extra={
-                "SPECULAR_ROOT": str(base / "Specula"),
+                "SPECULAR_ROOT": str(base / "Specular"),
                 "OPENCODE_PERMISSION": json.dumps("deny"),
             },
         )
@@ -2279,7 +2279,7 @@ class OpenCodeAdapter(AdapterCase):
         self.assertEqual(result["returncode"], 0, result["stderr"])
         permission = json.loads(result["opencode_permission"])
         self.assertEqual(permission["*"], "deny")
-        self.assertEqual(permission["external_directory"][str(base / "Specula")], "allow")
+        self.assertEqual(permission["external_directory"][str(base / "Specular")], "allow")
 
     def test_prompt_file_and_large_prompt_use_stdin(self) -> None:
         for prompt in ("prompt from file\n", "x" * 200_000):

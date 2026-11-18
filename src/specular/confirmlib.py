@@ -99,7 +99,7 @@ _log_file: Path | None = None  # when set, _log also tees here (the phase's bug-
 
 
 def _dispatcher_git_env(path: str | Path | None = None) -> dict[str, str] | None:
-    """Use deterministic Git context for Specula-owned snapshot operations."""
+    """Use deterministic Git context for Specular-owned snapshot operations."""
     if not os.environ.get(SNAPSHOT_MODE_ENV):
         return None
     extra: dict[str, str] = {}
@@ -615,7 +615,7 @@ class ConfirmConfig:
     prompt_extra: str = ""  # target's .prompt-extra.md, appended to every agent prompt
     resume_prompt_extra: str = ""  # latest guidance, manual continuation only
     # New controls stay after the original fields to preserve positional callers.
-    # None = no Specula override; "" = explicit reset to the CLI default.
+    # None = no Specular override; "" = explicit reset to the CLI default.
     model: str | None = None
     effort: str | None = None
     debate: bool = False
@@ -2091,7 +2091,7 @@ def _adapter_identity(cfg: ConfirmConfig) -> dict[str, str]:
 def _tuning_identity(cfg: ConfirmConfig) -> dict[str, dict[str, str | None]]:
     """Effective tuning inputs known before an adapter starts.
 
-    Explicit Specula values, including an empty reset, win over adapter-specific
+    Explicit Specular values, including an empty reset, win over adapter-specific
     environment fallbacks. CLI config-file defaults remain intentionally opaque.
     """
     adapter = cfg.adapter.stem

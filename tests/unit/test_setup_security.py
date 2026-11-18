@@ -18,7 +18,7 @@ SETUP_HELP = """\
 Usage:
   specular setup
 
-Install Specula's TLA+ tools, Python environments, agent skills, and MCP integrations.
+Install Specular's TLA+ tools, Python environments, agent skills, and MCP integrations.
 
 This interactive command may download dependencies, build local tools, and
 update agent configuration.
@@ -130,9 +130,9 @@ class TestSetupHelp(unittest.TestCase):
 
 class TestSetupAgentDetection(unittest.TestCase):
     AGENT_PROMPTS = {
-        "claude": "Install Specula for Claude Code?",
-        "codex": "Install Specula for Codex?",
-        "copilot": "Install Specula for GitHub Copilot CLI?",
+        "claude": "Install Specular for Claude Code?",
+        "codex": "Install Specular for Codex?",
+        "copilot": "Install Specular for GitHub Copilot CLI?",
     }
     AGENT_MISSING_MESSAGES = {
         "claude": "Claude Code CLI not found on PATH; skipping.",

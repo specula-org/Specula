@@ -1,7 +1,7 @@
 """Output contract of a single-session main session.
 
 In single-session orchestration one agent session writes every Phase 1-3 output,
-so the confirmation handoff requires only what Specula's code or a later agent
+so the confirmation handoff requires only what Specular's code or a later agent
 reads as input. The other files the stage skills describe are recommendations:
 the agent writes them when they help it or a later reader. Phased
 orchestration keeps the full contract, because there those files are the
@@ -30,9 +30,9 @@ the full contract for ablation: the prompt lists every phase output as
 required and the handoff requires each of them. A run keeps the value it was
 created with (see ``pipelinelib``).
 
-SANY runs the way the rest of Specula runs the TLA+ tools: ``java`` from
+SANY runs the way the rest of Specular runs the TLA+ tools: ``java`` from
 ``PATH`` with ``lib/tla2tools.jar`` (plus ``lib/CommunityModules-deps.jar``)
-from this Specula tree, else from ``$SPECULAR_ROOT`` (as in
+from this Specular tree, else from ``$SPECULAR_ROOT`` (as in
 ``scripts/tlc/run_model_check.sh``), in the spec directory, as the trace
 debugger's ``validate_spec_syntax`` tool does.
 """

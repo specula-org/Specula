@@ -204,7 +204,7 @@
 
 ## 7. Reference Pointers
 
-- **Full analysis report**: see the [Specula case-studies repository](https://github.com/specula-org/specula-case-studies) for the complete dpdk-ring analysis
+- **Full analysis report**: see the [Specular case-studies repository](https://github.com/specula-org/specula-case-studies) for the complete dpdk-ring analysis
 - **Key source files**:
   - `lib/ring/rte_ring_elem_pvt.h` — core enqueue/dequeue (474 lines)
   - `lib/ring/rte_ring_c11_pvt.h` — C11 atomics CAS + tail update (143 lines)

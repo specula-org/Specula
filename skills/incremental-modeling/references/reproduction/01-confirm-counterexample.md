@@ -1,6 +1,6 @@
 # Reproduction Entry: Confirm Incremental Findings
 
-This is a thin entry point. Read and follow the installed Specula **bug-confirmation** skill completely for investigation, reproduction, verdicts, evidence, and repair requests. Do not duplicate its escalation ladder or output formats here.
+This is a thin entry point. Read and follow the installed Specular **bug-confirmation** skill completely for investigation, reproduction, verdicts, evidence, and repair requests. Do not duplicate its escalation ladder or output formats here.
 
 ## Preconditions
 

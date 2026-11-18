@@ -159,7 +159,7 @@ echo "$PID" > "$PID_FILE"
 # A parallel confirmation worker deliberately narrows its stop-gate scan to the
 # finding directory. Register managed jobs there as well as next to their logs,
 # so an absolute/out-of-scope log path or a pruned TLC directory cannot hide a
-# live process from the gate. Outside a Specula agent run the env var is absent
+# live process from the gate. Outside a Specular agent run the env var is absent
 # and this helper keeps its historical standalone behaviour.
 GATE_WORK_DIR="${SPECULAR_STOP_GATE_WORK_DIR:-${SPECULAR_WORK_DIR:-}}"
 if [[ -n "$GATE_WORK_DIR" ]]; then
@@ -177,7 +177,7 @@ if [[ -n "$GATE_WORK_DIR" ]]; then
         echo "  TLC registry:  $OWNER_REGISTRY_FILE"
     else
         rm -f "$REGISTRY_TMP" "$OWNER_REGISTRY_TMP" "$REGISTRY_FILE" "$OWNER_REGISTRY_FILE" 2>/dev/null || true
-        echo "ERROR: could not register PID with the Specula stop gate; stopping untracked job $PID" >&2
+        echo "ERROR: could not register PID with the Specular stop gate; stopping untracked job $PID" >&2
         kill "$PID" 2>/dev/null || true
         wait "$PID" 2>/dev/null || true
         rm -f "$PID_FILE"

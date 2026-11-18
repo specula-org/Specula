@@ -1503,7 +1503,7 @@ class TestParsing(TmpCwd):
         p = pl.Pipeline()
         rc, out = quiet(p.parse_args, ["--help"])
         self.assertEqual(rc, 0)
-        self.assertIn("Full Specula pipeline", out)
+        self.assertIn("Full Specular pipeline", out)
         self.assertIn("--agent-config=PATH", out)
         self.assertIn("--model=NAME", out)
         self.assertIn("--effort=LEVEL", out)

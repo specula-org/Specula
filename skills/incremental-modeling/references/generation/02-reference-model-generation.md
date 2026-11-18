@@ -1,6 +1,6 @@
 # Chapter 2: Generate the Complete New Reference Suite
 
-Read and follow the installed Specula **spec-generation** skill for all touched artifacts. Start from the prior suite and revise it into the complete semantic model of the new source revision, correcting implementation-backed inconsistencies in the relevant old abstraction as needed.
+Read and follow the installed Specular **spec-generation** skill for all touched artifacts. Start from the prior suite and revise it into the complete semantic model of the new source revision, correcting implementation-backed inconsistencies in the relevant old abstraction as needed.
 
 ## 1. Keep One Behavioral Source of Truth
 
@@ -54,7 +54,7 @@ At each changed reference location, add a concise comment after the correspondin
 \* update: Update!<focus-operator>
 ```
 
-Retain the normal Specula `file:line` source annotations inside changed logic blocks. The mapping comment supplements them; it does not replace source-faithful annotations.
+Retain the normal Specular `file:line` source annotations inside changed logic blocks. The mapping comment supplements them; it does not replace source-faithful annotations.
 
 For assumptions, setup, variables, or helpers that are not redefined in `Update.tla`, point to the `Update.tla` section that explains their effect on Affected Actions, Interaction Actions, or update properties.
 

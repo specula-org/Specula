@@ -23,7 +23,7 @@ REPAIR_SNAPSHOT = "spec/.repair-phase3-snapshot.json"
 CONFIRMATION_YIELD_RC = 73
 CONFIRMATION_TOOL = "request_bug_confirmation"
 CONFIRMATION_DESCRIPTION = (
-    "Submit the current MC findings and code-review Scenarios to Specula's parallel confirmation workflow. "
+    "Submit the current MC findings and code-review Scenarios to Specular's parallel confirmation workflow. "
     "First save the current modeling brief and spec/bug-report.md (and spec/findings.json when present), "
     "and reuse applicable persistent findings. Follow the returned yield instructions; this is not CI completion."
 )
@@ -96,7 +96,7 @@ def _request(action: str, handoff_path: str | None = None) -> dict[str, str]:
     phase = os.environ.get("SPECULAR_PHASE")
     if phase not in CONTEXT_CONTROL_PHASES or not raw or not token or not work:
         raise ValueError(
-            "Workflow requests are available only inside an incremental CI run or a single-session Specula main session."
+            "Workflow requests are available only inside an incremental CI run or a single-session Specular main session."
         )
     root = Path(work).resolve()
     document: dict[str, str] = {"token": token}

@@ -1,4 +1,4 @@
-"""Install Specula skills alongside an agent's existing skills."""
+"""Install Specular skills alongside an agent's existing skills."""
 
 from __future__ import annotations
 
@@ -227,7 +227,7 @@ def _duplicate_skill_paths(
 
 
 def _is_specular_skills_root(path: Path) -> bool:
-    """Conservatively identify a live ``skills`` directory in a Specula checkout."""
+    """Conservatively identify a live ``skills`` directory in a Specular checkout."""
 
     try:
         resolved = path.resolve(strict=True)
@@ -308,7 +308,7 @@ def _legacy_inventory_conflicts(source: Path, root: Path) -> tuple[Path, ...]:
 
 
 def remove_legacy_root(source: Path, legacy_root: Path) -> bool:
-    """Remove an old whole-directory link only when Specula owns it."""
+    """Remove an old whole-directory link only when Specular owns it."""
 
     if _owned_legacy_root(source, legacy_root) and not _legacy_inventory_conflicts(source, legacy_root):
         legacy_root.unlink()
@@ -329,10 +329,10 @@ def _owned_skill_link(path: Path, skill: SkillSource) -> bool:
 
 
 def plan_shadow_cleanup(source: Path, root: Path) -> ShadowCleanupPlan:
-    """Plan removal of Specula skills that would shadow a local install.
+    """Plan removal of Specular skills that would shadow a local install.
 
     User-managed skills are never removed. An unreadable or ambiguous entry
-    that could share a Specula name is reported as a conflict instead.
+    that could share a Specular name is reported as a conflict instead.
     """
 
     source = source.resolve()
@@ -390,8 +390,8 @@ def apply_shadow_cleanup(plan: ShadowCleanupPlan) -> None:
 def install_skills(source: Path, target: Path) -> InstallResult:
     """Merge per-skill links into *target* without replacing user content.
 
-    A legacy whole-directory link created by earlier Specula setup versions is
-    migrated when it points at any identifiable live Specula checkout. A
+    A legacy whole-directory link created by earlier Specular setup versions is
+    migrated when it points at any identifiable live Specular checkout. A
     user-managed root symlink to a directory is merged through without replacing
     the link. Broken roots and per-skill collisions are preserved and reported
     as incomplete. Installation is preflighted before writing any skill link.
@@ -538,7 +538,7 @@ def main(argv: list[str] | None = None) -> int:
             for path in cleanup_conflicts:
                 print(f"CONFLICT: preserving unsafe skill path: {path}", file=sys.stderr)
             print(
-                "ERROR: Specula skill installation incomplete; "
+                "ERROR: Specular skill installation incomplete; "
                 f"resolve {len(cleanup_conflicts)} cleanup conflict(s) and rerun setup.",
                 file=sys.stderr,
             )
@@ -549,21 +549,21 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     if result.migrated_legacy_root:
-        print(f"Migrated legacy Specula skills symlink: {args.target}")
+        print(f"Migrated legacy Specular skills symlink: {args.target}")
     for previous, current in result.migrated_links:
-        print(f"Migrated Specula skill link: {previous} -> {current}")
+        print(f"Migrated Specular skill link: {previous} -> {current}")
     for path in result.updated_links:
-        print(f"Updated Specula skill link: {path}")
+        print(f"Updated Specular skill link: {path}")
     for name in result.linked:
-        print(f"Linked Specula skill: {args.target / name}")
+        print(f"Linked Specular skill: {args.target / name}")
     for name in result.existing:
-        print(f"Specula skill already configured: {args.target / name}")
+        print(f"Specular skill already configured: {args.target / name}")
     for path in result.conflicts:
         print(f"CONFLICT: preserving existing path: {path}", file=sys.stderr)
 
     if not result.complete:
         print(
-            f"ERROR: Specula skill installation incomplete; resolve {len(result.conflicts)} conflict(s) and rerun setup.",
+            f"ERROR: Specular skill installation incomplete; resolve {len(result.conflicts)} conflict(s) and rerun setup.",
             file=sys.stderr,
         )
         return 1
@@ -571,18 +571,18 @@ def main(argv: list[str] | None = None) -> int:
         for plan in shadow_plans:
             apply_shadow_cleanup(plan)
             for path in plan.removals:
-                print(f"Removed shadowing Specula skill path: {path}")
+                print(f"Removed shadowing Specular skill path: {path}")
         for plan in legacy_plans:
             apply_shadow_cleanup(plan)
             for path in plan.removals:
-                print(f"Removed legacy Specula skills symlink: {path}")
+                print(f"Removed legacy Specular skills symlink: {path}")
     except (OSError, ValueError) as exc:
-        print(f"ERROR: could not remove shadowing Specula skill: {exc}", file=sys.stderr)
+        print(f"ERROR: could not remove shadowing Specular skill: {exc}", file=sys.stderr)
         return 1
     for legacy_root, plan in zip(args.legacy_root, legacy_plans, strict=True):
         if not plan.removals and (legacy_root.exists() or legacy_root.is_symlink()):
             print(f"Preserving unrelated legacy path: {legacy_root}")
-    print(f"Specula skills installed: {len(result.linked) + len(result.existing)} in {args.target}")
+    print(f"Specular skills installed: {len(result.linked) + len(result.existing)} in {args.target}")
     return 0
 
 

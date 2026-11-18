@@ -188,7 +188,7 @@ class CliE2E(unittest.TestCase):
         out = proc.stdout
         # the full-chain banner + a dry-run phase line (proves the shim reached
         # pipelinelib and printed rather than launched) + the completion line
-        self.assertIn("Specula", out)
+        self.assertIn("Specular", out)
         self.assertIn("[DRY RUN] bash scripts/launch/launch_code_analysis.sh", out)
         self.assertIn("Pipeline completed", out)
 
@@ -1007,7 +1007,7 @@ class CliE2E(unittest.TestCase):
         self.assertIn("# nocase Results", index)
         self.assertIn("## Final Reports", index)
         self.assertIn("## Supporting Analysis", index)
-        self.assertNotIn("# Specula Run", index)
+        self.assertNotIn("# Specular Run", index)
         self.assertIn("[pipeline.log](pipeline.log)", index)
         self.assertTrue((work / ".specular-output" / "summary.md").is_file())
         self.assertFalse((root / "runs").exists())
@@ -1045,7 +1045,7 @@ class CliE2E(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
 
         run_index = (work / ".specular-output" / "index.md").read_text()
-        self.assertIn("# Specula Run", run_index)
+        self.assertIn("# Specular Run", run_index)
         self.assertIn("[Open results](../alpha/.specular-output/index.md)", run_index)
         self.assertIn("[Open results](../beta/.specular-output/index.md)", run_index)
         self.assertIn("# alpha Results", (work / "alpha" / ".specular-output" / "index.md").read_text())

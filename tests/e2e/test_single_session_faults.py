@@ -306,7 +306,7 @@ class SingleSessionFaults(unittest.TestCase):
 
     def assert_resumed_main(self, call: int) -> None:
         self.assertTrue(self.prompt(call).startswith(_MANUAL_SESSION_RESUME_PROMPT), self.prompt(call)[:300])
-        self.assertNotIn("# Specula Main Session", self.prompt(call))
+        self.assertNotIn("# Specular Main Session", self.prompt(call))
 
     # ── 1. kill -9 mid-analysis ──
     def check_analysis_kill(self, mode: str) -> None:

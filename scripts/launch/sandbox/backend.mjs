@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// Specula v0 sandbox backend — a thin Node shim over @anthropic-ai/sandbox-runtime (srt).
+// Specular v0 sandbox backend — a thin Node shim over @anthropic-ai/sandbox-runtime (srt).
 //
-// Reads a user-editable sandbox.json (Specula's own schema), translates it into an
+// Reads a user-editable sandbox.json (Specular's own schema), translates it into an
 // srt runtime config, and runs the given command inside the srt sandbox.
 //
 // Why a Node shim and not the `srt` CLI: the default posture leaves the network
@@ -84,7 +84,7 @@ export function loadConfig(explicit, cwd) {
   return { cfg: JSON.parse(def), source: USER_CONFIG_PATH };
 }
 
-// Expand Specula placeholders (${WORKSPACE}, ${TMPDIR}) and a leading ~ in a
+// Expand Specular placeholders (${WORKSPACE}, ${TMPDIR}) and a leading ~ in a
 // config path. We expand ~ ourselves so a credential deny does not depend on
 // srt's own tilde handling for this load-bearing path.
 export function expandPlaceholders(s, workspace) {
@@ -94,7 +94,7 @@ export function expandPlaceholders(s, workspace) {
   return out;
 }
 
-// Specula sandbox.json → srt runtime config.
+// Specular sandbox.json → srt runtime config.
 export function translate(cfg, workspace) {
   const expand = s => expandPlaceholders(s, workspace);
   const arr = x => (Array.isArray(x) ? x : []);

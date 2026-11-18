@@ -65,7 +65,7 @@ def failure_result(
 
 
 INCREMENTAL_USAGE = """
-Incremental Specula CI: one update conversation with parallel bug confirmation.
+Incremental Specular CI: one update conversation with parallel bug confirmation.
 
 Usage:
   specular run --incremental --ci-dir=PATH [options]

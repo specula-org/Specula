@@ -1,4 +1,4 @@
-# Specula v0 sandbox
+# Specular v0 sandbox
 
 A thin guardrail that wraps each agent run so a fully-automatic agent can work on
 a user's own machine without damaging their environment. It is a **guardrail, not
@@ -42,7 +42,7 @@ Tighten by editing this one file — no code changes.
 {
   "enabled": true,                 // false = run WITHOUT sandbox (legacy behaviour)
   "write": {                       // the ONLY dimension restricted by default
-    "allow": ["${WORKSPACE}", "${TMPDIR}"],  // placeholders expanded by Specula
+    "allow": ["${WORKSPACE}", "${TMPDIR}"],  // placeholders expanded by Specular
     "deny":  []                    // carve-outs inside allowed paths (deny wins)
   },
   "read": {                        // open by default

@@ -29,7 +29,7 @@ CLIENT_TIMEOUT_MS = (MAX_WAIT_SECONDS + 120) * 1000
 _LAUNCHER_LOCKS: dict[tuple[Path, Path], tuple[Path, int]] = {}
 _LOCK_GUARD = threading.Lock()
 START_DESCRIPTION = (
-    "Start TLC model checking or simulation in the background using Specula's resource-budgeted wrapper. "
+    "Start TLC model checking or simulation in the background using Specular's resource-budgeted wrapper. "
     "Prefer this over starting java/tlc2.TLC in a shell. Returns a durable task ID, log paths, and waiting instructions. "
     "Pass wrapper options as separate arguments: -m heap (default 50G), -M offheap (200G), -w workers (auto), "
     "-t minutes (180); choose memory/workers within the run budget. Simulation: -S -n traces -p depth. "
@@ -156,7 +156,7 @@ def prepare_environment(env: dict[str, str], log: Path, root: Path = ROOT) -> No
 def tasks_root() -> Path:
     work = os.environ.get("SPECULAR_WORK_DIR")
     if not work:
-        raise ValueError("TLC task tools require a Specula working directory.")
+        raise ValueError("TLC task tools require a Specular working directory.")
     return Path(work).resolve() / ".tlc-tasks" / "jobs"
 
 
@@ -200,7 +200,7 @@ async def start_tlc(
     work = Path(work_dir).resolve()
     allowed = Path(os.environ.get("SPECULAR_WORK_DIR", "")).resolve()
     if not work.is_relative_to(allowed) or not work.is_dir():
-        raise ValueError("work_dir must be inside the Specula working directory.")
+        raise ValueError("work_dir must be inside the Specular working directory.")
     for filename in (spec_file, config_file):
         file = (work / filename).resolve()
         if not file.is_relative_to(allowed) or not file.is_file():

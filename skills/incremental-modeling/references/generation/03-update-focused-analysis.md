@@ -13,7 +13,7 @@ Ask:
 - Did the code update the same mechanism at every special/general call site and branch?
 - Which old assumptions, masks, and environment constraints still hold?
 
-Use the Category A/B analysis patterns from the installed Specula **code-analysis** skill for the changed mechanism. Do not apply an unrelated generic fault checklist.
+Use the Category A/B analysis patterns from the installed Specular **code-analysis** skill for the changed mechanism. Do not apply an unrelated generic fault checklist.
 
 ## 2. Derive Update Scenarios
 

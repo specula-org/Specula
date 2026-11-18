@@ -1,12 +1,12 @@
 # Writing Modeling Guidance
 
-Read this when the user asks you to set up Specula for a new target, or to write or revise a modeling guidance file for them.
+Read this when the user asks you to set up Specular for a new target, or to write or revise a modeling guidance file for them.
 
 ## What this file is
 
-Modeling guidance is an optional text file supplied to a single-target run with `--guidance=/absolute/path/to/file`. Specula adds the same guidance to analysis, specification generation, harness generation, validation and repair, and bug confirmation. Severity classification does not use it.
+Modeling guidance is an optional text file supplied to a single-target run with `--guidance=/absolute/path/to/file`. Specular adds the same guidance to analysis, specification generation, harness generation, validation and repair, and bug confirmation. Severity classification does not use it.
 
-The file may live anywhere and may use any filename. Specula records its absolute path when the run is created. A resumed run reuses that path and reads its current contents, so the user may edit the file between invocations without selecting a new path.
+The file may live anywhere and may use any filename. Specular records its absolute path when the run is created. A resumed run reuses that path and reads its current contents, so the user may edit the file between invocations without selecting a new path.
 
 ## When to write one
 
@@ -17,7 +17,7 @@ Write guidance if at least one of these is true:
 - Default phase behavior would over-scope a large target.
 - The user wants to include or exclude specific subsystems.
 
-If none apply, explain that guidance is optional and Specula can determine the modeling scope automatically. Avoid generic boilerplate that would weaken the agents' decisions.
+If none apply, explain that guidance is optional and Specular can determine the modeling scope automatically. Avoid generic boilerplate that would weaken the agents' decisions.
 
 ## Hard rules
 
@@ -39,7 +39,7 @@ If none apply, explain that guidance is optional and Specula can determine the m
 | Known incidents and design references | State-space bounds |
 | Explicit exclusions and their reasons | Symmetry, fairness, or TLC configuration choices |
 
-Self-test before writing: would the guidance still make sense if Specula switched modeling languages? If not, remove the modeling-specific prescription.
+Self-test before writing: would the guidance still make sense if Specular switched modeling languages? If not, remove the modeling-specific prescription.
 
 ## Recommended structure
 

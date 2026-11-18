@@ -1,4 +1,4 @@
-"""Deterministic, human-readable navigation for Specula run outputs.
+"""Deterministic, human-readable navigation for Specular run outputs.
 
 The indexes are derived views only: pipeline, repair, resume, and confirmation
 never consume them. The renderer is limited to fixed files and shallow
@@ -307,7 +307,7 @@ def render_run_index(
 ) -> str:
     """Render the intentionally minimal run-level target chooser."""
     lines = [
-        "# Specula Run",
+        "# Specular Run",
         "",
         "Select a target to browse its results or open its final reports directly.",
         "",

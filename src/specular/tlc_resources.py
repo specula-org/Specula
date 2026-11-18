@@ -3,7 +3,7 @@
 The TLC wrapper calls this module before starting Java and releases its lease
 when Java exits.  Reservations are declarations (``-m + -M`` and ``-w``), not
 measurements of RSS or CPU usage.  A file lock makes concurrent admissions for
-the same Specula run atomic on Linux and macOS.
+the same Specular run atomic on Linux and macOS.
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ WORKER_LIMIT_ENV = "SPECULAR_TLC_WORKER_LIMIT"
 STATE_DIR_ENV = "SPECULAR_TLC_RESOURCE_DIR"
 SCOPE_ENV = "SPECULAR_TLC_SCOPE"
 RUN_POLICY_FILENAME = "tlc-resources.json"
-# Names from before the Specula -> Specular rename. Interactive sessions and
+# Names from before the Specular -> Specular rename. Interactive sessions and
 # agent-written scripts call the TLC wrappers directly, bypassing the pipeline
 # entry points, so refuse them here rather than silently using the default budget.
 LEGACY_ENV = ("SPECULA_TLC_MEMORY_LIMIT", "SPECULA_TLC_WORKER_LIMIT", "SPECULA_TLC_SCOPE", "SPECULA_TLC_RESOURCE_DIR")
@@ -693,14 +693,14 @@ def _validate_policy(ledger: dict[str, Any], scope: str, memory_raw: str, worker
     )
     if not same_memory:
         raise ResourceError(
-            f"this Specula run already uses a {format_bytes(stored_limit)} TLC memory budget; "
+            f"this Specular run already uses a {format_bytes(stored_limit)} TLC memory budget; "
             "the budget cannot change inside the run"
         )
     if ledger.get("worker_limit") != requested_workers:
         stored_workers = ledger.get("worker_limit")
         label = "unbounded" if stored_workers is None else str(stored_workers)
         raise ResourceError(
-            f"this Specula run already uses TLC worker limit {label}; the limit cannot change inside the run"
+            f"this Specular run already uses TLC worker limit {label}; the limit cannot change inside the run"
         )
 
 
@@ -727,7 +727,7 @@ def _render_report(
     remaining_before = max(0, memory_limit - active_memory)
     remaining_after = max(0, remaining_before - request_memory)
     scope_label = Path(scope).name or scope
-    lines = [f"TLC resource budget (Specula run {scope_label}):"]
+    lines = [f"TLC resource budget (Specular run {scope_label}):"]
     if memory["mode"] == "auto":
         measured = memory.get("snapshot")
         if not isinstance(measured, dict):

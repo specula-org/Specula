@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Specula pipeline orchestrator — Python port of scripts/launch/launch_pipeline.sh.
+"""Specular pipeline orchestrator — Python port of scripts/launch/launch_pipeline.sh.
 
 Runs the full phase sequence (analysis → specgen → harness → validation →
 confirmation [+ repair loop] → classification → summary) by invoking the
@@ -132,7 +132,7 @@ USAGE_SCRIPT = SPECULAR_ROOT / "scripts" / "exp" / "usage.sh"
 PHASE_TERMINATION_GRACE_SECONDS = 3.0
 
 USAGE = """
-Full Specula pipeline: Code Analysis → Spec Generation → Harness Generation → Validation + Bug Hunting
+Full Specular pipeline: Code Analysis → Spec Generation → Harness Generation → Validation + Bug Hunting
 
 Runs all phases with optional review agents between each phase.
 All agent logs and review results are saved for inspection.
@@ -1092,7 +1092,7 @@ class Pipeline:
         default = self._resumable_selection(self._agent_selection())
         routes = self._resumable_routes()
         return {
-            # Single-session runs use version 2, so Specula releases without single-session
+            # Single-session runs use version 2, so Specular releases without single-session
             # orchestration refuse to resume them instead of continuing them as phased.
             "version": 2 if self.orchestration == "single-session" else 1,
             "default": self._selection_document(default),
@@ -1909,7 +1909,7 @@ class Pipeline:
             self.tlc_memory_limit = stored_memory
         elif parse_memory_limit(current_memory) != stored_memory_value:
             print(
-                f"ERROR: this Specula run already uses TLC memory limit {stored_memory}; "
+                f"ERROR: this Specular run already uses TLC memory limit {stored_memory}; "
                 "the limit cannot change when resuming",
                 file=sys.stderr,
             )
@@ -1919,7 +1919,7 @@ class Pipeline:
         elif stored_worker_value is None or parse_worker_limit(current_workers) != stored_worker_value:
             label = "unbounded" if stored_workers is None else stored_workers
             print(
-                f"ERROR: this Specula run already uses TLC worker limit {label}; the limit cannot change when resuming",
+                f"ERROR: this Specular run already uses TLC worker limit {label}; the limit cannot change when resuming",
                 file=sys.stderr,
             )
             return 1
@@ -4084,7 +4084,7 @@ class Pipeline:
         # phased hand-offs require, so their absence is not reported here.
         advisory = self.orchestration == "single-session" and not output_contract.strict()
         out: list[str] = []
-        out += ["# Specula Pipeline Summary", "", f"Generated: {_date_iseconds()}", "", "## Systems Processed", ""]
+        out += ["# Specular Pipeline Summary", "", f"Generated: {_date_iseconds()}", "", "## Systems Processed", ""]
 
         for name in names:
             work_dir = Path(self.get_work_dir(name))
@@ -4238,7 +4238,7 @@ class Pipeline:
 
     def print_run_header(self) -> None:
         print("╔══════════════════════════════════════════════════════════╗")
-        print("║        Specula — Full Pipeline Runner                   ║")
+        print("║        Specular — Full Pipeline Runner                   ║")
         print("╚══════════════════════════════════════════════════════════╝")
         print()
         print(f"Targets:      {len(self.targets)}")

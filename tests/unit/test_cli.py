@@ -41,7 +41,7 @@ commands:
   confirm    Phase 4a - confirm & reproduce model-checking bugs
   classify   Phase 4b - assign severity tiers to confirmed bugs
   review     Run an inter-phase review agent
-  setup      Install Specula agent skills + MCP tools
+  setup      Install Specular agent skills + MCP tools
 
 Every argument after <command> is forwarded verbatim to the underlying
 launch script. Run 'specular <command> --help' for a command's full flag set.

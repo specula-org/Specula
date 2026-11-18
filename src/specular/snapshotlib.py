@@ -88,7 +88,7 @@ def sanitize_snapshot_git_environment(env: MutableMapping[str, str], *, ceiling:
 
 
 def clean_git_environment(extra: Mapping[str, str] | None = None) -> dict[str, str]:
-    """Return a deterministic environment for Specula-owned local Git calls."""
+    """Return a deterministic environment for Specular-owned local Git calls."""
     env = os.environ.copy()
     for key in list(env):
         if key.startswith("GIT_"):
@@ -99,9 +99,9 @@ def clean_git_environment(extra: Mapping[str, str] | None = None) -> dict[str, s
             "GIT_CONFIG_GLOBAL": os.devnull,
             "GIT_ATTR_NOSYSTEM": "1",
             "GIT_TERMINAL_PROMPT": "0",
-            "GIT_AUTHOR_NAME": "Specula",
+            "GIT_AUTHOR_NAME": "Specular",
             "GIT_AUTHOR_EMAIL": "specular@localhost",
-            "GIT_COMMITTER_NAME": "Specula",
+            "GIT_COMMITTER_NAME": "Specular",
             "GIT_COMMITTER_EMAIL": "specular@localhost",
         }
     )
@@ -386,7 +386,7 @@ def _create_baseline(control: Path, source: Path, index: Path, *, is_git: bool) 
         _git(["read-tree", "--empty"], cwd=source, env=env)
         _stage_review_tree(source, is_git=is_git, env=env)
         tree = _git(["write-tree"], cwd=source, env=env)
-        baseline = _git(["commit-tree", tree, "-m", "Specula source baseline"], cwd=source, env=env)
+        baseline = _git(["commit-tree", tree, "-m", "Specular source baseline"], cwd=source, env=env)
         _git(["update-ref", _BASELINE_REF, baseline], cwd=source, env=env)
         return baseline
     finally:

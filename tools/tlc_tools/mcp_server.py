@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""TLC startup and blocking waits for Specula Agent clients."""
+"""TLC startup and blocking waits for Specular Agent clients."""
 
 import sys
 from pathlib import Path

@@ -1,6 +1,6 @@
 # Update-Focused Model Checking
 
-Use the installed Specula **validation-workflow** skill for the trace/MC repair loop and the installed **tla-checking-workflow** skill for TLC execution, counterexample analysis, classification, and fixes. Reuse their one-shot checking methods with the budgeted completion rules below.
+Use the installed Specular **validation-workflow** skill for the trace/MC repair loop and the installed **tla-checking-workflow** skill for TLC execution, counterexample analysis, classification, and fixes. Reuse their one-shot checking methods with the budgeted completion rules below.
 
 ## Entry Gate
 

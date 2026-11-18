@@ -47,7 +47,7 @@ class TestRunIndex(OutputIndexCase):
 
         expected_pending = textwrap.dedent(
             """\
-            # Specula Run
+            # Specular Run
 
             Select a target to browse its results or open its final reports directly.
 

@@ -1,9 +1,9 @@
 ---
 name: specular-lite
-description: Find bugs in concurrent or distributed code using TLA+ modeling, model checking, and code-level reproduction. Use for a focused investigation with one coding agent, without trace validation or the full Specula pipeline.
+description: Find bugs in concurrent or distributed code using TLA+ modeling, model checking, and code-level reproduction. Use for a focused investigation with one coding agent, without trace validation or the full Specular pipeline.
 ---
 
-# Specula Lite
+# Specular Lite
 
 Investigate the user's code, model its behavior, check properties, attempt code-level reproduction, and deliver an evidence-backed report. This is a long task conducted by the current agent.
 
@@ -19,7 +19,7 @@ Resolve this skill's installed directory as `SKILL_DIR`; it is not the target re
 python3 "$SKILL_DIR/scripts/prepare.py"
 ```
 
-The helper unpacks the bundled Specula references and output reader, reuses Java 21+ when available, and downloads missing tools into the user's cache. It prints JSON with the `guides` directory and tool paths. No Specula installation, agent adapter, MCP registration, Maven, or Python packages are needed. Python 3.10+ is the bootstrap prerequisite; if unavailable, help prepare it using the user's existing environment tooling. Explain a failed prerequisite concretely rather than presenting an unexecuted check as a result.
+The helper unpacks the bundled Specular references and output reader, reuses Java 21+ when available, and downloads missing tools into the user's cache. It prints JSON with the `guides` directory and tool paths. No Specular installation, agent adapter, MCP registration, Maven, or Python packages are needed. Python 3.10+ is the bootstrap prerequisite; if unavailable, help prepare it using the user's existing environment tooling. Explain a failed prerequisite concretely rather than presenting an unexecuted check as a result.
 
 Create a fresh investigation directory under the target's `.specular-lite/`, keeping models, logs, reproduction tests, and `report.md` together. Record the source revision and local changes relevant to the investigation. Preserve the user's existing work; use a separate source copy/worktree for reproduction changes when necessary. Keep brief progress notes so the same agent can continue after context compaction.
 
@@ -29,7 +29,7 @@ Read the bundled guides as methodology, in the sequence below. `guides` is the d
 
 **These Lite rules govern the workflow when a shared guide describes the standard pipeline:**
 
-- Use one agent throughout. Perform referenced subagent/Task work yourself, sequentially; do not launch other agents or Specula's pipeline/confirmation dispatchers. The only exception is [delegated reproduction](#delegated-reproduction), when the user names a reproduction command.
+- Use one agent throughout. Perform referenced subagent/Task work yourself, sequentially; do not launch other agents or Specular's pipeline/confirmation dispatchers. The only exception is [delegated reproduction](#delegated-reproduction), when the user names a reproduction command.
 - Skip trace-validation instrumentation, execution-trace collection, harness generation, `Trace.tla`/`Trace.cfg`, and instrumentation specifications. Do not invoke `validation-workflow` or `tla-trace-workflow`. TLC counterexample traces remain essential evidence and are different from implementation traces.
 - Use the scripts below and the host's file/shell tools instead of MCP tools, `specular` commands, background-run wrappers, or agent-specific launchers. VAV is optional if already available; do not install the full CFA/Maven stack as a prerequisite for Lite.
 - Continue autonomously after the opening answer. Do not wait for the user between phases or stop at the first model counterexample. Investigate and reproduce candidates before completing the report.

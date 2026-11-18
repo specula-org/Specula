@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Overnight batch scheduler for Specula pipeline.
+# Overnight batch scheduler for Specular pipeline.
 # Thin shim → Python scheduler (src/specular/schedulerlib.py). Same CLI; every argument is
 # forwarded verbatim and the exit code propagates via exec. The original bash
 # implementation is in git history; the behavior is pinned by

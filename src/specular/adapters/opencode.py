@@ -99,7 +99,7 @@ def _allow_external_directories(env: dict[str, str]) -> None:
             generated_rules[f"{raw}/**"] = "allow"
 
     # OpenCode applies the last matching pattern.  Keep every native rule in
-    # its original relative position, inserting Specula's paths after the
+    # its original relative position, inserting Specular's paths after the
     # native catch-all (or before all native rules when there is no catch-all).
     # That lets the generated paths override only a default, while later native
     # path-specific denies/asks still win.

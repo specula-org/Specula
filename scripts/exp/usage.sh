@@ -42,7 +42,7 @@ die() { echo "error: $*" >&2; exit 2; }
 # Keychain items to try, in order. Claude Code names its item
 # "<base>-<h>", h being the first 8 hex digits of sha256(config dir), whenever
 # CLAUDE_CONFIG_DIR is set (even to ~/.claude), and plain "<base>" otherwise.
-# Specula's adapter always sets it, so the suffixed item comes first; the plain
+# Specular's adapter always sets it, so the suffixed item comes first; the plain
 # item is only ever the default profile's, so no other profile may fall back to it.
 keychain_services() {
   [[ "$(uname -s)" == "Darwin" ]] || return 1

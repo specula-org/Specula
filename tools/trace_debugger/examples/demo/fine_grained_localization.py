@@ -69,7 +69,7 @@ class DebugClient:
 
 
 def get_specular_root():
-    """Auto-detect Specula root directory."""
+    """Auto-detect Specular root directory."""
     # Try environment variable first
     specular_root = os.environ.get("SPECULAR_ROOT")
     if specular_root:
@@ -81,7 +81,7 @@ def get_specular_root():
     examples_dir = os.path.dirname(demo_dir)  # .../examples
     trace_debugger_dir = os.path.dirname(examples_dir)  # .../trace_debugger
     tools_dir = os.path.dirname(trace_debugger_dir)  # .../tools
-    return os.path.dirname(tools_dir)  # .../Specula
+    return os.path.dirname(tools_dir)  # .../Specular
 
 
 def run_inspection():

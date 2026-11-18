@@ -9,7 +9,7 @@ Read this chapter when a focused `Update.tla` omits reference Actions that can a
 
 ## Why It Matters Here
 
-Do not conjoin `Update.tla` as a second closed behavior model with the reference. Closed specs that both write shared state can overconstrain each other. In Incremental Specula, reference Actions remain the sole behavior definitions; `Update.tla` selects them and optionally gives omitted context an explicit environment/rely action.
+Do not conjoin `Update.tla` as a second closed behavior model with the reference. Closed specs that both write shared state can overconstrain each other. In Incremental Specular, reference Actions remain the sole behavior definitions; `Update.tla` selects them and optionally gives omitted context an explicit environment/rely action.
 
 ## Open Update Pattern
 
@@ -61,4 +61,4 @@ A chaos/type universe can check single-step implications over all type-correct s
 
 Use TLC first. Consider writing discharge lemmas and checking them with TLAPS only after real cases show that finite bounds or state-space cost limit the TLC checks. Safety action relies fit this pattern; do not assume it directly handles liveness relies.
 
-Do not decompose the entire existing reference into open components. This method is a focused completeness guard around `Update.tla`, not a replacement architecture for Specula.
+Do not decompose the entire existing reference into open components. This method is a focused completeness guard around `Update.tla`, not a replacement architecture for Specular.

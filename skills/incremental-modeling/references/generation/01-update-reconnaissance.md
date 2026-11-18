@@ -7,7 +7,7 @@ Use the existing `code-analysis` methodology selectively. The old run already co
 - Identify the old and new source revisions exactly.
 - Read the complete diff, then read every changed function in both revisions with its callers, callees, tests, and downstream consumers.
 - Read the old `modeling-brief.md`, `analysis-report.md`, base/MC/Trace specs, validation changelog, findings, confirmed dispositions, reproductions, and repair history relevant to the changed mechanism.
-- Preserve the old system category unless the update changes the concurrency or communication architecture. If it does, reapply the category routing from the installed Specula **code-analysis** skill.
+- Preserve the old system category unless the update changes the concurrency or communication architecture. If it does, reapply the category routing from the installed Specular **code-analysis** skill.
 
 Do not infer protocol importance from diff size. A one-line guard can be model-critical; a large refactor can be outside the current abstraction.
 

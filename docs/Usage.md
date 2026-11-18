@@ -5,10 +5,10 @@
 ### Supported platforms
 
 - **Linux:** supported directly.
-- **macOS:** supported. Specula's long-running-job helpers use GNU `timeout` and `tail --pid`; install GNU coreutils and put its `gnubin` directory on `PATH` (for Homebrew: `brew install coreutils`, then add `$(brew --prefix coreutils)/libexec/gnubin` to `PATH`).
-- **Windows:** use [WSL2](https://learn.microsoft.com/windows/wsl/install) and run Specula inside its Linux environment. Native Windows terminals are not supported because the launchers and setup use Bash and other POSIX tools.
+- **macOS:** supported. Specular's long-running-job helpers use GNU `timeout` and `tail --pid`; install GNU coreutils and put its `gnubin` directory on `PATH` (for Homebrew: `brew install coreutils`, then add `$(brew --prefix coreutils)/libexec/gnubin` to `PATH`).
+- **Windows:** use [WSL2](https://learn.microsoft.com/windows/wsl/install) and run Specular inside its Linux environment. Native Windows terminals are not supported because the launchers and setup use Bash and other POSIX tools.
 
-When using WSL2, install the prerequisites and agent CLI inside WSL2, then clone and run Specula there. The target repository must also be accessible from that environment.
+When using WSL2, install the prerequisites and agent CLI inside WSL2, then clone and run Specular there. The target repository must also be accessible from that environment.
 
 ### Requirements
 
@@ -28,11 +28,11 @@ The dependencies below are not installed by `specular setup`; install them separ
 
 The first setup needs network access to GitHub, PyPI, and Maven Central. Agent runs also need access to the selected model provider and any remote repositories the analysis uses. Claude subscription quota monitoring specifically uses `curl`; if it is unavailable, the quota check warns and fails open rather than stopping the pipeline.
 
-Specula relies on the selected agent to analyze code and reason about counterexamples, so use a strong reasoning model at high effort. Harness generation builds and instruments the target project; verify that the target builds normally before starting a full pipeline.
+Specular relies on the selected agent to analyze code and reason about counterexamples, so use a strong reasoning model at high effort. Harness generation builds and instruments the target project; verify that the target builds normally before starting a full pipeline.
 
 Some frontier models apply stricter cyber-safety access checks during the `confirm` step, because Phase 4 asks the agent to validate and reproduce real bugs in source code. If those checks block your run, use a model/provider with the required cyber access, or a model that does not block this defensive reproduction workflow, for Phase 4; earlier phases can still use frontier reasoning models.
 
-Model checking can be long-running and memory-intensive. On machines with limited memory, you can run more TLC simulations or configure TLC to offload state data to disk. Limited memory may constrain model checking, but it does not prevent you from using Specula, and we plan to improve resource handling and provide more support for resource-constrained machines in future releases.
+Model checking can be long-running and memory-intensive. On machines with limited memory, you can run more TLC simulations or configure TLC to offload state data to disk. Limited memory may constrain model checking, but it does not prevent you from using Specular, and we plan to improve resource handling and provide more support for resource-constrained machines in future releases.
 
 ### Optional sandbox dependencies
 
@@ -63,7 +63,7 @@ specular run --artifact=/path/to/source "name|owner/repository|language|referenc
 
 If neither `.specular/sandbox.json` in the launch directory nor `~/.specular/sandbox.json` exists, the first sandboxed run copies the default policy to `~/.specular/sandbox.json`. Review the [sandbox guide](../scripts/launch/sandbox/README.md) before enabling it or tightening read/network access.
 
-Clone Specula, install the CLI, and run its interactive setup:
+Clone Specular, install the CLI, and run its interactive setup:
 
 ```bash
 git clone https://github.com/specula-org/Specula.git
@@ -120,7 +120,7 @@ Existing CI directories keep working. Helper scripts that agents wrote into a CI
 
 ### First run
 
-From the Specula checkout, point Specula at the source repository to analyze:
+From the Specular checkout, point Specular at the source repository to analyze:
 
 ```bash
 specular run \
@@ -147,9 +147,9 @@ specular run \
   "cometbft|cometbft/cometbft|Go|Tendermint BFT"
 ```
 
-Guidance is optional. Without it, Specula determines the modeling scope automatically.
+Guidance is optional. Without it, Specular determines the modeling scope automatically.
 
-With the default isolated workspace, an external source checkout must be supplied with `--artifact`. Alternatively, Specula finds canonical checkouts under `case-studies/<name>/artifact/`.
+With the default isolated workspace, an external source checkout must be supplied with `--artifact`. Alternatively, Specular finds canonical checkouts under `case-studies/<name>/artifact/`.
 
 Select an agent, model, and reasoning effort when needed:
 
@@ -164,13 +164,13 @@ specular run \
 
 Supported adapters are `claude-code` (default), `codex`, `copilot-cli`, `opencode`, and `pi`. Model names and effort values are interpreted by the selected agent. OpenCode and Pi model names use `provider/model` syntax.
 
-## Add Specula to CI
+## Add Specular to CI
 
-Specula maintains a reference model and harness that evolve with your project's code. Choose a persistent CI directory outside the source checkout, and use the same directory for initialization and subsequent checks.
+Specular maintains a reference model and harness that evolve with your project's code. Choose a persistent CI directory outside the source checkout, and use the same directory for initialization and subsequent checks.
 
 ### Initialize once
 
-Initialization runs the full Specula workflow, focusing on the depth of the core logic and its interactions. Optional `--guidance` supplies your modeling scope and priorities.
+Initialization runs the full Specular workflow, focusing on the depth of the core logic and its interactions. Optional `--guidance` supplies your modeling scope and priorities.
 
 ```bash
 specular run --ci-init --ci-dir=/work/project-ci \
@@ -201,7 +201,7 @@ For each update, check out the target commit in the source repository and run:
 specular run --incremental --ci-dir=/work/project-ci
 ```
 
-Specula computes the changes since the current model's source version, then runs a main Agent through the incremental-modeling workflow using the existing model and harness. New MC and code-review candidates use the one-shot confirmation workflow; the main Agent waits for confirmation and resumes with its results. The repository path and user guidance are reused. Use `--agent`, `--model`, and `--effort` for the default Agent, or [hybrid agent configuration](#hybrid-agent-configuration) to select a separate confirmation Agent. See `specular run --incremental --help` for supported options.
+Specular computes the changes since the current model's source version, then runs a main Agent through the incremental-modeling workflow using the existing model and harness. New MC and code-review candidates use the one-shot confirmation workflow; the main Agent waits for confirmation and resumes with its results. The repository path and user guidance are reused. Use `--agent`, `--model`, and `--effort` for the default Agent, or [hybrid agent configuration](#hybrid-agent-configuration) to select a separate confirmation Agent. See `specular run --incremental --help` for supported options.
 
 New incremental runs use the same retry defaults as one-shot runs: `--policy-retries=20` for provider-policy interruptions and `--transient-resumes=20` for temporary provider or transport failures. Each budget applies separately to the main Agent conversation and each confirmation turn. Set either option to a non-negative integer to override its budget; `0` disables that recovery path. Resuming an existing run preserves its saved budgets.
 
@@ -216,7 +216,7 @@ Once a run starts, it records its outcome in `runs/<run-id>/ci-result.json`. A c
 | `provider` | The Agent provider stopped the run after its retry budget; `reason` is `rate_limit`, `temporary`, `credentials`, or `policy`. |
 | `interrupted` | The run received SIGINT, SIGTERM, or SIGHUP. |
 | `incomplete` | The workflow did not produce an accepted result, but its conversation or post-confirmation work can be resumed. |
-| `error` | Specula stopped on an error and the run cannot be resumed; fix it and start a new run. |
+| `error` | Specular stopped on an error and the run cannot be resumed; fix it and start a new run. |
 
 None of these categories is a finding about the checked source.
 
@@ -236,7 +236,7 @@ For BYOM initialization, the same resume command restores the original BYOM path
 
 ### Run automatically with GitHub Actions
 
-Install Specula, the selected agent, and the project's build dependencies under the account running a dedicated Linux runner labeled `specular`. Initialize the CI directory under that same account so later runs can reuse its files and Agent sessions.
+Install Specular, the selected agent, and the project's build dependencies under the account running a dedicated Linux runner labeled `specular`. Initialize the CI directory under that same account so later runs can reuse its files and Agent sessions.
 
 Copy the [workflow template](../examples/ci/specular-ci.yml) into your project's `.github/workflows/specular-ci.yml`. Set the repository variables `SPECULAR_CI_DIR` and `SPECULAR_MODEL`; optionally set `SPECULAR_AGENT` and `SPECULAR_EFFORT`. Edit the branch filters to suit your repository. Each independently evolving branch needs its own initialized CI directory.
 
@@ -265,7 +265,7 @@ Clearly describe in your prompt what the BYOM path provides and how those artifa
 
 BYOM skips the full code-analysis phase. Its Phase 2 and Phase 2.5 agents inspect the supplied assets, perform a focused Scenario supplement, reuse usable work, and fill only missing or incompatible specification, instrumentation, harness, and trace responsibilities. Existing traces are used without rerunning the harness by default; the agent may run or adjust the harness when validation requires it. The standard validation, confirmation, repair, and classification workflow then continues unchanged.
 
-Specula does not modify the original BYOM path. Later phases may modify the adopted workspace copies under their normal validation and repair rules. At the end of each target run, `byom-modification-report.md` summarizes which supplied assets were reused or modified, what Specula added, and why. The report is an agent-produced comparison, not a mechanically complete patch.
+Specular does not modify the original BYOM path. Later phases may modify the adopted workspace copies under their normal validation and repair rules. At the end of each target run, `byom-modification-report.md` summarizes which supplied assets were reused or modified, what Specular added, and why. The report is an agent-produced comparison, not a mechanically complete patch.
 
 BYOM requires the default isolated layout and conflicts with `--no-isolate` and every `--skip-*` option. A resumed run reuses its stored absolute BYOM path; keep the original files available and unchanged until the run and any resume finish. Ordinary runs can use `--fresh-context` to select a different path. For persistent CI, use [BYOM initialization](#initialize-once); `--incremental` does not accept `--byom`, and changing the initialization input requires a new run.
 
@@ -334,11 +334,11 @@ With `--incremental`, `default_profile` selects the main Agent and `phases.confi
 
 To run a `codex` profile on a model from another provider, see [Use other model providers with Codex](codex-model-providers.md).
 
-### Models tested by the Specula team
+### Models tested by the Specular team
 
 We have tested the following agent and model combinations. These observations summarize our own runs and are not guarantees for every target or configuration.
 
-- **Reliable in our testing:** Claude Code with Claude Opus 5.5 or Fable 5.2, and Codex with GPT-6-Astra or GPT-6.1-Sol. These combinations reliably completed the full Specula workflow, followed instructions consistently throughout, and produced almost no false positives in our runs.
+- **Reliable in our testing:** Claude Code with Claude Opus 5.5 or Fable 5.2, and Codex with GPT-6-Astra or GPT-6.1-Sol. These combinations reliably completed the full Specular workflow, followed instructions consistently throughout, and produced almost no false positives in our runs.
 - **Completed the workflow, but requires additional review:** Claude Code with GLM-5.2 completed the full workflow and followed instructions, but produced more hallucinations and occasionally a small number of false positives.
 - **Use with debate and careful review:** Claude Code with Kimi 2.7 or DeepSeek V4 produced substantially more hallucinations. Kimi 2.7 sometimes failed to complete tasks—for example, its repair process did not converge. DeepSeek V4 sometimes reported successful reproductions that were not supported by the generated tests or evidence. When using either model, enable `--confirm-debate` and review the confirmation evidence carefully.
 
@@ -352,21 +352,21 @@ We have tested the following agent and model combinations. These observations su
 | OpenCode | `opencode` | Existing provider authentication configured in the native OpenCode CLI |
 | Pi | `pi` | Existing provider authentication configured in the native Pi CLI |
 
-Specula launches the installed agent CLI directly and uses its existing credentials. Authenticate the CLI before starting a pipeline. Claude Code runs default to maximum reasoning effort; Codex and Copilot use their configured defaults unless `--effort` is supplied.
+Specular launches the installed agent CLI directly and uses its existing credentials. Authenticate the CLI before starting a pipeline. Claude Code runs default to maximum reasoning effort; Codex and Copilot use their configured defaults unless `--effort` is supplied.
 
-Specula runs Copilot CLI with `--autopilot` and fails before launching a task when the installed CLI does not advertise that capability. Resume-aware pipeline launches require Copilot CLI 1.0.51 or newer plus JSON output; Specula captures the full session UUID and uses `--resume`, refusing ambiguous or missing-session recovery instead of using `--session-id`, which can create an empty session for a stale UUID. Passing `--effort` to Copilot requires Copilot CLI 1.0.4 or newer. OpenCode forwards it as a variant, while Pi forwards it as a thinking level.
+Specular runs Copilot CLI with `--autopilot` and fails before launching a task when the installed CLI does not advertise that capability. Resume-aware pipeline launches require Copilot CLI 1.0.51 or newer plus JSON output; Specular captures the full session UUID and uses `--resume`, refusing ambiguous or missing-session recovery instead of using `--session-id`, which can create an empty session for a stale UUID. Passing `--effort` to Copilot requires Copilot CLI 1.0.4 or newer. OpenCode forwards it as a variant, while Pi forwards it as a thinking level.
 
-After a Copilot invocation, Specula uses that exact session UUID to read cumulative token telemetry from `$COPILOT_HOME/session-store.db`, or `~/.copilot/session-store.db` when `COPILOT_HOME` is unset. The collector opens the database read-only and queries only `assistant_usage_events`; it does not read or export prompts, responses, or other session content. Copilot records cache reads and cache writes inside `input_tokens`, so Specula subtracts both before emitting the normalized uncached-input bucket and avoids counting cache traffic twice. Resume attempts emit cumulative snapshots that the resource summary reduces to deltas. Request count, per-model token buckets, reasoning tokens, duration, nano-AIU, and AI Credits are retained in the usage sidecar. `total_cost_usd` uses GitHub's fixed conversion of 1 AI Credit per 1,000,000,000 nano-AIU and $0.01 per AI Credit; it represents usage value, while the amount added to a bill may be lower when included or pooled credits cover the usage. Missing sessions, databases, events, or supported schema are reported as incomplete telemetry rather than zero usage.
+After a Copilot invocation, Specular uses that exact session UUID to read cumulative token telemetry from `$COPILOT_HOME/session-store.db`, or `~/.copilot/session-store.db` when `COPILOT_HOME` is unset. The collector opens the database read-only and queries only `assistant_usage_events`; it does not read or export prompts, responses, or other session content. Copilot records cache reads and cache writes inside `input_tokens`, so Specular subtracts both before emitting the normalized uncached-input bucket and avoids counting cache traffic twice. Resume attempts emit cumulative snapshots that the resource summary reduces to deltas. Request count, per-model token buckets, reasoning tokens, duration, nano-AIU, and AI Credits are retained in the usage sidecar. `total_cost_usd` uses GitHub's fixed conversion of 1 AI Credit per 1,000,000,000 nano-AIU and $0.01 per AI Credit; it represents usage value, while the amount added to a bill may be lower when included or pooled credits cover the usage. Missing sessions, databases, events, or supported schema are reported as incomplete telemetry rather than zero usage.
 
-`--max-turns` maps to Copilot's autopilot continuation limit. Claude Code, Codex, OpenCode, and Pi accept the option for adapter compatibility but do not enforce it. The reviews between steps pass a fixed value of 30 instead of the pipeline option; all four adapters still ignore it. Copilot CLI, OpenCode, and Pi do not support Specula's agent-side stop gate.
+`--max-turns` maps to Copilot's autopilot continuation limit. Claude Code, Codex, OpenCode, and Pi accept the option for adapter compatibility but do not enforce it. The reviews between steps pass a fixed value of 30 instead of the pipeline option; all four adapters still ignore it. Copilot CLI, OpenCode, and Pi do not support Specular's agent-side stop gate.
 
 `--policy-retries=N` sets the provider-policy continuation budget for each logical phase agent or confirmation turn. The default is `20`, so one logical turn may advance through at most 20 revised continuation levels after its initial request; `0` disables policy recovery. Automatic rate-limit retries preserve the current level and exact session when available, without resetting or consuming another policy continuation.
 
-`--transient-resumes=N` sets the continuation budget for narrowly classified capacity, provider 5xx, and transport failures. The default is `20`; `0` disables transient recovery. When an adapter has captured the native session identifier, Specula resumes that exact session with a short continuation instead of replaying the original task; if the CLI failed before emitting an ID, it safely retries the original prompt. Corrupt or mismatched state fails closed, and failed invocation logs are retained with `.attempt-N` names before the current log is replaced.
+`--transient-resumes=N` sets the continuation budget for narrowly classified capacity, provider 5xx, and transport failures. The default is `20`; `0` disables transient recovery. When an adapter has captured the native session identifier, Specular resumes that exact session with a short continuation instead of replaying the original task; if the CLI failed before emitting an ID, it safely retries the original prompt. Corrupt or mismatched state fails closed, and failed invocation logs are retained with `.attempt-N` names before the current log is replaced.
 
 An exact resume preserves the provider-persisted conversation and the files already written in the retained workspace. It cannot restore the terminated CLI process's in-memory state or an in-flight child process, and a provider may omit a partial response that was never committed to the native session.
 
-Specula rechecks confirmation results from versions that did not record which code each worker checked. To restart unfinished confirmations from those versions, use `--fresh-context`. For persistent CI, start a new run without `--run-id`.
+Specular rechecks confirmation results from versions that did not record which code each worker checked. To restart unfinished confirmations from those versions, use `--fresh-context`. For persistent CI, start a new run without `--run-id`.
 
 ## Output Structure
 
@@ -392,7 +392,7 @@ The run-level `index.md` is a compact target chooser with direct links to each t
 
 Each target's `summary.md` is the primary results report. It presents the run status, confirmed bugs, masked findings, findings that could not be reproduced in the current environment, explicit validation limits, run details, links to the confirmation and severity reports, and resource usage. Run details distinguish the source commit recorded when the run was created from the commit used by the current attempt. Finding descriptions are written during classification from the final confirmation evidence; runtime, token, cost, and configuration fields are filled deterministically. Missing resource values are shown as `-`, and partial resource totals are marked `Total (incomplete)`.
 
-By default, Specula works directly in the source passed through `--artifact`, so harness or reproduction work may modify it. Use `--keep-original` to run every phase on a private copy instead. The original checkout stays unchanged, and a reviewable source-change diff is written to `changes.patch`.
+By default, Specular works directly in the source passed through `--artifact`, so harness or reproduction work may modify it. Use `--keep-original` to run every phase on a private copy instead. The original checkout stays unchanged, and a reviewable source-change diff is written to `changes.patch`.
 
 The patch follows project ignore rules while retaining tracked files and trace metadata. Binary and trace contents remain under the private `source/` instead of being inlined. Expect roughly one extra copy of the checkout and Git history. Unsafe layouts such as external symlinks, linked worktrees, submodules, nested repositories, or externally shared Git objects are rejected. Without the optional sandbox, this does not prevent a command from deliberately writing to the original absolute path.
 
@@ -400,7 +400,7 @@ The patch follows project ignore rules while retaining tracked files and trace m
 
 TLC can use substantial memory and temporary disk space during model checking. The bundled `scripts/tlc/run_model_check.sh` stores states under `TMPDIR` (or `/tmp`) by default; set `TLC_STATE_DIR` to a larger or faster filesystem when necessary.
 
-TLC memory is admitted against one aggregate budget per Specula run. By default, the first TLC snapshots effective available memory and fixes the budget at 80% for that run. Each live TLC reserves its declared heap plus direct-memory limits (`-m + -M`); a concurrent launch that would exceed the remaining budget is rejected before Java starts and reports the run total, this agent's existing reservation, and the remainder.
+TLC memory is admitted against one aggregate budget per Specular run. By default, the first TLC snapshots effective available memory and fixes the budget at 80% for that run. Each live TLC reserves its declared heap plus direct-memory limits (`-m + -M`); a concurrent launch that would exceed the remaining budget is rejected before Java starts and reports the run total, this agent's existing reservation, and the remainder.
 
 Set an explicit bound when you want to divide a machine among several independent runs:
 
@@ -408,7 +408,7 @@ Set an explicit bound when you want to divide a machine among several independen
 specular run --tlc-memory-limit=64G ...
 ```
 
-An explicit bound is authoritative and intentionally does not subtract unrelated system use, so leave any desired OS/JVM-native headroom yourself. The bound covers TLC heap and direct memory, not thread stacks, metaspace, JIT, GC, or other native overhead. For an individual phase or interactive agent session, use `SPECULAR_TLC_MEMORY_LIMIT=64G`. Direct multi-target phase commands automatically share one command-scoped budget. When invoking the TLC wrapper outside a Specula launcher, calls from the same working directory share the fallback scope; set an absolute, session-specific `SPECULAR_TLC_SCOPE` when unrelated sessions use that directory, and reuse it for every concurrent TLC in the same session.
+An explicit bound is authoritative and intentionally does not subtract unrelated system use, so leave any desired OS/JVM-native headroom yourself. The bound covers TLC heap and direct memory, not thread stacks, metaspace, JIT, GC, or other native overhead. For an individual phase or interactive agent session, use `SPECULAR_TLC_MEMORY_LIMIT=64G`. Direct multi-target phase commands automatically share one command-scoped budget. When invoking the TLC wrapper outside a Specular launcher, calls from the same working directory share the fallback scope; set an absolute, session-specific `SPECULAR_TLC_SCOPE` when unrelated sessions use that directory, and reuse it for every concurrent TLC in the same session.
 
 TLC workers remain unbounded by default: `-w auto` uses every CPU visible to each JVM and the wrapper only reports the resulting aggregate. Set `--tlc-worker-limit=N` (or `SPECULAR_TLC_WORKER_LIMIT=N`) only when you want an explicit aggregate worker bound; the wrapper rejects rather than silently shrinking an over-budget request.
 
@@ -423,7 +423,7 @@ specular run \
   "name|owner/repository|language|reference"
 ```
 
-If an agent call is interrupted, attach to the same run. Specula restores omitted run settings, returns to the interrupted phase, and resumes the unfinished agent conversation:
+If an agent call is interrupted, attach to the same run. Specular restores omitted run settings, returns to the interrupted phase, and resumes the unfinished agent conversation:
 
 ```bash
 specular run --run-id=my-run
@@ -433,9 +433,9 @@ When a run was created with `--guidance`, an omitted flag on resume reuses the s
 
 After the resumed phase finishes, later phases follow the skip options on the current command.
 
-If the previous phase or agent is still running, Specula refuses the attach. Wait for it to finish or stop it before retrying.
+If the previous phase or agent is still running, Specular refuses the attach. Wait for it to finish or stop it before retrying.
 
-Only unfinished conversations can be resumed. If resume state is unavailable, Specula stops instead of silently starting a new conversation. To keep the run's files but start with a fresh agent context, add `--fresh-context` and use skip flags to choose where to restart:
+Only unfinished conversations can be resumed. If resume state is unavailable, Specular stops instead of silently starting a new conversation. To keep the run's files but start with a fresh agent context, add `--fresh-context` and use skip flags to choose where to restart:
 
 ```bash
 specular run --run-id=my-run --fresh-context --skip-analysis --skip-specgen --skip-harness
@@ -527,7 +527,7 @@ specular run [options] "name|owner/repository|language|reference"
 
 `--byom` is supported only by `specular run`. It conflicts with `--no-isolate`, `--skip-analysis`, `--skip-specgen`, `--skip-harness`, `--skip-validate`, `--skip-confirmation`, `--skip-classification`, and `--skip-repair-loop`.
 
-When an interactive `specular run` has no `--guidance`, Specula asks before continuing. Non-interactive and batch runs print a warning and continue without waiting for input, so unattended jobs are not blocked.
+When an interactive `specular run` has no `--guidance`, Specular asks before continuing. Non-interactive and batch runs print a warning and continue without waiting for input, so unattended jobs are not blocked.
 
 Use command-specific help for the authoritative option list:
 
@@ -554,7 +554,7 @@ specular batch --queue /path/to/tasks.queue --workers 3
 
 The scheduler clones missing repositories under `case-studies/` and creates an isolated workspace for every task. See all scheduler options with `specular batch --help`.
 
-The scheduler owns `--run-id`, `--isolate`, and `--no-isolate` so that each task keeps a separate workspace. Do not include these flags in a queue; Specula rejects the queue and reports the affected line and flag.
+The scheduler owns `--run-id`, `--isolate`, and `--no-isolate` so that each task keeps a separate workspace. Do not include these flags in a queue; Specular rejects the queue and reports the affected line and flag.
 
 ## Progress and Logs
 
