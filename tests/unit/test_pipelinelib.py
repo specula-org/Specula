@@ -3907,11 +3907,21 @@ class TestRunLauncherExitCodes(TmpCwd):
 
     def test_sigterm_is_forwarded_to_active_phase(self) -> None:
         forwarded = self.tmp / "forwarded"
-        p = self._pipeline(f"trap 'touch \"{forwarded}\"; exit 0' TERM\nwhile :; do sleep 0.05; done\n")
+        pid_file = self.tmp / "pid"
+        p = self._pipeline(
+            f"trap 'touch \"{forwarded}\"; exit 0' TERM\nprintf '%s\\n' $$ > \"{pid_file}\"\n"
+            "while :; do sleep 0.05; done\n"
+        )
         stop = threading.Event()
 
         def terminate() -> None:
-            if not stop.wait(0.1):
+            # Signal only once the phase has published its PID, so its TERM
+            # trap is already installed however slowly it started.
+            deadline = time.monotonic() + 30
+            while not pid_file.is_file() or not pid_file.read_text().endswith("\n"):
+                if stop.wait(0.01) or time.monotonic() > deadline:
+                    break
+            if not stop.is_set():
                 os.kill(os.getpid(), signal.SIGTERM)
 
         previous = signal.getsignal(signal.SIGTERM)
