@@ -1,0 +1,269 @@
+[
+  {
+    "arm": "v0",
+    "attempt_no": 1,
+    "audit_review": null,
+    "backend": "claude",
+    "behavior": {
+      "api_messages": 199,
+      "bash_commands": 210,
+      "build_or_test_commands": 9,
+      "cost_source": "result_event",
+      "cost_usd": 25.510395000000003,
+      "error": null,
+      "network_audit": {
+        "contaminated": false,
+        "prohibited_command_matches": [],
+        "web_tool_events": []
+      },
+      "num_turns": 224,
+      "result_subtype": "success",
+      "sany_commands": 9,
+      "skill_files_read": [
+        "/skills/incremental-modeling/SKILL.md (Skill tool)",
+        "/work/.claude/skills/incremental-modeling/guide.md"
+      ],
+      "streamed_usage": {
+        "cache_creation_input_tokens": 551760,
+        "cache_read_input_tokens": 77278315,
+        "input_tokens": 398,
+        "output_tokens": 2603
+      },
+      "tlc_commands": 18,
+      "tool_calls": {
+        "Bash": 210,
+        "Edit": 1,
+        "Monitor": 1,
+        "Read": 1,
+        "Skill": 1,
+        "ToolSearch": 1,
+        "Write": 7
+      },
+      "usage": {
+        "cache_creation_input_tokens": 551760,
+        "cache_read_input_tokens": 77278315,
+        "input_tokens": 398,
+        "output_tokens": 281953
+      }
+    },
+    "case_id": "case-006",
+    "completed": true,
+    "decision": "MODEL_UPDATED",
+    "effort": "xhigh",
+    "findings_paths": [
+      "/work/current/.specula-output/spec/findings.json",
+      "/work/current/.specula-output/spec/bug-report.md",
+      "/work/current/.specula-output/spec/output/hunt-s6-linearizable-guided-v2.log",
+      "/work/current/.specula-output/spec/output/hunt-s6-linearizable-guided-v2.cex.json",
+      "/work/current/.specula-output/spec/output/hunt-s6-stale-ack.log",
+      "/work/current/.specula-output/spec/output/hunt-s6-stale-ack.cex.json",
+      "/work/current/.specula-output/spec/output/update-full.cex.json",
+      "/work/current/.specula-output/spec/output/trace-stale-read-reuse-witness.log",
+      "/work/current/.specula-output/traces/stale_read_reuse.ndjson",
+      "/work/current/.specula-output/harness/src/specula_s6_stale_read_test.go",
+      "/work/current/.specula-output/spec/output/controls.log",
+      "/work/current/.specula-output/spec/final-result.json"
+    ],
+    "graded": null,
+    "invariant_evidence": null,
+    "model": "claude-opus-5-5",
+    "outcome": null,
+    "prior_tree_sha256": "e8d331d3f327b95e78858f50e281f20904225c2cdf50e9e39cfe53e77c94e81a",
+    "rep": 1,
+    "skills_tree_sha256": "285a0893559beac4965983c0ba3d4fcbb9b987d2800f3b29b2bb5e1218b69075",
+    "status": "EXITED_0",
+    "wall_seconds": 7049.7,
+    "workflow_status": "COMPLETED_WITH_LIMITED_COVERAGE"
+  },
+  {
+    "arm": "v1",
+    "attempt_no": 1,
+    "audit_review": {
+      "contaminated": false,
+      "reason": "flagged command is `cat /work/tools/network-guard/git /work/tools/network-guard/curl`: reading the guard scripts, nothing executed"
+    },
+    "backend": "claude",
+    "behavior": {
+      "api_messages": 132,
+      "bash_commands": 136,
+      "build_or_test_commands": 3,
+      "cost_source": "result_event",
+      "cost_usd": 17.06494319999999,
+      "error": null,
+      "network_audit": {
+        "contaminated": true,
+        "prohibited_command_matches": [
+          {
+            "command": "cat /work/tools/network-guard/git /work/tools/network-guard/curl; which git; cat /work/tools/clean_states.sh | head -40; cat /work/tools/wait_for_pid.sh | head -30"
+          }
+        ],
+        "web_tool_events": []
+      },
+      "num_turns": 142,
+      "result_subtype": "success",
+      "sany_commands": 9,
+      "skill_files_read": [
+        "/skills/incremental-modeling/SKILL.md (Skill tool)",
+        "/work/.claude/skills/bug-confirmation/references/persistent-findings.md",
+        "/work/.claude/skills/incremental-modeling/guide.md"
+      ],
+      "streamed_usage": {
+        "cache_creation_input_tokens": 480277,
+        "cache_read_input_tokens": 42399156,
+        "input_tokens": 264,
+        "output_tokens": 1981
+      },
+      "tlc_commands": 11,
+      "tool_calls": {
+        "Bash": 136,
+        "Monitor": 1,
+        "Read": 1,
+        "Skill": 1,
+        "ToolSearch": 1
+      },
+      "usage": {
+        "cache_creation_input_tokens": 480277,
+        "cache_read_input_tokens": 42399156,
+        "input_tokens": 264,
+        "output_tokens": 237092
+      }
+    },
+    "case_id": "case-006",
+    "completed": true,
+    "decision": "MODEL_UPDATED",
+    "effort": "xhigh",
+    "findings_paths": [
+      "/work/current/.specula-output/spec/findings.json",
+      "/work/current/.specula-output/spec/bug-report.md",
+      "/work/current/.specula-output/spec/confirmation-MC-1.md",
+      "/work/current/.specula-output/spec/final-result.json",
+      "/work/current/.specula-output/spec/output/mc/final_hunt_us4_guided.log",
+      "/work/current/.specula-output/spec/output/mc/final_hunt_us4_guided.cex.json",
+      "/work/current/.specula-output/spec/output/mc/final_update_focused.log",
+      "/work/current/.specula-output/spec/output/mc/final_update_focused_reset.log",
+      "/work/current/.specula-output/spec/output/mc/sim_update_full.log",
+      "/work/current/.specula-output/spec/output/repro/repro-new-update.log",
+      "/work/current/.specula-output/spec/output/repro/repro-old-baseline.log",
+      "/work/current/.specula-output/harness/repro/specula_repro_readindex_test.go"
+    ],
+    "graded": null,
+    "invariant_evidence": {
+      "bug_candidates": 3,
+      "changed_from_initial": 0,
+      "decisions": {
+        "add": 3,
+        "keep": 2,
+        "modify": 2
+      },
+      "entries": 7,
+      "evidence_records": 11,
+      "state_sources": {
+        "constructed": 2,
+        "trace": 9
+      },
+      "tlc_values_matching_claim": "18/18",
+      "unresolved": 0
+    },
+    "model": "claude-opus-5-5",
+    "outcome": null,
+    "prior_tree_sha256": "e8d331d3f327b95e78858f50e281f20904225c2cdf50e9e39cfe53e77c94e81a",
+    "rep": 1,
+    "skills_tree_sha256": "a227a3af2846112176bb6f0773ecf785f636e8fcbe7ab316f8a0bbad0c8e7d7a",
+    "status": "EXITED_0",
+    "wall_seconds": 6829.4,
+    "workflow_status": "COMPLETED_WITH_LIMITED_COVERAGE"
+  },
+  {
+    "arm": "v2",
+    "attempt_no": 1,
+    "audit_review": {
+      "contaminated": false,
+      "reason": "flagged command is `git clone -q $OUT/artifact $B/work-source`: a local clone of the workspace's own artifact repo to apply the instrumentation patch; no network access"
+    },
+    "backend": "claude",
+    "behavior": {
+      "api_messages": 138,
+      "bash_commands": 145,
+      "build_or_test_commands": 5,
+      "cost_source": "result_event",
+      "cost_usd": 18.735346599999996,
+      "error": null,
+      "network_audit": {
+        "contaminated": true,
+        "prohibited_command_matches": [
+          {
+            "command": "set -e; OUT=/work/current/.specula-output; B=$OUT/build\nGP=$B/gopath; mkdir -p $GP/src/github.com/golang $GP/src/golang.org/x $GP/src/github.com/coreos/etcd/pkg/testutil\ncp -r $B/gomodcache/github.com/golang/protobuf@v1.3.5 $GP/src/github.com/golang/protobuf\ncp -r $B/gomodcache/golang.org/x/net@v0.7.0 $GP/src/golang.org/x/net\ncat > $GP/src/github.com/coreos/etcd/pkg/testutil/testutil.go <<'EOF'\n// Package testutil is a minimal build shim for the supplied raft subset.\n// The real package is absent from the immutable input; only the scheduler\n// helper referenced by node_test.go is provided. Focused Specula tests do not\n// call it.\npackage testutil\n\nimport \"time\"\n\n// WaitSchedule briefly yields so other goroutines can be scheduled.\nfunc WaitSchedule() { time.Sleep(10 * time.Millisecond) }\nEOF\n# separate writable working copy of the updated artifact (keeps artifact clean)\nrm -rf $B/work-source; git clone -q $OUT/artifact $B/work-source; cd $B/work-source; git log --oneline; git rev-parse HEAD\nln -sfn $B/work-source $GP/src/github.com/coreos/etcd/raft; ls -la $GP/src/github.com/coreos/etcd/"
+          }
+        ],
+        "web_tool_events": []
+      },
+      "num_turns": 154,
+      "result_subtype": "success",
+      "sany_commands": 6,
+      "skill_files_read": [
+        "/skills/incremental-modeling/SKILL.md (Skill tool)",
+        "/work/.claude/skills/incremental-modeling/guide.md"
+      ],
+      "streamed_usage": {
+        "cache_creation_input_tokens": 497711,
+        "cache_read_input_tokens": 47668573,
+        "input_tokens": 276,
+        "output_tokens": 1932
+      },
+      "tlc_commands": 14,
+      "tool_calls": {
+        "Bash": 145,
+        "Read": 1,
+        "Skill": 1,
+        "Write": 5
+      },
+      "usage": {
+        "cache_creation_input_tokens": 497711,
+        "cache_read_input_tokens": 47668573,
+        "input_tokens": 276,
+        "output_tokens": 260942
+      }
+    },
+    "case_id": "case-006",
+    "completed": true,
+    "decision": "MODEL_UPDATED",
+    "effort": "xhigh",
+    "findings_paths": [
+      "/work/current/.specula-output/spec/bug-report.md",
+      "/work/current/.specula-output/spec/findings.json",
+      "/work/current/.specula-output/spec/confirmation-MC-1.md",
+      "/work/current/.specula-output/spec/final-result.json",
+      "/work/current/.specula-output/spec/output/cex/upd_hunt_linearizable_directed.tla",
+      "/work/current/.specula-output/spec/output/cex/upd_hunt_stale_ack.tla",
+      "/work/current/.specula-output/spec/output/cex/upd_full_sim.tla",
+      "/work/current/.specula-output/spec/output/repro.log",
+      "/work/current/.specula-output/traces/stale_ack_reuse.ndjson"
+    ],
+    "graded": null,
+    "invariant_evidence": {
+      "bug_candidates": 2,
+      "changed_from_initial": 0,
+      "decisions": {
+        "add": 4,
+        "keep": 2,
+        "modify": 2
+      },
+      "entries": 8,
+      "evidence_records": 11,
+      "state_sources": {
+        "mc": 1,
+        "trace": 10
+      },
+      "tlc_values_matching_claim": "16/18",
+      "unresolved": 0
+    },
+    "model": "claude-opus-5-5",
+    "outcome": null,
+    "prior_tree_sha256": "872833d7b264cc7f30459b32bc84ae26c838dbbeadf5bbde19e30cb3d547454e",
+    "rep": 1,
+    "skills_tree_sha256": "8c85fc177d13e9cc7cce0dd6114cb419bc2e3d2eb6363041d2b1794fa0ad92e6",
+    "status": "EXITED_0",
+    "wall_seconds": 5684.8,
+    "workflow_status": "COMPLETED_WITH_LIMITED_COVERAGE"
+  }
+]

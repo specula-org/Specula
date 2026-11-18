@@ -1,0 +1,88 @@
+{
+  "arm": "v2",
+  "attempt_no": 1,
+  "backend": "claude",
+  "behavior": {
+    "api_messages": 138,
+    "bash_commands": 145,
+    "build_or_test_commands": 5,
+    "cost_source": "result_event",
+    "cost_usd": 18.735346599999996,
+    "error": null,
+    "network_audit": {
+      "contaminated": true,
+      "prohibited_command_matches": [
+        {
+          "command": "set -e; OUT=/work/current/.specula-output; B=$OUT/build\nGP=$B/gopath; mkdir -p $GP/src/github.com/golang $GP/src/golang.org/x $GP/src/github.com/coreos/etcd/pkg/testutil\ncp -r $B/gomodcache/github.com/golang/protobuf@v1.3.5 $GP/src/github.com/golang/protobuf\ncp -r $B/gomodcache/golang.org/x/net@v0.7.0 $GP/src/golang.org/x/net\ncat > $GP/src/github.com/coreos/etcd/pkg/testutil/testutil.go <<'EOF'\n// Package testutil is a minimal build shim for the supplied raft subset.\n// The real package is absent from the immutable input; only the scheduler\n// helper referenced by node_test.go is provided. Focused Specula tests do not\n// call it.\npackage testutil\n\nimport \"time\"\n\n// WaitSchedule briefly yields so other goroutines can be scheduled.\nfunc WaitSchedule() { time.Sleep(10 * time.Millisecond) }\nEOF\n# separate writable working copy of the updated artifact (keeps artifact clean)\nrm -rf $B/work-source; git clone -q $OUT/artifact $B/work-source; cd $B/work-source; git log --oneline; git rev-parse HEAD\nln -sfn $B/work-source $GP/src/github.com/coreos/etcd/raft; ls -la $GP/src/github.com/coreos/etcd/"
+        }
+      ],
+      "web_tool_events": []
+    },
+    "num_turns": 154,
+    "result_subtype": "success",
+    "sany_commands": 6,
+    "skill_files_read": [
+      "/skills/incremental-modeling/SKILL.md (Skill tool)",
+      "/work/.claude/skills/incremental-modeling/guide.md"
+    ],
+    "streamed_usage": {
+      "cache_creation_input_tokens": 497711,
+      "cache_read_input_tokens": 47668573,
+      "input_tokens": 276,
+      "output_tokens": 1932
+    },
+    "tlc_commands": 14,
+    "tool_calls": {
+      "Bash": 145,
+      "Read": 1,
+      "Skill": 1,
+      "Write": 5
+    },
+    "usage": {
+      "cache_creation_input_tokens": 497711,
+      "cache_read_input_tokens": 47668573,
+      "input_tokens": 276,
+      "output_tokens": 260942
+    }
+  },
+  "case_id": "case-006",
+  "completed": true,
+  "decision": "MODEL_UPDATED",
+  "effort": "xhigh",
+  "findings_paths": [
+    "/work/current/.specula-output/spec/bug-report.md",
+    "/work/current/.specula-output/spec/findings.json",
+    "/work/current/.specula-output/spec/confirmation-MC-1.md",
+    "/work/current/.specula-output/spec/final-result.json",
+    "/work/current/.specula-output/spec/output/cex/upd_hunt_linearizable_directed.tla",
+    "/work/current/.specula-output/spec/output/cex/upd_hunt_stale_ack.tla",
+    "/work/current/.specula-output/spec/output/cex/upd_full_sim.tla",
+    "/work/current/.specula-output/spec/output/repro.log",
+    "/work/current/.specula-output/traces/stale_ack_reuse.ndjson"
+  ],
+  "graded": null,
+  "invariant_evidence": {
+    "bug_candidates": 2,
+    "changed_from_initial": 0,
+    "decisions": {
+      "add": 4,
+      "keep": 2,
+      "modify": 2
+    },
+    "entries": 8,
+    "evidence_records": 11,
+    "state_sources": {
+      "mc": 1,
+      "trace": 10
+    },
+    "tlc_values_matching_claim": "16/18",
+    "unresolved": 0
+  },
+  "model": "claude-opus-5-5",
+  "prior_tree_sha256": "872833d7b264cc7f30459b32bc84ae26c838dbbeadf5bbde19e30cb3d547454e",
+  "rep": 1,
+  "skills_tree_sha256": "8c85fc177d13e9cc7cce0dd6114cb419bc2e3d2eb6363041d2b1794fa0ad92e6",
+  "status": "EXITED_0",
+  "wall_seconds": 5684.8,
+  "workflow_status": "COMPLETED_WITH_LIMITED_COVERAGE"
+}

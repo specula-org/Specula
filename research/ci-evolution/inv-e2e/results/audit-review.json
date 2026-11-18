@@ -1,0 +1,10 @@
+{
+  "v2/case-006/r1": {
+    "contaminated": false,
+    "reason": "flagged command is `git clone -q $OUT/artifact $B/work-source`: a local clone of the workspace's own artifact repo to apply the instrumentation patch; no network access"
+  },
+  "v1/case-006/r1": {
+    "contaminated": false,
+    "reason": "flagged command is `cat /work/tools/network-guard/git /work/tools/network-guard/curl`: reading the guard scripts, nothing executed"
+  }
+}

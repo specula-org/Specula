@@ -1,0 +1,20 @@
+{
+  "decision": "MODEL_UPDATED",
+  "workflow_status": "COMPLETED_WITH_LIMITED_COVERAGE",
+  "summary": "The update changes read_only.go advance to delete released ReadIndex requests by their real key (Entries[0].Data) instead of req.Context. That changes modeled state and enablement: released pending entries are removed, so a RequestCtx can be enqueued again; the exact-old code kept them and silently dropped reuse. Generation updated base/MC/Trace, added UpdateProps.tla and Update.tla (affected/interaction actions, EnvUpdate, discharge, full/focused/open/hunt cfgs) and repaired V0 defects: readOnly reset on role changes, leader progress reset, and the forwarded-read justification. Validation rebased the V0 harness without drift and added densified probes plus 6 diff-derived scenarios. All 8 fresh traces from the updated code pass real TLC replay with TraceMatched and exact pending-key/ReadState checks. The V0 model rejects the fresh traces and the V1 model rejects the archived V0 read trace. Model checking found MC-1. A heartbeat response generated for an earlier use of a context is matched by context only and can release the reused request (UpdReadAckAfterEnqueue, 21 states). If a newer leader committed during a partition, the stale leader returns a read index below that commit (UpdReadIndexLinearizable, 37 states). The real updated code shows the same: the stale_read_reuse trace replays and violates the property, and a reachability test fails on the update and passes on the baseline, which ignored the reuse. The premise is a caller reusing a RequestCtx after its ReadState was produced. The Part 4 bug-confirmation workflow was not run, and the specula CLI is not installed, so ci-result was not generated. One V0 Crash defect (Case B) was repaired, and one property was revised (Case A). All other campaigns finished without violation but are budget-limited (LIMITED_COVERAGE). All reachability canaries were witnessed.",
+  "findings_paths": [
+    "/work/current/.specula-output/spec/findings.json",
+    "/work/current/.specula-output/spec/bug-report.md",
+    "/work/current/.specula-output/spec/output/hunt-s6-linearizable-guided-v2.log",
+    "/work/current/.specula-output/spec/output/hunt-s6-linearizable-guided-v2.cex.json",
+    "/work/current/.specula-output/spec/output/hunt-s6-stale-ack.log",
+    "/work/current/.specula-output/spec/output/hunt-s6-stale-ack.cex.json",
+    "/work/current/.specula-output/spec/output/update-full.cex.json",
+    "/work/current/.specula-output/spec/output/trace-stale-read-reuse-witness.log",
+    "/work/current/.specula-output/traces/stale_read_reuse.ndjson",
+    "/work/current/.specula-output/harness/src/specula_s6_stale_read_test.go",
+    "/work/current/.specula-output/spec/output/controls.log",
+    "/work/current/.specula-output/spec/final-result.json"
+  ],
+  "blockers": []
+}

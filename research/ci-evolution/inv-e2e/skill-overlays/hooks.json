@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "note": "Hook lines inserted into the base incremental-modeling skill. Each anchor must match exactly one whole line of the base file; 'end' appends to the file. Arms are cumulative: v2 = v1 + v2.",
+  "arms": {
+    "v1": {
+      "files": ["v1/references/generation/divergence-evidence.md"],
+      "hooks": [
+        {
+          "file": "guide.md",
+          "anchor": "3. `references/generation/03-update-focused-analysis.md` — use the explicit draft to derive deeper invariants, Scenarios, and interactions; revise the reference as needed.",
+          "insert": "   Property decisions in Chapters 3–5 require the evidence defined in `references/generation/divergence-evidence.md`."
+        },
+        {
+          "file": "references/generation/03-update-focused-analysis.md",
+          "anchor": "Do not weaken a still-promised property merely because the draft violates it. The later validation phase decides whether a violation is a model issue, property issue, or implementation bug.",
+          "insert": "\nGive every affected property an explicit decision with the separating or keep evidence defined in [Divergence Evidence](divergence-evidence.md). Record the initial decision before code observation."
+        },
+        {
+          "file": "references/generation/04-update-model-generation.md",
+          "anchor": "Every property must cite its Scenario and source/reference evidence. Later validation must check it against full `MCNext`; an open focused property additionally requires discharge checking.",
+          "insert": "\nEach revised, added, or removed property must have an entry and an evaluated separating state in `spec/invariant-evidence.json`; see [Divergence Evidence](divergence-evidence.md)."
+        },
+        {
+          "file": "references/generation/05-completeness-review.md",
+          "anchor": "- all generated properties are evidence-backed and enabled by a real cfg;",
+          "insert": "- every affected property satisfies the completion conditions of [Divergence Evidence §10](divergence-evidence.md#10-completion);"
+        },
+        {
+          "file": "references/validation/02-update-focused-scenarios.md",
+          "anchor": "end",
+          "insert": "\nUse update-focused scenarios to complete the code observations and reachable witnesses that [Divergence Evidence](../generation/divergence-evidence.md) §2 and §6 require; update `spec/invariant-evidence.json`, keeping `initial_decision` unchanged."
+        }
+      ]
+    },
+    "v2": {
+      "files": ["v2/references/generation/ledger-usage.md"],
+      "hooks": [
+        {
+          "file": "guide.md",
+          "anchor": "   Property decisions in Chapters 3–5 require the evidence defined in `references/generation/divergence-evidence.md`.",
+          "insert": "   When the prior suite carries `REQ-EVIDENCE` blocks, read `references/generation/ledger-usage.md` before deciding any property."
+        },
+        {
+          "file": "references/generation/03-update-focused-analysis.md",
+          "anchor": "Give every affected property an explicit decision with the separating or keep evidence defined in [Divergence Evidence](divergence-evidence.md). Record the initial decision before code observation.",
+          "insert": "Read each property's `REQ-EVIDENCE` block first and apply [Requirement-Evidence Annotations](ledger-usage.md); keep the blocks current for revised and added properties."
+        }
+      ]
+    }
+  }
+}

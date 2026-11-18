@@ -1,0 +1,74 @@
+{
+  "arm": "v0",
+  "attempt_no": 1,
+  "backend": "claude",
+  "behavior": {
+    "api_messages": 199,
+    "bash_commands": 210,
+    "build_or_test_commands": 9,
+    "cost_source": "result_event",
+    "cost_usd": 25.510395000000003,
+    "error": null,
+    "network_audit": {
+      "contaminated": false,
+      "prohibited_command_matches": [],
+      "web_tool_events": []
+    },
+    "num_turns": 224,
+    "result_subtype": "success",
+    "sany_commands": 9,
+    "skill_files_read": [
+      "/skills/incremental-modeling/SKILL.md (Skill tool)",
+      "/work/.claude/skills/incremental-modeling/guide.md"
+    ],
+    "streamed_usage": {
+      "cache_creation_input_tokens": 551760,
+      "cache_read_input_tokens": 77278315,
+      "input_tokens": 398,
+      "output_tokens": 2603
+    },
+    "tlc_commands": 18,
+    "tool_calls": {
+      "Bash": 210,
+      "Edit": 1,
+      "Monitor": 1,
+      "Read": 1,
+      "Skill": 1,
+      "ToolSearch": 1,
+      "Write": 7
+    },
+    "usage": {
+      "cache_creation_input_tokens": 551760,
+      "cache_read_input_tokens": 77278315,
+      "input_tokens": 398,
+      "output_tokens": 281953
+    }
+  },
+  "case_id": "case-006",
+  "completed": true,
+  "decision": "MODEL_UPDATED",
+  "effort": "xhigh",
+  "findings_paths": [
+    "/work/current/.specula-output/spec/findings.json",
+    "/work/current/.specula-output/spec/bug-report.md",
+    "/work/current/.specula-output/spec/output/hunt-s6-linearizable-guided-v2.log",
+    "/work/current/.specula-output/spec/output/hunt-s6-linearizable-guided-v2.cex.json",
+    "/work/current/.specula-output/spec/output/hunt-s6-stale-ack.log",
+    "/work/current/.specula-output/spec/output/hunt-s6-stale-ack.cex.json",
+    "/work/current/.specula-output/spec/output/update-full.cex.json",
+    "/work/current/.specula-output/spec/output/trace-stale-read-reuse-witness.log",
+    "/work/current/.specula-output/traces/stale_read_reuse.ndjson",
+    "/work/current/.specula-output/harness/src/specula_s6_stale_read_test.go",
+    "/work/current/.specula-output/spec/output/controls.log",
+    "/work/current/.specula-output/spec/final-result.json"
+  ],
+  "graded": null,
+  "invariant_evidence": null,
+  "model": "claude-opus-5-5",
+  "prior_tree_sha256": "e8d331d3f327b95e78858f50e281f20904225c2cdf50e9e39cfe53e77c94e81a",
+  "rep": 1,
+  "skills_tree_sha256": "285a0893559beac4965983c0ba3d4fcbb9b987d2800f3b29b2bb5e1218b69075",
+  "status": "EXITED_0",
+  "wall_seconds": 7049.7,
+  "workflow_status": "COMPLETED_WITH_LIMITED_COVERAGE"
+}

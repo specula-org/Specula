@@ -1,0 +1,20 @@
+{
+  "decision": "MODEL_UPDATED",
+  "workflow_status": "COMPLETED_WITH_LIMITED_COVERAGE",
+  "summary": "Source delta (read_only.go:100-104): readOnly.advance now deletes released ReadIndex requests under their real key Entries[0].Data instead of the never-matching req.Context, so released requests leave pendingReadIndex. Disposition MODEL_CHANGE_REQUIRED: base/MC/Trace updated, plus two evidence-backed repairs of the V0 reference (readOnly is cleared by raft.reset() on every role transition; MsgReadIndexResp follows Step term/role rules) and ghost-only justification fields; Update.tla/UpdateProps.tla add PendingMatchesQueue, ReadQueueDistinct, ReadDeliveryJustifiedFresh (revision of ReadDeliveryJustified) and ReadIndexFreshness with TLC-evaluated divergence evidence. Validation: the prior harness was rebased without drift and extended with forwarded-read probes and three update scenarios; 5/5 fresh traces of the update revision pass TLC replay with TraceMatched, and sensitivity runs show the V0 model rejects them exactly at the release and reset steps. Model checking: standard MC.cfg exhausted (4,291,336 distinct states) with no violation; full-update, open, discharge, inherited hunts and simulations found nothing else within their time budgets (LIMITED_COVERAGE, not proof). One finding, MC-1 (Medium): because released contexts can now be enqueued again in the same term and heartbeat acks are matched to requests only by context, an ack produced before the new request (delayed, or duplicated by MsgBeat) can complete it; if a newer leader committed meanwhile, the old leader returns a stale ReadState. Counterexamples: ReadIndexFreshness 37 states (guided search over full MCSpec), ReadDeliveryJustifiedFresh 21-22 states (focused) and 44 states (unguided full-model simulation). A standalone test reproduces it deterministically on the update revision (read index 1 returned after index 3 was committed) and passes on the baseline, where the reused request is instead never served. Limits: the stale-read consequence was reached only by the guided hunt; the specula CLI and the controller confirmation step are unavailable here, so reproduction was done in-run.",
+  "findings_paths": [
+    "/work/current/.specula-output/spec/findings.json",
+    "/work/current/.specula-output/spec/bug-report.md",
+    "/work/current/.specula-output/spec/confirmation-MC-1.md",
+    "/work/current/.specula-output/spec/final-result.json",
+    "/work/current/.specula-output/spec/output/mc/final_hunt_us4_guided.log",
+    "/work/current/.specula-output/spec/output/mc/final_hunt_us4_guided.cex.json",
+    "/work/current/.specula-output/spec/output/mc/final_update_focused.log",
+    "/work/current/.specula-output/spec/output/mc/final_update_focused_reset.log",
+    "/work/current/.specula-output/spec/output/mc/sim_update_full.log",
+    "/work/current/.specula-output/spec/output/repro/repro-new-update.log",
+    "/work/current/.specula-output/spec/output/repro/repro-old-baseline.log",
+    "/work/current/.specula-output/harness/repro/specula_repro_readindex_test.go"
+  ],
+  "blockers": []
+}

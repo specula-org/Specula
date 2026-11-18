@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["decision", "workflow_status", "summary", "findings_paths", "blockers"],
+  "properties": {
+    "decision": {
+      "type": "string",
+      "enum": ["NO_MODEL_CHANGE", "MODEL_UPDATED", "NEEDS_FULL_REMODEL"]
+    },
+    "workflow_status": {
+      "type": "string",
+      "enum": ["COMPLETED", "COMPLETED_WITH_LIMITED_COVERAGE", "FAILED", "BLOCKED"]
+    },
+    "summary": {"type": "string"},
+    "findings_paths": {"type": "array", "items": {"type": "string"}},
+    "blockers": {"type": "array", "items": {"type": "string"}}
+  }
+}

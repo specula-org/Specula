@@ -1,0 +1,3 @@
+# Re-include results/ (ignored at the repository root).
+!results/
+__pycache__/

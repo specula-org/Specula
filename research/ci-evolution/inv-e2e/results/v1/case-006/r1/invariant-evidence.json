@@ -1,0 +1,353 @@
+{
+ "entries": [
+  {
+   "property": "PendingMatchesQueue",
+   "replaces": null,
+   "decision": "add",
+   "kind": "strengthening",
+   "affected_because": "Update deletes released requests from pendingReadIndex (read_only.go:100-104); the pending map and queue now describe the same set.",
+   "initial_decision": "add",
+   "changed_from_initial": false,
+   "evidence_ids": [
+    "E1",
+    "E1c"
+   ]
+  },
+  {
+   "property": "ReadQueueDistinct",
+   "replaces": null,
+   "decision": "add",
+   "kind": "strengthening",
+   "affected_because": "Released contexts can now be enqueued again (read_only.go:52-58 after read_only.go:100-104); FIFO advance must still see each context at most once.",
+   "initial_decision": "add",
+   "changed_from_initial": false,
+   "evidence_ids": [
+    "E7",
+    "E7c"
+   ]
+  },
+  {
+   "property": "ReadDeliveryJustifiedFresh",
+   "replaces": "ReadDeliveryJustified",
+   "decision": "modify",
+   "kind": "strengthening",
+   "affected_because": "A released context can be pending again in the same term, so recvAck (read_only.go:64-73) can count an acknowledgement produced for an earlier instance; the old count-only formula cannot tell instances apart.",
+   "initial_decision": "modify",
+   "changed_from_initial": false,
+   "evidence_ids": [
+    "E2",
+    "E2b",
+    "E2c"
+   ],
+   "note": "ReadDeliveryJustified is retained in base as a weaker control (implied by the new property); it accepts the forbidden trace state (E2), so it is not credited as update coverage."
+  },
+  {
+   "property": "ReadIndexFreshness",
+   "replaces": null,
+   "decision": "add",
+   "kind": "strengthening",
+   "affected_because": "New consumer-visible consequence of the stale acknowledgement: a read state below an index committed before the request.",
+   "initial_decision": "add",
+   "changed_from_initial": false,
+   "evidence_ids": [
+    "E3",
+    "E3c"
+   ]
+  },
+  {
+   "property": "TypeOK",
+   "replaces": "TypeOK",
+   "decision": "modify",
+   "kind": "representation-only",
+   "affected_because": "Ghost fields floor/fresh in pending and read records and the ghost readReleases log.",
+   "initial_decision": "modify",
+   "changed_from_initial": false,
+   "evidence_ids": [
+    "E4"
+   ]
+  },
+  {
+   "property": "ReadyNoInvention",
+   "replaces": null,
+   "decision": "keep",
+   "kind": "keep",
+   "affected_because": "Forwarded-read consumer (HandleReadIndexResponse) was repaired and now draws justification from the release log.",
+   "initial_decision": "keep",
+   "changed_from_initial": false,
+   "evidence_ids": [
+    "E5"
+   ]
+  },
+  {
+   "property": "ElectionSafety",
+   "replaces": null,
+   "decision": "keep",
+   "kind": "control",
+   "affected_because": "Unaffected core safety property kept enabled in every update cfg as a control.",
+   "initial_decision": "keep",
+   "changed_from_initial": false,
+   "evidence_ids": []
+  }
+ ],
+ "evidence": [
+  {
+   "id": "E1",
+   "property": "PendingMatchesQueue",
+   "role": "separating",
+   "state_source": "trace",
+   "state": "spec/evidence/E1/E1.tla",
+   "how_populated": "V0 model replay of fresh OLD-revision trace traces/old-control/quorum_read.ndjson; post-state of record 26 (first HandleHeartbeatResponse: queue [], pendingCount 1)",
+   "old": {
+    "claimed": "not checked",
+    "tlc": "not checked"
+   },
+   "new": {
+    "claimed": false,
+    "tlc": false
+   },
+   "log": "spec/evidence/E1/tlc.log",
+   "impl_produces": {
+    "value": "no",
+    "basis": "new revision: traces/quorum_read.ndjson record 26 pendingCount 0 (old revision produced it: traces/old-control/quorum_read.ndjson record 26 pendingCount 1)"
+   },
+   "requirement": {
+    "value": "forbidden",
+    "citations": [
+     "raft_test.go:1249-1251",
+     "raft_test.go:1287-1295"
+    ]
+   },
+   "cell": "strengthening justified"
+  },
+  {
+   "id": "E1c",
+   "property": "PendingMatchesQueue",
+   "role": "control",
+   "state_source": "trace",
+   "state": "spec/Trace.cfg",
+   "how_populated": "V1 replay of fresh new-revision traces/quorum_read.ndjson (all 29 states incl. post-release)",
+   "expected": true,
+   "new": {
+    "claimed": true,
+    "tlc": true
+   },
+   "log": "spec/output/trace/Trace.log"
+  },
+  {
+   "id": "E7",
+   "property": "ReadQueueDistinct",
+   "role": "separating",
+   "state_source": "constructed",
+   "state": "spec/evidence/E7/E7.tla",
+   "how_populated": "readQueue[s1] = <<ctx1, ctx1>> substituted into the actual UpdateProps definition",
+   "old": {
+    "claimed": "not checked",
+    "tlc": "not checked"
+   },
+   "new": {
+    "claimed": false,
+    "tlc": false
+   },
+   "log": "spec/evidence/E7/tlc.log",
+   "impl_produces": {
+    "value": "no",
+    "basis": "addRequest ignores an already-pending context (read_only.go:53-56); never observed in 5 fresh traces"
+   },
+   "requirement": {
+    "value": "forbidden",
+    "citations": [
+     "read_only.go:75-77"
+    ]
+   },
+   "cell": "strengthening justified"
+  },
+  {
+   "id": "E7c",
+   "property": "ReadQueueDistinct",
+   "role": "control",
+   "state_source": "constructed",
+   "state": "spec/evidence/E7/E7.tla",
+   "how_populated": "readQueue[s1] = <<ctx1, ctx2>>",
+   "expected": true,
+   "new": {
+    "claimed": true,
+    "tlc": true
+   },
+   "log": "spec/evidence/E7/tlc.log"
+  },
+  {
+   "id": "E2",
+   "property": "ReadDeliveryJustifiedFresh",
+   "role": "separating",
+   "state_source": "trace",
+   "state": "spec/evidence/Eval_stale_read_ReadDeliveryJustifiedFresh.cfg",
+   "how_populated": "V1 replay of fresh new-revision traces/stale_read.ndjson; post-state of record 33 (ReadyPublish s1): second published read acks {s1,s3}, fresh {s1}",
+   "old": {
+    "claimed": true,
+    "tlc": true
+   },
+   "new": {
+    "claimed": false,
+    "tlc": false
+   },
+   "log": "spec/evidence/Eval_stale_read_ReadDeliveryJustifiedFresh.log",
+   "old_log": "spec/evidence/Eval_stale_read_ReadDeliveryJustified.log",
+   "impl_produces": {
+    "value": "yes",
+    "basis": "new revision TestSpeculaTraceStaleRead (spec/output/harness-run.log) and TestSpeculaReproStaleReadAfterContextReuse (spec/output/repro/repro-new-update.log); old revision does not (spec/output/harness-run-old-control.log, spec/output/repro/repro-old-baseline.log)"
+   },
+   "requirement": {
+    "value": "forbidden",
+    "citations": [
+     "README.md:27-29",
+     "node.go:154-157",
+     "rawnode.go:258-261",
+     "raft_test.go:1282-1285"
+    ]
+   },
+   "cell": "bug candidate"
+  },
+  {
+   "id": "E2b",
+   "property": "ReadDeliveryJustifiedFresh",
+   "role": "separating",
+   "state_source": "trace",
+   "state": "spec/evidence/Eval_read_reuse_ReadDeliveryJustifiedFresh.cfg",
+   "how_populated": "V1 replay of fresh new-revision traces/read_reuse.ndjson; post-state of record 27 (ReadyPublish s1), re-enqueued ctx1 released by the held round-1 ack of s3",
+   "old": {
+    "claimed": true,
+    "tlc": true
+   },
+   "new": {
+    "claimed": false,
+    "tlc": false
+   },
+   "log": "spec/evidence/Eval_read_reuse_ReadDeliveryJustifiedFresh.log",
+   "old_log": "spec/evidence/Eval_read_reuse_ReadDeliveryJustified.log",
+   "impl_produces": {
+    "value": "yes",
+    "basis": "TestSpeculaTraceReadReuse on the update revision (spec/output/harness-run.log OBSERVE after-delayed-ack)"
+   },
+   "requirement": {
+    "value": "forbidden",
+    "citations": [
+     "README.md:27-29",
+     "raft_test.go:1282-1285"
+    ]
+   },
+   "cell": "bug candidate"
+  },
+  {
+   "id": "E2c",
+   "property": "ReadDeliveryJustifiedFresh",
+   "role": "control",
+   "state_source": "trace",
+   "state": "spec/Trace.cfg",
+   "how_populated": "fresh new-revision quorum_read and read_stepdown replays (normal released reads)",
+   "expected": true,
+   "new": {
+    "claimed": true,
+    "tlc": true
+   },
+   "log": "spec/output/trace/Trace.log",
+   "also": "spec/output/trace/Trace_read_stepdown.log"
+  },
+  {
+   "id": "E3",
+   "property": "ReadIndexFreshness",
+   "role": "separating",
+   "state_source": "trace",
+   "state": "spec/evidence/Eval_stale_read_ReadIndexFreshness.cfg",
+   "how_populated": "V1 replay of traces/stale_read.ndjson record 33: published read index 1, floor 3 (index 3 committed by the term-2 leader before the request)",
+   "old": {
+    "claimed": "not checked",
+    "tlc": "not checked"
+   },
+   "new": {
+    "claimed": false,
+    "tlc": false
+   },
+   "log": "spec/evidence/Eval_stale_read_ReadIndexFreshness.log",
+   "impl_produces": {
+    "value": "yes",
+    "basis": "spec/output/repro/repro-new-update.log (read index 1 < committed 3); old revision: spec/output/repro/repro-old-baseline.log (no read state)"
+   },
+   "requirement": {
+    "value": "forbidden",
+    "citations": [
+     "node.go:154-157",
+     "node.go:63-66",
+     "rawnode.go:258-261",
+     "README.md:27-32"
+    ]
+   },
+   "cell": "bug candidate"
+  },
+  {
+   "id": "E3c",
+   "property": "ReadIndexFreshness",
+   "role": "control",
+   "state_source": "trace",
+   "state": "spec/evidence/Eval_read_reuse_ReadIndexFreshness.cfg",
+   "how_populated": "traces/read_reuse.ndjson: same reuse mechanism but no newer leader (floor 1 = index 1)",
+   "expected": true,
+   "new": {
+    "claimed": true,
+    "tlc": true
+   },
+   "log": "spec/evidence/Eval_read_reuse_ReadIndexFreshness.log"
+  },
+  {
+   "id": "E4",
+   "property": "TypeOK",
+   "role": "representation",
+   "state_source": "trace",
+   "state": "spec/Trace.cfg",
+   "how_populated": "V1 TraceTypeOK on every state of fresh new-revision traces (nonempty pending/read records); V0 TypeOK on the corresponding old-revision execution (spec/evidence/E1/tlc.log replays V0 TypeOK-compatible states up to record 26)",
+   "old": {
+    "claimed": true,
+    "tlc": true
+   },
+   "new": {
+    "claimed": true,
+    "tlc": true
+   },
+   "log": "spec/output/trace/Trace.log"
+  },
+  {
+   "id": "E5",
+   "property": "ReadyNoInvention",
+   "role": "keep",
+   "state_source": "trace",
+   "state": "spec/Trace_read_reuse.cfg",
+   "how_populated": "traces/read_reuse.ndjson: published local reads at s1 and the forwarded ctx2 read at s2 (records 27-28)",
+   "old": {
+    "claimed": true,
+    "tlc": true
+   },
+   "new": {
+    "claimed": true,
+    "tlc": true
+   },
+   "log": "spec/output/trace/Trace_read_reuse.log",
+   "impl_produces": {
+    "value": "yes",
+    "basis": "TestSpeculaTraceReadReuse"
+   },
+   "requirement": {
+    "value": "allowed",
+    "citations": [
+     "node.go:63-67",
+     "node.go:154-157"
+    ]
+   },
+   "cell": "keep justified"
+  }
+ ],
+ "bug_candidates": [
+  "E2",
+  "E2b",
+  "E3"
+ ],
+ "unresolved": []
+}

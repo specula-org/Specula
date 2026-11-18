@@ -14,6 +14,7 @@ Prototypes for #188 §3. This branch is not merged into main.
 - `update-coverage/`: checks that the checking configs reach the update's affected actions with the suite's checks enabled (§3.3), with results on etcd V01–V03 and a MongoDB case study.
 - `prefix-branch/`: branches from a recorded run into the update's affected actions instead of starting at Init (§3.3), with results on etcd V01–V03 from the 153-event prefix and from all 11 recordings of the V02 CI run. `choose.py` ranks branch points.
 - `env-update/`: finds the actions the focused update model leaves out, summarizes what they do as `EnvUpdate`, and checks the summary (§3.3), with results on etcd V01–V03 and a check of its action split on the 10 blind-study V0 suites.
+- `inv-e2e/`: end-to-end blind test of the §3.2 invariant evidence in the full incremental workflow (v0 base skill, v1 divergence evidence, v2 plus the requirement-evidence ledger), with pilot results on case-006.
 - `blind-incremental-bugs/`: blind study of historical bug-introducing updates (§2.2): protocol, neutral cohort, runner tools.
 
 Scripts still use the original absolute paths.

@@ -1,0 +1,239 @@
+{
+  "revision": "update c780d355 (baseline 7289d1c5)",
+  "entries": [
+    {
+      "property": "UpdPendingMatchesQueue",
+      "replaces": null,
+      "decision": "add",
+      "kind": "strengthening",
+      "affected_because": "read_only.go:advance now deletes released requests under their real key (line 103); the new test TestRaftFreesReadOnlyMem asserts the map and queue are emptied",
+      "initial_decision": "add",
+      "changed_from_initial": false,
+      "ledger_status": "requirement",
+      "watch_touched": true,
+      "evidence_ids": ["E1", "E1c"]
+    },
+    {
+      "property": "UpdReadAckFresh",
+      "replaces": null,
+      "decision": "add",
+      "kind": "strengthening",
+      "affected_because": "freed contexts can be registered again in the same leader term (read_only.go:54-58) while recvAck matches acknowledgements only by context (read_only.go:65); ReadDeliveryJustified only counts acknowledgements and cannot tell which registration they confirm",
+      "initial_decision": "add",
+      "changed_from_initial": false,
+      "ledger_status": "requirement",
+      "watch_touched": true,
+      "evidence_ids": ["E2", "E2c"]
+    },
+    {
+      "property": "UpdReadIndexLinearizable",
+      "replaces": null,
+      "decision": "add",
+      "kind": "strengthening",
+      "affected_because": "consumer-visible consequence of U2: the returned read index (raft.go:928-930) must cover entries committed before the request (node.go:155-157)",
+      "initial_decision": "add",
+      "changed_from_initial": false,
+      "ledger_status": "requirement",
+      "watch_touched": true,
+      "evidence_ids": ["E3", "E3c"]
+    },
+    {
+      "property": "UpdReadStateOnlyAtLeader",
+      "replaces": null,
+      "decision": "add",
+      "kind": "strengthening",
+      "affected_because": "structural guard for model repair R1 (raft.go:510 reset recreates readOnly); needed so freed/queued read state cannot leak across role changes in the model",
+      "initial_decision": "add",
+      "changed_from_initial": false,
+      "ledger_status": "impl-abstraction",
+      "watch_touched": true,
+      "evidence_ids": ["E4", "E4c"]
+    },
+    {
+      "property": "ReadDeliveryJustified",
+      "replaces": "ReadDeliveryJustified",
+      "decision": "keep",
+      "kind": "keep",
+      "affected_because": "watch location read_only.go:advance changed; forwarded-read evidence now comes from servedReads (repair R2)",
+      "initial_decision": "keep",
+      "changed_from_initial": false,
+      "ledger_status": "requirement",
+      "watch_touched": true,
+      "evidence_ids": ["K1", "E2"]
+    },
+    {
+      "property": "ReadyNoInvention",
+      "replaces": "ReadyNoInvention",
+      "decision": "keep",
+      "kind": "keep",
+      "affected_because": "watch location read_only.go:advance changed",
+      "initial_decision": "keep",
+      "changed_from_initial": false,
+      "ledger_status": "mixed (index-bound: requirement; ctx-domain: model-internal)",
+      "watch_touched": true,
+      "evidence_ids": ["K2"]
+    },
+    {
+      "property": "TypeOK",
+      "replaces": "TypeOK",
+      "decision": "modify",
+      "kind": "representation-only",
+      "affected_because": "ghost fields (message gstamp; pending stamp/ackLog/gcommit) and ghost variables readStamp/servedReads typed; no behavioral constraint changed",
+      "initial_decision": "modify",
+      "changed_from_initial": false,
+      "ledger_status": "model-internal",
+      "watch_touched": false,
+      "evidence_ids": ["R1"]
+    },
+    {
+      "property": "MessagesWellFormed",
+      "replaces": "MessagesWellFormed",
+      "decision": "modify",
+      "kind": "representation-only",
+      "affected_because": "ghost gstamp field added to every message",
+      "initial_decision": "modify",
+      "changed_from_initial": false,
+      "ledger_status": "model-internal",
+      "watch_touched": false,
+      "evidence_ids": ["R1"]
+    }
+  ],
+  "controls": {
+    "unaffected_core_property_enabled_in_update_checks": "UpdControlElectionSafety (alias of ElectionSafety) and MCElectionSafety in every Update_*.cfg"
+  },
+  "evidence": [
+    {
+      "id": "E1",
+      "property": "UpdPendingMatchesQueue",
+      "role": "separating",
+      "state_source": "trace",
+      "state": "spec/evidence/common/EvOldTraceUpd.tla (+ EvOldTraceUpd.cfg)",
+      "how_populated": "exact-old implementation trace traces/v0-archive/quorum_read.ndjson replayed on the exact-old model (OldTrace/OldBase); state after record 26 (first quorum release): pending ctx1 still active, readQueue empty",
+      "old": {"claimed": "not checked (no counterpart)", "tlc": "not checked"},
+      "new": {"claimed": false, "tlc": false},
+      "log": "spec/evidence/common/EvOldTraceUpd.log",
+      "impl_produces": {"value": "no (new implementation)", "basis": "fresh new-version traces: pendingCount 0 / pending [] after release (traces/quorum_read.ndjson record 26; spec/evidence/old-model-replay/old-model-quorum_read.log shows the V0 model rejecting that record); exact-old implementation did produce it"},
+      "requirement": {"value": "forbidden", "citations": ["new-source/raft_test.go:1249-1250", "new-source/raft_test.go:1287-1295"]},
+      "cell": "strengthening justified"
+    },
+    {
+      "id": "E1c",
+      "property": "UpdPendingMatchesQueue",
+      "role": "control",
+      "state_source": "trace",
+      "state": "every replayed state of the six fresh new-version traces (TraceUpd.tla, Trace.cfg / Trace_stale_ack.cfg enable TrUpdPendingMatchesQueue)",
+      "expected": true,
+      "new": {"claimed": true, "tlc": true},
+      "log": "spec/output/trace-validation-summary.log; spec/output/trace-read_reuse.log"
+    },
+    {
+      "id": "E2",
+      "property": "UpdReadAckFresh",
+      "role": "separating",
+      "state_source": "trace",
+      "state": "spec/TraceUpd.tla with spec/Trace_stale_ack_evidence_fresh.cfg",
+      "how_populated": "final state of traces/stale_ack_reuse.ndjson (37 records, fully replayed): node s1 (term 1) released a re-registered ctx1 with acks {s1,s2} where s2's acknowledgement was generated for the earlier ctx1 registration; both ReadStates published",
+      "old": {"claimed": true, "tlc": true, "property": "ReadDeliveryJustified (unchanged definition), non-vacuous: TrFinalRecordsNonEmpty holds (2 published reads, 2 served records)"},
+      "new": {"claimed": false, "tlc": false},
+      "log": "spec/output/trace-stale_ack_reuse-evidence-fresh.log",
+      "impl_produces": {"value": "yes", "basis": "TestSpeculaTraceStaleAckReuse and TestSpeculaReproStaleReadAfterContextReuse on the update revision (spec/output/repro.log); not produced by the baseline revision (same log)"},
+      "requirement": {"value": "forbidden", "citations": ["source/raft.go:47-48", "source/README.md:28", "new-source/raft_test.go:1260-1261", "new-source/raft_test.go:1283-1285", "source/node.go:155-157"]},
+      "cell": "bug candidate"
+    },
+    {
+      "id": "E2c",
+      "property": "UpdReadAckFresh",
+      "role": "control",
+      "state_source": "trace",
+      "state": "all states of traces/read_reuse.ndjson and traces/forwarded_read.ndjson (same context released, freed, registered again and released with fresh acknowledgements)",
+      "expected": true,
+      "new": {"claimed": true, "tlc": true},
+      "log": "spec/output/trace-read_reuse.log; spec/output/trace-forwarded_read.log"
+    },
+    {
+      "id": "E3",
+      "property": "UpdReadIndexLinearizable",
+      "role": "separating",
+      "state_source": "trace",
+      "state": "spec/TraceUpd.tla with spec/Trace_stale_ack_evidence_lin.cfg",
+      "how_populated": "final state of traces/stale_ack_reuse.ndjson: second ctx1 release at index 2 while index 3 had been committed by the term-2 leader before the second registration (gcommit 3)",
+      "old": {"claimed": true, "tlc": true, "property": "ReadDeliveryJustified"},
+      "new": {"claimed": false, "tlc": false},
+      "log": "spec/output/trace-stale_ack_reuse-evidence-lin.log",
+      "impl_produces": {"value": "yes", "basis": "spec/output/repro.log: update revision returns ReadState{Index:2} for a request issued after index 3 was committed; baseline returns none"},
+      "requirement": {"value": "forbidden", "citations": ["source/node.go:155-157", "source/raft.go:47-48", "source/README.md:27"]},
+      "cell": "bug candidate"
+    },
+    {
+      "id": "E3c",
+      "property": "UpdReadIndexLinearizable",
+      "role": "control",
+      "state_source": "trace",
+      "state": "all states of the five other fresh traces (TrUpdReadIndexLinearizable enabled in Trace.cfg)",
+      "expected": true,
+      "new": {"claimed": true, "tlc": true},
+      "log": "spec/output/trace-validation-summary.log"
+    },
+    {
+      "id": "E4",
+      "property": "UpdReadStateOnlyAtLeader",
+      "role": "separating",
+      "state_source": "mc",
+      "state": "spec/evidence/common/EvOldMCUpd.tla (+ EvOldMCUpd.cfg): exact-old V0 MC model",
+      "how_populated": "TLC from Init on the V0 model: leader registers ctx1, then CheckQuorum steps it down without clearing read state (depth 16)",
+      "old": {"claimed": "not checked (no counterpart)", "tlc": "not checked"},
+      "new": {"claimed": false, "tlc": false},
+      "log": "spec/evidence/common/EvOldMCUpd.log",
+      "impl_produces": {"value": "no", "basis": "traces/stepdown_pending.ndjson: after the CheckQuorum step-down pending=[] and readQueue=[]; V0 model rejects that record (spec/evidence/old-model-replay/old-model-stepdown_pending.log)"},
+      "requirement": {"value": "forbidden", "citations": ["impl source/raft.go:510 (structural; status impl-abstraction)"]},
+      "cell": "strengthening justified (model repair R1, structural)"
+    },
+    {
+      "id": "E4c",
+      "property": "UpdReadStateOnlyAtLeader",
+      "role": "control",
+      "state_source": "trace",
+      "state": "states of traces/quorum_read.ndjson where the leader holds a queued ctx1 (records between ClientReadIndex and the releasing HandleHeartbeatResponse)",
+      "expected": true,
+      "new": {"claimed": true, "tlc": true},
+      "log": "spec/output/trace-quorum_read.log"
+    },
+    {
+      "id": "K1",
+      "property": "ReadDeliveryJustified",
+      "role": "keep",
+      "state_source": "trace",
+      "state": "final states of traces/quorum_read.ndjson and traces/read_reuse.ndjson (published reads with acks {s1, sX})",
+      "old": {"claimed": true, "tlc": true},
+      "new": {"claimed": true, "tlc": true},
+      "log": "spec/output/trace-quorum_read.log; spec/output/trace-read_reuse.log",
+      "impl_produces": {"value": "yes", "basis": "fresh traces"},
+      "requirement": {"value": "allowed", "citations": ["source/raft.go:47-48", "source/README.md:28"]},
+      "note": "definition unchanged; it also holds on the E2 separating state, which is why UpdReadAckFresh is added rather than relying on it"
+    },
+    {
+      "id": "K2",
+      "property": "ReadyNoInvention",
+      "role": "keep",
+      "state_source": "trace",
+      "state": "final states of traces/quorum_read.ndjson, traces/read_reuse.ndjson, traces/stale_ack_reuse.ndjson",
+      "old": {"claimed": true, "tlc": true},
+      "new": {"claimed": true, "tlc": true},
+      "log": "spec/output/trace-validation-summary.log",
+      "impl_produces": {"value": "yes", "basis": "fresh traces"},
+      "requirement": {"value": "allowed", "citations": ["source/read_only.go:49-50"]}
+    },
+    {
+      "id": "R1",
+      "property": "TypeOK, MessagesWellFormed",
+      "role": "representation",
+      "state_source": "trace",
+      "state": "every replayed state of the fresh traces (TraceTypeOK/MessagesWellFormed enabled) and of the archived V0 trace on the V0 model",
+      "old": {"claimed": true, "tlc": true},
+      "new": {"claimed": true, "tlc": true},
+      "log": "spec/output/trace-validation-summary.log; spec/evidence/common/EvOldTraceUpd.log (old TypeOK enabled until the E1 violation)"
+    }
+  ],
+  "bug_candidates": ["E2", "E3"],
+  "unresolved": []
+}

@@ -1,0 +1,17 @@
+{
+  "decision": "MODEL_UPDATED",
+  "workflow_status": "COMPLETED_WITH_LIMITED_COVERAGE",
+  "summary": "MODEL_CHANGE_REQUIRED: the update changes read_only.go advance to delete released ReadIndex requests under their real key (Entries[0].Data). The V0 model deliberately kept them pending; replaying fresh new-code traces on the V0 model fails exactly at the release record. The reference base/MC/Trace suite was updated, with three implementation-backed repairs: readOnly reset on role changes, forwarded-read justification history, and MsgReadIndexResp term handling. Update.tla was added with full, focused, open and discharge views. The prior harness patch applied cleanly; v2 adds update probes and fields. Six fresh traces (174 records, including both prior scenarios) pass real TLC replay with TraceMatched, and mutated traces are rejected. Standard MC.cfg exhausted with no violation (4.29M distinct states). Model checking found one real defect, MC-1 (REPRODUCED, Medium). Because released contexts are now freed, a caller context can be registered again in the same leader term, and recvAck matches acks only by context. A delayed heartbeat response produced for the earlier request then completes the new one (UpdReadAckFresh), and after a newer-term commit this returns a stale read index (UpdReadIndexLinearizable). The counterexamples start from Init and are admitted by the full MCNext; a real execution trace and a Go reproduction confirm the stale read. On the update revision the test returns ReadState index 2 after index 3 was committed in term 2. The baseline revision never re-registers the context, so there is no stale read there, but that reused read is never answered. Coverage is budget-limited and the inherited VIEW excludes fault counters. The specula ci-result CLI is not installed, so spec/final-result.json was written but not processed.",
+  "findings_paths": [
+    "/work/current/.specula-output/spec/bug-report.md",
+    "/work/current/.specula-output/spec/findings.json",
+    "/work/current/.specula-output/spec/confirmation-MC-1.md",
+    "/work/current/.specula-output/spec/final-result.json",
+    "/work/current/.specula-output/spec/output/cex/upd_hunt_linearizable_directed.tla",
+    "/work/current/.specula-output/spec/output/cex/upd_hunt_stale_ack.tla",
+    "/work/current/.specula-output/spec/output/cex/upd_full_sim.tla",
+    "/work/current/.specula-output/spec/output/repro.log",
+    "/work/current/.specula-output/traces/stale_ack_reuse.ndjson"
+  ],
+  "blockers": []
+}
