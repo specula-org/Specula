@@ -97,7 +97,7 @@ Group findings into Scenarios by mechanism ("non-atomic persistence with crash w
 | `traces/*.ndjson` | Recorded execution traces |
 | `harness/INSTRUMENTATION.md` | Guide for adjusting instrumentation |
 
-For MongoDB targets: log parsing approach (no C++ recompilation needed). See the [Specular case-studies repository](https://github.com/specula-org/specula-case-studies) for a MongoDB shared harness example.
+For MongoDB targets: log parsing approach (no C++ recompilation needed). See the [Specular case-studies repository](https://github.com/specular-org/specula-case-studies) for a MongoDB shared harness example.
 
 ---
 

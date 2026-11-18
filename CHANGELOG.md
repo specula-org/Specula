@@ -66,7 +66,7 @@ See the [v1.2.0 release notes](docs/releases/v1.2.0.md) for upgrade instructions
 - Corrected the bundled TLC wrapper so `-D` enables deadlock checking.
 - Bound Codex usage accounting to the exact native root session and its descendants, including current cache-token fields, without guessing between concurrent sessions or failing successful runs when usage is unavailable.
 
-See the [v1.0.0 release notes](https://github.com/specula-org/Specula/releases/tag/v1.0.0) for upgrade instructions and known limitations.
+See the [v1.0.0 release notes](https://github.com/specular-org/Specular/releases/tag/v1.0.0) for upgrade instructions and known limitations.
 
 ## [0.3.0] - 2026-07-26
 
@@ -90,7 +90,7 @@ See the [v1.0.0 release notes](https://github.com/specula-org/Specula/releases/t
 
 - Hardened confirmation and repair handoffs, preserved still-valid invariant coverage during repairs, and recovered stale confirmation worktrees through fresh isolated paths.
 
-See the [v0.3.0 release notes](https://github.com/specula-org/Specula/releases/tag/v0.3.0) for migration details, resource requirements, and known limitations.
+See the [v0.3.0 release notes](https://github.com/specular-org/Specular/releases/tag/v0.3.0) for migration details, resource requirements, and known limitations.
 
 ## [0.2.0] - 2026-07-14
 
@@ -114,7 +114,7 @@ See the [v0.3.0 release notes](https://github.com/specula-org/Specula/releases/t
 
 - Stopped shipping the internal `bug_recording` skill to users.
 
-See the [v0.2.0 release notes](https://github.com/specula-org/Specula/releases/tag/v0.2.0) for installation instructions and known limitations.
+See the [v0.2.0 release notes](https://github.com/specular-org/Specular/releases/tag/v0.2.0) for installation instructions and known limitations.
 
 ## [0.1.0] - 2026-03-29
 
@@ -125,10 +125,10 @@ See the [v0.2.0 release notes](https://github.com/specula-org/Specula/releases/t
 - Added initial support for Claude Code, Codex, and Copilot CLI.
 - Added the trace-debugger MCP tooling and curated methodology for validating model fidelity before interpreting model-checking results.
 
-[Unreleased]: https://github.com/specula-org/Specula/compare/v1.2.0...HEAD
-[1.2.0]: https://github.com/specula-org/Specula/compare/v1.1.0...v1.2.0
-[1.1.0]: https://github.com/specula-org/Specula/compare/v1.0.0...v1.1.0
-[1.0.0]: https://github.com/specula-org/Specula/compare/v0.3.0...v1.0.0
-[0.3.0]: https://github.com/specula-org/Specula/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/specula-org/Specula/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/specula-org/Specula/tree/v0.1.0
+[Unreleased]: https://github.com/specular-org/Specular/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/specular-org/Specular/compare/v1.1.0...v1.2.0
+[1.1.0]: https://github.com/specular-org/Specular/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/specular-org/Specular/compare/v0.3.0...v1.0.0
+[0.3.0]: https://github.com/specular-org/Specular/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/specular-org/Specular/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/specular-org/Specular/tree/v0.1.0

@@ -331,4 +331,4 @@ Returns: `violation_name`, `trace_length`, `actions`, `action_frequency`, `stati
 
 ## Additional References
 
-For additional examples beyond the built-in ones, see the [Specular case-studies repository](https://github.com/specula-org/specula-case-studies) which contains 60+ completed case studies across distributed systems, consensus protocols, and concurrent data structures.
+For additional examples beyond the built-in ones, see the [Specular case-studies repository](https://github.com/specular-org/specula-case-studies) which contains 60+ completed case studies across distributed systems, consensus protocols, and concurrent data structures.
