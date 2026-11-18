@@ -3929,19 +3929,26 @@ class TestRunLauncherExitCodes(TmpCwd):
 
     def test_sigterm_escalates_when_phase_ignores_it(self) -> None:
         pid_file = self.tmp / "pid"
-        p = self._pipeline(f"printf '%s\\n' $$ > \"{pid_file}\"\ntrap '' TERM\nwhile :; do sleep 1; done\n")
+        p = self._pipeline(f"trap '' TERM\nprintf '%s\\n' $$ > \"{pid_file}\"\nwhile :; do sleep 1; done\n")
         old_grace = pl.PHASE_TERMINATION_GRACE_SECONDS
         pl.PHASE_TERMINATION_GRACE_SECONDS = 0.1
         self.addCleanup(setattr, pl, "PHASE_TERMINATION_GRACE_SECONDS", old_grace)
         stop = threading.Event()
+        sent: list[float] = []
 
         def terminate() -> None:
-            if not stop.wait(0.1):
+            # Signal only once the phase has published its PID, so it already
+            # ignores SIGTERM however slowly it started.
+            deadline = time.monotonic() + 30
+            while not pid_file.is_file() or not pid_file.read_text().endswith("\n"):
+                if stop.wait(0.01) or time.monotonic() > deadline:
+                    break
+            if not stop.is_set():
+                sent.append(time.monotonic())
                 os.kill(os.getpid(), signal.SIGTERM)
 
         sender = threading.Thread(target=terminate)
         sender.start()
-        started = time.monotonic()
         try:
             with self.assertRaises(SystemExit) as ctx:
                 p._run_launcher("fake.sh", [])
@@ -3949,7 +3956,7 @@ class TestRunLauncherExitCodes(TmpCwd):
             stop.set()
             sender.join()
         self.assertEqual(ctx.exception.code, 128 + signal.SIGTERM)
-        self.assertLess(time.monotonic() - started, 1.0)
+        self.assertLess(time.monotonic() - sent[0], 1.0)
         phase_pid = int(pid_file.read_text())
         with self.assertRaises(ProcessLookupError):
             os.kill(phase_pid, 0)
