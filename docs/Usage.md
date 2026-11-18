@@ -66,8 +66,8 @@ If neither `.specular/sandbox.json` in the launch directory nor `~/.specular/san
 Clone Specular, install the CLI, and run its interactive setup:
 
 ```bash
-git clone https://github.com/specula-org/Specula.git
-cd Specula
+git clone https://github.com/specular-org/Specular.git
+cd Specular
 uv tool install -e .
 specular setup
 ```

@@ -28,10 +28,10 @@ def build_plugin_manifest() -> dict:
         ),
         "author": {
             "name": "Specular-org",
-            "url": "https://github.com/specula-org/Specula",
+            "url": "https://github.com/specular-org/Specular",
         },
-        "homepage": "https://github.com/specula-org/Specula",
-        "repository": "https://github.com/specula-org/Specula",
+        "homepage": "https://github.com/specular-org/Specular",
+        "repository": "https://github.com/specular-org/Specular",
         "license": "Apache-2.0",
         "keywords": [
             "tla",
@@ -54,9 +54,9 @@ def build_plugin_manifest() -> dict:
             "developerName": "Specular-org",
             "category": "Developer Tools",
             "capabilities": ["Interactive", "Read", "Write"],
-            "websiteURL": "https://github.com/specula-org/Specula",
-            "privacyPolicyURL": "https://github.com/specula-org/Specula",
-            "termsOfServiceURL": "https://github.com/specula-org/Specula",
+            "websiteURL": "https://github.com/specular-org/Specular",
+            "privacyPolicyURL": "https://github.com/specular-org/Specular",
+            "termsOfServiceURL": "https://github.com/specular-org/Specular",
             "defaultPrompt": [
                 "Run Specular code analysis on this repository.",
                 "Generate TLA+ specs from this modeling brief.",

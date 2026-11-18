@@ -13,10 +13,10 @@ Scaling formal specs for autonomous bug finding
   <a href="https://arxiv.org/abs/2607.25333">
     <img src="https://img.shields.io/badge/arXiv-2607.25333-b31b1b.svg" alt="arXiv: 2607.25333">
   </a>
-  <a href="https://github.com/specula-org/Specula/actions/workflows/ci.yml">
-    <img src="https://github.com/specula-org/Specula/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI">
+  <a href="https://github.com/specular-org/Specular/actions/workflows/ci.yml">
+    <img src="https://github.com/specular-org/Specular/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI">
   </a>
-  <a href="https://github.com/specula-org/Specula/blob/main/LICENSE">
+  <a href="https://github.com/specular-org/Specular/blob/main/LICENSE">
     <img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="License: Apache 2.0">
   </a>
 </p>
@@ -26,7 +26,7 @@ It uses coding agents to write TLA+ specs of the target system, including invari
 
 We maintain [a list of bugs found by Specular](https://docs.google.com/spreadsheets/d/1AVXdKjNfD4952hZqyB-_wTdrzeTw0SD73f3F0zWJ0as). We would love to hear about the bugs you find using Specular.
 
-Browse the [case-study archive](https://github.com/specula-org/specula-case-studies) for reports, models, and reproduction evidence. The `case-studies` submodule pins the archive and its [system and run indexes](https://github.com/specula-org/specula-case-studies/blob/2797de3e0801442d3451f26491ccfe876aaf2f2f/catalog/README.md) for this checkout.
+Browse the [case-study archive](https://github.com/specular-org/specula-case-studies) for reports, models, and reproduction evidence. The `case-studies` submodule pins the archive and its [system and run indexes](https://github.com/specular-org/specula-case-studies/blob/2797de3e0801442d3451f26491ccfe876aaf2f2f/catalog/README.md) for this checkout.
 
 ## Prerequisites
 
@@ -53,7 +53,7 @@ Other strong coding agents may work, but we do not test them regularly during ou
 ## Setup
 
 ```bash
-git clone https://github.com/specula-org/Specula.git && cd Specula
+git clone https://github.com/specular-org/Specular.git && cd Specular
 uv tool install -e .   # installs the `specular` command
 specular setup          # installs the agent skills and MCP tools, builds the bundled tools
 ```
@@ -63,8 +63,8 @@ specular setup          # installs the agent skills and MCP tools, builds the bu
 
 You need to set up the Specular Agent Skills and MCP with your coding agent.
 
-- Symlink [the Specular `skills` directory](https://github.com/specula-org/Specula/tree/main/skills) to the one read by your coding agent, e.g., `~/.claude/skills` or `.claude/skills` for Claude Code, `~/.codex/skills` or `.agents/skills` for Codex, and `.github/skills` for Copilot CLI.
-- Add the `trace_debugger`, `spec_analyzer`, and `inv_checking_tool` [MCP tools](https://github.com/specula-org/Specula/tree/main/tools/) to your agent config. Please [build the CFA tool](./tools/cfa) with Maven before adding `spec_analyzer`.
+- Symlink [the Specular `skills` directory](https://github.com/specular-org/Specular/tree/main/skills) to the one read by your coding agent, e.g., `~/.claude/skills` or `.claude/skills` for Claude Code, `~/.codex/skills` or `.agents/skills` for Codex, and `.github/skills` for Copilot CLI.
+- Add the `trace_debugger`, `spec_analyzer`, and `inv_checking_tool` [MCP tools](https://github.com/specular-org/Specular/tree/main/tools/) to your agent config. Please [build the CFA tool](./tools/cfa) with Maven before adding `spec_analyzer`.
 
 ```bash
 # for trace debugger MCP
