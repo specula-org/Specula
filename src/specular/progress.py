@@ -1,4 +1,4 @@
-"""Portable progress reporting for Specula agent processes."""
+"""Portable progress reporting for Specular agent processes."""
 
 from __future__ import annotations
 

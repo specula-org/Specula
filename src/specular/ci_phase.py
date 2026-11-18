@@ -15,7 +15,7 @@ from specular.skill_refs import prompt_skill_ids
 
 class IncrementalPhase(Phase):
     key = "incremental"
-    title = "Specula — Incremental CI"
+    title = "Specular — Incremental CI"
 
     @staticmethod
     def _rate_limit_retries() -> int:

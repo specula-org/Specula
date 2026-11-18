@@ -1,6 +1,6 @@
 """Integration-style unit tests for the TLC shell wrappers.
 
-The fixtures build a minimal temporary Specula root with an empty
+The fixtures build a minimal temporary Specular root with an empty
 ``tla2tools.jar`` and a fake ``java`` executable.  This exercises admission and
 the background-launch handshake without starting a JVM or a real model check.
 """

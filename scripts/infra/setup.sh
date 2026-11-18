@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Specula setup script (agent skills + MCP tools + TLA+ jars)
+# Specular setup script (agent skills + MCP tools + TLA+ jars)
 
 set -euo pipefail
 
@@ -9,7 +9,7 @@ usage() {
 Usage:
   specular setup
 
-Install Specula's TLA+ tools, Python environments, agent skills, and MCP integrations.
+Install Specular's TLA+ tools, Python environments, agent skills, and MCP integrations.
 
 This interactive command may download dependencies, build local tools, and
 update agent configuration.
@@ -80,7 +80,7 @@ ask_scope() {
   local agent_name="$1"
   local answer
   while true; do
-    read -rp "$(echo -e "${BLUE}[?]${NC} Install ${agent_name} skills globally (all projects) or locally (this Specula checkout only)? (global/local): ")" answer
+    read -rp "$(echo -e "${BLUE}[?]${NC} Install ${agent_name} skills globally (all projects) or locally (this Specular checkout only)? (global/local): ")" answer
     case "$answer" in
       [Gg]|[Gg][Ll][Oo][Bb][Aa][Ll]) echo "global"; return 0 ;;
       [Ll]|[Ll][Oo][Cc][Aa][Ll]) echo "local"; return 0 ;;
@@ -96,7 +96,7 @@ ask_codex_install() {
   echo "          Codex installs plugins for the current profile, making them available across projects." >&2
   echo "          Rerun specular setup and choose plugin again to update it." >&2
   while true; do
-    read -rp "$(echo -e "${BLUE}[?]${NC} Install Specula for Codex? (y/n/plugin): ")" answer
+    read -rp "$(echo -e "${BLUE}[?]${NC} Install Specular for Codex? (y/n/plugin): ")" answer
     case "$answer" in
       [Yy]|[Yy][Ee][Ss]) echo "separate"; return 0 ;;
       [Nn]|[Nn][Oo]) echo "skip"; return 0 ;;
@@ -117,13 +117,13 @@ setup_skills() {
 
   install_args+=("$@")
 
-  print_status "Installing Specula skills into $target_dir..."
+  print_status "Installing Specular skills into $target_dir..."
   # Isolated mode keeps the caller's CWD and PYTHONPATH from shadowing trusted setup code.
   if python3 -I "$PROJECT_ROOT/src/specular/skill_install.py" "${install_args[@]}"; then
     print_success "Skills configured in $target_dir"
   else
     SKILL_SETUP_INCOMPLETE=true
-    print_warning "Specula skill installation is incomplete in $target_dir"
+    print_warning "Specular skill installation is incomplete in $target_dir"
   fi
 }
 
@@ -184,7 +184,7 @@ setup_codex_plugin() {
   local project_root="$1"
   local plugin_root="$2"
 
-  print_status "Generating Specula Codex plugin..."
+  print_status "Generating Specular Codex plugin..."
   python3 -I "$SCRIPT_DIR/setup_codex_plugin.py" \
     --project-root "$project_root" \
     --plugin-root "$plugin_root"
@@ -396,7 +396,7 @@ MCP_SERVERS=(
 echo -e "${BLUE}[1/3] Claude Code${NC}"
 if ! command_exists claude; then
   print_status "Claude Code CLI not found on PATH; skipping."
-elif ask_yn "Install Specula for Claude Code?"; then
+elif ask_yn "Install Specular for Claude Code?"; then
   scope="$(ask_scope "Claude Code")"
   if [[ "$scope" == "global" ]]; then
     setup_skills "$CLAUDE_USER_CONFIG_DIR/skills" "$SKILLS_SOURCE"
@@ -463,7 +463,7 @@ echo ""
 echo -e "${BLUE}[3/3] GitHub Copilot CLI${NC}"
 if ! command_exists copilot; then
   print_status "GitHub Copilot CLI not found on PATH; skipping."
-elif ask_yn "Install Specula for GitHub Copilot CLI?"; then
+elif ask_yn "Install Specular for GitHub Copilot CLI?"; then
   scope="$(ask_scope "Copilot CLI")"
   if [[ "$scope" == "global" ]]; then
     setup_skills \
@@ -487,7 +487,7 @@ echo ""
 # ─── Done ────────────────────────────────────────────────────────────────────
 
 for agent in opencode pi; do
-  if command_exists "$agent" && ask_yn "Install Specula skills for $agent?"; then
+  if command_exists "$agent" && ask_yn "Install Specular skills for $agent?"; then
     case "$agent" in
       opencode) setup_skills "${XDG_CONFIG_HOME:-$HOME/.config}/opencode/skills" "$SKILLS_SOURCE" ;;
       pi) setup_skills "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/skills" "$SKILLS_SOURCE" ;;
@@ -495,13 +495,13 @@ for agent in opencode pi; do
   fi
 done
 print_status "CI context tools are registered automatically for incremental runs."
-print_status "TLC task tools are registered automatically for Specula runs."
+print_status "TLC task tools are registered automatically for Specular runs."
 if command_exists copilot && ! "$PROJECT_ROOT/tools/context_control/.venv/bin/python" -c 'import copilot' >/dev/null 2>&1; then
   print_warning "Copilot context compaction needs Python 3.11+; other CI functionality remains available."
 fi
 
 if [[ "$SKILL_SETUP_INCOMPLETE" == true ]]; then
-  print_warning "Setup completed with an incomplete Specula skill installation."
+  print_warning "Setup completed with an incomplete Specular skill installation."
   setup_rc=1
 else
   print_success "Setup completed."

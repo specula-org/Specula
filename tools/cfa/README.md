@@ -8,7 +8,7 @@ CFA is a static analysis and transformation tool for TLA+ specifications, built 
 
 <img src="./images/CFA_example.png" alt="Control flow of an IF/THEN/ELSE block" width="300" />
 
-## Role in the Specula pipeline
+## Role in the Specular pipeline
 
 The pipeline uses CFA as the backend of the `spec_analyzer` MCP: its `run_vav_analysis` tool runs the `vav` algorithm (Variable Assignment Validation) to check that every action assigns or `UNCHANGED`s every declared variable in every branch. This catches missing and duplicate assignments that SANY and TLC do not report (see [tlaplus#677](https://github.com/tlaplus/tlaplus/issues/677)). Agents run it on generated specs before model checking (see `skills/tla-checking-workflow`).
 
@@ -35,7 +35,7 @@ cd tools/cfa && mvn package -DskipTests
 
 ## Standalone spec transformation
 
-Beyond the `vav` check, CFA can rewrite a spec that violates atomic-action semantics into a TLC-accepted one (spec → CFG → transform → print). This powered Specula v1, which translated source code into TLA+ statement-by-statement and then repaired the result; it works on any input spec and does not depend on the rest of Specula.
+Beyond the `vav` check, CFA can rewrite a spec that violates atomic-action semantics into a TLC-accepted one (spec → CFG → transform → print). This powered Specular v1, which translated source code into TLA+ statement-by-statement and then repaired the result; it works on any input spec and does not depend on the rest of Specular.
 
 A typical input problem — `electionElapsed` is assigned twice in one action:
 

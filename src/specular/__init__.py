@@ -1,1 +1,1 @@
-"""Specula package."""
+"""Specular package."""

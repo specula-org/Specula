@@ -1,4 +1,4 @@
-"""Externalized agent-prompt templates for the Specula phases.
+"""Externalized agent-prompt templates for the Specular phases.
 
 Prompts live as markdown files under this package (e.g. `confirmation/reproduce.md`),
 NOT inline in the phase code, so they can be edited and reviewed without touching

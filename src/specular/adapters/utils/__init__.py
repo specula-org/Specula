@@ -1,1 +1,1 @@
-"""Shared implementation details for Specula agent adapters."""
+"""Shared implementation details for Specular agent adapters."""

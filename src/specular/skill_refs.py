@@ -1,4 +1,4 @@
-"""Stable Specula skill identifiers used in agent prompts."""
+"""Stable Specular skill identifiers used in agent prompts."""
 
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ def prompt_skill_ids(name: str) -> str:
 def stable_skill_refs(prompt: str) -> str:
     """Return ``prompt`` with skill references in a form every process shares.
 
-    Each Specula process uses its own reference marker, so compare prompts
+    Each Specular process uses its own reference marker, so compare prompts
     across invocations (for example, on attach) in this form.
     """
     return _SKILL_REF.sub(lambda match: f"<!-- specular-skill:{match.group(1)} -->", prompt)
@@ -41,14 +41,14 @@ def stable_skill_refs(prompt: str) -> str:
 
 def _warn_codex_plugin_probe(action: str) -> None:
     print(
-        f"WARNING: could not {action} enabled Codex plugins; using standalone Specula skill IDs.",
+        f"WARNING: could not {action} enabled Codex plugins; using standalone Specular skill IDs.",
         file=sys.stderr,
     )
 
 
 @functools.lru_cache(maxsize=8)
 def _probe_codex_plugin(executable: str, home: str, codex_home: str, cwd: str) -> bool:
-    """Probe one Codex installation/config tuple for the Specula plugin."""
+    """Probe one Codex installation/config tuple for the Specular plugin."""
     env = os.environ.copy()
     if home:
         env["HOME"] = home
@@ -98,7 +98,7 @@ def _probe_codex_plugin(executable: str, home: str, codex_home: str, cwd: str) -
 
 
 def _codex_plugin_enabled() -> bool:
-    """Whether the active Codex executable/config exposes Specula as a plugin."""
+    """Whether the active Codex executable/config exposes Specular as a plugin."""
     executable = shutil.which("codex") or "codex"
     return _probe_codex_plugin(
         executable,
@@ -117,8 +117,8 @@ def _local_skill_reference(name: str) -> str:
     try:
         path = _local_skill_files()[name]
     except (OSError, ValueError, KeyError) as exc:
-        raise ValueError(f"unknown Specula skill reference: {name}") from exc
-    return f" (read the local Specula skill file at `{path}`)"
+        raise ValueError(f"unknown Specular skill reference: {name}") from exc
+    return f" (read the local Specular skill file at `{path}`)"
 
 
 def materialize_skill_refs(
@@ -141,5 +141,5 @@ def materialize_skill_refs(
         resolved = _SKILL_REF.sub("", prompt)
 
     if _SKILL_REF_PREFIX in resolved:
-        raise ValueError("unresolved Specula skill reference")
+        raise ValueError("unresolved Specular skill reference")
     return resolved

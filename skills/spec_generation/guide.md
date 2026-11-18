@@ -147,4 +147,4 @@ For each spec action, specify: spec action name, code location (`file:line`), tr
 
 ## Additional References
 
-For additional examples beyond the built-in ones, see the [Specula case-studies repository](https://github.com/specula-org/specula-case-studies) which contains 60+ completed case studies across distributed systems, consensus protocols, and concurrent data structures.
+For additional examples beyond the built-in ones, see the [Specular case-studies repository](https://github.com/specula-org/specula-case-studies) which contains 60+ completed case studies across distributed systems, consensus protocols, and concurrent data structures.

@@ -1,6 +1,6 @@
 # Incremental Modeling Workflow
 
-Treat the prior Specula run as semantic evidence and the new source as the implementation to verify. Keep one complete current reference suite, reuse proven CI assets, and focus new validation effort on the update and its interactions with unchanged behavior.
+Treat the prior Specular run as semantic evidence and the new source as the implementation to verify. Keep one complete current reference suite, reuse proven CI assets, and focus new validation effort on the update and its interactions with unchanged behavior.
 
 When a candidate defect appears, follow [Persistent Findings](../bug-confirmation/references/persistent-findings.md) for a lightweight history match before deeper analysis or reproduction.
 
@@ -30,16 +30,16 @@ If prior trace/model validation has unresolved errors, say so in the analysis an
 
 Preserve correct system semantics rather than the old model's text. Prior validation provides evidence within its coverage; it does not make every old abstraction correct. Recheck the assumptions and state meanings on which the update depends, and actively repair implementation-backed inconsistencies within the modeling scope. Prioritize repairs needed for the update and its interactions; record independent issues for separate work. Chapter 2 defines the repair criteria.
 
-## Reuse the Existing Specula Methods
+## Reuse the Existing Specular Methods
 
 Read and apply the relevant parts of the existing skills rather than restating them here:
 
-- For evidence, Scenario construction, exclusions, category-specific reasoning, and modeling granularity, read and apply the installed Specula **code-analysis** skill. Follow its category routing when the update changes or stresses distributed/concurrent boundaries.
-- For code-faithful base/MC/Trace/instrumentation edits, source annotations, action splitting, and cfg coverage, read and apply the installed Specula **spec-generation** skill. Read its referenced generation documents for every artifact type touched by the update.
-- For reusing or modifying the prior harness and collecting fresh traces, read and apply only the relevant parts of the installed Specula **harness-generation** skill.
-- For running and debugging trace validation, follow the installed Specula **tla-trace-workflow** skill. Use [Validation 3's category-specific completion evidence](references/validation/03-trace-validation-loop.md#completion-evidence) in place of generic template requirements that assume every trace needs a temporal completion property.
-- For the trace/MC validation loop, follow the installed Specula **validation-workflow** skill with the incremental ordering and budgeted completion rules in Part 3.
-- For counterexample confirmation and reproduction, follow the installed Specula **bug-confirmation** skill.
+- For evidence, Scenario construction, exclusions, category-specific reasoning, and modeling granularity, read and apply the installed Specular **code-analysis** skill. Follow its category routing when the update changes or stresses distributed/concurrent boundaries.
+- For code-faithful base/MC/Trace/instrumentation edits, source annotations, action splitting, and cfg coverage, read and apply the installed Specular **spec-generation** skill. Read its referenced generation documents for every artifact type touched by the update.
+- For reusing or modifying the prior harness and collecting fresh traces, read and apply only the relevant parts of the installed Specular **harness-generation** skill.
+- For running and debugging trace validation, follow the installed Specular **tla-trace-workflow** skill. Use [Validation 3's category-specific completion evidence](references/validation/03-trace-validation-loop.md#completion-evidence) in place of generic template requirements that assume every trace needs a temporal completion property.
+- For the trace/MC validation loop, follow the installed Specular **validation-workflow** skill with the incremental ordering and budgeted completion rules in Part 3.
+- For counterexample confirmation and reproduction, follow the installed Specular **bug-confirmation** skill.
 
 Do not rerun full-project archaeology by default. Reuse the old run and investigate history/issues only where the update introduces uncertainty, changes a known mechanism, or invalidates prior evidence.
 
@@ -110,11 +110,11 @@ For repair-only work, apply the validation coverage requirements to the repaired
 
 ## Part 3: Model Checking
 
-Read `references/model-checking/01-update-focused-checking.md`. It reuses the installed Specula validation loop, TLC operation, BFS/simulation strategy, and counterexample classification, while defining the incremental full/focused/open/discharge order and validation back-edge. Its budgeted completion rules take precedence over convergence/completion wording in the referenced skills for this incremental workflow; state-space exhaustion is not required.
+Read `references/model-checking/01-update-focused-checking.md`. It reuses the installed Specular validation loop, TLC operation, BFS/simulation strategy, and counterexample classification, while defining the incremental full/focused/open/discharge order and validation back-edge. Its budgeted completion rules take precedence over convergence/completion wording in the referenced skills for this incremental workflow; state-space exhaustion is not required.
 
 ## Part 4: Reproduction
 
-After Part 3, submit new MC and code-review candidates through `references/reproduction/01-confirm-counterexample.md`. Reuse applicable persistent findings first. The controller runs the one-shot confirmation workflow and resumes this conversation with its results; the installed Specula **bug-confirmation** skill owns investigation, reproduction, verdicts, and repair requests.
+After Part 3, submit new MC and code-review candidates through `references/reproduction/01-confirm-counterexample.md`. Reuse applicable persistent findings first. The controller runs the one-shot confirmation workflow and resumes this conversation with its results; the installed Specular **bug-confirmation** skill owns investigation, reproduction, verdicts, and repair requests.
 
 ## Readiness and Final Reporting
 

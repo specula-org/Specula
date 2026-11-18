@@ -25,6 +25,6 @@ A `codex` profile in a [hybrid agent configuration](Usage.md#hybrid-agent-config
    "phases": {"confirm": "reproduction"}
    ```
 
-3. Set the variable named by `env_key` before running Specula.
+3. Set the variable named by `env_key` before running Specular.
 
-Specula stops before launching if the profile file does not exist. Individual phase commands take the same setting as `--agent=codex --codex-profile=NAME`.
+Specular stops before launching if the profile file does not exist. Individual phase commands take the same setting as `--agent=codex --codex-profile=NAME`.

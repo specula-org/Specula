@@ -83,7 +83,7 @@ EXP_DIR = SPECULAR_ROOT / "scripts" / "exp"
 # the bash --help printed the scheduler.sh header comment via sed (lines 2 to
 # the first blank line, `# ` stripped); the text is pinned by help_scheduler
 HELP = """
-Overnight batch scheduler for Specula pipeline.
+Overnight batch scheduler for Specular pipeline.
 
 Runs tasks from a queue file with N parallel workers.
 Pauses when usage exceeds threshold, waits for 5-hour window reset, resumes.
@@ -520,7 +520,7 @@ class Scheduler:
 
     def main(self) -> int:
         self.log("===========================================")
-        self.log(f"Specula Scheduler  run={self.run_id}")
+        self.log(f"Specular Scheduler  run={self.run_id}")
         self.log(f"Workers={self.workers}  Threshold={self.threshold}%  MaxWindows={self.max_windows}")
         self.log("===========================================")
 

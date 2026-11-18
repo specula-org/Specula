@@ -7,7 +7,7 @@ export default function (pi) {
   pi.registerTool({
     name: "request_bug_confirmation",
     label: "Request bug confirmation",
-    description: "After saving current MC findings and code-review Scenarios, request Specula's parallel confirmation. Follow the returned yield instructions; this is not CI completion.",
+    description: "After saving current MC findings and code-review Scenarios, request Specular's parallel confirmation. Follow the returned yield instructions; this is not CI completion.",
     parameters: { type: "object", properties: {}, additionalProperties: false },
     async execute() {
       const output = execFileSync(process.env.SPECULAR_CONTEXT_PYTHON, [

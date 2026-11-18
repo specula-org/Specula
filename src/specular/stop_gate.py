@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stop gate — completion gate for Specula phase agents.
+"""Stop gate — completion gate for Specular phase agents.
 
 Batch agents must not end their turn while backgrounded work (TLC, builds,
 tests) is still running unobserved, and must not finish a phase without its

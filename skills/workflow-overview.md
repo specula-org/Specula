@@ -1,8 +1,8 @@
-# Specula Workflow: Finding Bugs in System Implementations
+# Specular Workflow: Finding Bugs in System Implementations
 
 ## What This Is
 
-Specula is a workflow for finding bugs in distributed system and concurrent data structure implementations using TLA+ formal verification. It combines code analysis, TLA+ modeling, trace validation, and bug reproduction into a systematic pipeline.
+Specular is a workflow for finding bugs in distributed system and concurrent data structure implementations using TLA+ formal verification. It combines code analysis, TLA+ modeling, trace validation, and bug reproduction into a systematic pipeline.
 
 The core idea: the most critical bugs — protocol safety violations, data loss, deadlocks — have extremely tricky trigger paths. Manual code review can suspect they exist, but cannot prove it. TLA+ model checking can explore the full state space and either confirm the bug with a concrete counterexample or provide confidence that it doesn't exist.
 
@@ -20,7 +20,7 @@ Each phase has a dedicated skill. The pipeline can be run automatically via `scr
 
 ## System Categories
 
-Specula handles two categories of systems with different trace strategies:
+Specular handles two categories of systems with different trace strategies:
 
 | | Category A: Distributed Systems | Category B: Concurrent/Lock-Free |
 |---|---|---|
@@ -97,7 +97,7 @@ Group findings into Scenarios by mechanism ("non-atomic persistence with crash w
 | `traces/*.ndjson` | Recorded execution traces |
 | `harness/INSTRUMENTATION.md` | Guide for adjusting instrumentation |
 
-For MongoDB targets: log parsing approach (no C++ recompilation needed). See the [Specula case-studies repository](https://github.com/specula-org/specula-case-studies) for a MongoDB shared harness example.
+For MongoDB targets: log parsing approach (no C++ recompilation needed). See the [Specular case-studies repository](https://github.com/specula-org/specula-case-studies) for a MongoDB shared harness example.
 
 ---
 

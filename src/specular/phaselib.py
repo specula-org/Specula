@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Specula phase launchers — Python framework (port of scripts/launch/launch_*.sh).
+"""Specular phase launchers — Python framework (port of scripts/launch/launch_*.sh).
 
 Each historical `launch_<phase>.sh` spawns one agent per target: parse args,
 check prerequisites, build a per-phase prompt that defers to a skill, run the
@@ -174,9 +174,9 @@ _POLICY_RECOVERY_NOTE = """
 The previous invocation was interrupted because the provider blocked a response under its content policy. Continue the same legitimate formal-verification task from the existing workspace. Inspect and preserve completed work, rephrase the blocked portion in neutral formal-verification terms, and complete every required deliverable for this phase. Do not repeat work that is already complete.
 """
 
-_SESSION_RESUME_PROMPT = """Continue the current Specula task from this exact session. The previous invocation was interrupted by a temporary provider, capacity, or transport failure. Preserve completed work, inspect the current workspace, and finish every remaining deliverable. Do not restart completed analysis."""
+_SESSION_RESUME_PROMPT = """Continue the current Specular task from this exact session. The previous invocation was interrupted by a temporary provider, capacity, or transport failure. Preserve completed work, inspect the current workspace, and finish every remaining deliverable. Do not restart completed analysis."""
 
-_MANUAL_SESSION_RESUME_PROMPT = """Continue the current Specula task from this exact session. The previous run ended before this work was accepted. Inspect the latest failure for this task in the pipeline log (`$SPECULAR_PIPELINE_LOG` when set) and any relevant `error.txt`. If artifact validation failed, fix the reported issues and recheck the required deliverables before submitting again; do not merely repeat the previous response. Preserve completed work, inspect the current workspace, and finish every remaining deliverable. Do not restart completed analysis."""
+_MANUAL_SESSION_RESUME_PROMPT = """Continue the current Specular task from this exact session. The previous run ended before this work was accepted. Inspect the latest failure for this task in the pipeline log (`$SPECULAR_PIPELINE_LOG` when set) and any relevant `error.txt`. If artifact validation failed, fix the reported issues and recheck the required deliverables before submitting again; do not merely repeat the previous response. Preserve completed work, inspect the current workspace, and finish every remaining deliverable. Do not restart completed analysis."""
 
 _POLICY_SESSION_RESUME_PROMPT = """Continue the same legitimate formal-verification task from this exact session. The previous response was interrupted by the provider's content policy. Preserve completed work, rephrase the interrupted portion in neutral formal-verification terms, and finish every remaining deliverable without restarting the phase."""
 
@@ -980,7 +980,7 @@ class Phase:
                     os.environ[MEMORY_LIMIT_ENV] = stored_memory
                 elif parse_memory_limit(current_memory) != parse_memory_limit(stored_memory):
                     raise ResourceError(
-                        f"this Specula run uses TLC memory limit {stored_memory}; "
+                        f"this Specular run uses TLC memory limit {stored_memory}; "
                         "the limit cannot change in a direct phase"
                     )
                 if current_workers is None and stored_workers is not None:
@@ -990,7 +990,7 @@ class Phase:
                 ):
                     label = "unbounded" if stored_workers is None else stored_workers
                     raise ResourceError(
-                        f"this Specula run uses TLC worker limit {label}; the limit cannot change in a direct phase"
+                        f"this Specular run uses TLC worker limit {label}; the limit cannot change in a direct phase"
                     )
             except (ResourceError, ValueError) as exc:
                 print(f"ERROR: {exc}")
@@ -1823,7 +1823,7 @@ def run_agent_blocking(
     backoff; a credential-refresh failure (exit 72) takes the same path only
     while fewer than ``AUTH_REFRESH_RESUMES`` resumes have been used. Every
     retry reuses the exact native session captured in a state
-    file; if the CLI failed before emitting an ID, Specula safely replays the
+    file; if the CLI failed before emitting an ID, Specular safely replays the
     original prompt. Callers that automatically replay exit 75 may pass
     ``policy_state`` so the native session and both budgets survive that wait.
     The caller must discard that state after any non-75 terminal result.
@@ -2036,7 +2036,7 @@ def run_agent_blocking(
 class CodeAnalysisPhase(Phase):
     key = "code_analysis"
     next_phase_key = "spec_generation"
-    title = "Specula — Code Analysis Batch Runner"
+    title = "Specular — Code Analysis Batch Runner"
     usage = r"""
 Batch launcher: spawn one agent per target system for code analysis.
 Each agent follows the code-analysis skill methodology and produces a modeling brief.
@@ -2129,7 +2129,7 @@ You are analyzing the following system:
 
 ## Instructions
 
-Use the installed Specula skill {prompt_skill_ids("code-analysis")}. Read it in full and follow it exactly — it is the single source of methodology (its 4 phases, references, rules, Scenario modeling-brief format, and Category A/B handling).
+Use the installed Specular skill {prompt_skill_ids("code-analysis")}. Read it in full and follow it exactly — it is the single source of methodology (its 4 phases, references, rules, Scenario modeling-brief format, and Category A/B handling).
 
 Do everything the skill specifies. Do not add, relax, or override any step here. Scale the work to the requested scope; the skill sets no fixed counts or document-size targets.
 
@@ -2165,7 +2165,7 @@ Write your outputs to:
 class SpecGenerationPhase(Phase):
     key = "spec_generation"
     next_phase_key = "harness_generation"
-    title = "Specula — Spec Generation Batch Runner"
+    title = "Specular — Spec Generation Batch Runner"
     usage = r"""
 Batch launcher: spawn one agent per target system for TLA+ spec generation.
 Each agent follows the spec-generation skill methodology and produces base/MC/Trace specs.
@@ -2242,7 +2242,7 @@ Prerequisites:
         if byom_path is not None:
             prompt = f"""# BYOM Phase 2 Task: {name}
 
-Use the installed Specula skill {prompt_skill_ids("byom")}. Read it in full and complete its Phase 2 responsibilities for this target.
+Use the installed Specular skill {prompt_skill_ids("byom")}. Read it in full and complete its Phase 2 responsibilities for this target.
 
 - **User-provided artifacts**: {byom_path}
 - **Source code**: {repo_dir}
@@ -2264,7 +2264,7 @@ You are generating a TLA+ specification for: **{name}**
 
 ## Instructions
 
-Use the installed Specula skill {prompt_skill_ids("spec-generation")}. Read it in full and follow it exactly — it is the single source of methodology (its phases, references, rules, Category A/B handling, and the mandatory brief-coverage self-audit).
+Use the installed Specular skill {prompt_skill_ids("spec-generation")}. Read it in full and follow it exactly — it is the single source of methodology (its phases, references, rules, Category A/B handling, and the mandatory brief-coverage self-audit).
 
 Do everything the skill specifies. Do not add, relax, or override any step here. Scale the work to the requested scope; the skill sets no fixed counts or document-size targets.
 
@@ -2321,7 +2321,7 @@ Expected files:
 class HarnessGenerationPhase(Phase):
     key = "harness_generation"
     next_phase_key = "spec_validation"
-    title = "Specula — Harness Generation (Phase 2.5)"
+    title = "Specular — Harness Generation (Phase 2.5)"
     usage = r"""
 Batch launcher: spawn one agent per target system for harness generation (Phase 2.5).
 Each agent instruments the source code and collects NDJSON traces for spec validation.
@@ -2404,7 +2404,7 @@ Prerequisites:
         if byom_path is not None:
             prompt = f"""# BYOM Phase 2.5 Task: {name}
 
-Use the installed Specula skill {prompt_skill_ids("byom")}. Read it in full and complete its Phase 2.5 responsibilities for this target.
+Use the installed Specular skill {prompt_skill_ids("byom")}. Read it in full and complete its Phase 2.5 responsibilities for this target.
 
 - **User-provided artifacts**: {byom_path}
 - **Source code**: {repo_dir}
@@ -2428,7 +2428,7 @@ You are generating a trace harness for **{name}** — instrumenting the real sou
 
 ## Workflow
 
-Use the installed Specula skill {prompt_skill_ids("harness-generation")}. Read it in full and follow it exactly — it is the single source of methodology (instrument real code, trace format, run.sh, end-to-end validation).
+Use the installed Specular skill {prompt_skill_ids("harness-generation")}. Read it in full and follow it exactly — it is the single source of methodology (instrument real code, trace format, run.sh, end-to-end validation).
 
 Do everything the skill specifies. Do not add, relax, or override any step here. Scale the work to the requested scope; the skill sets no fixed counts or document-size targets.
 
@@ -2474,7 +2474,7 @@ Expected outputs:
 
 class BugClassificationPhase(Phase):
     key = "bug_classification"
-    title = "Specula — Bug Classification Batch Runner"
+    title = "Specular — Bug Classification Batch Runner"
     usage = r"""
 Batch launcher: spawn one agent per target system for Phase 4b final reporting.
 Each agent reads the confirmed-bugs.md produced by Phase 4a (bug-confirmation),
@@ -2555,7 +2555,7 @@ You are completing the Phase 4 final reports for **{name}**.
 
 ## Methodology
 
-Use the installed Specula skill {prompt_skill_ids("bug-classification")}. Read it in full and follow it exactly — it is the single source of methodology. For bug-severity.md, assign a four-tier Severity only to `REPRODUCED`, `ENV_LIMITED`, and `MASKED`; use `—` for `FALSE POSITIVE`, `NEEDS MORE INFO`, `DROPPED`, `PENDING REPAIR`, `DEFERRED`, and `INCOMPLETE`. Keep reproduced bugs, finding-tier entries, and no-severity dispositions separate in the mandatory Summary. Complete and validate bug-severity.md before starting .summary-findings.md. The findings summary must not contain severity classifications, internal reproduction levels, URLs, or Markdown links. Do not modify confirmed-bugs.md or any Status field.
+Use the installed Specular skill {prompt_skill_ids("bug-classification")}. Read it in full and follow it exactly — it is the single source of methodology. For bug-severity.md, assign a four-tier Severity only to `REPRODUCED`, `ENV_LIMITED`, and `MASKED`; use `—` for `FALSE POSITIVE`, `NEEDS MORE INFO`, `DROPPED`, `PENDING REPAIR`, `DEFERRED`, and `INCOMPLETE`. Keep reproduced bugs, finding-tier entries, and no-severity dispositions separate in the mandatory Summary. Complete and validate bug-severity.md before starting .summary-findings.md. The findings summary must not contain severity classifications, internal reproduction levels, URLs, or Markdown links. Do not modify confirmed-bugs.md or any Status field.
 
 Do everything the skill specifies. Do not add, relax, or override any step here.
 """
@@ -2565,7 +2565,7 @@ Do everything the skill specifies. Do not add, relax, or override any step here.
         prompt += f"""
 ## BYOM Modification Report
 
-After completing and validating the normal Phase 4b outputs, use the installed Specula skill {prompt_skill_ids("byom")} and complete its final modification-report responsibility.
+After completing and validating the normal Phase 4b outputs, use the installed Specular skill {prompt_skill_ids("byom")} and complete its final modification-report responsibility.
 
 - **Original user-provided artifacts**: {byom_path}
 - **Final target workspace**: {wd}
@@ -2730,7 +2730,7 @@ Compare the supplied artifacts with the final workspace, explain what was reused
 class SpecValidationPhase(Phase):
     key = "spec_validation"
     next_phase_key = "bug_confirmation"
-    title = "Specula — Spec Validation Batch Runner"
+    title = "Specular — Spec Validation Batch Runner"
     usage = r"""
 Batch launcher: spawn one agent per target system for spec validation.
 Each agent iteratively runs trace validation and invariant checking using existing
@@ -2858,7 +2858,7 @@ You are validating the TLA+ specification for **{name}** through iterative trace
 
 ## Workflow
 
-Use the installed Specula skill {prompt_skill_ids("validation-workflow")}. Read it in full and follow it exactly — it is the single source of methodology (its iterative trace-validation ↔ model-checking loop, the Case A/B/C classification, convergence, bug hunting, and required artifacts such as changelog.md / bug-report.md), including the {prompt_skill_ids("tla-trace-workflow")} and {prompt_skill_ids("tla-checking-workflow")} skills it delegates to.
+Use the installed Specular skill {prompt_skill_ids("validation-workflow")}. Read it in full and follow it exactly — it is the single source of methodology (its iterative trace-validation ↔ model-checking loop, the Case A/B/C classification, convergence, bug hunting, and required artifacts such as changelog.md / bug-report.md), including the {prompt_skill_ids("tla-trace-workflow")} and {prompt_skill_ids("tla-checking-workflow")} skills it delegates to.
 
 Do everything the skill specifies. Do not add, relax, or override any step here. Harness and traces already exist from Phase 2.5 under `{wd}/traces/` and `{wd}/harness/`; the skill's Phase 0 covers verifying and (if needed) regenerating them.
 """
@@ -2890,7 +2890,7 @@ Do everything the skill specifies. Do not add, relax, or override any step here.
 class BugConfirmationPhase(Phase):
     key = "bug_confirmation"
     next_phase_key = "bug_classification"
-    title = "Specula — Bug Confirmation Batch Runner"
+    title = "Specular — Bug Confirmation Batch Runner"
     usage = r"""
 Bug confirmation for each target system. By DEFAULT this runs parallel
 per-finding confirmation (step 0 consolidate + dedup, then one Reproducer agent
@@ -3469,7 +3469,7 @@ Output:
         _refresh_target_indexes(ws, names)
 
         print("========================================")
-        print(f" Specula — Review Agent ({phase})")
+        print(f" Specular — Review Agent ({phase})")
         print("========================================")
         print(f"Policy retries: {policy_retries}")
         print(f"Transient resumes: {transient_resumes}")

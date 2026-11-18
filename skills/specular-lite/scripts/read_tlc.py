@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Use Specula's unchanged output reader without installing an MCP server."""
+"""Use Specular's unchanged output reader without installing an MCP server."""
 
 import sys
 

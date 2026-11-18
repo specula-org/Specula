@@ -1,12 +1,12 @@
 # Bring Your Own Model Workflow
 
-Continue the normal Specula workflow from user-provided verification artifacts. Treat the supplied path and the target-specific instructions as flexible inputs: they may contain one model file, a directory of partial artifacts, or assets for several targets.
+Continue the normal Specular workflow from user-provided verification artifacts. Treat the supplied path and the target-specific instructions as flexible inputs: they may contain one model file, a directory of partial artifacts, or assets for several targets.
 
 ## Shared Rules
 
 1. Inspect the supplied path and the target-specific instructions. Identify only the assets that belong to the current target; if ownership is ambiguous, stop and explain what the user must clarify.
 2. Never modify the original supplied path. Copy adopted artifacts into the target's `.specular-output/` workspace and make later changes only there.
-3. Reuse every supplied artifact that already performs the required job. Verify that it is usable, but do not recreate it merely to match Specula's usual implementation style.
+3. Reuse every supplied artifact that already performs the required job. Verify that it is usable, but do not recreate it merely to match Specular's usual implementation style.
 4. During the initial inventory and Scenario analysis, do not make semantic changes to supplied artifacts. Add missing artifacts or adapters around them. Once the normal validation and repair workflows begin, they may revise workspace copies as usual.
 5. Do not require a manifest or fixed input layout. Infer relationships from the artifacts, target source, and user instructions. Record uncertainty instead of guessing.
 
@@ -43,7 +43,7 @@ Keep the report short and include:
 
 - supplied assets reused without modification;
 - supplied assets modified in the workspace and why;
-- verification assets added by Specula and why;
+- verification assets added by Specular and why;
 - relationships that could not be determined reliably.
 
 State explicitly when nothing supplied was modified. This is an agent-produced comparison report, not a mechanically complete patch. Do not modify any verification artifact while preparing it.

@@ -44,7 +44,7 @@ COMMANDS: list[tuple[str, str, str]] = [
     ("confirm", "launch/launch_bug_confirmation.sh", "Phase 4a - confirm & reproduce model-checking bugs"),
     ("classify", "launch/launch_bug_classification.sh", "Phase 4b - assign severity tiers to confirmed bugs"),
     ("review", "launch/launch_review.sh", "Run an inter-phase review agent"),
-    ("setup", "infra/setup.sh", "Install Specula agent skills + MCP tools"),
+    ("setup", "infra/setup.sh", "Install Specular agent skills + MCP tools"),
 ]
 
 

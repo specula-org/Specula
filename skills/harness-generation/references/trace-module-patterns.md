@@ -26,7 +26,7 @@ Every emitted line must follow this envelope:
 
 ### Examples by Language
 
-Built-in examples are in `skills/harness-generation/examples/`. For additional examples in other languages, see the [Specula case-studies repository](https://github.com/specula-org/specula-case-studies).
+Built-in examples are in `skills/harness-generation/examples/`. For additional examples in other languages, see the [Specular case-studies repository](https://github.com/specula-org/specula-case-studies).
 
 | Language | Case Study | Built-in Example | Key Files |
 |----------|-----------|-----------------|-----------|
@@ -66,7 +66,7 @@ emit(event_name, tid, t_start, t_end, state, args)
 
 ### Examples by Language
 
-Built-in examples are in `skills/harness-generation/examples/`. For additional examples, see the [Specula case-studies repository](https://github.com/specula-org/specula-case-studies).
+Built-in examples are in `skills/harness-generation/examples/`. For additional examples, see the [Specular case-studies repository](https://github.com/specula-org/specula-case-studies).
 
 | Language | Case Study | Built-in Example | Key Files |
 |----------|-----------|-----------------|-----------|

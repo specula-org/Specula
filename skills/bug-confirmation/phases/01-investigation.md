@@ -40,7 +40,7 @@ Record what you find, verbatim, with cites. **Do NOT classify it bug/not-bug her
 
 Determine whether this finding merely **duplicates an already-reported bug**. It
 counts as *known* **only** if an existing **issue / PR / CVE / advisory (or a prior
-Specula dataset entry) has already reported THIS exact defect** — the SAME
+Specular dataset entry) has already reported THIS exact defect** — the SAME
 mechanism at the SAME site — as a filed bug. The bar is about *a report already
 existing in the tracker*, **not** about developer awareness. So the following do
 **NOT** count as known — KEEP the finding and let Phase 2 decide it, because

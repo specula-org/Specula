@@ -172,7 +172,7 @@ class SingleSessionCLI(unittest.TestCase):
         repair_prompt = self.prompt(2)
         self.assertTrue(repair_prompt.startswith("## Repair Round 1"), repair_prompt[:200])
         self.assertIn("RR-001", repair_prompt)
-        self.assertNotIn("# Specula Main Session", repair_prompt)
+        self.assertNotIn("# Specular Main Session", repair_prompt)
         self.assertEqual(self.worker_starts("MC-1"), 1)
         self.assertEqual(self.worker_starts("CR-1"), 1)
         self.assertIn("status: CONSUMED", (work / "spec/repair-requests/RR-001.md").read_text())

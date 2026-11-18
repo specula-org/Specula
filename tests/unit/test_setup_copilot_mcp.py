@@ -126,7 +126,7 @@ class TestCopilotMcpSetup(unittest.TestCase):
         home.mkdir()
         config_dir = root / "copilot config"
         config_dir.mkdir()
-        project_root = root / "Specula checkout"
+        project_root = root / "Specular checkout"
         log_file = root / "copilot-calls.jsonl"
         list_json: str | None = None
         first_name, first_python, first_server = entries[0].split("|")
@@ -272,7 +272,7 @@ class TestCopilotMcpSetup(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stderr)
             config_dir = str(root / "copilot config")
-            project_root = str(root / "Specula checkout")
+            project_root = str(root / "Specular checkout")
             add_calls = [call for call in calls if call["argv"][:2] == ["mcp", "add"]]
             self.assertEqual(len(add_calls), 3)
             for entry, call in zip(entries, add_calls, strict=True):

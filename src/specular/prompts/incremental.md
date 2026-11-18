@@ -1,6 +1,6 @@
 # Incremental CI Task: {{target}}
 
-Read the installed Specula skill {{skill}} and its guide. Execute generation, trace validation, and model checking in this continuous session. Collect both code-review candidates and actual model-checking counterexamples using the one-shot formats. You own the analysis, planning, repairs, and verification loop.
+Read the installed Specular skill {{skill}} and its guide. Execute generation, trace validation, and model checking in this continuous session. Collect both code-review candidates and actual model-checking counterexamples using the one-shot formats. You own the analysis, planning, repairs, and verification loop.
 
 For confirmation, save the current `modeling-brief.md`, `spec/bug-report.md`, and `spec/findings.json` when present, then call `request_bug_confirmation`. Reuse applicable persistent findings first. The controller pauses this conversation, runs the existing one-shot confirmation workflow with the configured agent and concurrency, then resumes this exact session with the results. Do not independently reproduce the same candidates or start confirmation agents yourself. If the tool is unavailable, run `python3 "$SPECULAR_ROOT/tools/context_control/request.py" --confirm` and follow its returned yield instruction.
 
@@ -11,7 +11,7 @@ For long conversations, follow the skill's context-preservation guidance. The `r
 - Original source update (before instrumentation): {{source_diff}}
 - Old source: {{old_source}}
 - New source working copy: {{new_source}}
-- Prior Specula artifacts: {{old_model}}
+- Prior Specular artifacts: {{old_model}}
 - Working artifacts, initially copied from the prior model: {{work_dir}}
 
 Treat old source and artifacts as read-only evidence. Make all changes in the new source working copy and working artifacts. Rebase the existing harness onto the new source; do not include instrumentation changes in the source update itself. Keep the stage artifacts required by the skill as you work. They record evidence, not automatic stage-completion or conversation-resume checkpoints.

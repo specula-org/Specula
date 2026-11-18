@@ -2,7 +2,7 @@
 
 Complete the Required sections and remove unused Optional sections. Describe
 WHAT should be verified, not HOW to model it. Priority questions are a coverage
-floor: Specula should verify each one against the code and may also explore
+floor: Specular should verify each one against the code and may also explore
 adjacent code-derived risks. Expected behavior is a contract to test, not an
 implementation fact to assume.
 

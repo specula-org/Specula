@@ -127,7 +127,7 @@ Add to your MCP client configuration (e.g., Claude Desktop):
       "command": "python3",
       "args": ["/path/to/tools/inv_checking_tool/mcp_server.py"],
       "env": {
-        "SPECULAR_ROOT": "/path/to/Specula"
+        "SPECULAR_ROOT": "/path/to/Specular"
       }
     }
   }
@@ -262,4 +262,4 @@ Nested values can be accessed using dot notation with optional array indices:
 
 ## License
 
-Part of the Specula project.
+Part of the Specular project.

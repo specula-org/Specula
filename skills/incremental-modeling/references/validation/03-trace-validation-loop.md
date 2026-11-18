@@ -1,6 +1,6 @@
 # Validation 3: Trace Validation Loop
 
-Follow the installed Specula **tla-trace-workflow** skill for validation, layered debugging, and evidence-backed fixes. This chapter defines only the incremental ordering and back-edges.
+Follow the installed Specular **tla-trace-workflow** skill for validation, layered debugging, and evidence-backed fixes. This chapter defines only the incremental ordering and back-edges.
 
 ## 1. Validate in Information Order
 
@@ -14,7 +14,7 @@ Follow the installed Specula **tla-trace-workflow** skill for validation, layere
 - **Category A (linear replay):** enable the suite's correctly defined temporal completion property, such as `TraceMatched` or `TraceFullyConsumed`, and retain its completed check result.
 - **Category B (timebox replay):** establish at least one legal interleaving that consumes every thread's trace while enforcing the semantic and field checks. A deadlocked or pruned ordering rejects only that ordering; a separate universal temporal completion check is not required for this existential criterion.
 
-A Category B completion witness may be obtained by checking the negation of the completion predicate: an expected invariant violation counts only when the saved path ends with every per-thread cursor past its final event and retains the required checks. An unrelated violation, a property name, or an error-free run with deadlock detection disabled is not a completion witness. Without a witness, an exhausted search establishes no match under the checked model/configuration; an unfinished search leaves conformance unresolved. These category-specific criteria also govern the final validation gate when applying the reused Specula skills.
+A Category B completion witness may be obtained by checking the negation of the completion predicate: an expected invariant violation counts only when the saved path ends with every per-thread cursor past its final event and retains the required checks. An unrelated violation, a property name, or an error-free run with deadlock detection disabled is not a completion witness. Without a witness, an exhausted search establishes no match under the checked model/configuration; an unfinished search leaves conformance unresolved. These category-specific criteria also govern the final validation gate when applying the reused Specular skills.
 
 ## 2. Classify Before Editing
 

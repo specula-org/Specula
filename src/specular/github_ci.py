@@ -361,7 +361,7 @@ class GitHubCI:
                             "--no-ff",
                             "--no-edit",
                             "-m",
-                            "Specula CI merge candidate",
+                            "Specular CI merge candidate",
                             event.target,
                         )
                     except CIError:
@@ -405,9 +405,9 @@ class GitHubCI:
     def report(self, error: str | None = None) -> None:
         self.reports.mkdir(parents=True, exist_ok=False)
         lines = [
-            "# Specula CI",
+            "# Specular CI",
             "",
-            "| Source commit | Result | Verdict | Specula run | Usage |",
+            "| Source commit | Result | Verdict | Specular run | Usage |",
             "|---|---|---|---|---|",
         ]
         resumes: list[str] = []
@@ -421,7 +421,7 @@ class GitHubCI:
             if row.get("resume"):
                 resumes.append(f"- {html.escape(str(row['commit']))}: <code>{html.escape(str(row['resume']))}</code>")
             if row.get("verdict") == "WARNING" and os.environ.get("GITHUB_ACTIONS") == "true":
-                print("::warning::Specula found masked defects; see the CI report for their safeguards and evidence.")
+                print("::warning::Specular found masked defects; see the CI report for their safeguards and evidence.")
             run_id = row.get("run_id")
             if not isinstance(run_id, str) or not _valid_run_id(run_id):
                 continue

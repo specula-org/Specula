@@ -130,7 +130,7 @@ scripts/tlc/cleanup-tmp-tlc.sh
 
 # ── Release-prep: local-only / confidential / generated (not for the public repo) ──
 # Paper checked out inside the tree (own private repo specula-org/Specula-Paper)
-docs/Specula-Paper/
+docs/Specular-Paper/
 docs/main.pdf
 docs/pipeline-cost-time.md
 # All experiment outputs / run data (nothing here is tracked)
@@ -140,7 +140,7 @@ scripts/exp/ablation/targets_rq2*.txt
 # Generated output / caches
 .specular-output/
 .specular-lite/
-# Left behind by runs from before the Specula -> Specular rename.
+# Left behind by runs from before the Specular -> Specular rename.
 .specula-output/
 .specula-lite/
 # Per-run isolated workspaces (launch_pipeline.sh --isolate); experiment

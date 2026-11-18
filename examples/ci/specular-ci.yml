@@ -1,4 +1,4 @@
-name: Specula CI
+name: Specular CI
 
 on:
   push:
@@ -51,7 +51,7 @@ jobs:
       TARGET_REVISION: ${{ inputs.revision }}
       FORCE_CHECK: ${{ inputs.force }}
     steps:
-      - name: Reject repository variables from before the Specula rename
+      - name: Reject repository variables from before the Specular rename
         if: >-
           vars.SPECULA_CI_DIR || vars.SPECULA_AGENT || vars.SPECULA_MODEL ||
           vars.SPECULA_EFFORT || vars.SPECULA_CI_ENVIRONMENT || vars.SPECULA_CI_BRANCH
@@ -78,7 +78,7 @@ jobs:
           fi
           [[ -z "$TARGET_REVISION" ]] || args+=(--revision="$TARGET_REVISION")
           [[ "$FORCE_CHECK" != true ]] || args+=(--force)
-          # Use the trusted Specula installation on the runner, not PR-provided scripts.
+          # Use the trusted Specular installation on the runner, not PR-provided scripts.
           specular ci "${args[@]}"
       - name: Upload reports
         if: always()

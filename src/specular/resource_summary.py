@@ -898,7 +898,7 @@ def render_summary(
     findings = _findings_summary(state, work_dir, state.findings_summary_enabled)
 
     lines = [
-        "# Specula Summary",
+        "# Specular Summary",
         "",
         "## Result",
         "",

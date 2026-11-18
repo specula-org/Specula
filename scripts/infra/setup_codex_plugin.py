@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate and install the local Specula Codex plugin."""
+"""Generate and install the local Specular Codex plugin."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ PLUGIN_NAME = "specular-codex"
 PLUGIN_VERSION = "1.2.0"
 MARKETPLACE_NAME = "specular"
 LEGACY_MCP_NAMES = ("tracedebugger", "spec_analyzer", "inv_checking_tool")
-# The plugin as installed before the Specula -> Specular rename.
+# The plugin as installed before the Specular -> Specular rename.
 PRE_RENAME_PLUGIN = "specula-codex"
 PRE_RENAME_MARKETPLACE = "specula"
 
@@ -23,11 +23,11 @@ def build_plugin_manifest() -> dict:
         "name": PLUGIN_NAME,
         "version": PLUGIN_VERSION,
         "description": (
-            "Specula TLA+ workflow skills and MCP tools for code analysis, "
+            "Specular TLA+ workflow skills and MCP tools for code analysis, "
             "spec generation, trace validation, and bug confirmation."
         ),
         "author": {
-            "name": "Specula-org",
+            "name": "Specular-org",
             "url": "https://github.com/specula-org/Specula",
         },
         "homepage": "https://github.com/specula-org/Specula",
@@ -43,22 +43,22 @@ def build_plugin_manifest() -> dict:
         "skills": "./skills/",
         "mcpServers": "./.mcp.json",
         "interface": {
-            "displayName": "Specula",
-            "shortDescription": "Run Specula's TLA+ bug-finding workflow from Codex.",
+            "displayName": "Specular",
+            "shortDescription": "Run Specular's TLA+ bug-finding workflow from Codex.",
             "longDescription": (
-                "Specula packages workflow skills and MCP tools for analyzing "
+                "Specular packages workflow skills and MCP tools for analyzing "
                 "system implementations, generating TLA+ specifications, "
                 "validating traces, running model checking, and confirming "
                 "bugs in source code."
             ),
-            "developerName": "Specula-org",
+            "developerName": "Specular-org",
             "category": "Developer Tools",
             "capabilities": ["Interactive", "Read", "Write"],
             "websiteURL": "https://github.com/specula-org/Specula",
             "privacyPolicyURL": "https://github.com/specula-org/Specula",
             "termsOfServiceURL": "https://github.com/specula-org/Specula",
             "defaultPrompt": [
-                "Run Specula code analysis on this repository.",
+                "Run Specular code analysis on this repository.",
                 "Generate TLA+ specs from this modeling brief.",
                 "Validate this trace against the TLA+ spec.",
             ],
@@ -99,7 +99,7 @@ def build_mcp_config(project_root: pathlib.Path) -> dict:
 def build_marketplace_manifest() -> dict:
     return {
         "name": MARKETPLACE_NAME,
-        "interface": {"displayName": "Specula"},
+        "interface": {"displayName": "Specular"},
         "plugins": [
             {
                 "name": PLUGIN_NAME,
@@ -153,7 +153,7 @@ def run(command: list[str], *, check: bool = True, quiet: bool = False) -> subpr
 
 def install_plugin(plugin_root: pathlib.Path) -> None:
     if shutil.which("codex") is None:
-        raise SystemExit("codex is required to install the Specula Codex plugin")
+        raise SystemExit("codex is required to install the Specular Codex plugin")
 
     run(["codex", "plugin", "remove", f"{PRE_RENAME_PLUGIN}@{PRE_RENAME_MARKETPLACE}"], check=False, quiet=True)
     run(["codex", "plugin", "marketplace", "remove", PRE_RENAME_MARKETPLACE], check=False, quiet=True)

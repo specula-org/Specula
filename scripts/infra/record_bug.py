@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Append, update, or list bugs in the Specula Google Sheet.
+"""Append, update, or list bugs in the Specular Google Sheet.
 
 Supports 4 sheets:
   - "New bug"              (simple)
@@ -373,7 +373,7 @@ def list_bugs(args):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Specula Bug Tracker")
+    parser = argparse.ArgumentParser(description="Specular Bug Tracker")
     sub = parser.add_subparsers(dest="command", required=True)
 
     # --- append ---

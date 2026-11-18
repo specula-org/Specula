@@ -1011,7 +1011,7 @@ class TestUsageParsingAndRendering(ResourceSummaryCase):
         tracker.initialize(resume=False)
 
         text = self.summary(self.work_dir)
-        self.assertIn("# Specula Summary", text)
+        self.assertIn("# Specular Summary", text)
         self.assertIn("## Result\n\n- Run status: **Incomplete**", text)
         self.assertIn("## Findings\n\nThe findings summary is unavailable", text)
         self.assertIn("## Validation limits", text)

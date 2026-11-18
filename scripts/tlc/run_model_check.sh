@@ -113,7 +113,7 @@ fi
 
 # Resolve one runtime root for every bundled TLC dependency. A relocated
 # wrapper may be reached through a symlink, while SPECULAR_ROOT points at the
-# installed Specula tree that owns the jars, guard, and worker probe.
+# installed Specular tree that owns the jars, guard, and worker probe.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 RUNTIME_ROOT="$PROJECT_ROOT"
@@ -588,7 +588,7 @@ fi
 # START so even SIGKILL during launcher handoff cannot hide a live TLC from the
 # agent stop gate.
 if ! register_owner_with_stop_gate; then
-    WATCHDOG_ERROR="could not register the TLC owner with the Specula stop gate."
+    WATCHDOG_ERROR="could not register the TLC owner with the Specular stop gate."
     echo "Error: $WATCHDOG_ERROR" >&2
     touch "$STOP_FILE"
     publish_admission rejected "" "$WATCHDOG_ERROR" || true

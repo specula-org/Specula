@@ -1,4 +1,4 @@
-"""Tests for composable Specula skill installation."""
+"""Tests for composable Specular skill installation."""
 
 from __future__ import annotations
 

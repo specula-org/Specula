@@ -59,7 +59,7 @@ def parse_options(
     model_env: str,
     effort_env: str,
 ) -> AdapterOptions:
-    """Parse the common Specula adapter options without reading prompt files."""
+    """Parse the common Specular adapter options without reading prompt files."""
     prompt: str | None = None
     prompt_file: str | None = None
     log_file: str | None = None
@@ -373,7 +373,7 @@ def run_json_cli(
                 )
                 return TRANSIENT_FAILURE_RC
             if native_status != 0:
-                # 74 is Specula's normalized transient contract, not a native
+                # 74 is Specular's normalized transient contract, not a native
                 # CLI passthrough. An unrelated EX_IOERR must not trigger twenty
                 # session resumes without a classified provider diagnostic, nor
                 # a native 72 the credential-refresh resumes.

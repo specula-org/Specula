@@ -3,7 +3,7 @@
 On ``--resume`` Claude Code restores the running totals saved in the session
 transcript (its last ``cost-state`` record), so the ``total_cost_usd`` and
 ``modelUsage`` of a resumed invocation also count every earlier invocation of
-the session. Specula records usage per invocation, so a result is reduced to
+the session. Specular records usage per invocation, so a result is reduced to
 what its own process added:
 
 1. A fresh session's totals are already per invocation; its final result's

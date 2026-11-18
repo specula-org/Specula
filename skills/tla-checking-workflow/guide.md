@@ -64,7 +64,7 @@ These parameters apply to **all** model checking runs — convergence and bug hu
 | **Timeout** | **30 minutes** per run (`-t 30`) | The single hard constraint. If TLC hasn't found a violation in 30 min, the run ends. A safety run that reaches the timeout without a violation is a completed, budget-limited check: record its coverage (distinct states, depth, queue) and proceed; do not describe it as exhaustive. |
 | **Workers** | Prefer `-w auto` for one TLC; use an explicit count when running several TLCs concurrently | `auto` uses every CPU visible to that JVM. It does not coordinate with other TLC processes. |
 | **Heap memory** | Choose together with off-heap (e.g., `-m 50G`) | The wrapper accounts for the declared heap and off-heap as one request. |
-| **Off-heap memory** | Give `OffHeapDiskFPSet` the larger share when useful (e.g., `-M 200G`) | The sum of `-m + -M` must fit the remaining Specula-run budget. |
+| **Off-heap memory** | Give `OffHeapDiskFPSet` the larger share when useful (e.g., `-M 200G`) | The sum of `-m + -M` must fit the remaining Specular-run budget. |
 | **Simulation depth** | Enough transitions to reach and exercise the target interactions | Values such as `-p 50` or `-p 100` suit some small protocols; longer lifecycles may require substantially greater depth. |
 | **Simulation traces** | As many as possible (`-n 999999999`) | Let the timeout be the stopping condition, not trace count. |
 | **State space size** | **Do not constrain.** | Let TLC explore as much as possible within the 30-min window. |
@@ -331,4 +331,4 @@ Returns: `violation_name`, `trace_length`, `actions`, `action_frequency`, `stati
 
 ## Additional References
 
-For additional examples beyond the built-in ones, see the [Specula case-studies repository](https://github.com/specula-org/specula-case-studies) which contains 60+ completed case studies across distributed systems, consensus protocols, and concurrent data structures.
+For additional examples beyond the built-in ones, see the [Specular case-studies repository](https://github.com/specula-org/specula-case-studies) which contains 60+ completed case studies across distributed systems, consensus protocols, and concurrent data structures.

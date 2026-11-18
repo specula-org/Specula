@@ -169,7 +169,7 @@ def _log(message: str) -> None:
 def apply_prompt_defaults() -> None:
     """Turn on the single-session prompt additions for this process and its children unless set.
 
-    An exported-but-empty variable counts as unset, as with the other Specula switches.
+    An exported-but-empty variable counts as unset, as with the other Specular switches.
     """
     for variable in PROMPT_DEFAULTS:
         if not os.environ.get(variable, "").strip():
@@ -339,7 +339,7 @@ def has_unfinished_work(pipeline: Pipeline) -> bool:
 
 def compaction_continue_prompt(status: str, handoff: str, work: Path) -> str:
     return _continuation_prompt(
-        f"Continue the same Specula main session. Context compaction {status}. "
+        f"Continue the same Specular main session. Context compaction {status}. "
         f"First read the saved handoff at {handoff}; then open only evidence needed for the next work. "
         "Keep unresolved counterexamples, invalidated results and pending checks pending. "
         "This was an internal pause, not finalization or a new run. "
@@ -355,12 +355,12 @@ def _repair_context(name: str, work: Path, repair_round: int, requests: list[str
     spec = work / "spec"
     listed = ", ".join(requests) if requests else "every OPEN request"
     opening = (
-        "Specula confirmed the findings of an earlier main session for this target, in separate clean contexts. "
+        "Specular confirmed the findings of an earlier main session for this target, in separate clean contexts. "
         "Confirmation judged some counterexamples to be spec, fault-model, or invariant artifacts rather than real "
         "bugs, and recorded each as a repair request. This session takes over that repair; inspect the workspace "
         "instead of assuming its state."
         if new_session
-        else "Specula finished the confirmation batch you requested, in separate clean contexts. Confirmation judged "
+        else "Specular finished the confirmation batch you requested, in separate clean contexts. Confirmation judged "
         "some counterexamples to be spec, fault-model, or invariant artifacts rather than real bugs, and recorded "
         "each as a repair request. Continue this same session; do not restart completed work."
     )
@@ -374,7 +374,7 @@ Methodology — use these installed skills and follow them exactly:
 - {prompt_skill_ids("bug-confirmation")} — apply its repair-request format, request state machine, and per-request repair procedure (how to repair each target, the full-trace soundness gate, and the OPEN → IN_REPAIR → CONSUMED transitions you own).
 - {prompt_skill_ids("validation-workflow")} — repair and re-validate without overfitting, including the {prompt_skill_ids("tla-trace-workflow")} and {prompt_skill_ids("tla-checking-workflow")} skills it delegates to.
 
-Run the complete conformance pass (full trace validation and model checking), update the existing evidence and each request's History, write the current violations to `{spec}/findings.json`, and mark each processed request CONSUMED. Do not run confirmation yourself, and do not edit `confirmed-bugs.md`. Then request confirmation again and follow the yield instruction; Specula confirms exactly the violations in `findings.json`.
+Run the complete conformance pass (full trace validation and model checking), update the existing evidence and each request's History, write the current violations to `{spec}/findings.json`, and mark each processed request CONSUMED. Do not run confirmation yourself, and do not edit `confirmed-bugs.md`. Then request confirmation again and follow the yield instruction; Specular confirms exactly the violations in `findings.json`.
 """
 
 
@@ -382,7 +382,7 @@ def _rejection_context(name: str, reason: str, *, new_session: bool = False) -> 
     handoff = "the last handoff of an earlier main session" if new_session else "your last handoff"
     return f"""## Confirmation Request Not Accepted
 
-Specula did not start confirmation for {name} after {handoff}:
+Specular did not start confirmation for {name} after {handoff}:
 
 {reason}
 
@@ -437,7 +437,7 @@ These are the earlier session's results, not yours. Read `notes/INDEX.md` first 
 
 class SingleSessionPhase(Phase):
     key = PHASE_KEY
-    title = "Specula — Single-Session Main Session"
+    title = "Specular — Single-Session Main Session"
     usage = r"""
 Single-session orchestration: one agent per target performs code analysis, spec
 generation, harness generation, and validation in a single native conversation,
@@ -572,7 +572,7 @@ Options:
             return _continuation_prompt(
                 context
                 or (
-                    f"Continue the Specula main session for {name} from where it stopped. Keep completed work, "
+                    f"Continue the Specular main session for {name} from where it stopped. Keep completed work, "
                     "finish the remaining stages, and hand off to confirmation as instructed."
                 ),
                 work_dir=work,
@@ -736,7 +736,7 @@ class SingleSessionRun:
             return
         self._repair_loop_banner()
         _log(
-            "[DRY RUN] OPEN repair requests resume the same main session; Specula then confirms its current violations"
+            "[DRY RUN] OPEN repair requests resume the same main session; Specular then confirms its current violations"
         )
 
     @staticmethod

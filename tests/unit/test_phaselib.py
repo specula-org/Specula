@@ -489,7 +489,7 @@ class TestDryRunCommand(PhaseCase):
 
                 self.assertIn("**code-analysis**", body)
                 self.assertIn("/skills/code_analysis/SKILL.md", body)
-                self.assertIn("read the local Specula skill file", body)
+                self.assertIn("read the local Specular skill file", body)
                 self.assertNotIn("<!-- specular-skill:", body)
 
     def test_bug_confirmation_defaults_to_parallel(self) -> None:

@@ -807,7 +807,7 @@ def main(argv: list[str]) -> int:
             print("claude-code adapter: credential refresh failure", file=sys.stderr)
             return AUTH_REFRESH_FAILURE_RC
         if cli_rc != 0:
-            # Both are Specula retry contracts, never native CLI passthroughs.
+            # Both are Specular retry contracts, never native CLI passthroughs.
             return 1 if cli_rc in (TRANSIENT_FAILURE_RC, AUTH_REFRESH_FAILURE_RC) else cli_rc
         return 1 if stream_failed or postprocess_failed else 0
     finally:

@@ -1,4 +1,4 @@
-"""Pinned hard rules for every Specula agent session.
+"""Pinned hard rules for every Specular agent session.
 
 Long sessions lose instructions to context compaction, and continuation prompts
 (transient/policy/manual resume) carry none of the original phase prompt. The
@@ -24,7 +24,7 @@ from specular.prompts import PROMPTS_DIR
 
 RULES_ENV = "SPECULAR_RULES"
 RULES_TEMPLATE = "optional/rules.md"
-RULES_TITLE = "# Specula hard rules"
+RULES_TITLE = "# Specular hard rules"
 RULES_SEPARATOR = "\n---\n\n"
 _ON_VALUES = frozenset({"1", "true", "yes", "on"})
 

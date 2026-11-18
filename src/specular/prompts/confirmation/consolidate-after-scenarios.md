@@ -26,7 +26,7 @@ the dispatcher decides what to confirm again. Emit every model-checking finding;
 do not drop, merge, or re-judge any of them.
 
 ## Schema — read it first
-Use the installed Specula skill {{validation_workflow_skill}}. Within it, read and follow the
+Use the installed Specular skill {{validation_workflow_skill}}. Within it, read and follow the
 findings JSON format. The top-level object uses
 `generated_by: "consolidate"` and the list key `findings`. Each entry: `id`
 (unique, filesystem-safe), `title`, `source`, `scenario`, `severity`,

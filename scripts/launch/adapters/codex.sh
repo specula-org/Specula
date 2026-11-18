@@ -575,7 +575,7 @@ sys.stdout.write(json.dumps(text, ensure_ascii=False).replace("\x7f", "\\u007f")
 
   if (( codex_rc == TRANSIENT_FAILURE_RC )) && [[ "$transient_classified" != true ]]; then
     # Native 74 is EX_IOERR; only a classified provider diagnostic may expose
-    # Specula's retry/resume contract to the phase runner.
+    # Specular's retry/resume contract to the phase runner.
     codex_rc=1
   elif (( codex_rc == AUTH_REFRESH_FAILURE_RC )); then
     codex_rc=1  # Likewise never a native passthrough.

@@ -286,7 +286,7 @@
 
 ## 7. Reference Pointers
 
-- **Full analysis report**: see the [Specula case-studies repository](https://github.com/specula-org/specula-case-studies) for the complete cometbft analysis
+- **Full analysis report**: see the [Specular case-studies repository](https://github.com/specula-org/specula-case-studies) for the complete cometbft analysis
 - **Key source files**:
   - `artifact/cometbft/consensus/state.go` (2671 lines) — core state machine
   - `artifact/cometbft/consensus/reactor.go` (2010 lines) — gossip and message routing

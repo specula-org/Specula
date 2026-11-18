@@ -445,7 +445,7 @@ def seed_repair_round(work: Path, round_: int = 1) -> None:
 def test_first_launch_uses_the_full_prompt_with_phase_output_contract(run_workspace: tuple[Workspace, Path]) -> None:
     ws, work = run_workspace
     prompt = single_session.SingleSessionPhase().build_prompt(ws, "t|org/t|Go|Raft")
-    assert prompt.startswith("# Specula Main Session: t")
+    assert prompt.startswith("# Specular Main Session: t")
     for expected in (
         "code-analysis",
         "spec-generation",
@@ -495,7 +495,7 @@ def test_main_prompt_keeps_skill_methodology_and_allows_probes(run_workspace: tu
     assert "read it in full when you reach that stage" in workflow and FOLLOW_EXACTLY in workflow
     # Only formal confirmation is reserved; hypothesis probes are expected.
     assert "Do not reproduce candidates" not in prompt
-    assert "Formal confirmation is Specula's: do not start confirmation agents" in prompt
+    assert "Formal confirmation is Specular's: do not start confirmation agents" in prompt
     assert "running small probe programs to test hypotheses during analysis and validation" in prompt
     # The delegation section adds the subagent-notes rule on top of the skills' guidance.
     assert "is your decision" not in prompt
@@ -599,7 +599,7 @@ def test_repair_resume_sends_only_the_continuation(
     prompt = single_session.SingleSessionPhase().build_prompt(ws, "t|org/t|Go|Raft")
     assert prompt.startswith("HOOKED ## Repair Round 1")
     assert "RR-001" in prompt and "CONSUMED" in prompt
-    assert "# Specula Main Session" not in prompt
+    assert "# Specular Main Session" not in prompt
     assert len(seen) == 1
 
 
@@ -608,7 +608,7 @@ def test_unresumable_repair_restarts_with_full_prompt_and_context(run_workspace:
     seed_active_main(ws, work, resumable=False)
     seed_repair_round(work)
     prompt = strip_rules(single_session.SingleSessionPhase().build_prompt(ws, "t|org/t|Go|Raft"))
-    assert prompt.startswith("# Specula Main Session: t")
+    assert prompt.startswith("# Specular Main Session: t")
     assert "## Repair Round 1" in prompt
     # A new session did not request that batch and is not "this same session".
     assert "This session takes over that repair" in prompt
@@ -693,7 +693,7 @@ def test_main_confirmation_request_requires_consumed_repairs(monkeypatch: pytest
     rr.write_text(rr.read_text().replace("OPEN", "CONSUMED"))
     assert control.request_confirmation()["status"] == "requested"
     monkeypatch.setenv("SPECULAR_PHASE", "spec_validation")
-    with pytest.raises(ValueError, match="single-session Specula main session"):
+    with pytest.raises(ValueError, match="single-session Specular main session"):
         control.request_confirmation()
 
 
@@ -914,7 +914,7 @@ def test_runner_compacts_main_then_records_explicit_confirmation(
         f"resume.write_text(json.dumps({{'adapter':{agent!r},'session_id':'native-1'}}))\n"
         "assert any(a.startswith('--system-prompt-file=') for a in sys.argv[1:]), sys.argv\n"
         "if second:\n"
-        " assert prompt.startswith('HOOK Continue the same Specula main session'), prompt\n"
+        " assert prompt.startswith('HOOK Continue the same Specular main session'), prompt\n"
         " (work/'spec/bug-report.md').write_text('report')\n"
         " request_confirmation()\n"
         "else:\n"
@@ -960,7 +960,7 @@ def test_continuations_pin_rules_exactly_once(run_workspace: tuple[Workspace, Pa
     assert strip_rules(launched).startswith("## Repair Round 1")
     compaction = single_session.compaction_continue_prompt("completed", str(work / "handoff.md"), work)
     body = strip_rules(compaction)
-    assert body.startswith("Continue the same Specula main session")
+    assert body.startswith("Continue the same Specular main session")
     assert "## Working Notes" in body and "Earlier phases may have left notes" in body
     assert strip_rules(_retry_prompt(compaction, "fresh", resumable=False)) == body
 
@@ -987,10 +987,10 @@ def test_rules_and_notes_off_leave_continuations_bare(
     monkeypatch.setenv(rules.RULES_ENV, "off")
     monkeypatch.setenv(NOTES_ENV, "off")
     prompt = single_session.SingleSessionPhase().build_prompt(ws, "t|org/t|Go|Raft")
-    assert prompt.startswith("# Specula Main Session: t")
+    assert prompt.startswith("# Specular Main Session: t")
     assert "## Working Notes" not in prompt and rules.RULES_TITLE not in prompt
     compaction = single_session.compaction_continue_prompt("failed", "h.md", work)
-    assert compaction.startswith("Continue the same Specula main session") and "Working Notes" not in compaction
+    assert compaction.startswith("Continue the same Specular main session") and "Working Notes" not in compaction
 
 
 def test_incremental_compaction_continue_prompt_is_pinned_only_when_rules_are_on(

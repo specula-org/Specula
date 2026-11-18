@@ -1,6 +1,6 @@
-# Contributing to Specula
+# Contributing to Specular
 
-Thank you for your interest in contributing to Specula!
+Thank you for your interest in contributing to Specular!
 
 ## Developer Certificate of Origin (DCO)
 

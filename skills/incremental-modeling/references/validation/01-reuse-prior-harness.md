@@ -7,7 +7,7 @@ Treat the previous harness as a validated CI asset, not scaffolding to regenerat
 - Confirm the prior harness, traces, source revision, build configuration, and validation changelog belong to the supplied old run.
 - Preserve the prior system category and trace strategy: Category A single-file traces or Category B per-thread timebox traces.
 - Read the current `instrumentation-spec.md`, `Trace.tla`, and update Scenarios before editing the harness.
-- Read and apply the relevant category-specific parts of the installed Specula **harness-generation** skill. Do not repeat its language templates here.
+- Read and apply the relevant category-specific parts of the installed Specular **harness-generation** skill. Do not repeat its language templates here.
 
 ## 2. Rebase, Do Not Regenerate
 

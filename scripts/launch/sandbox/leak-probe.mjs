@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Specula v0 sandbox self-test ("leak-probe").
+// Specular v0 sandbox self-test ("leak-probe").
 //
 // Given a sandbox.json, assert that everything the config claims to restrict
 // actually holds INSIDE the sandbox. It reads the SAME config the backend uses

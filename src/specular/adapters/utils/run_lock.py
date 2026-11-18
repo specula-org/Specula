@@ -27,8 +27,8 @@ def inherited_run_lock_fds(env: Mapping[str, str] | None = None) -> tuple[int, .
             fd = int(raw)
             info = os.fstat(fd)
         except (OSError, ValueError) as exc:
-            raise RunLockError("inherited Specula run lock is unavailable") from exc
+            raise RunLockError("inherited Specular run lock is unavailable") from exc
         if fd < 3 or not stat.S_ISREG(info.st_mode):
-            raise RunLockError("inherited Specula run lock is invalid")
+            raise RunLockError("inherited Specular run lock is invalid")
         descriptors.append(fd)
     return tuple(dict.fromkeys(descriptors))

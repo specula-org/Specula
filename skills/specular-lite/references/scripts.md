@@ -1,6 +1,6 @@
 # Lite scripts
 
-These helpers use Python 3.10+ and its standard library. Run them by their absolute installed paths; no working copy of Specula is needed.
+These helpers use Python 3.10+ and its standard library. Run them by their absolute installed paths; no working copy of Specular is needed.
 
 ## Preparation
 
@@ -22,7 +22,7 @@ The model's parent directory is the process working directory. Relative config p
 
 ## Reading results
 
-`read_tlc.py` exposes the standard Specula TLC Output Reader CLI, with no MCP dependency:
+`read_tlc.py` exposes the standard Specular TLC Output Reader CLI, with no MCP dependency:
 
 ```bash
 python3 scripts/read_tlc.py output/check.log --summary --json
