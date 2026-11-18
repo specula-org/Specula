@@ -239,18 +239,14 @@ def _is_specula_skills_root(path: Path) -> bool:
     modern_root = resolved.parent
     try:
         project = (modern_root / "pyproject.toml").read_text()
-        modern_readme = (modern_root / "README.md").read_text().splitlines()
         modern_setup = (modern_root / "scripts" / "infra" / "setup.sh").read_text()
     except OSError:
         project = ""
-        modern_readme = []
         modern_setup = ""
     project_section = re.search(r"(?ms)^\[project\]\s*$\n(.*?)(?=^\[|\Z)", project)
     modern_layout = (
         project_section is not None
         and re.search(r"""(?m)^\s*name\s*=\s*["']specula["']\s*$""", project_section.group(1)) is not None
-        and bool(modern_readme)
-        and modern_readme[0].startswith("# Specula:")
         and 'SKILLS_SOURCE="$PROJECT_ROOT/skills"' in modern_setup
         and (modern_root / "src" / "specula" / "__init__.py").is_file()
     )
