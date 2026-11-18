@@ -5169,6 +5169,57 @@ class TestRepoIsolation(ConfirmCase):
             with self.assertRaisesRegex(C.ConfirmationFailed, "inputs changed"):
                 C._load_lease(cfg, f)
 
+    def _abbreviated_index_fingerprint(self, cfg: C.ConfirmConfig, f: C.Finding) -> str:
+        """The fingerprint as computed before diff index names were hashed in full."""
+        run = subprocess.run
+
+        def abbreviated(args: list[str], *rest: Any, **kwargs: Any) -> Any:
+            return run([arg for arg in args if arg != "--full-index"], *rest, **kwargs)
+
+        with mock.patch("specula.confirmlib.subprocess.run", side_effect=abbreviated):
+            return C._verdict_fingerprint(cfg, f)
+
+    def test_cache_survives_longer_default_abbreviation(self) -> None:
+        repo = self._repo()
+        (repo / "tracked.txt").write_text("instrumented\n")
+        cfg, ws = self._repo_cfg(repo, worktree=True)
+        f = C.Finding({"id": "MC-1", "source": "model-checking"}, ws.work_dir("T") / "confirmation" / "MC-1")
+        C._save_verdict(C.Outcome(f, "FALSE POSITIVE", True, 0, EVIDENCE), cfg)
+        legacy = self._abbreviated_index_fingerprint(cfg, f)
+
+        # A fetch into the shared object store lengthens git's default abbreviation.
+        subprocess.run(["git", "-C", str(repo), "config", "core.abbrev", "12"], check=True)
+        self.assertNotEqual(self._abbreviated_index_fingerprint(cfg, f), legacy)
+        self.assertIsNotNone(C._load_verdict(f, cfg))
+
+    def test_fingerprint_with_abbreviated_index_names_stays_valid(self) -> None:
+        repo = self._repo()
+        (repo / "tracked.txt").write_text("instrumented\n")
+        cfg, ws = self._repo_cfg(repo, worktree=True)
+        f = C.Finding({"id": "MC-1", "source": "model-checking"}, ws.work_dir("T") / "confirmation" / "MC-1")
+        legacy = self._abbreviated_index_fingerprint(cfg, f)
+        self.assertNotEqual(legacy, C._verdict_fingerprint(cfg, f))
+        C._save_verdict(C.Outcome(f, "FALSE POSITIVE", True, 0, EVIDENCE, fingerprint=legacy), cfg)
+        root = Path(self.tmp)
+        resumelib.initialize_run(root)
+        resumelib.save_configuration(root, {"agent": "x"})
+        with mock.patch.dict(os.environ, {resumelib.INVOCATION_ENV: "first"}):
+            lease = cfg.acquire_finding_lease(f)
+            self.addCleanup(lease.cleanup)
+            lease.fingerprint = legacy
+            C._persist_lease(cfg, f, lease)
+
+            subprocess.run(["git", "-C", str(repo), "config", "core.abbrev", "9"], check=True)
+            cached = C._load_verdict(f, cfg)
+            assert cached is not None
+            self.assertEqual(cached.fingerprint, legacy)
+            self.assertEqual(C._load_lease(cfg, f).fingerprint, legacy)
+
+            (repo / "tracked.txt").write_text("changed\n")
+            self.assertIsNone(C._load_verdict(f, cfg))
+            with self.assertRaisesRegex(C.ConfirmationFailed, "inputs changed"):
+                C._load_lease(cfg, f)
+
     def test_repo_change_reuses_open_repair_then_allocates_after_consumed(self) -> None:
         repo = self._repo()
         cfg, ws = self._repo_cfg(repo, worktree=False)

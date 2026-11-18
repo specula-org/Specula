@@ -37,7 +37,7 @@ import subprocess
 import threading
 import time
 import traceback
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -87,6 +87,9 @@ VALID_SOURCES = {"model-checking", "code-review"}
 ID_CHARS = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
 _CACHE_VERSION = 3
 _VERDICT_FINGERPRINT_VERSION = 4  # Invalidate verdicts saved before snapshot binding.
+# Default `git diff` abbreviation lengths (repositories below 2**24 objects) that
+# repository identities stored before full index names may have used.
+_LEGACY_DIFF_ABBREVS = range(7, 13)
 _CANDIDATE_CACHE = ".candidates-cache.json"
 
 _VERDICT_RE = re.compile(r"^\s*VERDICT:\s*(.+?)\s*$", re.MULTILINE)
@@ -353,7 +356,7 @@ def _load_lease(cfg: ConfirmConfig, f: Finding) -> _FindingLease:
     if not isinstance(value, dict) or value.get("version") != _LEASE_VERSION or value.get("finding_id") != f.id:
         raise ConfirmationFailed(f"{f.id}: invalid Phase 4 resume checkpoint")
     fingerprint = value.get("fingerprint")
-    if not isinstance(fingerprint, str) or fingerprint != _verdict_fingerprint(cfg, f):
+    if not isinstance(fingerprint, str) or not _matches_verdict_fingerprint(cfg, f, fingerprint):
         raise ConfirmationFailed(f"{f.id}: Phase 4 inputs changed; pass --fresh-context to start over")
 
     source_repo = value.get("source_repo")
@@ -2139,15 +2142,28 @@ def _skill_identity() -> dict[str, str]:
 
 
 def _repo_cache_identity(cfg: ConfirmConfig) -> dict[str, str]:
+    return next(_repo_cache_identities(cfg))
+
+
+def _repo_cache_identities(cfg: ConfirmConfig) -> Iterator[dict[str, str]]:
+    """Yield the repository cache identity, then the forms stored before full index names.
+
+    Without ``--full-index`` the ``git diff`` index lines of text files use
+    git's default abbreviation, which grows with the object count (e.g. when a
+    confirmation fetches into the shared object store). The later values
+    reproduce that diff for each default length so older caches stay valid.
+    """
     repo = cfg.repo_dir.rstrip("/")
     if not repo:
-        return {"path": "", "head": "", "isolation": str(cfg.worktree)}
+        yield {"path": "", "head": "", "isolation": str(cfg.worktree)}
+        return
     git_env = _dispatcher_git_env(repo)
     head = subprocess.run(["git", "-C", repo, "rev-parse", "HEAD"], env=git_env, capture_output=True)
     if head.returncode != 0:
         if cfg.worktree:
             raise ConfirmationFailed(f"worktree isolation requested but {repo!r} is not a git checkout")
-        return {"path": str(Path(repo).resolve()), "head": "non-git", "isolation": "False"}
+        yield {"path": str(Path(repo).resolve()), "head": "non-git", "isolation": "False"}
+        return
     root_result = subprocess.run(["git", "-C", repo, "rev-parse", "--show-toplevel"], env=git_env, capture_output=True)
     if root_result.returncode != 0:
         raise ConfirmationFailed(f"could not resolve repository root for cache identity: {repo!r}")
@@ -2167,9 +2183,11 @@ def _repo_cache_identity(cfg: ConfirmConfig) -> dict[str, str]:
     if output_rel is not None and output_rel.parts:
         rel = output_rel.as_posix()
         pathspec += [f":(exclude){rel}", f":(exclude){rel}/**"]
-    diff = subprocess.run(
-        ["git", "-C", str(root), "diff", "--binary", "HEAD", *pathspec], env=git_env, capture_output=True
-    )
+
+    def git_diff(*options: str) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.run(["git", "-C", str(root), *options, "HEAD", *pathspec], env=git_env, capture_output=True)
+
+    diff = git_diff("diff", "--binary", "--full-index")
     status = subprocess.run(
         ["git", "-C", str(root), "status", "--porcelain", "--untracked-files=all", *pathspec],
         env=git_env,
@@ -2182,25 +2200,35 @@ def _repo_cache_identity(cfg: ConfirmConfig) -> dict[str, str]:
     )
     if any(result.returncode != 0 for result in (diff, status, untracked)):
         raise ConfirmationFailed(f"could not inspect repository state for cache identity: {root}")
-    local = hashlib.sha256(diff.stdout + b"\0" + status.stdout)
-    for relative in _untracked_snapshot_paths(root, untracked.stdout):
-        path = root / relative
-        local.update(b"\0" + os.fsencode(relative.as_posix()) + b"\0")
-        entry_stat = _snapshot_path_lstat(root, relative)
-        local.update(f"<mode:{entry_stat.st_mode:o}>".encode())
-        if stat.S_ISLNK(entry_stat.st_mode):
-            local.update(b"<symlink>" + os.fsencode(os.readlink(path)))
-        elif stat.S_ISDIR(entry_stat.st_mode):
-            local.update(b"<directory>")
-        elif stat.S_ISREG(entry_stat.st_mode):
-            try:
-                local.update(path.read_bytes())
-            except OSError as exc:
-                local.update(f"<unreadable:{exc}>".encode())
-        else:
-            raise ConfirmationFailed(f"unsupported untracked repository entry: {path}")
-    identity["local"] = local.hexdigest()
-    return identity
+    untracked_paths = _untracked_snapshot_paths(root, untracked.stdout)
+
+    def local_identity(diff_output: bytes) -> str:
+        local = hashlib.sha256(diff_output + b"\0" + status.stdout)
+        for relative in untracked_paths:
+            path = root / relative
+            local.update(b"\0" + os.fsencode(relative.as_posix()) + b"\0")
+            entry_stat = _snapshot_path_lstat(root, relative)
+            local.update(f"<mode:{entry_stat.st_mode:o}>".encode())
+            if stat.S_ISLNK(entry_stat.st_mode):
+                local.update(b"<symlink>" + os.fsencode(os.readlink(path)))
+            elif stat.S_ISDIR(entry_stat.st_mode):
+                local.update(b"<directory>")
+            elif stat.S_ISREG(entry_stat.st_mode):
+                try:
+                    local.update(path.read_bytes())
+                except OSError as exc:
+                    local.update(f"<unreadable:{exc}>".encode())
+            else:
+                raise ConfirmationFailed(f"unsupported untracked repository entry: {path}")
+        return local.hexdigest()
+
+    yield {**identity, "local": local_identity(diff.stdout)}
+    seen = {diff.stdout}
+    for length in _LEGACY_DIFF_ABBREVS:
+        legacy = git_diff("-c", f"core.abbrev={length}", "diff", "--binary")
+        if legacy.returncode == 0 and legacy.stdout not in seen:
+            seen.add(legacy.stdout)
+            yield {**identity, "local": local_identity(legacy.stdout)}
 
 
 def _prompt_sources() -> dict[str, str]:
@@ -2270,6 +2298,16 @@ def _fingerprint_finding_data(f: Finding) -> dict[str, Any]:
 
 
 def _verdict_fingerprint(cfg: ConfirmConfig, f: Finding) -> str:
+    return next(_verdict_fingerprints(cfg, f))
+
+
+def _matches_verdict_fingerprint(cfg: ConfirmConfig, f: Finding, stored: object) -> bool:
+    """Whether a stored fingerprint, current or legacy, binds the finding's current inputs."""
+    return isinstance(stored, str) and stored in _verdict_fingerprints(cfg, f)
+
+
+def _verdict_fingerprints(cfg: ConfirmConfig, f: Finding) -> Iterator[str]:
+    """Yield the verdict fingerprint, then the legacy forms of the same inputs."""
     confirmation_identity: Any
     if cfg.repair_round is None:
         confirmation_identity = _generation_content(cfg)
@@ -2279,26 +2317,25 @@ def _verdict_fingerprint(cfg: ConfirmConfig, f: Finding) -> str:
         confirmation_identity = {
             "repair_token": cfg.repair_token or f"repair-round:{cfg.repair_round}",
         }
-    return _digest(
-        {
-            "version": _VERDICT_FINGERPRINT_VERSION,
-            "generation": confirmation_identity,
-            "finding": _fingerprint_finding_data(f),
-            "spec": _spec_identity(cfg, f),
-            "repo": _repo_cache_identity(cfg),
-            "adapter": _adapter_identity(cfg),
-            "claude_alias": cfg.claude_alias,
-            "debate": cfg.debate,
-            "rounds": cfg.rounds,
-            "prompt_extra": cfg.prompt_extra,
-            "max_turns": cfg.max_turns,
-            "tuning": _tuning_identity(cfg),
-            "prompts": _prompt_sources(),
-            "skill": _skill_identity(),
-            **_worker_notes_identity(),
-            **_rules_identity(),
-        }
-    )
+    identity = {
+        "version": _VERDICT_FINGERPRINT_VERSION,
+        "generation": confirmation_identity,
+        "finding": _fingerprint_finding_data(f),
+        "spec": _spec_identity(cfg, f),
+        "adapter": _adapter_identity(cfg),
+        "claude_alias": cfg.claude_alias,
+        "debate": cfg.debate,
+        "rounds": cfg.rounds,
+        "prompt_extra": cfg.prompt_extra,
+        "max_turns": cfg.max_turns,
+        "tuning": _tuning_identity(cfg),
+        "prompts": _prompt_sources(),
+        "skill": _skill_identity(),
+        **_worker_notes_identity(),
+        **_rules_identity(),
+    }
+    for repo in _repo_cache_identities(cfg):
+        yield _digest({**identity, "repo": repo})
 
 
 def _rr_field_text(text: str, key: str) -> list[str]:
@@ -2421,7 +2458,7 @@ def _load_verdict(f: Finding, cfg: ConfirmConfig) -> Outcome | None:
     except (OSError, ValueError):
         return None
     try:
-        if d.get("cache_version") != _CACHE_VERSION or d.get("fingerprint") != _verdict_fingerprint(cfg, f):
+        if d.get("cache_version") != _CACHE_VERSION or not _matches_verdict_fingerprint(cfg, f, d.get("fingerprint")):
             return None
         status = str(d["status"])
         if status not in CANON:
