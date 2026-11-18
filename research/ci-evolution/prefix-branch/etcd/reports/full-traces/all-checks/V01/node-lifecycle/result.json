@@ -1,0 +1,233 @@
+{
+ "spec": "$SPECULA/research/ci-evolution/etcd-v0-v3/agent-runs/inv-evidence/out/revised-spec/V01",
+ "trace": "node-lifecycle.ndjson",
+ "recorded_events": 100,
+ "replayable_prefix": 100,
+ "settings": {
+  "limits": "Update_full.cfg",
+  "actions": "AffectedActions",
+  "settle": "base.tla:ReactiveActions",
+  "replay": "MatchEvent(logline)",
+  "domains": "",
+  "domain": [
+   "RequestId={1, 2, 3, 4, 5}",
+   "PayloadWeights={0, 1, 8, 16, 40}",
+   "EncodedWeights={1, 2, 16, 24, 48}"
+  ],
+  "prefix": "auto",
+  "points": "",
+  "guard": "",
+  "constraint": true,
+  "settled": "",
+  "after": 100,
+  "checks": "",
+  "ignore": "NotReached$|NotAppended$",
+  "steps": 0,
+  "seconds": 300,
+  "seed": 1,
+  "heap": "3g",
+  "steps_total": 306
+ },
+ "build": {
+  "module": "Update",
+  "init": "MCInit",
+  "extra_variables": [
+   "faultCount"
+  ],
+  "settle_parts": 8,
+  "probes": [
+   {
+    "index": 1,
+    "label": "MCInvokeV2"
+   },
+   {
+    "index": 2,
+    "label": "Propose"
+   },
+   {
+    "index": 3,
+    "label": "ApplyEntry"
+   },
+   {
+    "index": 4,
+    "label": "MCCampaign"
+   },
+   {
+    "index": 5,
+    "label": "MCTick"
+   },
+   {
+    "index": 6,
+    "label": "Receive"
+   },
+   {
+    "index": 7,
+    "label": "Ready"
+   },
+   {
+    "index": 8,
+    "label": "Advance"
+   },
+   {
+    "index": 9,
+    "label": "Restart"
+   },
+   {
+    "index": 10,
+    "label": "MCCreateSnapshot"
+   }
+  ],
+  "checks": [
+   "ElectionSafety",
+   "LogMatching",
+   "LeaderCompleteness",
+   "CommittedHistory",
+   "AppliedAgreement",
+   "MCTypeOK",
+   "LogStructure",
+   "VoteDecisionEligibility",
+   "CampaignDecisionEligibility",
+   "TransferDecisionEligibility",
+   "RequestCorrelatedConfigurationEffects",
+   "ProposalConfigurationDecisions",
+   "VoteRecovery",
+   "RecoveryBacking",
+   "PromiseBacking",
+   "AckPreservation",
+   "NoUnexpectedFatal",
+   "LearnerEligibility",
+   "QuorumAccounting",
+   "ConfigurationOrigin",
+   "ConfigurationTransitionSafety",
+   "ReadyAccounting",
+   "OutcomeSoundness",
+   "ReplicationEvidence",
+   "SnapshotBacking",
+   "QuotaIntegrity",
+   "ReadBasis",
+   "ReadApplication",
+   "ReadCorrelation",
+   "TypeOK",
+   "JointConfigurationShape",
+   "JointSnapshotRecovery",
+   "UpdateJointConfigurationShape",
+   "UpdateReadyOwnership",
+   "UpdateAutoLeaveAdvance",
+   "UpdateJointSnapshotRecovery"
+  ],
+  "skipped_checks": [
+   "RevisedConfigurationTransitionSafety",
+   "RevisedAckPreservation",
+   "RevisedCampaignDecisionEligibility",
+   "RevisedAutoLeaveAdvance",
+   "SourceAlignment",
+   "WitnessCheck"
+  ],
+  "domains": [],
+  "explicit_domains": {
+   "RequestId": "{1, 2, 3, 4, 5}",
+   "PayloadWeights": "{0, 1, 8, 16, 40}",
+   "EncodedWeights": "{1, 2, 16, 24, 48}"
+  },
+  "domains_tried": {}
+ },
+ "replay": {
+  "seconds": 3.2,
+  "timed_out": false,
+  "violated": "PBReplayed",
+  "error": null,
+  "traces": null,
+  "distinct": 101,
+  "complete": true
+ },
+ "search": {
+  "seconds": 14.8,
+  "timed_out": false,
+  "violated": "PB_NoUnexpectedFatal",
+  "error": null,
+  "traces": 10,
+  "distinct": null,
+  "counterexample": {
+   "states": 98,
+   "branch_step": 79,
+   "recorded_events_replayed": 79,
+   "branch_during": "replay",
+   "branch_action": "MCInvokeV2",
+   "steps_after_branch": 17,
+   "branch_step_changes": [
+    "faultCount.request: 0 -> 1",
+    "requests[5].changes: [] -> [{\"target\": 1, \"kind\": \"Remove\"}]",
+    "requests[5].transition: \"Legacy\" -> \"Auto\"",
+    "requests[5].node: 0 -> 1",
+    "requests[5].kind: \"Normal\" -> \"V2\"",
+    "requests[5].weight: 0 -> 8",
+    "requests[5].encoded: 1 -> 16",
+    "requests[5].context: 0 -> 5",
+    "requests[5].status: \"Unused\" -> \"Invoked\"",
+    "requests[5].beforeWrites: [] -> [[{\"id\": 0, \"changes\": [{\"target\": 1, \"kind\": \"AddVoter\"}], \"transition\": \"Legacy\", \"target\": 1, \"kind\": \"AddVoter\", \"we"
+   ],
+   "changes_after_branch": [
+    "ready[1].id: 1 -> 2",
+    "ready[1].hist: [{\"id\": 0, \"changes\": [{\"target\": 1, \"kind\": \"AddVoter\"}], \"transition\": \"Legacy\", \"target\": 1, \"kind\": \"AddVoter\", \"wei -> [{\"id\": 0, \"changes\": [{\"target\": 1, \"kind\": \"AddVoter\"}], \"transition\": \"Legacy\", \"target\": 1, \"kind\": \"AddVoter\", \"wei",
+    "ready[1].entries[1].id: 0 -> 5",
+    "ready[1].entries[1].changes: [] -> [{\"target\": 1, \"kind\": \"Remove\"}]",
+    "ready[1].entries[1].transition: \"Legacy\" -> \"Auto\"",
+    "ready[1].entries[1].kind: \"Normal\" -> \"V2\"",
+    "ready[1].entries[1].weight: 0 -> 8",
+    "ready[1].entries[1].encoded: 6 -> 16",
+    "ready[1].entries[1].index: 5 -> 6",
+    "ready[1].hs.commit: 5 -> 6",
+    "ready[1].hasSS: true -> false",
+    "ready[1].committed[1].id: 0 -> 5",
+    "ready[1].committed[1].changes: [] -> [{\"target\": 1, \"kind\": \"Remove\"}]",
+    "ready[1].committed[1].transition: \"Legacy\" -> \"Auto\"",
+    "ready[1].committed[1].kind: \"Normal\" -> \"V2\"",
+    "ready[1].committed[1].weight: 0 -> 8",
+    "ready[1].committed[1].encoded: 6 -> 16",
+    "ready[1].committed[1].index: 5 -> 6",
+    "ready[1].cursor: 5 -> 6",
+    "ready[1].fromApplied: 4 -> 5",
+    "ready[1].installed: [\"Snapshot\"] -> [\"HS\", \"Snapshot\"]",
+    "ready[1].queued: false -> true",
+    "raft[1].cfgHist: [{\"id\": 0, \"changes\": [{\"target\": 1, \"kind\": \"AddVoter\"}], \"transition\": \"Legacy\", \"target\": 1, \"kind\": \"AddVoter\", \"wei -> [{\"id\": 0, \"changes\": [{\"target\": 1, \"kind\": \"AddVoter\"}], \"transition\": \"Legacy\", \"target\": 1, \"kind\": \"AddVoter\", \"wei",
+    "raft[1].commit: 5 -> 6",
+    "raft[1].unstable[1].id: 0 -> 5",
+    "raft[1].unstable[1].changes: [] -> [{\"target\": 1, \"kind\": \"Remove\"}]",
+    "raft[1].unstable[1].transition: \"Legacy\" -> \"Auto\"",
+    "raft[1].unstable[1].kind: \"Normal\" -> \"V2\"",
+    "raft[1].unstable[1].weight: 0 -> 8",
+    "raft[1].unstable[1].encoded: 6 -> 16",
+    "raft[1].unstable[1].index: 5 -> 6",
+    "raft[1].store.hist: [{\"id\": 0, \"changes\": [{\"target\": 1, \"kind\": \"AddVoter\"}], \"transition\": \"Legacy\", \"target\": 1, \"kind\": \"AddVoter\", \"wei -> [{\"id\": 0, \"changes\": [{\"target\": 1, \"kind\": \"AddVoter\"}], \"transition\": \"Legacy\", \"target\": 1, \"kind\": \"AddVoter\", \"wei",
+    "raft[1].store.hs.term: 2 -> 3",
+    "raft[1].store.hs.commit: 4 -> 6",
+    "raft[1].uoff: 5 -> 6",
+    "raft[1].prs[1].match: 5 -> 6",
+    "raft[1].prs[1].next: 6 -> 7",
+    "raft[1].prs[1].evidence: [{\"id\": 0, \"changes\": [{\"target\": 1, \"kind\": \"AddVoter\"}], \"transition\": \"Legacy\", \"target\": 1, \"kind\": \"AddVoter\", \"wei -> [{\"id\": 0, \"changes\": [{\"target\": 1, \"kind\": \"AddVoter\"}], \"transition\": \"Legacy\", \"target\": 1, \"kind\": \"AddVoter\", \"wei",
+    "raft[1].fatal: \"\" -> \"invalid configuration transition\"",
+    "raft[1].applied: 4 -> 5",
+    "raft[1].commitUses: [{\"config\": {\"outgoing\": [], \"voters\": [1], \"learners\": [], \"learnersNext\": [], \"autoLeave\": false}, \"term\": 3, \"hist\":  -> [{\"config\": {\"outgoing\": [], \"voters\": [1], \"learners\": [], \"learnersNext\": [], \"autoLeave\": false}, \"term\": 3, \"hist\": ",
+    "raft[1].pendingConf: 4 -> 6",
+    "raft[1].quota: 0 -> 8",
+    "raft[1].decision: \"\" -> \"Accepted\"",
+    "raft[1].prevHS.term: 2 -> 3",
+    "raft[1].prevHS.commit: 4 -> 5",
+    "raft[1].readySeq: 1 -> 2",
+    "quality.effects: [] -> [{\"node\": 1, \"request\": {\"changes\": [{\"target\": 1, \"kind\": \"Remove\"}], \"transition\": \"Auto\", \"parent\": 0, \"node\": 1, \"ta",
+    "requests[5].status: \"Invoked\" -> \"Returned\"",
+    "requests[5].handoff: false -> true",
+    "requests[5].core: \"\" -> \"Accepted\"",
+    "requests[5].result: \"\" -> \"Handoff\"",
+    "application[1].hist: [{\"id\": 0, \"changes\": [{\"target\": 1, \"kind\": \"AddVoter\"}], \"transition\": \"Legacy\", \"target\": 1, \"kind\": \"AddVoter\", \"wei -> [{\"id\": 0, \"changes\": [{\"target\": 1, \"kind\": \"AddVoter\"}], \"transition\": \"Legacy\", \"target\": 1, \"kind\": \"AddVoter\", \"wei",
+    "application[1].jobs: [] -> [{\"entries\": [], \"snapshot\": {\"index\": 0, \"config\": {\"outgoing\": [], \"voters\": [], \"learners\": [], \"learnersNext\": [], \"",
+    "history.applied: [[{\"id\": 0, \"changes\": [{\"target\": 1, \"kind\": \"AddVoter\"}], \"transition\": \"Legacy\", \"target\": 1, \"kind\": \"AddVoter\", \"we -> [[{\"id\": 0, \"changes\": [{\"target\": 1, \"kind\": \"AddVoter\"}], \"transition\": \"Legacy\", \"target\": 1, \"kind\": \"AddVoter\", \"we",
+    "history.commitUses: [{\"config\": {\"outgoing\": [], \"voters\": [1], \"learners\": [], \"learnersNext\": [], \"autoLeave\": false}, \"term\": 2, \"hist\":  -> [{\"config\": {\"outgoing\": [], \"voters\": [1], \"learners\": [], \"learnersNext\": [], \"autoLeave\": false}, \"term\": 2, \"hist\": ",
+    "history.acks: [{\"applied\": 1, \"after\": [{\"id\": 0, \"changes\": [{\"target\": 1, \"kind\": \"AddVoter\"}], \"transition\": \"Legacy\", \"target\": 1, -> [{\"applied\": 1, \"after\": [{\"id\": 0, \"changes\": [{\"target\": 1, \"kind\": \"AddVoter\"}], \"transition\": \"Legacy\", \"target\": 1,",
+    "history.obligations: [{\"term\": 2, \"hist\": [{\"id\": 0, \"changes\": [{\"target\": 1, \"kind\": \"AddVoter\"}], \"transition\": \"Legacy\", \"target\": 1, \"ki -> [{\"term\": 2, \"hist\": [{\"id\": 0, \"changes\": [{\"target\": 1, \"kind\": \"AddVoter\"}], \"transition\": \"Legacy\", \"target\": 1, \"ki",
+    "history.readyChecks: [{\"commit\": 1, \"from\": 0, \"entries\": [{\"id\": 0, \"changes\": [{\"target\": 1, \"kind\": \"AddVoter\"}], \"transition\": \"Legacy\",  -> [{\"commit\": 1, \"from\": 0, \"entries\": [{\"id\": 0, \"changes\": [{\"target\": 1, \"kind\": \"AddVoter\"}], \"transition\": \"Legacy\", ",
+    "history.outcomes: [{\"kind\": \"Normal\", \"weight\": 16, \"role\": \"Leader\", \"lead\": 1, \"transfer\": 0, \"quota\": 0, \"decision\": \"Accepted\", \"membe -> [{\"kind\": \"Normal\", \"weight\": 16, \"role\": \"Leader\", \"lead\": 1, \"transfer\": 0, \"quota\": 0, \"decision\": \"Accepted\", \"membe"
+   ]
+  }
+ }
+}

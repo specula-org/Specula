@@ -6,6 +6,7 @@ import argparse
 from pathlib import Path
 
 from branch import (
+    SPEC_DEF,
     build,
     constants,
     declared_variables,
@@ -154,3 +155,14 @@ def test_settled_condition_is_checked_when_quiet(tmp_path: Path) -> None:
     module, cfg, _ = build(options(settled="x = y"), suite(tmp_path), 10, set())
     assert "PB_Settled == ~PBQuiet \\/ (x = y)" in module
     assert "    PB_Settled" in cfg
+
+
+def test_explicit_domains_override_the_trace_and_the_limits(tmp_path: Path) -> None:
+    _, cfg, info = build(options(domain=["RequestId={1, 2, 9}"]), suite(tmp_path), 10, {"RequestId"})
+    assert "    RequestId = {1, 2, 9}" in cfg
+    assert info["explicit_domains"] == {"RequestId": "{1, 2, 9}"}
+
+
+def test_spec_definition_accepts_a_tuple_of_variables() -> None:
+    match = SPEC_DEF.match(" MCInit /\\ [][MCNext]_<<allVars, mcVars>>")
+    assert match and match.groups() == ("MCInit", "MCNext", "<<allVars, mcVars>>")

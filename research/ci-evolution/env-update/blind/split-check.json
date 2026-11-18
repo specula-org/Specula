@@ -1,0 +1,302 @@
+[
+ {
+  "case": "case-001",
+  "next": "MCNext",
+  "actions": 16,
+  "dropped_in_control": "MCInitialize",
+  "unnamed": 0,
+  "checks": {
+   "original_steps_are_split": {
+    "seconds": 85.0,
+    "traces": 106955,
+    "violated": null,
+    "error": null,
+    "states": 2433775
+   },
+   "split_steps_are_original": {
+    "seconds": 85.0,
+    "traces": 121863,
+    "violated": null,
+    "error": null,
+    "states": 2772786
+   },
+   "control_without_first_action": {
+    "seconds": 0.4,
+    "traces": 6,
+    "violated": "ControlCover",
+    "error": "Error: The behavior up to this point is:",
+    "states": 10
+   }
+  }
+ },
+ {
+  "case": "case-002",
+  "next": "MCNext",
+  "actions": 25,
+  "dropped_in_control": "MCBeginElection",
+  "unnamed": 0,
+  "checks": {
+   "original_steps_are_split": {
+    "seconds": 85.0,
+    "traces": 52143,
+    "violated": null,
+    "error": null,
+    "states": 1706973
+   },
+   "split_steps_are_original": {
+    "seconds": 85.0,
+    "traces": 38459,
+    "violated": null,
+    "error": null,
+    "states": 1258650
+   },
+   "control_without_first_action": {
+    "seconds": 0.8,
+    "traces": 4,
+    "violated": "ControlCover",
+    "error": "Error: The behavior up to this point is:",
+    "states": 10
+   }
+  }
+ },
+ {
+  "case": "case-003",
+  "next": "MCNext",
+  "actions": 18,
+  "dropped_in_control": "MCSaveBlock",
+  "unnamed": 0,
+  "checks": {
+   "original_steps_are_split": {
+    "seconds": 85.0,
+    "traces": 328966,
+    "violated": null,
+    "error": null,
+    "states": 16448259
+   },
+   "split_steps_are_original": {
+    "seconds": 85.0,
+    "traces": 123183,
+    "violated": null,
+    "error": null,
+    "states": 6159132
+   },
+   "control_without_first_action": {
+    "seconds": 0.7,
+    "traces": 13,
+    "violated": "ControlCover",
+    "error": "Error: The behavior up to this point is:",
+    "states": 20
+   }
+  }
+ },
+ {
+  "case": "case-004",
+  "next": "MCNext",
+  "actions": 24,
+  "dropped_in_control": "MCElect",
+  "unnamed": 0,
+  "checks": {
+   "original_steps_are_split": {
+    "seconds": 85.0,
+    "traces": 21316,
+    "violated": null,
+    "error": null,
+    "states": 1065800
+   },
+   "split_steps_are_original": {
+    "seconds": 85.0,
+    "traces": 22970,
+    "violated": null,
+    "error": null,
+    "states": 1148487
+   },
+   "control_without_first_action": {
+    "seconds": 1.0,
+    "traces": 14,
+    "violated": "ControlCover",
+    "error": "Error: The behavior up to this point is:",
+    "states": 79
+   }
+  }
+ },
+ {
+  "case": "case-005",
+  "next": "MCNext",
+  "actions": 27,
+  "dropped_in_control": "ElectionDecision",
+  "unnamed": 0,
+  "checks": {
+   "original_steps_are_split": {
+    "seconds": 85.1,
+    "traces": 8902,
+    "violated": null,
+    "error": null,
+    "states": 974389
+   },
+   "split_steps_are_original": {
+    "seconds": 85.0,
+    "traces": 18765,
+    "violated": null,
+    "error": null,
+    "states": 1185256
+   },
+   "control_without_first_action": {
+    "seconds": 0.8,
+    "traces": 3,
+    "violated": "ControlCover",
+    "error": "Error: The behavior up to this point is:",
+    "states": 7
+   }
+  }
+ },
+ {
+  "case": "case-006",
+  "next": "MCNext",
+  "actions": 20,
+  "dropped_in_control": "MCCampaign",
+  "unnamed": 0,
+  "checks": {
+   "original_steps_are_split": {
+    "seconds": 85.0,
+    "traces": 2395,
+    "violated": null,
+    "error": null,
+    "states": 201303
+   },
+   "split_steps_are_original": {
+    "seconds": 85.0,
+    "traces": 6374,
+    "violated": null,
+    "error": null,
+    "states": 219122
+   },
+   "control_without_first_action": {
+    "seconds": 0.9,
+    "traces": 10,
+    "violated": "ControlCover",
+    "error": "Error: The behavior up to this point is:",
+    "states": 11
+   }
+  }
+ },
+ {
+  "case": "case-007",
+  "next": "MCNext",
+  "actions": 23,
+  "dropped_in_control": "MCSpawn",
+  "unnamed": 0,
+  "checks": {
+   "original_steps_are_split": {
+    "seconds": 85.0,
+    "traces": 8956,
+    "violated": null,
+    "error": null,
+    "states": 448177
+   },
+   "split_steps_are_original": {
+    "seconds": 85.0,
+    "traces": 9384,
+    "violated": null,
+    "error": null,
+    "states": 469576
+   },
+   "control_without_first_action": {
+    "seconds": 1.0,
+    "traces": 49,
+    "violated": "ControlCover",
+    "error": "Error: The behavior up to this point is:",
+    "states": 54
+   }
+  }
+ },
+ {
+  "case": "case-010",
+  "next": "MCCoreNext",
+  "actions": 27,
+  "dropped_in_control": "MCBeginElection",
+  "unnamed": 0,
+  "checks": {
+   "original_steps_are_split": {
+    "seconds": 85.1,
+    "traces": 2348,
+    "violated": null,
+    "error": null,
+    "states": 623281
+   },
+   "split_steps_are_original": {
+    "seconds": 85.0,
+    "traces": 15990,
+    "violated": null,
+    "error": null,
+    "states": 637678
+   },
+   "control_without_first_action": {
+    "seconds": 85.0,
+    "traces": 2169,
+    "violated": null,
+    "error": null,
+    "states": 577608
+   }
+  }
+ },
+ {
+  "case": "case-011",
+  "next": "MCNext",
+  "actions": 19,
+  "dropped_in_control": "MCTickElect",
+  "unnamed": 0,
+  "checks": {
+   "original_steps_are_split": {
+    "seconds": 85.0,
+    "traces": 1234,
+    "violated": null,
+    "error": null,
+    "states": 273079
+   },
+   "split_steps_are_original": {
+    "seconds": 85.0,
+    "traces": 2974,
+    "violated": null,
+    "error": null,
+    "states": 354515
+   },
+   "control_without_first_action": {
+    "seconds": 85.0,
+    "traces": 1150,
+    "violated": null,
+    "error": null,
+    "states": 254340
+   }
+  }
+ },
+ {
+  "case": "case-012",
+  "next": "MCNext",
+  "actions": 12,
+  "dropped_in_control": "MCStartElection",
+  "unnamed": 0,
+  "checks": {
+   "original_steps_are_split": {
+    "seconds": 85.0,
+    "traces": 8817,
+    "violated": null,
+    "error": null,
+    "states": 548173
+   },
+   "split_steps_are_original": {
+    "seconds": 85.0,
+    "traces": 9353,
+    "violated": null,
+    "error": null,
+    "states": 581558
+   },
+   "control_without_first_action": {
+    "seconds": 1.1,
+    "traces": 8,
+    "violated": "ControlCover",
+    "error": "Error: The behavior up to this point is:",
+    "states": 9
+   }
+  }
+ }
+]

@@ -26,7 +26,7 @@ sys.path.insert(0, str(HERE.parent / "update-coverage"))
 from check import ROOT, affected_probes, disjuncts, split_config, strip_comments, top_level_definitions  # noqa: E402
 
 MODULE = "PrefixBranch"
-SPEC_DEF = re.compile(r"^\s*(\w+)\s*/\\\s*\[\]\[(\w+)\]_(\w+)", re.S)
+SPEC_DEF = re.compile(r"^\s*(\w+)\s*/\\\s*\[\]\[(\w+)\]_(<<[^>]*>>|\w+)", re.S)
 CONSTANT_LINE = re.compile(r"^\s*(\w+)\s*(<-|=)\s*(.+?)\s*$")
 
 
@@ -158,9 +158,14 @@ def build(args: argparse.Namespace, spec: Path, trace_events: int, domains: set[
 
     trace_constants = constants((spec / "Trace.cfg").read_text())
     limit_constants = constants(limits_text)
+    explicit = dict(item.split("=", 1) for item in getattr(args, "domain", None) or [])
     cfg = ["SPECIFICATION PBSpec", "CONSTANTS"]
     for name, binding in trace_constants.items():
-        cfg.append(f"    {name} {limit_constants[name] if name in domains else binding}")
+        if name in explicit:
+            binding = f"= {explicit[name]}"
+        elif name in domains:
+            binding = limit_constants[name]
+        cfg.append(f"    {name} {binding}")
     for name, binding in limit_constants.items():
         if name not in trace_constants:
             cfg.append(f"    {name} {binding}")
@@ -180,6 +185,7 @@ def build(args: argparse.Namespace, spec: Path, trace_events: int, domains: set[
         "checks": checks,
         "skipped_checks": skipped,
         "domains": sorted(domains),
+        "explicit_domains": explicit,
     }
     return "\n".join(lines) + "\n", "\n".join(cfg) + "\n", info
 
@@ -299,6 +305,29 @@ def summarise(work: Path, info: dict, recorded: int) -> dict:
     }
 
 
+def replays(work: Path, spec: Path, trace: Path, events: int, args: argparse.Namespace) -> bool:
+    module, cfg, _ = build(args, spec, events, set())
+    (work / f"{MODULE}.tla").write_text(module)
+    result = run_tlc(work, replay_config(cfg, events - 1), args, trace, simulate=False, seconds=600)
+    return result["violated"] == "PBReplayed"
+
+
+def longest_prefix(work: Path, spec: Path, trace: Path, events: int, args: argparse.Namespace) -> tuple[Path, int]:
+    """The longest prefix of the run that the suite replays, found by bisection; replay is prefix-closed."""
+    if replays(work, spec, trace, events, args):
+        return trace, events
+    lines = trace.read_text().splitlines()
+    good, bad = 1, events
+    while bad - good > 1:
+        middle = (good + bad) // 2
+        candidate = work / "prefix.ndjson"
+        candidate.write_text("\n".join(lines[:middle]) + "\n")
+        good, bad = (middle, bad) if replays(work, spec, candidate, middle, args) else (good, middle)
+    prefix = work / "prefix.ndjson"
+    prefix.write_text("\n".join(lines[:good]) + "\n")
+    return prefix, good
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("spec", type=Path)
@@ -316,6 +345,20 @@ def main() -> None:
         default="auto",
         help="constants to take from --limits instead of the trace; 'auto' keeps each one that leaves the replay unchanged",
     )
+    parser.add_argument(
+        "--domain",
+        action="append",
+        default=[],
+        metavar="NAME=VALUE",
+        help="set a trace constant to a TLA+ value; the replay must still reach the end",
+    )
+    parser.add_argument(
+        "--prefix",
+        choices=["full", "auto"],
+        default="full",
+        help="'auto' branches from the longest prefix that replays, for runs recorded on another version",
+    )
+    parser.add_argument("--points", default="", help="comma-separated branch steps (default: every step)")
     parser.add_argument("--guard", default="", help="extra condition on the branch step")
     parser.add_argument(
         "--no-constraint", dest="constraint", action="store_false", help="ignore the limits config's state constraint"
@@ -341,6 +384,11 @@ def main() -> None:
     try:
         for path in spec.glob("*.tla"):
             shutil.copy(path, work / path.name)
+        prefix_events, full_events = None, recorded
+        if args.prefix == "auto":
+            trace, events = longest_prefix(work, spec, trace, events, args)
+            prefix_events = events - 1
+            recorded = events - 1
         tried: dict[str, bool] = {}
         if args.domains == "auto":
             domains: set[str] = set()
@@ -362,7 +410,12 @@ def main() -> None:
 
         replay = run_tlc(work, replay_config(cfg, recorded), args, trace, simulate=False, seconds=600)
         replay["complete"] = replay["violated"] == "PBReplayed"
-        result = {"spec": str(spec).replace(str(ROOT), "$SPECULA"), "trace": trace.name, "recorded_events": recorded}
+        result = {
+            "spec": str(spec).replace(str(ROOT), "$SPECULA"),
+            "trace": args.trace.name,
+            "recorded_events": full_events,
+            "replayable_prefix": prefix_events,
+        }
         result.update(
             {
                 "settings": {
@@ -375,7 +428,8 @@ def main() -> None:
             }
         )
         if replay["complete"]:
-            search = run_tlc(work, cfg.replace("PBPOINTS", "<- PBAllPoints"), args, trace, True, args.seconds)
+            points = f"= {{{args.points}}}" if args.points else "<- PBAllPoints"
+            search = run_tlc(work, cfg.replace("PBPOINTS", points), args, trace, True, args.seconds)
             if search["violated"]:
                 search["counterexample"] = summarise(work, info, recorded)
             result["search"] = search

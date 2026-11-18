@@ -10,7 +10,8 @@ Prototypes for #188 §3. This branch is not merged into main.
   - 3.3 Update-focused model checking: `experiments/campaign-prefix/`, `agent-runs/progress-probe-V03/`
     - Same-budget comparison of the bug B probe with ordinary model checking: `prefix-ablation/`
 - `update-coverage/`: checks that the checking configs reach the update's affected actions with the suite's checks enabled (§3.3), with results on etcd V01–V03 and a MongoDB case study.
-- `prefix-branch/`: branches from a recorded run into the update's affected actions instead of starting at Init (§3.3), with results on etcd V01–V03.
+- `prefix-branch/`: branches from a recorded run into the update's affected actions instead of starting at Init (§3.3), with results on etcd V01–V03 from the 153-event prefix and from all 11 recordings of the V02 CI run. `choose.py` ranks branch points.
+- `env-update/`: finds the actions the focused update model leaves out, summarizes what they do as `EnvUpdate`, and checks the summary (§3.3), with results on etcd V01–V03 and a check of its action split on the 10 blind-study V0 suites.
 - `blind-incremental-bugs/`: blind study of historical bug-introducing updates (§2.2): protocol, neutral cohort, runner tools.
 
 Scripts still use the original absolute paths.

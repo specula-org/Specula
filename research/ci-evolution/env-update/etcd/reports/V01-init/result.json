@@ -1,0 +1,411 @@
+{
+ "spec": "$SPECULA/research/ci-evolution/etcd-v0-v3/agent-runs/inv-evidence/out/revised-spec/V01",
+ "trace": null,
+ "full": "Update_full.cfg",
+ "focused": "Update_focused.cfg",
+ "focused_next": "ConcreteUpdateNext",
+ "view_from": [
+  "UpdateJointConfigurationShape",
+  "UpdateReadyOwnership",
+  "UpdateAutoLeaveAdvance",
+  "UpdateJointSnapshotRecovery"
+ ],
+ "view": [
+  "history.autoLeaveChecks",
+  "history.readyChecks",
+  "history.recovery",
+  "raft.alive",
+  "raft.cfgHist",
+  "raft.config",
+  "raft.decision",
+  "raft.id"
+ ],
+ "learn": {
+  "seconds": 600.2,
+  "traces": 2009,
+  "violated": null,
+  "error": null
+ },
+ "parts": [
+  {
+   "part": 1,
+   "label": "Propose",
+   "in_focused_model": true,
+   "taken": true,
+   "outside_focused": false,
+   "changes_view": [],
+   "changes_other": []
+  },
+  {
+   "part": 2,
+   "label": "ReadIndex",
+   "in_focused_model": false,
+   "taken": true,
+   "outside_focused": true,
+   "changes_view": [],
+   "changes_other": [
+    "history.events",
+    "quality.campaigns",
+    "quality.effects",
+    "quality.proposals",
+    "requests"
+   ]
+  },
+  {
+   "part": 3,
+   "label": "ReturnAPI",
+   "in_focused_model": true,
+   "taken": true,
+   "outside_focused": false,
+   "changes_view": [],
+   "changes_other": []
+  },
+  {
+   "part": 4,
+   "label": "Receive",
+   "in_focused_model": true,
+   "taken": true,
+   "outside_focused": false,
+   "changes_view": [],
+   "changes_other": []
+  },
+  {
+   "part": 5,
+   "label": "Ready",
+   "in_focused_model": true,
+   "taken": true,
+   "outside_focused": false,
+   "changes_view": [],
+   "changes_other": []
+  },
+  {
+   "part": 6,
+   "label": "Publish",
+   "in_focused_model": true,
+   "taken": true,
+   "outside_focused": false,
+   "changes_view": [],
+   "changes_other": []
+  },
+  {
+   "part": 7,
+   "label": "QueueApplication",
+   "in_focused_model": true,
+   "taken": true,
+   "outside_focused": false,
+   "changes_view": [],
+   "changes_other": []
+  },
+  {
+   "part": 8,
+   "label": "Advance",
+   "in_focused_model": true,
+   "taken": true,
+   "outside_focused": false,
+   "changes_view": [],
+   "changes_other": []
+  },
+  {
+   "part": 9,
+   "label": "StorageApplySnapshot",
+   "in_focused_model": true,
+   "taken": true,
+   "outside_focused": false,
+   "changes_view": [],
+   "changes_other": []
+  },
+  {
+   "part": 10,
+   "label": "StorageAppend",
+   "in_focused_model": true,
+   "taken": true,
+   "outside_focused": false,
+   "changes_view": [],
+   "changes_other": []
+  },
+  {
+   "part": 11,
+   "label": "StorageSetHardState",
+   "in_focused_model": true,
+   "taken": true,
+   "outside_focused": false,
+   "changes_view": [],
+   "changes_other": []
+  },
+  {
+   "part": 12,
+   "label": "ApplySnapshot",
+   "in_focused_model": true,
+   "taken": false,
+   "outside_focused": false,
+   "changes_view": [],
+   "changes_other": []
+  },
+  {
+   "part": 13,
+   "label": "FinishApplication",
+   "in_focused_model": true,
+   "taken": true,
+   "outside_focused": false,
+   "changes_view": [],
+   "changes_other": []
+  },
+  {
+   "part": 14,
+   "label": "SaveApplication",
+   "in_focused_model": true,
+   "taken": true,
+   "outside_focused": false,
+   "changes_view": [],
+   "changes_other": []
+  },
+  {
+   "part": 15,
+   "label": "PersistLocalSnapshot",
+   "in_focused_model": true,
+   "taken": true,
+   "outside_focused": false,
+   "changes_view": [],
+   "changes_other": []
+  },
+  {
+   "part": 16,
+   "label": "StartPersist",
+   "in_focused_model": true,
+   "taken": true,
+   "outside_focused": false,
+   "changes_view": [],
+   "changes_other": []
+  },
+  {
+   "part": 17,
+   "label": "CompletePersist",
+   "in_focused_model": true,
+   "taken": true,
+   "outside_focused": false,
+   "changes_view": [],
+   "changes_other": []
+  },
+  {
+   "part": 18,
+   "label": "ApplyEntry",
+   "in_focused_model": true,
+   "taken": true,
+   "outside_focused": false,
+   "changes_view": [],
+   "changes_other": []
+  },
+  {
+   "part": 19,
+   "label": "Restart",
+   "in_focused_model": true,
+   "taken": true,
+   "outside_focused": false,
+   "changes_view": [],
+   "changes_other": []
+  },
+  {
+   "part": 20,
+   "label": "CompleteWrite",
+   "in_focused_model": true,
+   "taken": false,
+   "outside_focused": false,
+   "changes_view": [],
+   "changes_other": []
+  },
+  {
+   "part": 21,
+   "label": "CompleteRead",
+   "in_focused_model": false,
+   "taken": false,
+   "outside_focused": false,
+   "changes_view": [],
+   "changes_other": []
+  },
+  {
+   "part": 22,
+   "label": "MCTick",
+   "in_focused_model": true,
+   "taken": true,
+   "outside_focused": false,
+   "changes_view": [],
+   "changes_other": []
+  },
+  {
+   "part": 23,
+   "label": "MCCampaign",
+   "in_focused_model": true,
+   "taken": true,
+   "outside_focused": false,
+   "changes_view": [],
+   "changes_other": []
+  },
+  {
+   "part": 24,
+   "label": "MCTransfer",
+   "in_focused_model": false,
+   "taken": true,
+   "outside_focused": true,
+   "changes_view": [],
+   "changes_other": [
+    "faultCount.transfer",
+    "history.events",
+    "quality.campaigns",
+    "quality.effects",
+    "quality.proposals"
+   ]
+  },
+  {
+   "part": 25,
+   "label": "MCInvoke",
+   "in_focused_model": false,
+   "taken": true,
+   "outside_focused": true,
+   "changes_view": [],
+   "changes_other": [
+    "faultCount.request",
+    "quality.campaigns",
+    "quality.effects",
+    "quality.proposals",
+    "requests"
+   ]
+  },
+  {
+   "part": 26,
+   "label": "MCInvokeV2",
+   "in_focused_model": true,
+   "taken": true,
+   "outside_focused": false,
+   "changes_view": [],
+   "changes_other": []
+  },
+  {
+   "part": 27,
+   "label": "MCCrash",
+   "in_focused_model": true,
+   "taken": true,
+   "outside_focused": false,
+   "changes_view": [],
+   "changes_other": []
+  },
+  {
+   "part": 28,
+   "label": "MCQuiesce",
+   "in_focused_model": false,
+   "taken": false,
+   "outside_focused": false,
+   "changes_view": [],
+   "changes_other": []
+  },
+  {
+   "part": 29,
+   "label": "MCCreateSnapshot",
+   "in_focused_model": true,
+   "taken": true,
+   "outside_focused": false,
+   "changes_view": [],
+   "changes_other": []
+  },
+  {
+   "part": 30,
+   "label": "MCCompact",
+   "in_focused_model": true,
+   "taken": true,
+   "outside_focused": false,
+   "changes_view": [],
+   "changes_other": []
+  },
+  {
+   "part": 31,
+   "label": "MCAvailability",
+   "in_focused_model": false,
+   "taken": false,
+   "outside_focused": false,
+   "changes_view": [],
+   "changes_other": []
+  },
+  {
+   "part": 32,
+   "label": "MCAvailability",
+   "in_focused_model": false,
+   "taken": false,
+   "outside_focused": false,
+   "changes_view": [],
+   "changes_other": []
+  },
+  {
+   "part": 33,
+   "label": "MCCancel",
+   "in_focused_model": false,
+   "taken": false,
+   "outside_focused": false,
+   "changes_view": [],
+   "changes_other": []
+  },
+  {
+   "part": 34,
+   "label": "MCLose",
+   "in_focused_model": false,
+   "taken": true,
+   "outside_focused": true,
+   "changes_view": [],
+   "changes_other": [
+    "faultCount.loss",
+    "quality.campaigns",
+    "quality.effects",
+    "quality.proposals",
+    "quality.votes",
+    "wire"
+   ]
+  },
+  {
+   "part": 35,
+   "label": "MCDuplicate",
+   "in_focused_model": false,
+   "taken": false,
+   "outside_focused": false,
+   "changes_view": [],
+   "changes_other": []
+  },
+  {
+   "part": 36,
+   "label": "MCReportUnreachable",
+   "in_focused_model": false,
+   "taken": true,
+   "outside_focused": true,
+   "changes_view": [],
+   "changes_other": [
+    "faultCount.report",
+    "history.events",
+    "quality.campaigns",
+    "quality.effects",
+    "quality.votes"
+   ]
+  },
+  {
+   "part": 37,
+   "label": "MCReportSnapshot",
+   "in_focused_model": false,
+   "taken": false,
+   "outside_focused": false,
+   "changes_view": [],
+   "changes_other": []
+  }
+ ],
+ "env_update_keeps": [
+  "history.autoLeaveChecks",
+  "history.readyChecks",
+  "history.recovery",
+  "raft.alive",
+  "raft.cfgHist",
+  "raft.config",
+  "raft.decision",
+  "raft.id"
+ ],
+ "discharge_check": {
+  "seconds": 600.2,
+  "traces": 1947,
+  "violated": null,
+  "error": null
+ }
+}

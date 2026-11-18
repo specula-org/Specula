@@ -243,8 +243,9 @@ def run_config(
                     process.wait()
         config.seconds = round((config.seconds or 0) + time.monotonic() - started, 1)
         text = (work / "tlc.log").read_text(errors="replace")
-        taken = {int(k) for k in re.findall(r'<<"update-coverage", (\d+)>>', text)}
-        enabled = {int(k) for k in re.findall(r'<<"update-coverage-enabled", (\d+)>>', text)}
+        flat = re.sub(r"\s+", " ", text)
+        taken = {int(k) for k in re.findall(r'<< ?"update-coverage", (\d+) ?>>', flat)}
+        enabled = {int(k) for k in re.findall(r'<< ?"update-coverage-enabled", (\d+) ?>>', flat)}
         config.taken = sorted(set(config.taken) | taken)
         config.enabled = sorted(set(config.enabled) | enabled | taken)
         traces = re.findall(r"([\d,]+) traces generated", text)

@@ -1,0 +1,177 @@
+{
+ "spec": "$SPECULA/research/ci-evolution/etcd-v0-v3/agent-runs/inv-evidence/out/revised-spec/V03",
+ "trace": "membership-snapshots.ndjson",
+ "recorded_events": 1574,
+ "replayable_prefix": 264,
+ "settings": {
+  "limits": "Update_full.cfg",
+  "actions": "AffectedActions",
+  "settle": "base.tla:ReactiveActions",
+  "replay": "MatchEvent(logline)",
+  "domains": "",
+  "domain": [
+   "RequestId={1, 2, 3, 4, 5, 6, 7, 8, 9, 10}",
+   "PayloadWeights={0, 1, 6, 24}",
+   "EncodedWeights={1, 2, 6, 14, 32}"
+  ],
+  "prefix": "auto",
+  "points": "",
+  "guard": "",
+  "constraint": true,
+  "settled": "",
+  "after": 100,
+  "checks": "",
+  "ignore": "NotReached$|NotAppended$",
+  "steps": 0,
+  "search": "simulate",
+  "seconds": 300,
+  "seed": 1,
+  "heap": "3g",
+  "steps_total": 470
+ },
+ "build": {
+  "module": "Update",
+  "init": "MCInit",
+  "extra_variables": [
+   "faultCount"
+  ],
+  "settle_parts": 8,
+  "probes": [
+   {
+    "index": 1,
+    "label": "MCCampaign"
+   },
+   {
+    "index": 2,
+    "label": "MCTick"
+   },
+   {
+    "index": 3,
+    "label": "Receive (some message types)"
+   },
+   {
+    "index": 4,
+    "label": "Ready"
+   },
+   {
+    "index": 5,
+    "label": "Advance"
+   },
+   {
+    "index": 6,
+    "label": "Restart"
+   },
+   {
+    "index": 7,
+    "label": "Receive (some message types)"
+   },
+   {
+    "index": 8,
+    "label": "MCInvoke"
+   },
+   {
+    "index": 9,
+    "label": "MCInvokeV2"
+   },
+   {
+    "index": 10,
+    "label": "Propose"
+   },
+   {
+    "index": 11,
+    "label": "ApplyEntry"
+   },
+   {
+    "index": 12,
+    "label": "MCTransfer"
+   },
+   {
+    "index": 13,
+    "label": "Receive (some message types)"
+   }
+  ],
+  "checks": [
+   "ElectionSafety",
+   "LogMatching",
+   "LeaderCompleteness",
+   "CommittedHistory",
+   "AppliedAgreement",
+   "MCTypeOK",
+   "LogStructure",
+   "VoteDecisionEligibility",
+   "CampaignDecisionEligibility",
+   "TransferDecisionEligibility",
+   "RequestCorrelatedConfigurationEffects",
+   "ProposalConfigurationDecisions",
+   "VoteRecovery",
+   "RecoveryBacking",
+   "PromiseBacking",
+   "AckPreservation",
+   "NoUnexpectedFatal",
+   "LearnerEligibility",
+   "QuorumAccounting",
+   "ConfigurationOrigin",
+   "ConfigurationTransitionSafety",
+   "ReadyAccounting",
+   "OutcomeSoundness",
+   "ReplicationEvidence",
+   "SnapshotBacking",
+   "QuotaIntegrity",
+   "ReadBasis",
+   "ReadApplication",
+   "ReadCorrelation",
+   "TypeOK",
+   "JointConfigurationShape",
+   "JointSnapshotRecovery",
+   "ReadyOwnership",
+   "JointSnapshotMemberAcceptance",
+   "UpdateJointConfigurationShape",
+   "UpdateQuorumAccounting",
+   "UpdateLearnerVoteContract",
+   "UpdateLearnerCampaignEligibility",
+   "UpdateReadyOwnership",
+   "UpdateAdvanceOutputPreservation",
+   "UpdateAutoLeaveAdvance",
+   "UpdateJointSnapshotRecovery",
+   "UpdateJointSnapshotMemberAcceptance"
+  ],
+  "skipped_checks": [
+   "RevisedConfigurationTransitionSafety",
+   "RevisedAckPreservation",
+   "RevisedReadyAccounting",
+   "RevisedOutcomeSoundness",
+   "RevisedCampaignDecisionEligibility",
+   "RevisedProposalConfigurationDecisions",
+   "RevisedAutoLeaveAdvance",
+   "RevisedReadyOwnership",
+   "AdvancePreservesPendingOutput",
+   "TransferCancellationOnConfigurationChange",
+   "SourceAlignment",
+   "WitnessCheck"
+  ],
+  "domains": [],
+  "explicit_domains": {
+   "RequestId": "{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}",
+   "PayloadWeights": "{0, 1, 6, 24}",
+   "EncodedWeights": "{1, 2, 6, 14, 32}"
+  },
+  "domains_tried": {}
+ },
+ "replay": {
+  "seconds": 9.5,
+  "timed_out": false,
+  "violated": "PBReplayed",
+  "error": null,
+  "traces": null,
+  "distinct": 280,
+  "complete": true
+ },
+ "search": {
+  "seconds": 300.1,
+  "timed_out": true,
+  "violated": null,
+  "error": null,
+  "traces": 3,
+  "distinct": null
+ }
+}

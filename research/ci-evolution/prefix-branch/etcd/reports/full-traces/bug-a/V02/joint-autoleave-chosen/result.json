@@ -1,0 +1,109 @@
+{
+ "spec": "$SPECULA/research/ci-evolution/etcd-v0-v3/agent-runs/inv-evidence/out/revised-spec/V02",
+ "trace": "joint-autoleave.ndjson",
+ "recorded_events": 414,
+ "replayable_prefix": 414,
+ "settings": {
+  "limits": "Update_full.cfg",
+  "actions": "AffectedActions",
+  "settle": "base.tla:ReactiveActions",
+  "replay": "MatchEvent(logline)",
+  "domains": "",
+  "domain": [
+   "RequestId={1, 2, 3}",
+   "PayloadWeights={0, 1, 2, 6, 24}",
+   "EncodedWeights={1, 2, 6, 10, 14, 32}"
+  ],
+  "prefix": "auto",
+  "points": "8,9,10,11,21,22,23,24,34,35",
+  "guard": "",
+  "constraint": true,
+  "settled": "",
+  "after": 100,
+  "checks": "CampaignDecisionEligibility",
+  "ignore": "NotReached$|NotAppended$",
+  "steps": 0,
+  "seconds": 300,
+  "seed": 1,
+  "heap": "3g",
+  "steps_total": 620
+ },
+ "build": {
+  "module": "Update",
+  "init": "MCInit",
+  "extra_variables": [
+   "faultCount"
+  ],
+  "settle_parts": 8,
+  "probes": [
+   {
+    "index": 1,
+    "label": "MCCampaign"
+   },
+   {
+    "index": 2,
+    "label": "MCTick"
+   },
+   {
+    "index": 3,
+    "label": "Receive (some message types)"
+   },
+   {
+    "index": 4,
+    "label": "Ready"
+   },
+   {
+    "index": 5,
+    "label": "Advance"
+   },
+   {
+    "index": 6,
+    "label": "Restart"
+   },
+   {
+    "index": 7,
+    "label": "Receive (some message types)"
+   },
+   {
+    "index": 8,
+    "label": "MCInvokeV2"
+   },
+   {
+    "index": 9,
+    "label": "Propose"
+   },
+   {
+    "index": 10,
+    "label": "ApplyEntry"
+   }
+  ],
+  "checks": [
+   "CampaignDecisionEligibility"
+  ],
+  "skipped_checks": [],
+  "domains": [],
+  "explicit_domains": {
+   "RequestId": "{1, 2, 3}",
+   "PayloadWeights": "{0, 1, 2, 6, 24}",
+   "EncodedWeights": "{1, 2, 6, 10, 14, 32}"
+  },
+  "domains_tried": {}
+ },
+ "replay": {
+  "seconds": 14.3,
+  "timed_out": false,
+  "violated": "PBReplayed",
+  "error": null,
+  "traces": null,
+  "distinct": 424,
+  "complete": true
+ },
+ "search": {
+  "seconds": 300.1,
+  "timed_out": true,
+  "violated": null,
+  "error": null,
+  "traces": 123,
+  "distinct": null
+ }
+}
