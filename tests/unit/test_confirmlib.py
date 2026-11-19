@@ -2946,6 +2946,63 @@ class TestRepairScopedConfirmation(ConfirmCase):
         mc2_body = json.loads((ws.work_dir(name) / "confirmation" / "MC-2" / "verdict.json").read_text())["body"]
         self.assertEqual(mc2_body.count("## Repair round 1 evidence"), 1)
 
+    def test_exit_code_ignores_carried_incomplete_rows_and_judges_current_violations(self) -> None:
+        name = "T"
+        ws = Workspace([name])
+        old_mc = self.mc(ws, name, "MC-1", "old artifact")
+        code_review = {
+            "id": "CR-1",
+            "source": "code-review",
+            "title": "review finding",
+            "summary": "review analysis",
+        }
+        spec = ws.work_dir(name) / "spec"
+        spec.mkdir(parents=True, exist_ok=True)
+        (spec / "candidates.json").write_text(json.dumps({"findings": [old_mc, code_review]}))
+        initial_cfg = self.cfg(ws, name)
+        mc_finding = C.Finding(old_mc, ws.work_dir(name) / "confirmation" / "MC-1")
+        mc_finding.fdir.mkdir(parents=True, exist_ok=True)
+        (mc_finding.fdir / "repair-request.body.md").write_text(TestMergeRR.AGENT_BODY)
+        pending = C.Outcome(mc_finding, "PENDING REPAIR", True, 0, "ORIGINAL PENDING EVIDENCE", bug_no=1)
+        pending.rr = C.allocate_rr(initial_cfg, pending)
+        C._save_verdict(pending, initial_cfg)
+        # The ordinary pass left CR-1 INCOMPLETE (uncached) after a rate limit.
+        review_finding = C.Finding(code_review, ws.work_dir(name) / "confirmation" / "CR-1")
+        unfinished = C.Outcome(review_finding, C.INCOMPLETE, False, 0, "RATE-LIMITED BEFORE A VERDICT", bug_no=2)
+        C.aggregate(initial_cfg, [pending, unfinished])
+        request = spec / "repair-requests" / f"{pending.rr}.md"
+        request.write_text(
+            request.read_text().replace("status: OPEN", "status: CONSUMED", 1)
+            + "- r1 (phase3-repair): fixed the model; MC-2 remains\n"
+        )
+        cfg = self.commit(ws, name, [self.mc(ws, name, "MC-2")], [str(pending.rr)])
+        calls: list[str] = []
+
+        def agent(rc: int, text: str = "") -> Callable[..., tuple[int, str]]:
+            def run(*args: object, **_kwargs: object) -> tuple[int, str]:
+                calls.append(Path(str(args[2])).parent.name)
+                return (rc, text)
+
+            return run
+
+        # An unfinished current violation still decides the code.
+        with mock.patch.object(C, "run_agent_blocking", agent(75)):
+            self.assertEqual(C.run_parallel_confirmation(cfg), 75)
+        with mock.patch.object(C, "run_agent_blocking", agent(2)):
+            self.assertEqual(C.run_parallel_confirmation(cfg), 1)
+        # Once it has a verdict, the carried INCOMPLETE row does not fail the pass,
+        # neither now nor on a resume that finds the verdict cached.
+        with mock.patch.object(C, "run_agent_blocking", agent(0, _response("FALSE POSITIVE"))):
+            self.assertEqual(C.run_parallel_confirmation(cfg), 0)
+        with mock.patch.object(C, "run_agent_blocking", _boom):
+            self.assertEqual(C.run_parallel_confirmation(cfg), 0)
+
+        self.assertEqual(calls, ["MC-2", "MC-2", "MC-2"])
+        report = (ws.work_dir(name) / "confirmed-bugs.md").read_text()
+        self.assertIn("| 2 | CR-1 | INCOMPLETE |", report)
+        self.assertIn("RATE-LIMITED BEFORE A VERDICT", report)
+        self.assertIn("| 3 | MC-2 | FALSE POSITIVE |", report)
+
     def test_reused_id_still_runs_and_continues_evidence_without_global_generation(self) -> None:
         name = "T"
         ws = Workspace([name])
