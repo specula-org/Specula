@@ -4997,8 +4997,13 @@ def _drive_confirmation(cfg: ConfirmConfig, *, rate_limit_replay: bool = False) 
         outcomes.extend(carried.values())
         order = {f.id: i for i, f in enumerate(catalog)}
         outcomes.sort(key=lambda o: order[o.finding.id])
+        judged = outcomes
     else:
         current_outcomes = {outcome.finding.id: outcome for outcome in outcomes}
+        # Rows carried unchanged from the prior report are reported but not
+        # judged here: an INCOMPLETE one is retried by the ordinary Phase 4,
+        # which runs only after this repair result has been processed.
+        judged = list(current_outcomes.values())
         outcomes = [
             current_outcomes.get(finding.id) or prior_by_id[finding.id]
             for finding in catalog
@@ -5025,7 +5030,7 @@ def _drive_confirmation(cfg: ConfirmConfig, *, rate_limit_replay: bool = False) 
     # keeps cached verdicts while re-attempting every uncached finding,
     # including the failed one. Without such a replay, or once no rate-limited
     # finding remains, a permanent failure wins, so it is never hidden behind 75.
-    incomplete_codes = [o.failure_code or 1 for o in outcomes if o.status == INCOMPLETE]
+    incomplete_codes = [o.failure_code or 1 for o in judged if o.status == INCOMPLETE]
     rate_limited = quota.RATE_LIMIT_RC in incomplete_codes
     permanent = any(code != quota.RATE_LIMIT_RC for code in incomplete_codes)
     if rate_limited and (rate_limit_replay or not permanent):
