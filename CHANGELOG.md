@@ -6,9 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-11-19
+
+### Added
+
+- Added `--confirm-first=only` to reproduce bug candidates from code analysis before any model is built, and `--confirm-first=continue` to then run the full workflow.
+- Added liveness checking: modeling briefs cover liveness properties, generated specs include liveness patterns, and model checking runs liveness configurations and classifies liveness counterexamples.
+- Added experimental `--orchestration=single-session`, which runs analysis through validation and repairs in one agent session.
+
 ### Changed
 
 - Renamed the project from Specula to Specular: the command is now `specular`, environment variables use the `SPECULAR_` prefix, and run outputs go to `.specular-output/`. Existing installs must switch once; see [Switching from Specula](docs/Usage.md#switching-from-specula).
+- Scaled modeling guidance and verification to the requested scope.
+
+### Fixed
+
+- Bound confirmation verdicts to the inspected snapshot, kept repair limits across resume, and recovered after partial repairs.
+- Improved TLC cleanup and timeouts and retries after rate limits.
+- Handled Claude Code safeguard refusals as policy blocks and reported per-invocation cost for resumed sessions.
+- Fixed macOS compatibility issues.
+
+See the [v1.5.0 release notes](docs/releases/v1.5.0.md) for the steps to switch from Specula.
 
 ## [1.2.0] - 2026-09-16
 
@@ -125,7 +143,8 @@ See the [v0.2.0 release notes](https://github.com/specular-org/Specular/releases
 - Added initial support for Claude Code, Codex, and Copilot CLI.
 - Added the trace-debugger MCP tooling and curated methodology for validating model fidelity before interpreting model-checking results.
 
-[Unreleased]: https://github.com/specular-org/Specular/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/specular-org/Specular/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/specular-org/Specular/compare/v1.2.0...v1.5.0
 [1.2.0]: https://github.com/specular-org/Specular/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/specular-org/Specular/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/specular-org/Specular/compare/v0.3.0...v1.0.0

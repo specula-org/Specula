@@ -24,7 +24,7 @@ if __package__ in (None, ""):  # run by path (the repo-root launcher)
 from specular import rename_check
 
 PROG = "specular"
-VERSION = "1.2.0"
+VERSION = "1.5.0"
 
 SPECULAR_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS_DIR = SPECULAR_ROOT / "scripts"

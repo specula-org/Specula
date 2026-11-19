@@ -10,7 +10,7 @@ import shutil
 import subprocess
 
 PLUGIN_NAME = "specular-codex"
-PLUGIN_VERSION = "1.2.0"
+PLUGIN_VERSION = "1.5.0"
 MARKETPLACE_NAME = "specular"
 LEGACY_MCP_NAMES = ("tracedebugger", "spec_analyzer", "inv_checking_tool")
 # The plugin as installed before the Specular -> Specular rename.
