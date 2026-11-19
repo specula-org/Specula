@@ -21,6 +21,8 @@ Scaling formal specs for autonomous bug finding
   </a>
 </p>
 
+> **Specula is now Specular.** To update an existing install, follow [Switching from Specula](docs/Usage.md#switching-from-specula).
+
 Specular (formerly Specula) finds deep bugs in concurrent and distributed system code. 
 It uses coding agents to write TLA+ specs of the target system, including invariants that capture the system's correctness properties and formal models that describe the system implementation. It then model-checks the specs and reproduces violations at the code level. Specular has been used to find deep bugs in many open-source projects. For more details, see our [paper](https://arxiv.org/abs/2607.25333).
 
