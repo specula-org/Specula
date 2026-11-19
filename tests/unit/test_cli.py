@@ -86,7 +86,7 @@ class TestHelp(CaptureExec):
 
     def test_version(self) -> None:
         rc, out, err = self._main(["--version"])
-        self.assertEqual((rc, out, err), (0, "specular 1.2.0\n", ""))
+        self.assertEqual((rc, out, err), (0, "specular 1.5.0\n", ""))
         self.assertEqual(self.execs, [])
 
 
@@ -153,4 +153,4 @@ class TestShim(unittest.TestCase):
             capture_output=True,
             text=True,
         )
-        self.assertEqual((r.returncode, r.stdout, r.stderr), (0, "specular 1.2.0\n", ""))
+        self.assertEqual((r.returncode, r.stdout, r.stderr), (0, "specular 1.5.0\n", ""))

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "specular"
-version = "1.2.0"
+version = "1.5.0"
 description = "Specular: a framework for finding deep bugs in system code using TLA+."
 readme = "README.md"
 requires-python = ">=3.10"
