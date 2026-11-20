@@ -57,24 +57,9 @@ Bug A, checking only `CampaignDecisionEligibility` (`reports/full-traces/bug-a/s
 - The four that find it are the runs that go through a joint configuration change. Every counterexample branches at step 193–416 with one `Campaign`, inside or right after the recording, so the recordings themselves reach bug A's precondition.
 - On V01 this takes 8–21 s. From the 153-event prefix it took 434 s, and with the RawNode guard it was not found in 30 minutes.
 
-With every invariant in the suite checked (`reports/full-traces/all-checks/`), the same branches also broke `NoUnexpectedFatal`, `PromiseBacking`, `ConfigurationOrigin` and `ProposalConfigurationDecisions`. Qian's verdicts are in `etcd/qian-verdicts.json`: one real raft bug already fixed upstream, the rest noise.
+### All checks
 
-### Rerun with fixed attribution
-
-The runs were repeated with three changes: checks already false in the recording are not counted as alarms, `Maintenance.tla` is loaded so `RevisedX` replaces `X`, and `--guard` only injects V2 requests that leave a well-formed configuration. Each alarm is also rerun on the previous version (`full_traces.py triage`).
-
-Qian's cases (`reports/full-traces/verdicts/summary.md`):
-
-| Case | Qian | Now |
-|---|---|---|
-| Remove the only voter | noise | not found; the same recording finds the empty ConfChangeV2 bug on V01 and V02 |
-| Empty ConfChangeV2 | real, fixed upstream | found on V01 and V02, not on V03 |
-| `PromiseBacking` | noise | found, also on the previous version |
-| `ConfigurationOrigin` on V01 | noise | broken in the recording, not an alarm |
-| `ProposalConfigurationDecisions` on V03 | noise | skipped, replaced by the revised one |
-| Bug A | real, from V01 | found on V01 and V02 |
-
-Alarms per version over the 11 recordings (`reports/full-traces/per-update.md`). Times are summed over the runs; branching makes no model calls.
+Every invariant in the suite is checked (`reports/full-traces/fixed/`). Checks already false in the recording are not counted, `Maintenance.tla` is loaded so a `Revised` check replaces the original, and `--guard` only injects V2 requests that leave a well-formed configuration. Each alarm is rerun on the previous version (`full_traces.py triage`), and labels follow Qian's review (`etcd/qian-verdicts.json`). Times are summed over the 11 runs; branching makes no model calls.
 
 | Version | Checks | Wall s | TLC CPU s | Alarms | Real, from the update | Real, older | Noise | Not reviewed |
 |---|---|---:|---:|---:|---:|---:|---:|---:|
@@ -85,13 +70,18 @@ Alarms per version over the 11 recordings (`reports/full-traces/per-update.md`).
 | V02 | without the 4 noisy | 3399 | 3253 | 4 | 0 | 3 | 0 | 1 |
 | V03 | without the 4 noisy | 3106 | 3416 | 4 | 0 | 1 | 0 | 3 |
 
-Before the changes each version had 6 alarms, 3, 2 and 5 of them noise.
+- Bug A comes from the V01 update and is found on V01, V02 and V03.
+- An empty ConfChangeV2 outside a joint config is committed and every node panics. It is found on V01 and V02 from node-lifecycle and ready-intervening-output, not on V03. This is a raft bug already fixed upstream.
+- `PromiseBacking` fails on all three versions from same-batch-replay. It is an old model gap from V00.
+- `ConfigurationOrigin` is already false in V01's joint-snapshot-recovery recording.
+- Removing the only voter, which raft also rejects, is no longer injected.
+- Without the four noisy invariants (`reports/full-traces/fixed-without-noisy/`), V02 finds bug A on two more recordings.
 
 Not reviewed yet:
 
 - V03: `RevisedProposalConfigurationDecisions` on node-lifecycle, ready-intervening-output and same-batch-replay.
 - V03 node-lifecycle: the app calls `Advance` before `ApplyConfChange` after an auto-leave, the leader proposes a second leave, and applying it is fatal.
-- `RevisedConfigurationTransitionSafety` on V01 and `ReadBasis` on V02 and V01, both on node-lifecycle.
+- `RevisedConfigurationTransitionSafety` on V01 and `ReadBasis` on V01 and V02, both on node-lifecycle.
 
 ### Choosing branch points
 

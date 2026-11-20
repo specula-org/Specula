@@ -327,7 +327,7 @@ def main() -> None:
     parser.add_argument("--checks", default="", help="invariants to check (default: every invariant in the suite)")
     parser.add_argument("--without", default="", help="comma-separated invariants to leave out")
     parser.add_argument("--guard", action="store_true", help="only inject V2 requests upstream would accept")
-    parser.add_argument("--label", default="all-checks", help="report subfolder")
+    parser.add_argument("--label", default="fixed", help="report subfolder")
     args = parser.parse_args()
     global REPORTS
     REPORTS = ROOT_REPORTS / args.label
