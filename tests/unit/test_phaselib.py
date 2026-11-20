@@ -3015,6 +3015,50 @@ class TestRunAgentBlocking(PhaseCase):
         self.assertEqual(rc, POLICY_BLOCKED_RC)
         self.assertEqual(count.read_text(), "x")
 
+    def test_policy_retry_keeps_tlc_tasks_until_the_turn_ends(self) -> None:
+        # Each attempt records whether its owned TLC task was already stopped.
+        adapter = self.tmp() / "adapter.sh"
+        adapter.write_text(
+            "#!/bin/sh\n"
+            'printf x >> "$COUNT_FILE"\n'
+            'if [ -e "$STOP_FILE" ]; then echo stopped; else echo running; fi >> "$SEEN_FILE"\n'
+            '[ "$(wc -c < "$COUNT_FILE")" -lt "$EXIT_AFTER" ] && exit 76\n'
+            'exit "$FINAL_RC"\n'
+        )
+        adapter.chmod(0o755)
+        # (retries, attempts until the final exit, final rc): a retried policy
+        # block keeps the task; a final policy block or any other exit stops it.
+        for retries, exit_after, final_rc in ((2, 3, 0), (2, 3, 1), (2, 3, 76), (0, 1, 76)):
+            with self.subTest(retries=retries, final_rc=final_rc):
+                root = self.tmp()
+                log = root / "turn.log"
+                job = self.work_dir() / ".tlc-tasks/jobs" / root.name
+                job.mkdir(parents=True)
+                (job / "request.json").write_text(json.dumps({"owner": str(log.resolve())}))
+                for var, value in (
+                    ("COUNT_FILE", root / "count"),
+                    ("SEEN_FILE", root / "seen"),
+                    ("STOP_FILE", job / "stop.json"),
+                    ("EXIT_AFTER", exit_after),
+                    ("FINAL_RC", final_rc),
+                ):
+                    self.set_env(var, str(value))
+
+                rc, _ = phaselib.run_agent_blocking(
+                    adapter,
+                    "original prompt",
+                    root / "prompt.md",
+                    log,
+                    phase_key="bug_confirmation",
+                    work_dir=self.work_dir(),
+                    claude_alias="profile",
+                    policy_retries=retries,
+                )
+
+                self.assertEqual(rc, final_rc)
+                self.assertEqual((root / "seen").read_text().split(), ["running"] * exit_after)
+                self.assertTrue((job / "stop.json").is_file())
+
     def test_fresh_blocking_turn_fails_if_stale_resume_state_cannot_be_cleared(self) -> None:
         marker = self.tmp() / "launched"
         adapter = self.tmp() / "adapter.sh"
@@ -4026,6 +4070,47 @@ class TestProgressReporting(PhaseCase):
         self.assertEqual(completed[0][1], 0)
         self.assertIn(f"{NAME}: final", output.getvalue())
         self.assertIn(f"{NAME}: completed (exit 0)", output.getvalue())
+
+    def test_reaper_keeps_tlc_tasks_for_a_policy_retry(self) -> None:
+        root = self.work_dir()
+        log = root / "agent.log"
+        job = root / ".tlc-tasks/jobs/task-1"
+        job.mkdir(parents=True)
+        (job / "request.json").write_text(json.dumps({"owner": str(log.resolve())}))
+        self.patch_attr(phaselib, "AGENT_TERMINATION_GRACE_SECONDS", 0.05)
+        phase = phaselib.Phase()
+        # A retried policy block keeps the task; a final policy block or any other exit stops it.
+        for rc, policy_attempt, stopped in ((76, 0, False), (76, phase._policy_retries, True), (1, 0, True)):
+            with self.subTest(rc=rc, policy_attempt=policy_attempt):
+                (job / "stop.json").unlink(missing_ok=True)
+                proc = subprocess.Popen(
+                    ["sh", "-c", f"sleep 30 & echo $!; exit {rc}"], stdout=subprocess.PIPE, start_new_session=True
+                )
+                assert proc.stdout is not None
+                child = Path(f"/proc/{int(proc.stdout.readline())}/status")
+                proc.stdout.close()
+                proc.wait()
+                agent = RunningAgent(
+                    name=NAME,
+                    proc=proc,
+                    work_dir=root,
+                    log=log,
+                    activity_log=root / "agent.activity.jsonl",
+                    ignored=set(),
+                    reported_snapshot={},
+                    log_stamp=None,
+                    activity_stamp=None,
+                    adapter_name="fake",
+                    policy_attempt=policy_attempt,
+                )
+                live, completed = phase._reap_agents([agent], show_progress=False)
+                self.assertEqual((live, completed), ([], [(agent, rc)]))
+                self.assertEqual((job / "stop.json").is_file(), stopped)
+                # The adapter's own session never outlives it.
+                deadline = time.time() + 1.0
+                while child.exists() and "State:\tZ" not in child.read_text(errors="replace"):
+                    self.assertLess(time.time(), deadline, "adapter background process remained active")
+                    time.sleep(0.01)
 
     def test_post_spawn_pid_write_failure_cleans_up_unregistered_agent(self) -> None:
         self.write_adapter("sleep 30\n")

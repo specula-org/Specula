@@ -347,7 +347,7 @@ def lookup(work: Path, queries: list[str], *, limit: int = 5, offset: int = 0) -
 
 
 def _prepare_issue(
-    work: Path, source: Path, run_id: str, proposal: dict[str, Any]
+    work: Path, source: Path, run_id: str, proposal: dict[str, Any], *, rewritten_work_ok: bool = False
 ) -> tuple[dict[str, Any], list[tuple[str, bytes, int]]]:
     fid = _id(proposal.get("id"))
     status = proposal.get("status")
@@ -395,6 +395,16 @@ def _prepare_issue(
         try:
             content = _dependency_bytes(dep, source, work)
         except FindingsError as exc:
+            # Parallel findings share work files (e.g. repro/go.mod); one
+            # validated earlier may be rewritten by a later finding before the
+            # run-end reconcile. Keep the issue without that fingerprint.
+            if (
+                rewritten_work_ok
+                and dep.get("root") == "work"
+                and str(exc).startswith("missing or ambiguous dependency boundaries")
+            ):
+                print(f"WARNING: {fid}: dependency {index}: {exc}; not fingerprinted", file=sys.stderr)
+                continue
             raise FindingsError(f"{fid}: dependency {index}: {exc}") from exc
         record["dependencies"].append({**dep, "sha256": _digest(content)})
     evidence = _strings(proposal.get("evidence"), "evidence")
@@ -683,7 +693,7 @@ def reconcile(
             if finding.get("source") in {"model-checking", "code-review"}:
                 proposal["source"] = finding["source"]
             proposal["evidence"] = list(dict.fromkeys([finding["evidence"], *proposal.get("evidence", [])]))
-            prepared.append(_prepare_issue(work, source, run_id, proposal))
+            prepared.append(_prepare_issue(work, source, run_id, proposal, rewritten_work_ok=True))
         elif set_aside:
             if registered is not None and registered["origin_run"] != run_id:
                 # A shared local ID does not establish issue identity: never
