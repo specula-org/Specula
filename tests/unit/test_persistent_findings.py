@@ -360,6 +360,43 @@ def test_reconcile_validates_all_proposals_before_writing_any_record(baseline: t
     assert not (work / persistent_findings._record_path("CR-3")).exists()
 
 
+def test_shared_work_file_rewritten_by_a_later_finding_does_not_block_persistence(
+    baseline: tuple[Path, Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    source, old = baseline
+    work = next_work(old)
+    write(work / "repro/check.sh", "fixture recipe\n")
+    shared = {"root": "work", "path": "repro/go.mod", "start": "module crd2repro", "end": "go 1.22"}
+    first, second = proposal("CR-2"), proposal("CR-3")
+    first["dependencies"].append(shared)
+    second["dependencies"].append({**shared, "start": "module crd10-repro"})
+    for item in (first, second):
+        item["source"] = "code-review"
+        write(work / f"confirmation/{item['id']}/issue.json", json.dumps(item))
+    # The later finding rewrote the shared module file after CR-2 recorded it.
+    write(work / "repro/go.mod", "module crd10-repro\n\ngo 1.22\n")
+    findings = [
+        {"id": fid, "status": "REPRODUCED", "source": "code-review", "evidence": "evidence.md"}
+        for fid in ("CR-2", "CR-3")
+    ]
+    # Outside the run-end reconcile (e.g. proposal validation) the boundaries stay strict.
+    with pytest.raises(persistent_findings.FindingsError, match=r"CR-2: dependency 6: missing or ambiguous"):
+        persistent_findings.record_issue(work, source, "v2", first)
+
+    persistent_findings.reconcile(work, source, "v2", findings, confirmed_ids=["CR-2", "CR-3"])
+
+    paths = {fid: [d["path"] for d in persistent_findings.load(work, fid)["dependencies"]] for fid in ("CR-2", "CR-3")}
+    assert "repro/go.mod" not in paths["CR-2"]
+    assert "repro/go.mod" in paths["CR-3"]
+    assert "CR-2: dependency 6: missing or ambiguous dependency boundaries: repro/go.mod" in capsys.readouterr().err
+    # Source boundaries stay strict.
+    invalid = proposal("CR-4")
+    invalid["source"] = "code-review"
+    invalid["dependencies"][0]["start"] = "  func reply() {"
+    with pytest.raises(persistent_findings.FindingsError, match=r"CR-4: dependency 1: missing or ambiguous"):
+        persistent_findings.record_issue(work, source, "v2", invalid)
+
+
 def test_validate_proposal_has_no_registry_side_effects(baseline: tuple[Path, Path]) -> None:
     source, old = baseline
     work = next_work(old)
