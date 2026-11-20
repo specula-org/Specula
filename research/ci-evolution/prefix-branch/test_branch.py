@@ -122,7 +122,8 @@ def test_build_keeps_trace_constants_except_domains(tmp_path: Path) -> None:
     assert "    RequestId = {1, 2}" in cfg
     assert "    CrashLimit = 1" in cfg
     assert "    PBMaxSteps = 110" in cfg
-    assert "PB_Safe == ~pbBranched \\/ Safe" in module
+    assert 'PB_Safe == ~pbBranched \\/ "Safe" \\in pbBroken \\/ Safe' in module
+    assert 'pbBroken\' = (IF Safe THEN {} ELSE {"Safe"})' in module
     assert "PBConstraint == ~pbBranched \\/ (Small)" in module
 
 
@@ -134,7 +135,7 @@ def test_build_input_replay_guard_and_random_settle(tmp_path: Path) -> None:
     assert "/\\ MatchEvent(logline)" in module
     assert "UNCHANGED <<l, pbAt, pbSlot>> /\\ (x' > x)" in module
     assert "PBSettle1 ==\n    FullUpdateNext" in module
-    assert "UNCHANGED <<l, pbAt, pbBranched, pbAction>>" in module
+    assert "UNCHANGED <<l, pbAt, pbBroken, pbBranched, pbAction>>" in module
     assert info["settle_parts"] == 1
 
 
@@ -143,7 +144,7 @@ def test_checks_outside_the_module_chain_are_skipped(tmp_path: Path) -> None:
     (spec / "Witness.cfg").write_text("INVARIANT WitnessOnly\n")
     module, _, info = build(options(), spec, 10, set())
     assert info["checks"] == ["Safe"]
-    assert info["skipped_checks"] == ["WitnessOnly"]
+    assert info["skipped_checks"] == {"WitnessOnly": "not defined in a module the run can load"}
     assert "WitnessOnly" not in module
 
 
@@ -166,3 +167,26 @@ def test_explicit_domains_override_the_trace_and_the_limits(tmp_path: Path) -> N
 def test_spec_definition_accepts_a_tuple_of_variables() -> None:
     match = SPEC_DEF.match(" MCInit /\\ [][MCNext]_<<allVars, mcVars>>")
     assert match and match.groups() == ("MCInit", "MCNext", "<<allVars, mcVars>>")
+
+
+def test_check_modules_are_loaded_and_replaced_or_noisy_checks_skipped(tmp_path: Path) -> None:
+    spec = suite(tmp_path)
+    (spec / "Maintenance.tla").write_text(
+        "---- MODULE Maintenance ----\nEXTENDS base\nVARIABLE audit\n"
+        "AuditInit == Init /\\ audit = 0\nAuditNext == Next /\\ audit' = x\n"
+        'RevisedSafe == audit >= 0\nShow == Assert(x >= 0, "x")\n====\n'
+    )
+    (spec / "Maintenance.cfg").write_text("INVARIANTS\n    RevisedSafe\n    Show\n")
+    module, _, info = build(options(), spec, 10, set())
+    assert info["check_modules"] == ["Maintenance"]
+    assert info["observers"] == ["audit"]
+    assert info["checks"] == ["RevisedSafe"]
+    assert info["skipped_checks"] == {
+        "Safe": "replaced by RevisedSafe",
+        "Show": "has side effects (Assert, Print, JSON output)",
+    }
+    assert "EXTENDS Trace, Update, Maintenance, TLC" in module
+    assert "/\\ audit = 0" in module and "/\\ audit' = x" in module
+    _, _, info = build(options(checks="Safe,RevisedSafe"), spec, 10, set())
+    assert info["checks"] == ["RevisedSafe"]
+    assert info["skipped_checks"] == {"Safe": "replaced by RevisedSafe"}

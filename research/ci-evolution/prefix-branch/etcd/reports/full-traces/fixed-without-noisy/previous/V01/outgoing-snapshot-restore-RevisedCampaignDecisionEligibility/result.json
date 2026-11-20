@@ -1,0 +1,146 @@
+{
+ "spec": "$SPECULA/research/ci-evolution/etcd-v0-v3/agent-runs/inv-evidence/out/revised-spec/V01",
+ "trace": "outgoing-snapshot-restore.ndjson",
+ "recorded_events": 298,
+ "replayable_prefix": 298,
+ "settings": {
+  "limits": "Update_full.cfg",
+  "actions": "AffectedActions",
+  "settle": "base.tla:ReactiveActions",
+  "replay": "MatchEvent(logline)",
+  "domains": "",
+  "domain": [
+   "RequestId={1, 2, 3}",
+   "PayloadWeights={0, 1, 6, 24}",
+   "EncodedWeights={1, 2, 6, 14, 32}"
+  ],
+  "prefix": "auto",
+  "points": "",
+  "guard": "\\A id \\in RequestId : (requests[id].status = \"Unused\" /\\ requests'[id].status = \"Invoked\" /\\ requests'[id].kind = \"V2\") => ConfigWellFormed(ConfigCandidate(raft[requests'[id].node].config, [kind |-> \"V2\", id |-> id, changes |-> requests'[id].changes, transition |-> requests'[id].transition]))",
+  "constraint": true,
+  "settled": "",
+  "after": 100,
+  "checks": "RevisedCampaignDecisionEligibility",
+  "ignore": "NotReached$|NotAppended$|SourceAlignment",
+  "steps": 0,
+  "seconds": 300,
+  "seed": 1,
+  "heap": "3g",
+  "steps_total": 504
+ },
+ "build": {
+  "module": "Update",
+  "init": "MCInit",
+  "extra_variables": [
+   "faultCount"
+  ],
+  "settle_parts": 8,
+  "probes": [
+   {
+    "index": 1,
+    "label": "MCInvokeV2"
+   },
+   {
+    "index": 2,
+    "label": "Propose"
+   },
+   {
+    "index": 3,
+    "label": "ApplyEntry"
+   },
+   {
+    "index": 4,
+    "label": "MCCampaign"
+   },
+   {
+    "index": 5,
+    "label": "MCTick"
+   },
+   {
+    "index": 6,
+    "label": "Receive"
+   },
+   {
+    "index": 7,
+    "label": "Ready"
+   },
+   {
+    "index": 8,
+    "label": "Advance"
+   },
+   {
+    "index": 9,
+    "label": "Restart"
+   },
+   {
+    "index": 10,
+    "label": "MCCreateSnapshot"
+   }
+  ],
+  "checks": [
+   "RevisedCampaignDecisionEligibility"
+  ],
+  "check_modules": [
+   "Maintenance"
+  ],
+  "observers": [
+   "audit"
+  ],
+  "skipped_checks": {},
+  "domains": [],
+  "explicit_domains": {
+   "RequestId": "{1, 2, 3}",
+   "PayloadWeights": "{0, 1, 6, 24}",
+   "EncodedWeights": "{1, 2, 6, 14, 32}"
+  },
+  "domains_tried": {}
+ },
+ "replay": {
+  "seconds": 7.7,
+  "cpu_seconds": 10.5,
+  "timed_out": false,
+  "violated": "PBReplayed",
+  "error": null,
+  "traces": null,
+  "distinct": 307,
+  "complete": true
+ },
+ "recording_violations": [],
+ "search": {
+  "seconds": 14.6,
+  "cpu_seconds": 21.6,
+  "timed_out": false,
+  "violated": "PB_RevisedCampaignDecisionEligibility",
+  "error": null,
+  "traces": 3,
+  "distinct": null,
+  "counterexample": {
+   "states": 195,
+   "branch_step": 193,
+   "recorded_events_replayed": 193,
+   "branch_during": "replay",
+   "branch_action": "MCCampaign",
+   "steps_after_branch": 0,
+   "branch_step_changes": [
+    "raft[2].timeout: 5 -> 4",
+    "raft[2].role: \"Follower\" -> \"Candidate\"",
+    "raft[2].term: 2 -> 3",
+    "raft[2].out: {\"[context |-> 0, index |-> 5, commit |-> 0, from |-> 2, to |-> 1, type |-> \\\"MsgAppResp\\\", term |-> 2, logTerm |-> 0, f -> {\"[context |-> 0, index |-> 5, commit |-> 0, from |-> 2, to |-> 1, type |-> \\\"MsgVote\\\", term |-> 3, logTerm |-> 2, forc",
+    "raft[2].campaigns: [] -> [{\"node\": 2, \"learner\": false}]",
+    "raft[2].vote: 1 -> 2",
+    "raft[2].lead: 1 -> 0",
+    "raft[2].yes: [] -> [2]",
+    "raft[2].prs[1].next: 4 -> 6",
+    "raft[2].prs[2].match: 3 -> 5",
+    "raft[2].prs[2].next: 4 -> 6",
+    "raft[2].prs[3].next: 4 -> 6",
+    "quality.campaigns: [] -> [{\"node\": 2, \"config\": {\"outgoing\": [], \"voters\": [1, 2, 3], \"autoLeave\": false, \"learners\": [], \"learnersNext\": []}, \"t",
+    "faultCount.campaign: 0 -> 1",
+    "history.campaigns: [{\"node\": 1, \"learner\": false}] -> [{\"node\": 1, \"learner\": false}, {\"node\": 2, \"learner\": false}]"
+   ],
+   "changes_after_branch": []
+  }
+ },
+ "wall_seconds": 37.9,
+ "tlc_cpu_seconds": 48.4
+}

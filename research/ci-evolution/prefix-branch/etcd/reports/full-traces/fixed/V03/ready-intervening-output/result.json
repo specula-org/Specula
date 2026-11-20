@@ -1,0 +1,242 @@
+{
+ "spec": "$SPECULA/research/ci-evolution/etcd-v0-v3/agent-runs/inv-evidence/out/revised-spec/V03",
+ "trace": "ready-intervening-output.ndjson",
+ "recorded_events": 131,
+ "replayable_prefix": 131,
+ "settings": {
+  "limits": "Update_full.cfg",
+  "actions": "AffectedActions",
+  "settle": "base.tla:ReactiveActions",
+  "replay": "MatchEvent(logline)",
+  "domains": "",
+  "domain": [
+   "RequestId={1, 2, 3}",
+   "PayloadWeights={0, 1, 6}",
+   "EncodedWeights={1, 2, 6, 14}"
+  ],
+  "prefix": "auto",
+  "points": "",
+  "guard": "\\A id \\in RequestId : (requests[id].status = \"Unused\" /\\ requests'[id].status = \"Invoked\" /\\ requests'[id].kind = \"V2\") => ConfigWellFormed(ConfigCandidate(raft[requests'[id].node].config, [kind |-> \"V2\", id |-> id, changes |-> requests'[id].changes, transition |-> requests'[id].transition]))",
+  "constraint": true,
+  "settled": "",
+  "after": 100,
+  "checks": "",
+  "ignore": "NotReached$|NotAppended$|SourceAlignment",
+  "steps": 0,
+  "seconds": 300,
+  "seed": 1,
+  "heap": "3g",
+  "steps_total": 337
+ },
+ "build": {
+  "module": "Update",
+  "init": "MCInit",
+  "extra_variables": [
+   "faultCount"
+  ],
+  "settle_parts": 8,
+  "probes": [
+   {
+    "index": 1,
+    "label": "MCCampaign"
+   },
+   {
+    "index": 2,
+    "label": "MCTick"
+   },
+   {
+    "index": 3,
+    "label": "Receive (some message types)"
+   },
+   {
+    "index": 4,
+    "label": "Ready"
+   },
+   {
+    "index": 5,
+    "label": "Advance"
+   },
+   {
+    "index": 6,
+    "label": "Restart"
+   },
+   {
+    "index": 7,
+    "label": "Receive (some message types)"
+   },
+   {
+    "index": 8,
+    "label": "MCInvoke"
+   },
+   {
+    "index": 9,
+    "label": "MCInvokeV2"
+   },
+   {
+    "index": 10,
+    "label": "Propose"
+   },
+   {
+    "index": 11,
+    "label": "ApplyEntry"
+   },
+   {
+    "index": 12,
+    "label": "MCTransfer"
+   },
+   {
+    "index": 13,
+    "label": "Receive (some message types)"
+   }
+  ],
+  "checks": [
+   "ElectionSafety",
+   "LogMatching",
+   "LeaderCompleteness",
+   "CommittedHistory",
+   "AppliedAgreement",
+   "MCTypeOK",
+   "LogStructure",
+   "VoteDecisionEligibility",
+   "TransferDecisionEligibility",
+   "RequestCorrelatedConfigurationEffects",
+   "VoteRecovery",
+   "RecoveryBacking",
+   "PromiseBacking",
+   "NoUnexpectedFatal",
+   "LearnerEligibility",
+   "QuorumAccounting",
+   "ConfigurationOrigin",
+   "ReplicationEvidence",
+   "SnapshotBacking",
+   "QuotaIntegrity",
+   "ReadBasis",
+   "ReadApplication",
+   "ReadCorrelation",
+   "TypeOK",
+   "RevisedConfigurationTransitionSafety",
+   "RevisedAckPreservation",
+   "RevisedReadyAccounting",
+   "RevisedOutcomeSoundness",
+   "RevisedCampaignDecisionEligibility",
+   "RevisedProposalConfigurationDecisions",
+   "JointConfigurationShape",
+   "JointSnapshotRecovery",
+   "RevisedAutoLeaveAdvance",
+   "RevisedReadyOwnership",
+   "AdvancePreservesPendingOutput",
+   "TransferCancellationOnConfigurationChange",
+   "JointSnapshotMemberAcceptance",
+   "UpdateJointConfigurationShape",
+   "UpdateQuorumAccounting",
+   "UpdateLearnerVoteContract",
+   "UpdateLearnerCampaignEligibility",
+   "UpdateReadyOwnership",
+   "UpdateAdvanceOutputPreservation",
+   "UpdateAutoLeaveAdvance",
+   "UpdateJointSnapshotRecovery",
+   "UpdateJointSnapshotMemberAcceptance"
+  ],
+  "check_modules": [
+   "Maintenance"
+  ],
+  "observers": [
+   "audit"
+  ],
+  "skipped_checks": {
+   "WitnessCheck": "its module Witnesses extends Checks",
+   "CampaignDecisionEligibility": "replaced by RevisedCampaignDecisionEligibility",
+   "ProposalConfigurationDecisions": "replaced by RevisedProposalConfigurationDecisions",
+   "AckPreservation": "replaced by RevisedAckPreservation",
+   "ConfigurationTransitionSafety": "replaced by RevisedConfigurationTransitionSafety",
+   "ReadyAccounting": "replaced by RevisedReadyAccounting",
+   "OutcomeSoundness": "replaced by RevisedOutcomeSoundness",
+   "ReadyOwnership": "replaced by RevisedReadyOwnership"
+  },
+  "domains": [],
+  "explicit_domains": {
+   "RequestId": "{1, 2, 3}",
+   "PayloadWeights": "{0, 1, 6}",
+   "EncodedWeights": "{1, 2, 6, 14}"
+  },
+  "domains_tried": {}
+ },
+ "replay": {
+  "seconds": 5.4,
+  "cpu_seconds": 11.4,
+  "timed_out": false,
+  "violated": "PBReplayed",
+  "error": null,
+  "traces": null,
+  "distinct": 132,
+  "complete": true
+ },
+ "recording_violations": [],
+ "search": {
+  "seconds": 138.9,
+  "cpu_seconds": 144.8,
+  "timed_out": false,
+  "violated": "PB_RevisedProposalConfigurationDecisions",
+  "error": null,
+  "traces": 24,
+  "distinct": null,
+  "counterexample": {
+   "states": 249,
+   "branch_step": 231,
+   "recorded_events_replayed": 131,
+   "branch_during": "settle",
+   "branch_action": "MCInvokeV2",
+   "steps_after_branch": 16,
+   "branch_step_changes": [
+    "faultCount.request: 0 -> 1",
+    "requests[3].kind: \"Normal\" -> \"V2\"",
+    "requests[3].transition: \"Legacy\" -> \"JointImplicit\"",
+    "requests[3].status: \"Unused\" -> \"Invoked\"",
+    "requests[3].node: 0 -> 2",
+    "requests[3].weight: 0 -> 6",
+    "requests[3].context: 0 -> 3"
+   ],
+   "changes_after_branch": [
+    "ready[1].id: 12 -> 13",
+    "ready[1].installed: [\"HS\", \"Snapshot\", \"Entries\"] -> [\"Snapshot\"]",
+    "ready[2].id: 0 -> 12",
+    "ready[2].hist: [] -> [{\"id\": 0, \"kind\": \"AddVoter\", \"target\": 1, \"changes\": [{\"kind\": \"AddVoter\", \"target\": 1}], \"transition\": \"Legacy\", \"wei",
+    "ready[2].hs.commit: 0 -> 3",
+    "ready[2].hs.term: 0 -> 2",
+    "ready[2].hs.vote: 0 -> 1",
+    "ready[2].messages: [] -> {\"[type |-> \\\"MsgProp\\\", context |-> 0, index |-> 0, commit |-> 0, from |-> 2, to |-> 1, term |-> 0, logTerm |-> 0, forc",
+    "ready[2].ss.lead: 0 -> 1",
+    "ready[2].active: false -> true",
+    "ready[2].fromApplied: 0 -> 3",
+    "ready[2].started: [] -> [\"All\"]",
+    "ready[2].done: [] -> [\"HS\", \"Snapshot\", \"Entries\", \"All\"]",
+    "ready[2].installed: [] -> [\"HS\"]",
+    "ready[2].published: false -> true",
+    "ready[2].queued: false -> true",
+    "raft[1].decision: \"\" -> \"Accepted\"",
+    "raft[1].out: [] -> {\"[type |-> \\\"MsgApp\\\", context |-> 0, index |-> 3, commit |-> 3, from |-> 1, to |-> 2, term |-> 2, logTerm |-> 2, force",
+    "raft[1].unstable: [] -> [{\"id\": 0, \"kind\": \"Normal\", \"target\": 0, \"changes\": [], \"transition\": \"Legacy\", \"weight\": 0, \"encoded\": 6, \"index\": 4, ",
+    "raft[1].prs[1].match: 3 -> 4",
+    "raft[1].prs[1].next: 4 -> 5",
+    "raft[1].prs[1].evidence: [{\"id\": 0, \"kind\": \"AddVoter\", \"target\": 1, \"changes\": [{\"kind\": \"AddVoter\", \"target\": 1}], \"transition\": \"Legacy\", \"wei -> [{\"id\": 0, \"kind\": \"AddVoter\", \"target\": 1, \"changes\": [{\"kind\": \"AddVoter\", \"target\": 1}], \"transition\": \"Legacy\", \"wei",
+    "raft[1].prs[2].next: 4 -> 5",
+    "raft[1].prs[2].inflight: [] -> [4]",
+    "raft[1].readySeq: 12 -> 13",
+    "raft[2].decision: \"\" -> \"Forwarded\"",
+    "raft[2].readySeq: 11 -> 12",
+    "quality.proposals: [] -> [{\"requests\": [{\"kind\": \"Normal\", \"target\": 0, \"parent\": 0, \"changes\": [], \"transition\": \"Legacy\", \"status\": \"Unused\", \"",
+    "requests[3].status: \"Invoked\" -> \"Returned\"",
+    "requests[3].handoff: false -> true",
+    "requests[3].core: \"\" -> \"Forwarded\"",
+    "requests[3].result: \"\" -> \"Forwarded\"",
+    "history.promises: [{\"message\": {\"type\": \"MsgApp\", \"context\": 0, \"index\": 2, \"commit\": 2, \"from\": 1, \"to\": 2, \"term\": 2, \"logTerm\": 1, \"for -> [{\"message\": {\"type\": \"MsgApp\", \"context\": 0, \"index\": 2, \"commit\": 2, \"from\": 1, \"to\": 2, \"term\": 2, \"logTerm\": 1, \"for",
+    "history.readyChecks: [{\"outBefore\": [], \"readsBefore\": [], \"first\": 1, \"commit\": 2, \"from\": 0, \"snapshot\": 0, \"cursor\": 2, \"quotaBefore\": 0,  -> [{\"outBefore\": [], \"readsBefore\": [], \"first\": 1, \"commit\": 2, \"from\": 0, \"snapshot\": 0, \"cursor\": 2, \"quotaBefore\": 0, ",
+    "history.outcomes: [] -> [{\"kind\": \"V2\", \"weight\": 0, \"role\": \"Follower\", \"quota\": 0, \"decision\": \"Forwarded\", \"transfer\": 0, \"member\": true, \"le",
+    "history.sent: [{\"type\": \"MsgApp\", \"context\": 0, \"index\": 2, \"commit\": 2, \"from\": 1, \"to\": 2, \"term\": 2, \"logTerm\": 1, \"forced\": false, -> [{\"type\": \"MsgApp\", \"context\": 0, \"index\": 2, \"commit\": 2, \"from\": 1, \"to\": 2, \"term\": 2, \"logTerm\": 1, \"forced\": false,",
+    "history.events: [\"Receive\", \"Ready\", \"Publish\", \"Advance\", \"StorageApplySnapshot\", \"StorageAppend\", \"StorageSetHardState\", \"SaveApplicat -> [\"Propose\", \"Receive\", \"Ready\", \"Publish\", \"Advance\", \"StorageApplySnapshot\", \"StorageAppend\", \"StorageSetHardState\", \"S"
+   ]
+  }
+ },
+ "wall_seconds": 154.8,
+ "tlc_cpu_seconds": 175.5
+}

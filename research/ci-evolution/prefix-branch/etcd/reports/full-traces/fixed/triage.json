@@ -1,0 +1,50 @@
+{
+ "V01/joint-explicit": {
+  "alarm": "RevisedCampaignDecisionEligibility",
+  "triage": "no previous version to compare"
+ },
+ "V01/node-lifecycle": {
+  "alarm": "NoUnexpectedFatal",
+  "triage": "no previous version to compare"
+ },
+ "V01/outgoing-snapshot-restore": {
+  "alarm": "RevisedCampaignDecisionEligibility",
+  "triage": "no previous version to compare"
+ },
+ "V01/same-batch-replay": {
+  "alarm": "PromiseBacking",
+  "triage": "no previous version to compare"
+ },
+ "V02/node-lifecycle": {
+  "alarm": "NoUnexpectedFatal",
+  "triage": "also found on the previous version"
+ },
+ "V02/outgoing-snapshot-restore": {
+  "alarm": "RevisedCampaignDecisionEligibility",
+  "triage": "also found on the previous version"
+ },
+ "V02/ready-intervening-output": {
+  "alarm": "NoUnexpectedFatal",
+  "triage": "also found on the previous version"
+ },
+ "V02/same-batch-replay": {
+  "alarm": "PromiseBacking",
+  "triage": "also found on the previous version"
+ },
+ "V03/joint-autoleave": {
+  "alarm": "RevisedCampaignDecisionEligibility",
+  "triage": "also found on the previous version"
+ },
+ "V03/node-lifecycle": {
+  "alarm": "RevisedProposalConfigurationDecisions",
+  "triage": "property not in the previous version"
+ },
+ "V03/ready-intervening-output": {
+  "alarm": "RevisedProposalConfigurationDecisions",
+  "triage": "property not in the previous version"
+ },
+ "V03/same-batch-replay": {
+  "alarm": "PromiseBacking",
+  "triage": "also found on the previous version"
+ }
+}

@@ -1,0 +1,118 @@
+{
+ "spec": "$SPECULA/research/ci-evolution/etcd-v0-v3/agent-runs/inv-evidence/out/revised-spec/V01",
+ "trace": "joint-snapshot-recovery.ndjson",
+ "recorded_events": 398,
+ "replayable_prefix": 238,
+ "settings": {
+  "limits": "Update_full.cfg",
+  "actions": "AffectedActions",
+  "settle": "base.tla:ReactiveActions",
+  "replay": "MatchEvent(logline)",
+  "domains": "",
+  "domain": [
+   "RequestId={1, 2, 3}",
+   "PayloadWeights={0, 1, 6, 24}",
+   "EncodedWeights={1, 2, 6, 14, 32}"
+  ],
+  "prefix": "auto",
+  "points": "",
+  "guard": "\\A id \\in RequestId : (requests[id].status = \"Unused\" /\\ requests'[id].status = \"Invoked\" /\\ requests'[id].kind = \"V2\") => ConfigWellFormed(ConfigCandidate(raft[requests'[id].node].config, [kind |-> \"V2\", id |-> id, changes |-> requests'[id].changes, transition |-> requests'[id].transition]))",
+  "constraint": true,
+  "settled": "",
+  "after": 100,
+  "checks": "ConfigurationOrigin",
+  "ignore": "NotReached$|NotAppended$|SourceAlignment",
+  "steps": 0,
+  "seconds": 300,
+  "seed": 1,
+  "heap": "3g",
+  "steps_total": 444
+ },
+ "build": {
+  "module": "Update",
+  "init": "MCInit",
+  "extra_variables": [
+   "faultCount"
+  ],
+  "settle_parts": 8,
+  "probes": [
+   {
+    "index": 1,
+    "label": "MCInvokeV2"
+   },
+   {
+    "index": 2,
+    "label": "Propose"
+   },
+   {
+    "index": 3,
+    "label": "ApplyEntry"
+   },
+   {
+    "index": 4,
+    "label": "MCCampaign"
+   },
+   {
+    "index": 5,
+    "label": "MCTick"
+   },
+   {
+    "index": 6,
+    "label": "Receive"
+   },
+   {
+    "index": 7,
+    "label": "Ready"
+   },
+   {
+    "index": 8,
+    "label": "Advance"
+   },
+   {
+    "index": 9,
+    "label": "Restart"
+   },
+   {
+    "index": 10,
+    "label": "MCCreateSnapshot"
+   }
+  ],
+  "checks": [
+   "ConfigurationOrigin"
+  ],
+  "check_modules": [],
+  "observers": [],
+  "skipped_checks": {},
+  "domains": [],
+  "explicit_domains": {
+   "RequestId": "{1, 2, 3}",
+   "PayloadWeights": "{0, 1, 6, 24}",
+   "EncodedWeights": "{1, 2, 6, 14, 32}"
+  },
+  "domains_tried": {}
+ },
+ "replay": {
+  "seconds": 8.4,
+  "cpu_seconds": 10.6,
+  "timed_out": false,
+  "violated": "PBReplayed",
+  "error": null,
+  "traces": null,
+  "distinct": 244,
+  "complete": true
+ },
+ "recording_violations": [
+  "ConfigurationOrigin"
+ ],
+ "search": {
+  "seconds": 300.1,
+  "cpu_seconds": 295.1,
+  "timed_out": true,
+  "violated": null,
+  "error": null,
+  "traces": 25,
+  "distinct": null
+ },
+ "wall_seconds": 412.4,
+ "tlc_cpu_seconds": 407.7
+}

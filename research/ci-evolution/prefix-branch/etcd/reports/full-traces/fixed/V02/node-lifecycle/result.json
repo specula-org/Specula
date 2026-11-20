@@ -1,0 +1,243 @@
+{
+ "spec": "$SPECULA/research/ci-evolution/etcd-v0-v3/agent-runs/inv-evidence/out/revised-spec/V02",
+ "trace": "node-lifecycle.ndjson",
+ "recorded_events": 100,
+ "replayable_prefix": 100,
+ "settings": {
+  "limits": "Update_full.cfg",
+  "actions": "AffectedActions",
+  "settle": "base.tla:ReactiveActions",
+  "replay": "MatchEvent(logline)",
+  "domains": "",
+  "domain": [
+   "RequestId={1, 2, 3, 4, 5}",
+   "PayloadWeights={0, 1, 8, 16, 40}",
+   "EncodedWeights={1, 2, 16, 24, 48}"
+  ],
+  "prefix": "auto",
+  "points": "",
+  "guard": "\\A id \\in RequestId : (requests[id].status = \"Unused\" /\\ requests'[id].status = \"Invoked\" /\\ requests'[id].kind = \"V2\") => ConfigWellFormed(ConfigCandidate(raft[requests'[id].node].config, [kind |-> \"V2\", id |-> id, changes |-> requests'[id].changes, transition |-> requests'[id].transition]))",
+  "constraint": true,
+  "settled": "",
+  "after": 100,
+  "checks": "",
+  "ignore": "NotReached$|NotAppended$|SourceAlignment",
+  "steps": 0,
+  "seconds": 300,
+  "seed": 1,
+  "heap": "3g",
+  "steps_total": 306
+ },
+ "build": {
+  "module": "Update",
+  "init": "MCInit",
+  "extra_variables": [
+   "faultCount"
+  ],
+  "settle_parts": 8,
+  "probes": [
+   {
+    "index": 1,
+    "label": "MCCampaign"
+   },
+   {
+    "index": 2,
+    "label": "MCTick"
+   },
+   {
+    "index": 3,
+    "label": "Receive (some message types)"
+   },
+   {
+    "index": 4,
+    "label": "Ready"
+   },
+   {
+    "index": 5,
+    "label": "Advance"
+   },
+   {
+    "index": 6,
+    "label": "Restart"
+   },
+   {
+    "index": 7,
+    "label": "Receive (some message types)"
+   },
+   {
+    "index": 8,
+    "label": "MCInvokeV2"
+   },
+   {
+    "index": 9,
+    "label": "Propose"
+   },
+   {
+    "index": 10,
+    "label": "ApplyEntry"
+   }
+  ],
+  "checks": [
+   "ElectionSafety",
+   "LogMatching",
+   "LeaderCompleteness",
+   "CommittedHistory",
+   "AppliedAgreement",
+   "MCTypeOK",
+   "LogStructure",
+   "VoteDecisionEligibility",
+   "TransferDecisionEligibility",
+   "RequestCorrelatedConfigurationEffects",
+   "ProposalConfigurationDecisions",
+   "VoteRecovery",
+   "RecoveryBacking",
+   "PromiseBacking",
+   "NoUnexpectedFatal",
+   "LearnerEligibility",
+   "QuorumAccounting",
+   "ConfigurationOrigin",
+   "OutcomeSoundness",
+   "ReplicationEvidence",
+   "SnapshotBacking",
+   "QuotaIntegrity",
+   "ReadBasis",
+   "ReadApplication",
+   "ReadCorrelation",
+   "TypeOK",
+   "RevisedConfigurationTransitionSafety",
+   "RevisedAckPreservation",
+   "RevisedReadyAccounting",
+   "RevisedCampaignDecisionEligibility",
+   "JointConfigurationShape",
+   "JointSnapshotRecovery",
+   "RevisedAutoLeaveAdvance",
+   "RevisedReadyOwnership",
+   "AdvancePreservesPendingOutput",
+   "JointSnapshotMemberAcceptance",
+   "UpdateJointConfigurationShape",
+   "UpdateQuorumAccounting",
+   "UpdateLearnerVoteContract",
+   "UpdateLearnerCampaignEligibility",
+   "UpdateReadyOwnership",
+   "UpdateAdvanceOutputPreservation",
+   "UpdateAutoLeaveAdvance",
+   "UpdateJointSnapshotRecovery",
+   "UpdateJointSnapshotMemberAcceptance"
+  ],
+  "check_modules": [
+   "Maintenance"
+  ],
+  "observers": [
+   "audit"
+  ],
+  "skipped_checks": {
+   "WitnessCheck": "its module Witnesses extends Checks",
+   "CampaignDecisionEligibility": "replaced by RevisedCampaignDecisionEligibility",
+   "AckPreservation": "replaced by RevisedAckPreservation",
+   "ConfigurationTransitionSafety": "replaced by RevisedConfigurationTransitionSafety",
+   "ReadyAccounting": "replaced by RevisedReadyAccounting",
+   "ReadyOwnership": "replaced by RevisedReadyOwnership"
+  },
+  "domains": [],
+  "explicit_domains": {
+   "RequestId": "{1, 2, 3, 4, 5}",
+   "PayloadWeights": "{0, 1, 8, 16, 40}",
+   "EncodedWeights": "{1, 2, 16, 24, 48}"
+  },
+  "domains_tried": {}
+ },
+ "replay": {
+  "seconds": 4.1,
+  "cpu_seconds": 8.9,
+  "timed_out": false,
+  "violated": "PBReplayed",
+  "error": null,
+  "traces": null,
+  "distinct": 101,
+  "complete": true
+ },
+ "recording_violations": [],
+ "search": {
+  "seconds": 28.8,
+  "cpu_seconds": 35.2,
+  "timed_out": false,
+  "violated": "PB_NoUnexpectedFatal",
+  "error": null,
+  "traces": 23,
+  "distinct": null,
+  "counterexample": {
+   "states": 70,
+   "branch_step": 49,
+   "recorded_events_replayed": 49,
+   "branch_during": "replay",
+   "branch_action": "MCInvokeV2",
+   "steps_after_branch": 19,
+   "branch_step_changes": [
+    "faultCount.request: 0 -> 1",
+    "requests[5].transition: \"Legacy\" -> \"Auto\"",
+    "requests[5].parent: 0 -> 1",
+    "requests[5].status: \"Unused\" -> \"Invoked\"",
+    "requests[5].kind: \"Normal\" -> \"V2\"",
+    "requests[5].node: 0 -> 1",
+    "requests[5].weight: 0 -> 40",
+    "requests[5].context: 0 -> 5"
+   ],
+   "changes_after_branch": [
+    "ready[1].id: 0 -> 5",
+    "ready[1].hist: [] -> [{\"id\": 0, \"changes\": [{\"kind\": \"AddVoter\", \"target\": 1}], \"transition\": \"Legacy\", \"kind\": \"AddVoter\", \"target\": 1, \"wei",
+    "ready[1].cursor: 0 -> 5",
+    "ready[1].committed: [] -> [{\"id\": 5, \"changes\": [], \"transition\": \"Auto\", \"kind\": \"V2\", \"target\": 0, \"weight\": 40, \"encoded\": 1, \"index\": 5, \"term",
+    "ready[1].hs.commit: 0 -> 5",
+    "ready[1].hs.term: 0 -> 2",
+    "ready[1].hs.vote: 0 -> 1",
+    "ready[1].ss.role: \"Follower\" -> \"Leader\"",
+    "ready[1].ss.lead: 0 -> 1",
+    "ready[1].active: false -> true",
+    "ready[1].entries: [] -> [{\"id\": 5, \"changes\": [], \"transition\": \"Auto\", \"kind\": \"V2\", \"target\": 0, \"weight\": 40, \"encoded\": 1, \"index\": 5, \"term",
+    "ready[1].hasHS: false -> true",
+    "ready[1].fromApplied: 0 -> 4",
+    "ready[1].mustSync: false -> true",
+    "ready[1].started: [] -> [\"All\"]",
+    "ready[1].done: [] -> [\"HS\", \"Snapshot\", \"Entries\", \"All\"]",
+    "ready[1].installed: [] -> [\"HS\", \"Snapshot\", \"Entries\"]",
+    "ready[1].published: false -> true",
+    "ready[1].queued: false -> true",
+    "raft[1].commit: 4 -> 5",
+    "raft[1].fatal: \"\" -> \"invalid configuration transition\"",
+    "raft[1].pendingConf: 1 -> 5",
+    "raft[1].quota: 0 -> 40",
+    "raft[1].unstable: [] -> [{\"id\": 5, \"changes\": [], \"transition\": \"Auto\", \"kind\": \"V2\", \"target\": 0, \"weight\": 40, \"encoded\": 1, \"index\": 5, \"term",
+    "raft[1].commitUses: [{\"config\": {\"outgoing\": [], \"voters\": [1], \"autoLeave\": false, \"learners\": [], \"learnersNext\": []}, \"matches\": [1], \"hi -> [{\"config\": {\"outgoing\": [], \"voters\": [1], \"autoLeave\": false, \"learners\": [], \"learnersNext\": []}, \"matches\": [1], \"hi",
+    "raft[1].store.hist: [{\"id\": 0, \"changes\": [{\"kind\": \"AddVoter\", \"target\": 1}], \"transition\": \"Legacy\", \"kind\": \"AddVoter\", \"target\": 1, \"wei -> [{\"id\": 0, \"changes\": [{\"kind\": \"AddVoter\", \"target\": 1}], \"transition\": \"Legacy\", \"kind\": \"AddVoter\", \"target\": 1, \"wei",
+    "raft[1].store.hs.commit: 4 -> 5",
+    "raft[1].prs[1].match: 4 -> 5",
+    "raft[1].prs[1].next: 5 -> 6",
+    "raft[1].prs[1].evidence: [{\"id\": 0, \"changes\": [{\"kind\": \"AddVoter\", \"target\": 1}], \"transition\": \"Legacy\", \"kind\": \"AddVoter\", \"target\": 1, \"wei -> [{\"id\": 0, \"changes\": [{\"kind\": \"AddVoter\", \"target\": 1}], \"transition\": \"Legacy\", \"kind\": \"AddVoter\", \"target\": 1, \"wei",
+    "raft[1].cfgHist: [{\"id\": 0, \"changes\": [{\"kind\": \"AddVoter\", \"target\": 1}], \"transition\": \"Legacy\", \"kind\": \"AddVoter\", \"target\": 1, \"wei -> [{\"id\": 0, \"changes\": [{\"kind\": \"AddVoter\", \"target\": 1}], \"transition\": \"Legacy\", \"kind\": \"AddVoter\", \"target\": 1, \"wei",
+    "raft[1].readySeq: 4 -> 5",
+    "quality.effects: [] -> [{\"node\": 1, \"before\": {\"outgoing\": [], \"voters\": [1], \"autoLeave\": false, \"learners\": [], \"learnersNext\": []}, \"after\":",
+    "requests[2].completed: false -> true",
+    "requests[3].completed: false -> true",
+    "requests[5].status: \"Invoked\" -> \"Returned\"",
+    "requests[5].handoff: false -> true",
+    "requests[5].core: \"\" -> \"Accepted\"",
+    "requests[5].result: \"\" -> \"Handoff\"",
+    "application[1].hist: [{\"id\": 0, \"changes\": [{\"kind\": \"AddVoter\", \"target\": 1}], \"transition\": \"Legacy\", \"kind\": \"AddVoter\", \"target\": 1, \"wei -> [{\"id\": 0, \"changes\": [{\"kind\": \"AddVoter\", \"target\": 1}], \"transition\": \"Legacy\", \"kind\": \"AddVoter\", \"target\": 1, \"wei",
+    "application[1].jobs: [{\"snapshot\": {\"config\": {\"outgoing\": [], \"voters\": [], \"autoLeave\": false, \"learners\": [], \"learnersNext\": []}, \"index\" -> [{\"snapshot\": {\"config\": {\"outgoing\": [], \"voters\": [], \"autoLeave\": false, \"learners\": [], \"learnersNext\": []}, \"index\"",
+    "history.applied: [[{\"id\": 0, \"changes\": [{\"kind\": \"AddVoter\", \"target\": 1}], \"transition\": \"Legacy\", \"kind\": \"AddVoter\", \"target\": 1, \"we -> [[{\"id\": 0, \"changes\": [{\"kind\": \"AddVoter\", \"target\": 1}], \"transition\": \"Legacy\", \"kind\": \"AddVoter\", \"target\": 1, \"we",
+    "history.commitUses: [{\"config\": {\"outgoing\": [], \"voters\": [1], \"autoLeave\": false, \"learners\": [], \"learnersNext\": []}, \"matches\": [1], \"hi -> [{\"config\": {\"outgoing\": [], \"voters\": [1], \"autoLeave\": false, \"learners\": [], \"learnersNext\": []}, \"matches\": [1], \"hi",
+    "history.obligations: [{\"hist\": [{\"id\": 0, \"changes\": [{\"kind\": \"AddVoter\", \"target\": 1}], \"transition\": \"Legacy\", \"kind\": \"AddVoter\", \"target -> [{\"hist\": [{\"id\": 0, \"changes\": [{\"kind\": \"AddVoter\", \"target\": 1}], \"transition\": \"Legacy\", \"kind\": \"AddVoter\", \"target",
+    "history.promises: [] -> [{\"message\": {\"type\": \"WriteResult\", \"context\": 0, \"index\": 0, \"commit\": 0, \"from\": 1, \"to\": 1, \"term\": 0, \"logTerm\": 0,",
+    "history.writes: [] -> [[{\"id\": 0, \"changes\": [{\"kind\": \"AddVoter\", \"target\": 1}], \"transition\": \"Legacy\", \"kind\": \"AddVoter\", \"target\": 1, \"we",
+    "history.readyChecks: [{\"outBefore\": [], \"readsBefore\": [], \"first\": 1, \"commit\": 1, \"from\": 0, \"snapshot\": 0, \"cursor\": 1, \"quotaBefore\": 0,  -> [{\"outBefore\": [], \"readsBefore\": [], \"first\": 1, \"commit\": 1, \"from\": 0, \"snapshot\": 0, \"cursor\": 1, \"quotaBefore\": 0, ",
+    "history.outcomes: [{\"kind\": \"Normal\", \"weight\": 16, \"role\": \"Leader\", \"quota\": 0, \"decision\": \"Accepted\", \"transfer\": 0, \"lead\": 1, \"membe -> [{\"kind\": \"Normal\", \"weight\": 16, \"role\": \"Leader\", \"quota\": 0, \"decision\": \"Accepted\", \"transfer\": 0, \"lead\": 1, \"membe",
+    "history.events: [\"Propose\", \"Ready\", \"Publish\", \"Advance\", \"StorageApplySnapshot\", \"StorageAppend\", \"StorageSetHardState\", \"CompletePers -> [\"Propose\", \"Ready\", \"Publish\", \"Advance\", \"StorageApplySnapshot\", \"StorageAppend\", \"StorageSetHardState\", \"SaveApplicat",
+    "disk[1].hs.commit: 4 -> 5",
+    "disk[1].log: [{\"id\": 0, \"changes\": [{\"kind\": \"AddVoter\", \"target\": 1}], \"transition\": \"Legacy\", \"kind\": \"AddVoter\", \"target\": 1, \"wei -> [{\"id\": 0, \"changes\": [{\"kind\": \"AddVoter\", \"target\": 1}], \"transition\": \"Legacy\", \"kind\": \"AddVoter\", \"target\": 1, \"wei",
+    "disk[1].savedApp: [] -> [{\"id\": 0, \"changes\": [{\"kind\": \"AddVoter\", \"target\": 1}], \"transition\": \"Legacy\", \"kind\": \"AddVoter\", \"target\": 1, \"wei"
+   ]
+  }
+ },
+ "wall_seconds": 40.6,
+ "tlc_cpu_seconds": 60.6
+}

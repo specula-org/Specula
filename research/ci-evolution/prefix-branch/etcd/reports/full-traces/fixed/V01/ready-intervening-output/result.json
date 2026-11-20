@@ -1,0 +1,161 @@
+{
+ "spec": "$SPECULA/research/ci-evolution/etcd-v0-v3/agent-runs/inv-evidence/out/revised-spec/V01",
+ "trace": "ready-intervening-output.ndjson",
+ "recorded_events": 131,
+ "replayable_prefix": 119,
+ "settings": {
+  "limits": "Update_full.cfg",
+  "actions": "AffectedActions",
+  "settle": "base.tla:ReactiveActions",
+  "replay": "MatchEvent(logline)",
+  "domains": "",
+  "domain": [
+   "RequestId={1, 2, 3}",
+   "PayloadWeights={0, 1, 6}",
+   "EncodedWeights={1, 2, 6, 14}"
+  ],
+  "prefix": "auto",
+  "points": "",
+  "guard": "\\A id \\in RequestId : (requests[id].status = \"Unused\" /\\ requests'[id].status = \"Invoked\" /\\ requests'[id].kind = \"V2\") => ConfigWellFormed(ConfigCandidate(raft[requests'[id].node].config, [kind |-> \"V2\", id |-> id, changes |-> requests'[id].changes, transition |-> requests'[id].transition]))",
+  "constraint": true,
+  "settled": "",
+  "after": 100,
+  "checks": "",
+  "ignore": "NotReached$|NotAppended$|SourceAlignment",
+  "steps": 0,
+  "seconds": 300,
+  "seed": 1,
+  "heap": "3g",
+  "steps_total": 325
+ },
+ "build": {
+  "module": "Update",
+  "init": "MCInit",
+  "extra_variables": [
+   "faultCount"
+  ],
+  "settle_parts": 8,
+  "probes": [
+   {
+    "index": 1,
+    "label": "MCInvokeV2"
+   },
+   {
+    "index": 2,
+    "label": "Propose"
+   },
+   {
+    "index": 3,
+    "label": "ApplyEntry"
+   },
+   {
+    "index": 4,
+    "label": "MCCampaign"
+   },
+   {
+    "index": 5,
+    "label": "MCTick"
+   },
+   {
+    "index": 6,
+    "label": "Receive"
+   },
+   {
+    "index": 7,
+    "label": "Ready"
+   },
+   {
+    "index": 8,
+    "label": "Advance"
+   },
+   {
+    "index": 9,
+    "label": "Restart"
+   },
+   {
+    "index": 10,
+    "label": "MCCreateSnapshot"
+   }
+  ],
+  "checks": [
+   "ElectionSafety",
+   "LogMatching",
+   "LeaderCompleteness",
+   "CommittedHistory",
+   "AppliedAgreement",
+   "MCTypeOK",
+   "LogStructure",
+   "VoteDecisionEligibility",
+   "TransferDecisionEligibility",
+   "RequestCorrelatedConfigurationEffects",
+   "ProposalConfigurationDecisions",
+   "VoteRecovery",
+   "RecoveryBacking",
+   "PromiseBacking",
+   "NoUnexpectedFatal",
+   "LearnerEligibility",
+   "QuorumAccounting",
+   "ConfigurationOrigin",
+   "ReadyAccounting",
+   "OutcomeSoundness",
+   "ReplicationEvidence",
+   "SnapshotBacking",
+   "QuotaIntegrity",
+   "ReadBasis",
+   "ReadApplication",
+   "ReadCorrelation",
+   "TypeOK",
+   "RevisedConfigurationTransitionSafety",
+   "RevisedAckPreservation",
+   "RevisedCampaignDecisionEligibility",
+   "JointConfigurationShape",
+   "JointSnapshotRecovery",
+   "RevisedAutoLeaveAdvance",
+   "UpdateJointConfigurationShape",
+   "UpdateReadyOwnership",
+   "UpdateAutoLeaveAdvance",
+   "UpdateJointSnapshotRecovery"
+  ],
+  "check_modules": [
+   "Maintenance"
+  ],
+  "observers": [
+   "audit"
+  ],
+  "skipped_checks": {
+   "WitnessCheck": "its module Witnesses extends Checks",
+   "CampaignDecisionEligibility": "replaced by RevisedCampaignDecisionEligibility",
+   "AckPreservation": "replaced by RevisedAckPreservation",
+   "ConfigurationTransitionSafety": "replaced by RevisedConfigurationTransitionSafety"
+  },
+  "domains": [],
+  "explicit_domains": {
+   "RequestId": "{1, 2, 3}",
+   "PayloadWeights": "{0, 1, 6}",
+   "EncodedWeights": "{1, 2, 6, 14}"
+  },
+  "domains_tried": {}
+ },
+ "replay": {
+  "seconds": 2.9,
+  "cpu_seconds": 8.0,
+  "timed_out": false,
+  "violated": "PBReplayed",
+  "error": null,
+  "traces": null,
+  "distinct": 120,
+  "complete": true
+ },
+ "recording_violations": [],
+ "search": {
+  "seconds": 300.0,
+  "cpu_seconds": 305.6,
+  "timed_out": true,
+  "violated": null,
+  "error": null,
+  "traces": 59,
+  "distinct": null
+ },
+ "wall_seconds": 324.7,
+ "tlc_cpu_seconds": 372.8
+}

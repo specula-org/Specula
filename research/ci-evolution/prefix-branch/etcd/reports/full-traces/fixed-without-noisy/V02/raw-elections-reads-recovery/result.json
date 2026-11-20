@@ -1,0 +1,167 @@
+{
+ "spec": "$SPECULA/research/ci-evolution/etcd-v0-v3/agent-runs/inv-evidence/out/revised-spec/V02",
+ "trace": "raw-elections-reads-recovery.ndjson",
+ "recorded_events": 761,
+ "replayable_prefix": 761,
+ "settings": {
+  "limits": "Update_full.cfg",
+  "actions": "AffectedActions",
+  "settle": "base.tla:ReactiveActions",
+  "replay": "MatchEvent(logline)",
+  "domains": "",
+  "domain": [
+   "RequestId={1, 2, 3, 4, 5}",
+   "PayloadWeights={0, 1, 6, 16, 24, 40}",
+   "EncodedWeights={1, 2, 6, 14, 24, 32, 48}"
+  ],
+  "prefix": "auto",
+  "points": "",
+  "guard": "\\A id \\in RequestId : (requests[id].status = \"Unused\" /\\ requests'[id].status = \"Invoked\" /\\ requests'[id].kind = \"V2\") => ConfigWellFormed(ConfigCandidate(raft[requests'[id].node].config, [kind |-> \"V2\", id |-> id, changes |-> requests'[id].changes, transition |-> requests'[id].transition]))",
+  "constraint": true,
+  "settled": "",
+  "after": 100,
+  "checks": "",
+  "ignore": "NotReached$|NotAppended$|SourceAlignment|^NoUnexpectedFatal$|^PromiseBacking$|^ConfigurationOrigin$|^ProposalConfigurationDecisions$",
+  "steps": 0,
+  "seconds": 300,
+  "seed": 1,
+  "heap": "3g",
+  "steps_total": 967
+ },
+ "build": {
+  "module": "Update",
+  "init": "MCInit",
+  "extra_variables": [
+   "faultCount"
+  ],
+  "settle_parts": 8,
+  "probes": [
+   {
+    "index": 1,
+    "label": "MCCampaign"
+   },
+   {
+    "index": 2,
+    "label": "MCTick"
+   },
+   {
+    "index": 3,
+    "label": "Receive (some message types)"
+   },
+   {
+    "index": 4,
+    "label": "Ready"
+   },
+   {
+    "index": 5,
+    "label": "Advance"
+   },
+   {
+    "index": 6,
+    "label": "Restart"
+   },
+   {
+    "index": 7,
+    "label": "Receive (some message types)"
+   },
+   {
+    "index": 8,
+    "label": "MCInvokeV2"
+   },
+   {
+    "index": 9,
+    "label": "Propose"
+   },
+   {
+    "index": 10,
+    "label": "ApplyEntry"
+   }
+  ],
+  "checks": [
+   "ElectionSafety",
+   "LogMatching",
+   "LeaderCompleteness",
+   "CommittedHistory",
+   "AppliedAgreement",
+   "MCTypeOK",
+   "LogStructure",
+   "VoteDecisionEligibility",
+   "TransferDecisionEligibility",
+   "RequestCorrelatedConfigurationEffects",
+   "VoteRecovery",
+   "RecoveryBacking",
+   "LearnerEligibility",
+   "QuorumAccounting",
+   "OutcomeSoundness",
+   "ReplicationEvidence",
+   "SnapshotBacking",
+   "QuotaIntegrity",
+   "ReadBasis",
+   "ReadApplication",
+   "ReadCorrelation",
+   "TypeOK",
+   "RevisedConfigurationTransitionSafety",
+   "RevisedAckPreservation",
+   "RevisedReadyAccounting",
+   "RevisedCampaignDecisionEligibility",
+   "JointConfigurationShape",
+   "JointSnapshotRecovery",
+   "RevisedAutoLeaveAdvance",
+   "RevisedReadyOwnership",
+   "AdvancePreservesPendingOutput",
+   "JointSnapshotMemberAcceptance",
+   "UpdateJointConfigurationShape",
+   "UpdateQuorumAccounting",
+   "UpdateLearnerVoteContract",
+   "UpdateLearnerCampaignEligibility",
+   "UpdateReadyOwnership",
+   "UpdateAdvanceOutputPreservation",
+   "UpdateAutoLeaveAdvance",
+   "UpdateJointSnapshotRecovery",
+   "UpdateJointSnapshotMemberAcceptance"
+  ],
+  "check_modules": [
+   "Maintenance"
+  ],
+  "observers": [
+   "audit"
+  ],
+  "skipped_checks": {
+   "WitnessCheck": "its module Witnesses extends Checks",
+   "CampaignDecisionEligibility": "replaced by RevisedCampaignDecisionEligibility",
+   "AckPreservation": "replaced by RevisedAckPreservation",
+   "ConfigurationTransitionSafety": "replaced by RevisedConfigurationTransitionSafety",
+   "ReadyAccounting": "replaced by RevisedReadyAccounting",
+   "ReadyOwnership": "replaced by RevisedReadyOwnership"
+  },
+  "domains": [],
+  "explicit_domains": {
+   "RequestId": "{1, 2, 3, 4, 5}",
+   "PayloadWeights": "{0, 1, 6, 16, 24, 40}",
+   "EncodedWeights": "{1, 2, 6, 14, 24, 32, 48}"
+  },
+  "domains_tried": {}
+ },
+ "replay": {
+  "seconds": 36.5,
+  "cpu_seconds": 28.8,
+  "timed_out": false,
+  "violated": "PBReplayed",
+  "error": null,
+  "traces": null,
+  "distinct": 781,
+  "complete": true
+ },
+ "recording_violations": [],
+ "search": {
+  "seconds": 300.1,
+  "cpu_seconds": 290.0,
+  "timed_out": true,
+  "violated": null,
+  "error": null,
+  "traces": 4,
+  "distinct": null
+ },
+ "wall_seconds": 384.0,
+ "tlc_cpu_seconds": 362.6
+}

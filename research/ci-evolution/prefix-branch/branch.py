@@ -12,6 +12,7 @@ import argparse
 import json
 import os
 import re
+import resource
 import shutil
 import signal
 import subprocess
@@ -85,6 +86,80 @@ def suite_checks(spec: Path, ignore: str | None) -> list[str]:
     return names
 
 
+SIDE_EFFECTS = re.compile(r"\b(Assert|JsonSerialize|Serialize|PrintT|Print|IOExec|IOEnvExec|TLCSet)\b")
+
+
+def closure_text(definitions: dict[str, str], name: str) -> str:
+    seen, stack, parts = set(), [name], []
+    while stack:
+        current = stack.pop()
+        if current in seen or current not in definitions:
+            continue
+        seen.add(current)
+        body = strip_comments(definitions[current])
+        parts.append(body)
+        stack += re.findall(r"[A-Za-z_]\w*", body)
+    return "\n".join(parts)
+
+
+def observers(spec: Path, module: str, variables: list[str]) -> dict[str, tuple[str, str]] | None:
+    """Initial and next value of each variable a check module adds, from `Init /\\ v = E` and `Next /\\ v' = F`."""
+    bodies = [strip_comments(b) for b in top_level_definitions((spec / f"{module}.tla").read_text()).values()]
+    found = {}
+    for v in variables:
+        init = next((m.group(1) for b in bodies if (m := re.search(rf"\b{v}\s*=\s*(\w+)", b)) and "'" not in b), None)
+        step = next((m.group(1) for b in bodies if (m := re.search(rf"\b{v}'\s*=\s*(\w+)", b))), None)
+        if not init or not step:
+            return None
+        found[v] = (init, step)
+    return found
+
+
+def load_checks(
+    spec: Path, wanted: list[str], definitions: dict[str, str], chain: list[str]
+) -> tuple[list[str], list[str], dict[str, tuple[str, str]], dict[str, str]]:
+    """Checks to use, extra modules to extend, observer variables, and why the others are skipped."""
+    modules: list[str] = []
+    watch: dict[str, tuple[str, str]] = {}
+    skipped: dict[str, str] = {}
+    loaded = set(chain)
+    for name in wanted:
+        if name in definitions:
+            continue
+        for path in sorted(spec.glob("*.tla")):
+            module = path.stem
+            own = top_level_definitions(path.read_text())
+            if module in loaded or module == MODULE or name not in own:
+                continue
+            needs = [m for m in extends_chain(spec, module)[1:] if m not in loaded]
+            text = strip_comments(path.read_text())
+            if needs:
+                skipped[name] = f"its module {module} extends {', '.join(needs)}"
+            elif set(own) & set(definitions):
+                skipped[name] = f"its module {module} redefines names"
+            elif re.search(r"^CONSTANTS?\b", text, re.M):
+                skipped[name] = f"its module {module} declares constants"
+            elif (found := observers(spec, module, declared_variables(spec, module))) is None:
+                skipped[name] = f"its module {module} adds variables without Init/Next updates"
+            else:
+                modules.append(module)
+                loaded.add(module)
+                watch.update(found)
+                definitions.update(own)
+            break
+    checks = []
+    for name in wanted:
+        if name not in definitions:
+            skipped.setdefault(name, "not defined in a module the run can load")
+        elif SIDE_EFFECTS.search(closure_text(definitions, name)):
+            skipped[name] = "has side effects (Assert, Print, JSON output)"
+        elif f"Revised{name}" in wanted and f"Revised{name}" in definitions:
+            skipped[name] = f"replaced by Revised{name}"
+        else:
+            checks.append(name)
+    return checks, modules, watch, skipped
+
+
 def build(args: argparse.Namespace, spec: Path, trace_events: int, domains: set[str]) -> tuple[str, str, dict]:
     limits_text = (spec / args.limits).read_text()
     module = "Update" if args.limits.startswith("Update") else "MC"
@@ -107,24 +182,29 @@ def build(args: argparse.Namespace, spec: Path, trace_events: int, domains: set[
     for name in extends_chain(spec, "Trace"):
         definitions.update(top_level_definitions((spec / f"{name}.tla").read_text()))
     wanted = args.checks.split(",") if args.checks else suite_checks(spec, args.ignore)
-    checks = [name for name in wanted if name in definitions]
-    skipped = [name for name in wanted if name not in definitions]
+    chain = list(dict.fromkeys(extends_chain(spec, module) + extends_chain(spec, "Trace")))
+    checks, check_modules, watch, skipped = load_checks(spec, wanted, definitions, chain)
     constraints = section_names(limits_text, "CONSTRAINT") if args.constraint else []
 
-    own = ["pbAt", "pbStep", "pbBranched", "pbSlot", "pbAction"]
+    own = ["pbAt", "pbStep", "pbBroken", "pbBranched", "pbSlot", "pbAction"]
     keep = ", ".join(extra)
     settle_keep = "" if args.settle == "next" or not keep else keep + ", "
     replay = "TraceNext" if args.replay == "strict" else args.replay
     start = f"TraceInit /\\ {init}" if args.replay == "strict" else f"{init} /\\ l = 2"
+    observe = "".join(f" /\\ {v}' = {step}" for v, (_, step) in watch.items())
+    observed = "".join(f", {v}" for v in watch)
+    broken = " \\cup ".join(f'(IF {c} THEN {{}} ELSE {{"{c}"}})' for c in checks) or "{}"
     lines = [
         f"{'-' * 30} MODULE {MODULE} {'-' * 30}",
-        f"EXTENDS Trace, {module}, TLC",
+        f"EXTENDS {', '.join(['Trace', module, *check_modules, 'TLC'])}",
         "CONSTANTS PBPoints, PBMaxSteps, PBAfter",
         f"VARIABLES {', '.join(own)}",
-        f"pbVars == <<vars, l, {keep + ', ' if keep else ''}{', '.join(own)}>>",
-        f"PBInit == {start} /\\ pbAt \\in PBPoints /\\ pbStep = 0 /\\ pbBranched = FALSE /\\ pbSlot = 1 /\\ pbAction = 0",
-        f"PBReplay == /\\ ~pbBranched /\\ pbStep < pbAt /\\ l <= Len(TraceLog) /\\ {replay}",
-        f"    /\\ l' = l + 1 /\\ pbStep' = pbStep + 1 /\\ UNCHANGED <<{keep + ', ' if keep else ''}pbAt, pbBranched, pbSlot, pbAction>>",
+        f"pbVars == <<vars, l, {keep + ', ' if keep else ''}{', '.join(own)}{observed}>>",
+        f"PBInit == {start} /\\ pbAt \\in PBPoints /\\ pbStep = 0 /\\ pbBranched = FALSE /\\ pbSlot = 1 /\\ pbAction = 0"
+        + "".join(f" /\\ {v} = {first}" for v, (first, _) in watch.items())
+        + " /\\ pbBroken = {}",
+        f"PBReplay == /\\ ~pbBranched /\\ pbStep < pbAt /\\ l <= Len(TraceLog) /\\ {replay}{observe}",
+        f"    /\\ l' = l + 1 /\\ pbStep' = pbStep + 1 /\\ UNCHANGED <<{keep + ', ' if keep else ''}pbAt, pbBroken, pbBranched, pbSlot, pbAction>>",
     ]
     for i, part in enumerate(settle_parts, 1):
         lines.append(f"PBSettle{i} ==\n    {part}")
@@ -136,7 +216,7 @@ def build(args: argparse.Namespace, spec: Path, trace_events: int, domains: set[
         "PBSettle == /\\ IF pbBranched THEN pbStep < pbAt + 1 + PBAfter ELSE l > Len(TraceLog) /\\ pbStep < pbAt",
         "    /\\ PBOffsets # {}",
         "    /\\ LET i == ((pbSlot - 1 + PBFirst) % PBParts) + 1 IN PBPart(i) /\\ pbSlot' = (i % PBParts) + 1",
-        f"    /\\ pbStep' = pbStep + 1 /\\ UNCHANGED <<l, {settle_keep}pbAt, pbBranched, pbAction>>",
+        f"    /\\ pbStep' = pbStep + 1 /\\ UNCHANGED <<l, {settle_keep}pbAt, pbBroken, pbBranched, pbAction>>{observe}",
     ]
     for p in probes:
         lines.append(f"PBProbe{p.index} ==\n    {p.formula}")
@@ -144,13 +224,15 @@ def build(args: argparse.Namespace, spec: Path, trace_events: int, domains: set[
     lines += [
         "PBBranch == /\\ ~pbBranched /\\ pbStep = pbAt",
         "    /\\ \\/ " + "\n       \\/ ".join(f"PBProbe{p.index} /\\ pbAction' = {p.index}" for p in probes),
+        f"    /\\ pbBroken' = {broken}{observe}",
         "    /\\ pbBranched' = TRUE /\\ pbStep' = pbStep + 1 /\\ UNCHANGED <<l, pbAt, pbSlot>>" + guard,
         "PBSpec == PBInit /\\ [][PBReplay \\/ PBSettle \\/ PBBranch]_pbVars",
         "PBReplayed == l <= Len(TraceLog)",
+        "PBReplayOnly == l' = l + 1",
         "PBAllPoints == 0..(PBMaxSteps - 1)",
         "PBConstraint == ~pbBranched \\/ (" + (" /\\ ".join(constraints) or "TRUE") + ")",
     ]
-    lines += [f"PB_{name} == ~pbBranched \\/ {name}" for name in checks]
+    lines += [f'PB_{name} == ~pbBranched \\/ "{name}" \\in pbBroken \\/ {name}' for name in checks]
     if args.settled:
         lines.append("PBQuiet == pbBranched /\\ (pbStep = pbAt + 1 + PBAfter \\/ PBOffsets = {})")
         lines.append(f"PB_Settled == ~PBQuiet \\/ ({args.settled})")
@@ -183,6 +265,8 @@ def build(args: argparse.Namespace, spec: Path, trace_events: int, domains: set[
         "settle_parts": len(settle_parts),
         "probes": [{"index": p.index, "label": p.label} for p in probes],
         "checks": checks,
+        "check_modules": check_modules,
+        "observers": sorted(watch),
         "skipped_checks": skipped,
         "domains": sorted(domains),
         "explicit_domains": explicit,
@@ -216,7 +300,14 @@ def replay_end(work: Path, module: str, cfg: str, args: argparse.Namespace, trac
 
 
 def run_tlc(
-    work: Path, cfg: str, args: argparse.Namespace, trace: Path, simulate: bool, seconds: int, dump: bool = False
+    work: Path,
+    cfg: str,
+    args: argparse.Namespace,
+    trace: Path,
+    simulate: bool,
+    seconds: int,
+    dump: bool = False,
+    extra: tuple[str, ...] = (),
 ) -> dict:
     (work / "run.cfg").write_text(cfg)
     jars = (
@@ -239,9 +330,10 @@ def run_tlc(
             "json",
             "cex.json",
         ]
-    command += [MODULE]
+    command += [*extra, MODULE]
     env = dict(os.environ, JSON=str(trace))
     started = time.monotonic()
+    cpu_before = resource.getrusage(resource.RUSAGE_CHILDREN)
     with (work / "tlc.log").open("w") as log:
         process = subprocess.Popen(command, cwd=work, stdout=log, stderr=subprocess.STDOUT, env=env)
         try:
@@ -255,13 +347,16 @@ def run_tlc(
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait()
+    cpu_after = resource.getrusage(resource.RUSAGE_CHILDREN)
     text = (work / "tlc.log").read_text(errors="replace")
     violated = re.search(r"Invariant (\S+) is violated", text)
     errors = [line for line in text.splitlines() if line.startswith("Error:")]
     traces = re.findall(r"([\d,]+) traces generated", text)
     distinct = re.findall(r"([\d,]+) distinct states found", text)
+    cpu = (cpu_after.ru_utime + cpu_after.ru_stime) - (cpu_before.ru_utime + cpu_before.ru_stime)
     return {
         "seconds": round(time.monotonic() - started, 1),
+        "cpu_seconds": round(cpu, 1),
         "timed_out": timed_out,
         "violated": violated.group(1) if violated else None,
         "error": None if violated or not errors else " ".join(errors[:2]),
@@ -288,7 +383,7 @@ def summarise(work: Path, info: dict, recorded: int) -> dict:
     branch = next(i for i, (_, s) in enumerate(states) if s["pbBranched"])
     before, after = states[branch - 1][1], states[branch][1]
     labels = {p["index"]: p["label"] for p in info["probes"]}
-    own = {"pbAt", "pbStep", "pbBranched", "pbSlot", "pbAction", "l"}
+    own = {"pbAt", "pbStep", "pbBroken", "pbBranched", "pbSlot", "pbAction", "l", *info["observers"]}
     return {
         "states": len(states),
         "branch_step": after["pbAt"],
@@ -376,6 +471,7 @@ def main() -> None:
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
 
+    started = time.monotonic()
     spec, trace = args.spec.resolve(), args.trace.resolve()
     events = sum(1 for line in trace.read_text().splitlines() if '"trace"' in line)
     recorded = events - 1
@@ -427,16 +523,27 @@ def main() -> None:
                 "replay": replay,
             }
         )
+        if replay["complete"] and info["checks"]:
+            recording = replay_config(cfg, recorded).replace("INVARIANT PBReplayed\n", "")
+            recording += "ACTION_CONSTRAINT PBReplayOnly\nINVARIANTS\n" + "".join(f"    {c}\n" for c in info["checks"])
+            run_tlc(work, recording, args, trace, simulate=False, seconds=600, extra=("-continue",))
+            text = (work / "tlc.log").read_text(errors="replace")
+            result["recording_violations"] = sorted(set(re.findall(r"Invariant (\S+) is violated", text)))
         if replay["complete"]:
             points = f"= {{{args.points}}}" if args.points else "<- PBAllPoints"
             search = run_tlc(work, cfg.replace("PBPOINTS", points), args, trace, True, args.seconds)
-            if search["violated"]:
+            if search["violated"] and (work / "cex.json").exists():
                 search["counterexample"] = summarise(work, info, recorded)
+            elif search["violated"]:
+                search["counterexample"] = None
             result["search"] = search
         log = (work / "tlc.log").read_text(errors="replace")
         log = log.replace(str(work), "$WORK").replace(str(ROOT), "$SPECULA").splitlines()
         kept = [line for line in log if not line.startswith((" ", "/\\", "\\", "Parsing file", "Semantic processing"))]
         (args.out / "tlc.log").write_text("\n".join(kept[:400]) + "\n")
+        usage = resource.getrusage(resource.RUSAGE_CHILDREN)
+        result["wall_seconds"] = round(time.monotonic() - started, 1)
+        result["tlc_cpu_seconds"] = round(usage.ru_utime + usage.ru_stime, 1)
         (args.out / "result.json").write_text(json.dumps(result, indent=1, default=str) + "\n")
         print(json.dumps({k: result[k] for k in ("replay", "search") if k in result}, indent=1, default=str))
     finally:

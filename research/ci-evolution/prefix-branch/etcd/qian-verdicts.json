@@ -1,0 +1,102 @@
+{
+ "source": "Qian's review of the four extra invariants from reports/full-traces/all-checks, plus bug A",
+ "cases": [
+  {
+   "id": "workload",
+   "invariant": "NoUnexpectedFatal",
+   "recordings": [
+    "node-lifecycle"
+   ],
+   "versions": [
+    "V01",
+    "V02",
+    "V03"
+   ],
+   "verdict": "Workload gap: the V2 generator lets a single-voter cluster remove its only voter. Real raft panics too and upstream treats it as invalid input.",
+   "label": "noise",
+   "match": "\"kind\": \"(Remove|AddLearner)\"",
+   "match_note": "the branch step removes or demotes a voter"
+  },
+  {
+   "id": "fixed-upstream",
+   "invariant": "NoUnexpectedFatal",
+   "recordings": [
+    "ready-intervening-output",
+    "node-lifecycle"
+   ],
+   "versions": [
+    "V01",
+    "V02",
+    "V03"
+   ],
+   "verdict": "Real raft bug, already fixed upstream: an empty ConfChangeV2 outside a joint config is committed and every node panics. V03 refuses it.",
+   "label": "real, not from the update",
+   "real_on": [
+    "V01",
+    "V02"
+   ],
+   "match": "^(?![\\s\\S]*\\.changes:)[\\s\\S]*transition: \"Legacy\" -> \"Auto\"",
+   "match_note": "the branch step injects an empty V2 change with transition Auto"
+  },
+  {
+   "id": "old-model-gap",
+   "invariant": "PromiseBacking",
+   "recordings": [
+    "same-batch-replay"
+   ],
+   "versions": [
+    "V01",
+    "V02",
+    "V03"
+   ],
+   "verdict": "Old model gap from V00, unrelated to V2: under SameBatch the model lets a follower ack before persisting its entries.",
+   "label": "noise"
+  },
+  {
+   "id": "in-recording",
+   "invariant": "ConfigurationOrigin",
+   "recordings": [
+    "joint-snapshot-recovery"
+   ],
+   "versions": [
+    "V01"
+   ],
+   "verdict": "The replayed state already violates it (the known V01 MC-1). branch.py blamed the branch because checks started after branching.",
+   "label": "noise"
+  },
+  {
+   "id": "replaced",
+   "invariant": "ProposalConfigurationDecisions",
+   "recordings": [
+    "joint-explicit",
+    "outgoing-snapshot-restore",
+    "ready-intervening-output"
+   ],
+   "versions": [
+    "V03"
+   ],
+   "verdict": "Outdated property: V03 replaced it with RevisedProposalConfigurationDecisions in Maintenance.tla, which the run skipped.",
+   "label": "noise"
+  },
+  {
+   "id": "bug-a",
+   "invariant": "CampaignDecisionEligibility",
+   "recordings": [
+    "joint-autoleave",
+    "joint-explicit",
+    "joint-snapshot-recovery",
+    "outgoing-snapshot-restore"
+   ],
+   "versions": [
+    "V01",
+    "V02"
+   ],
+   "verdict": "Bug A, introduced by the V01 update and still present in V02.",
+   "label": "real, from the update",
+   "update": "V01",
+   "also": [
+    "RevisedCampaignDecisionEligibility"
+   ]
+  }
+ ]
+}
