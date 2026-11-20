@@ -1468,7 +1468,10 @@ def _without_verdict_lines(text: str) -> str:
 
 
 def _repro_files(cfg: ConfirmConfig, f: Finding) -> list[Path]:
-    return [p for p in (cfg.ws.work_dir(cfg.name) / "repro").glob(f"test_bug{f.id}_*") if p.is_file()]
+    # The prompts name `repro/test_bug<ID>_*` relative to the work dir; a worker
+    # in its finding directory may resolve that path there instead.
+    dirs = (cfg.ws.work_dir(cfg.name) / "repro", f.fdir / "repro")
+    return [p for d in dirs for p in d.glob(f"test_bug{f.id}_*") if p.is_file()]
 
 
 def _validate_turn_output(f: Finding, status: str | None, text: str) -> str:
@@ -1601,11 +1604,14 @@ def _restore_issue_evidence(cfg: ConfirmConfig, f: Finding, digests: dict[str, s
     """
     repro_dir = cfg.ws.work_dir(cfg.name) / "repro"
     root = f.fdir / _ISSUE_EVIDENCE_DIR
-    extra = [path for path in _repro_files(cfg, f) if path.name not in digests]
+    current = _repro_files(cfg, f)
+    extra = [path for path in current if path.name not in digests]
+    # Judged evidence is checked and restored where the worker wrote it.
+    paths = {name: repro_dir / name for name in digests} | {p.name: p for p in current if p.name in digests}
     changed = [
         name
         for name, digest in sorted(digests.items())
-        if not (repro_dir / name).is_file() or hashlib.sha256((repro_dir / name).read_bytes()).hexdigest() != digest
+        if not paths[name].is_file() or hashlib.sha256(paths[name].read_bytes()).hexdigest() != digest
     ]
     for name in changed:
         saved = root / name
@@ -1616,13 +1622,13 @@ def _restore_issue_evidence(cfg: ConfirmConfig, f: Finding, digests: dict[str, s
             or hashlib.sha256(saved.read_bytes()).hexdigest() != digests[name]
         ):
             raise ConfirmationFailed(
-                f"{f.id}: reproduction evidence {repro_dir / name} changed after the verdict and its retained "
+                f"{f.id}: reproduction evidence {paths[name]} changed after the verdict and its retained "
                 f"snapshot {saved} is unavailable; rerun with --fresh-context"
             )
     for path in extra:
         path.unlink()
     for name in changed:
-        path = repro_dir / name
+        path = paths[name]
         _remove_path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(root / name, path)

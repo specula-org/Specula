@@ -495,6 +495,20 @@ class TestIssueProposal(ConfirmCase):
         self.assertEqual(self.calls(), ["turn01_A", "turn01_A-issue", "turn01_A-issue"])
         self.assert_judged_evidence()
 
+    def test_judged_evidence_in_the_finding_directory_is_restored_in_place(self) -> None:
+        cfg = self.cfg(self.ws, "T")
+        finding = self.finding(self.ws, "T")
+        repro = finding.fdir / "repro" / "test_bugMC-1_case.sh"
+        repro.parent.mkdir(parents=True)
+        repro.write_text("judged\n")
+        digests = C._snapshot_issue_evidence(cfg, finding)
+        repro.write_text("changed by the metadata turn\n")
+        (repro.parent / "test_bugMC-1_extra.sh").write_text("new evidence\n")
+        C._restore_issue_evidence(cfg, finding, digests)
+        self.assertEqual(sorted(path.name for path in repro.parent.iterdir()), [repro.name])
+        self.assertEqual(repro.read_text(), "judged\n")
+        self.assertFalse((self.work / "repro" / repro.name).exists())
+
     def test_fresh_start_removes_stale_evidence_snapshots(self) -> None:
         self.fdir.mkdir(parents=True)
         for name in (C._ISSUE_EVIDENCE_DIR, f"{C._ISSUE_EVIDENCE_DIR}.0123abcd.tmp"):
@@ -4180,6 +4194,29 @@ class TestValidationContracts(ConfirmCase):
                 self.assertEqual(C.run_parallel_confirmation(self.cfg(ws, f"T{rc}")), 1)
             verdict = ws.work_dir(f"T{rc}") / "confirmation" / "MC-1" / "verdict.json"
             self.assertFalse(verdict.exists())  # not cached
+
+    def test_reproduced_accepts_a_repro_written_under_the_finding_directory(self) -> None:
+        ws = self.seed("T", [{"id": "MC-1", "source": "model-checking", "title": "t", "summary": "s"}])
+        finding = self.finding(ws, "T")
+        repro = finding.fdir / "repro" / "test_bugMC-1_case.py"
+
+        def turn(*_args: object, **_kwargs: object) -> tuple[int, str]:
+            # `repro/...` resolved relative to the worker's finding directory.
+            repro.parent.mkdir(parents=True, exist_ok=True)
+            repro.write_text("assert True\n")
+            return (0, _response("REPRODUCED"))
+
+        with mock.patch.object(C, "run_agent_blocking", turn):
+            self.assertEqual(C.run_parallel_confirmation(self.cfg(ws, "T")), 0)
+        verdict = json.loads((finding.fdir / "verdict.json").read_text())
+        self.assertEqual(verdict["status"], "REPRODUCED")
+        self.assertEqual(list(verdict["artifacts"]["repro"]), [repro.name])
+        repro.write_text("")
+        with self.assertRaisesRegex(C.InvalidAgentOutput, "requires a non-empty"):
+            C._validate_final_artifacts(self.cfg(ws, "T"), finding, "REPRODUCED")
+        repro.unlink()
+        with self.assertRaisesRegex(C.InvalidAgentOutput, "requires a non-empty"):
+            C._validate_final_artifacts(self.cfg(ws, "T"), finding, "REPRODUCED")
 
     def test_rr_id_scans_deferred_and_never_overwrites(self) -> None:
         ws = self.seed("T", [])
