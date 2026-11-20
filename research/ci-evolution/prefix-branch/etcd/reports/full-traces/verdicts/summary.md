@@ -4,7 +4,7 @@
 |---|---|---|---|---|
 | workload | noise | V01 | node-lifecycle | found (no previous version to compare), but it is the fixed-upstream case; without the guard: found |
 | workload | noise | V02 | node-lifecycle | found (also found on the previous version), but it is the fixed-upstream case; without the guard: found |
-| workload | noise | V03 | node-lifecycle | found (also found on the previous version), but a different counterexample; without the guard: found |
+| workload | noise | V03 | node-lifecycle | found (also found on the previous version), but it is the duplicate-leave case; without the guard: found |
 | fixed-upstream | real, not from the update | V01 | ready-intervening-output | found (no previous version to compare) |
 | fixed-upstream | real, not from the update | V02 | ready-intervening-output | found (also found on the previous version) |
 | fixed-upstream | real, not from the update | V03 | ready-intervening-output | not found in the budget |

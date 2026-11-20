@@ -72,6 +72,7 @@ Every invariant in the suite is checked (`reports/full-traces/fixed/`). Checks a
 
 - Bug A comes from the V01 update and is found on V01, V02 and V03.
 - An empty ConfChangeV2 outside a joint config is committed and every node panics. It is found on V01 and V02 from node-lifecycle and ready-intervening-output, not on V03. This is a raft bug already fixed upstream.
+- With only `NoUnexpectedFatal` checked, V03 node-lifecycle finds a duplicate leave: after an auto-leave the app calls `Advance` before `ApplyConfChange`, which raft allows, the leader proposes a second leave, and applying it is fatal. Qian reproduced it on the latest etcd raft. It is not from the V03 update; V01 and V02 have a broader version of it.
 - `PromiseBacking` fails on all three versions from same-batch-replay. It is an old model gap from V00.
 - `ConfigurationOrigin` is already false in V01's joint-snapshot-recovery recording.
 - Removing the only voter, which raft also rejects, is no longer injected.
@@ -80,7 +81,6 @@ Every invariant in the suite is checked (`reports/full-traces/fixed/`). Checks a
 Not reviewed yet:
 
 - V03: `RevisedProposalConfigurationDecisions` on node-lifecycle, ready-intervening-output and same-batch-replay.
-- V03 node-lifecycle: the app calls `Advance` before `ApplyConfChange` after an auto-leave, the leader proposes a second leave, and applying it is fatal.
 - `RevisedConfigurationTransitionSafety` on V01 and `ReadBasis` on V01 and V02, both on node-lifecycle.
 
 ### Choosing branch points

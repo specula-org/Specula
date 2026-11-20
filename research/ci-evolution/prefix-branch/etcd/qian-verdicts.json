@@ -39,6 +39,20 @@
    "match_note": "the branch step injects an empty V2 change with transition Auto"
   },
   {
+   "id": "duplicate-leave",
+   "invariant": "NoUnexpectedFatal",
+   "recordings": [
+    "node-lifecycle"
+   ],
+   "versions": [
+    "V03"
+   ],
+   "verdict": "Real raft bug, reproduced on the latest etcd raft. After an auto-leave the app may call Advance before ApplyConfChange (doc.go step 4), the leader proposes a second leave, and applying it is fatal. Not from the V03 update: V01/V02 have a broader version of the same duplicate leave.",
+   "label": "real, not from the update",
+   "match": "\"kind\": \"AddVoter\"[\\s\\S]*transition: \"Legacy\" -> \"Joint",
+   "match_note": "the branch step injects a joint change that adds a voter"
+  },
+  {
    "id": "old-model-gap",
    "invariant": "PromiseBacking",
    "recordings": [
