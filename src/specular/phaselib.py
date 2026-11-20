@@ -723,7 +723,12 @@ class Phase:
                 completed.append((agent, rc))
                 # A completed adapter can still leave background descendants in
                 # its session. They are phase-scoped and must not outlive it.
-                self._terminate_agents([agent], announce=False)
+                if rc == POLICY_BLOCKED_RC and agent.policy_attempt < self._policy_retries:
+                    # The policy retry continues this conversation and can still
+                    # wait for its TLC tasks, which run in their own sessions.
+                    self._terminate_processes([agent.proc], announce=False)
+                else:
+                    self._terminate_agents([agent], announce=False)
         return live, completed
 
     @staticmethod
@@ -1984,6 +1989,7 @@ def run_agent_blocking(
                 attempt=state.invocation_attempt,
                 archived_usage_path=archived_attempts.get(usage_path),
             )
+            keep_tlc_tasks = False
             try:
                 tlc_tasks.prepare_environment(env, log_file, SPECULAR_ROOT)
                 rc = subprocess.run(
@@ -1992,8 +1998,11 @@ def run_agent_blocking(
                     cwd=run_cwd,
                     pass_fds=resumelib.inherited_run_lock_fds(),
                 ).returncode
+                # The policy retry below continues this conversation; keep its TLC tasks.
+                keep_tlc_tasks = rc == POLICY_BLOCKED_RC and policy_attempt < policy_retries
             finally:
-                tlc_tasks.stop_owned_tasks(work_dir, log_file)
+                if not keep_tlc_tasks:
+                    tlc_tasks.stop_owned_tasks(work_dir, log_file)
             persist_cursor()
             # Codex stdout is a complete CLI transcript, not the assistant's final
             # response. The adapter keeps that transcript in `log_file` for
