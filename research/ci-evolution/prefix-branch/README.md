@@ -57,53 +57,41 @@ Bug A, checking only `CampaignDecisionEligibility` (`reports/full-traces/bug-a/s
 - The four that find it are the runs that go through a joint configuration change. Every counterexample branches at step 193–416 with one `Campaign`, inside or right after the recording, so the recordings themselves reach bug A's precondition.
 - On V01 this takes 8–21 s. From the 153-event prefix it took 434 s, and with the RawNode guard it was not found in 30 minutes.
 
-With every invariant in the suite checked (`reports/full-traces/all-checks/`), the same branches also broke `NoUnexpectedFatal`, `PromiseBacking`, `ConfigurationOrigin` and `ProposalConfigurationDecisions`. Qian reviewed them (`etcd/qian-verdicts.json`): one is a real raft bug already fixed upstream (an empty ConfChangeV2 outside a joint config), and the rest are a workload gap, an old model gap, a violation already in the recording, and a property V03 replaced.
+With every invariant in the suite checked (`reports/full-traces/all-checks/`), the same branches also broke `NoUnexpectedFatal`, `PromiseBacking`, `ConfigurationOrigin` and `ProposalConfigurationDecisions`. Qian's verdicts are in `etcd/qian-verdicts.json`: one real raft bug already fixed upstream, the rest noise.
 
-### After Qian's review
+### Rerun with fixed attribution
 
-Changes to `branch.py`:
+The runs were repeated with three changes: checks already false in the recording are not counted as alarms, `Maintenance.tla` is loaded so `RevisedX` replaces `X`, and `--guard` only injects V2 requests that leave a well-formed configuration. Each alarm is also rerun on the previous version (`full_traces.py triage`).
 
-- Checks that are already false right before the branch are not blamed on it. A separate replay-only pass checks every invariant on the recording itself and reports `recording_violations`.
-- Modules that define checks but are not extended by `Trace` (such as `Maintenance.tla`) are loaded, together with their observer variables. A check `X` is skipped when `RevisedX` exists, and every skipped check is listed with its reason.
-- Each result has wall time and TLC CPU time.
+Qian's cases (`reports/full-traces/verdicts/summary.md`):
 
-`etcd/full_traces.py` adds:
-
-- `--guard`: an injected V2 request must leave a well-formed configuration. This drops "remove the only voter" but keeps the empty-ConfChangeV2 bug.
-- `triage`: for each alarm, is it already broken by the recording, is the property new in this version, and does the previous version fail it too from the same recording.
-- `verdicts`: reruns Qian's cases. Each case can carry a pattern over the branch step, so an alarm is matched to the case only if the injected request is the same kind.
-
-Qian's cases, rerun with the guard (`reports/full-traces/verdicts/summary.md`):
-
-| Case | Qian | What the tool says now |
+| Case | Qian | Now |
 |---|---|---|
-| Remove the only voter (`NoUnexpectedFatal`, node-lifecycle) | noise | Gone with the guard on all three versions. On V01 and V02 the same recording then finds the empty-ConfChangeV2 bug instead. On V03 it finds a different fatal, below. |
-| Empty ConfChangeV2 (`NoUnexpectedFatal`, ready-intervening-output) | real, fixed upstream | Found on V01 and V02 (also on the previous version), not on V03 |
-| `PromiseBacking` under SameBatch | noise | Still found, marked "also found on the previous version" |
-| `ConfigurationOrigin` on V01 | noise | Reported as broken by the recording, not as an alarm |
-| `ProposalConfigurationDecisions` on V03 | noise | Skipped, replaced by `RevisedProposalConfigurationDecisions` |
-| Bug A | real, from V01 | Found on all four recordings on V01 and V02 |
+| Remove the only voter | noise | not found; the same recording finds the empty ConfChangeV2 bug on V01 and V02 |
+| Empty ConfChangeV2 | real, fixed upstream | found on V01 and V02, not on V03 |
+| `PromiseBacking` | noise | found, also on the previous version |
+| `ConfigurationOrigin` on V01 | noise | broken in the recording, not an alarm |
+| `ProposalConfigurationDecisions` on V03 | noise | skipped, replaced by the revised one |
+| Bug A | real, from V01 | found on V01 and V02 |
 
-Per update, with every check (`fixed`) and without the four checks Qian called noisy (`fixed-without-noisy`). Times are summed over the 11 runs, 300 s each, six at a time. Branching uses no model calls.
+Alarms per version over the 11 recordings (`reports/full-traces/per-update.md`). Times are summed over the runs; branching makes no model calls.
 
 | Version | Checks | Wall s | TLC CPU s | Alarms | Real, from the update | Real, older | Noise | Not reviewed |
 |---|---|---:|---:|---:|---:|---:|---:|---:|
 | V01 | all | 3621 | 3598 | 4 | 2 | 1 | 1 | 0 |
 | V02 | all | 3104 | 3052 | 4 | 0 | 3 | 1 | 0 |
 | V03 | all | 3106 | 3415 | 4 | 0 | 1 | 1 | 2 |
-| V01 | without noisy | 3938 | 3787 | 3 | 2 | 0 | 0 | 1 |
-| V02 | without noisy | 3399 | 3253 | 4 | 0 | 3 | 0 | 1 |
-| V03 | without noisy | 3106 | 3416 | 4 | 0 | 1 | 0 | 3 |
+| V01 | without the 4 noisy | 3938 | 3787 | 3 | 2 | 0 | 0 | 1 |
+| V02 | without the 4 noisy | 3399 | 3253 | 4 | 0 | 3 | 0 | 1 |
+| V03 | without the 4 noisy | 3106 | 3416 | 4 | 0 | 1 | 0 | 3 |
 
-Before the fixes the same run gave 6 alarms per version, with 3, 2 and 5 of them noise (`reports/full-traces/per-update.md`). Without the noisy checks, V02 finds bug A on two more recordings (joint-autoleave, joint-explicit) within the 300 s.
+Before the changes each version had 6 alarms, 3, 2 and 5 of them noise.
 
-The alarms still not reviewed:
+Not reviewed yet:
 
-- V03, node-lifecycle and ready-intervening-output: `RevisedProposalConfigurationDecisions`.
-- V03, node-lifecycle (`NoUnexpectedFatal` only): a joint change auto-leaves, the app calls `Advance` before `ApplyConfChange`, the leader still sees `autoLeave` and proposes a second leave, and applying it outside a joint config is fatal. Whether the driver may call them in that order is the question.
-- Without the noisy checks: `RevisedConfigurationTransitionSafety` on V01 and `ReadBasis` on V02 (node-lifecycle, also found on V01), and `RevisedProposalConfigurationDecisions` on V03 same-batch-replay.
-
-There is no full V00 suite, so V01 alarms cannot be compared with a previous version. Invariants that read a per-step audit variable can only be attributed through the recording pass, not through the state right before the branch.
+- V03: `RevisedProposalConfigurationDecisions` on node-lifecycle, ready-intervening-output and same-batch-replay.
+- V03 node-lifecycle: the app calls `Advance` before `ApplyConfChange` after an auto-leave, the leader proposes a second leave, and applying it is fatal.
+- `RevisedConfigurationTransitionSafety` on V01 and `ReadBasis` on V02 and V01, both on node-lifecycle.
 
 ### Choosing branch points
 
@@ -121,6 +109,7 @@ A breadth-first sweep over every recorded state was also tried and dropped: it r
 
 - The full-trace domains are chosen from parameter names (`id`, `weight`, `encoded`), which is specific to this suite.
 - Recordings are made on V02 only, so V01 and V03 branch from a prefix of some of them.
+- There is no full V00 suite, so V01 alarms are not compared with a previous version.
 - The RawNode guard and a usable progress condition still need someone who knows the spec.
 - Rerunning Specula's CI on etcd here to get our own traces was tried and stopped: code analysis alone used a 5-hour Claude quota in 23 minutes.
 
