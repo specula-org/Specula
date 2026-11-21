@@ -10,7 +10,9 @@ import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
+import uuid
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -529,6 +531,84 @@ async def test_explicit_owner_cleanup_stops_only_owned_tasks(
     tasks.stop_owned_tasks(runtime.work, runtime.work / "agent.log")
     result = (await tasks.wait_tlc([started["task_id"]], timeout_seconds=10))["tasks"][0]
     assert result["status"] == "interrupted"
+
+
+def owned_job(work: Path, owner: Path, worker: str | None, *, age: float = 0) -> tuple[Path, int | None]:
+    """A task directory; worker is "held" (running), "released" (worker gone), or None (starting)."""
+    path = work / ".tlc-tasks/jobs" / uuid.uuid4().hex
+    path.mkdir(parents=True)
+    (path / "request.json").write_text(json.dumps({"owner": str(owner.resolve()), "created_at": time.time() - age}))
+    lock = None
+    if worker is not None:
+        lock = tasks._hold_lock(path / "worker.lock")
+        (path / "worker.json").write_text("{}")
+        if worker == "released":
+            os.close(lock)
+            lock = None
+    return path, lock
+
+
+def test_live_owned_tasks_are_running_or_starting_tasks_of_the_owner(tmp_path: Path) -> None:
+    owner = tmp_path / "agent.log"
+    running, running_lock = owned_job(tmp_path, owner, "held")
+    finished, finished_lock = owned_job(tmp_path, owner, "held")
+    (finished / "result.json").write_text("{}")
+    owned_job(tmp_path, owner, "released")
+    _, other_lock = owned_job(tmp_path, tmp_path / "other-agent.log", "held")
+    starting, _ = owned_job(tmp_path, owner, None)
+    owned_job(tmp_path, owner, None, age=tasks.START_GRACE_SECONDS + 1)
+    for request in ("not json", "{}", json.dumps({"owner": str(owner.resolve())})):
+        broken = tmp_path / ".tlc-tasks/jobs" / uuid.uuid4().hex
+        broken.mkdir()
+        (broken / "request.json").write_text(request)
+    try:
+        assert sorted(tasks.live_owned_tasks(tmp_path, owner)) == sorted([running, starting])
+    finally:
+        for lock in (running_lock, finished_lock, other_lock):
+            assert lock is not None
+            os.close(lock)
+    assert tasks.live_owned_tasks(tmp_path, owner) == [starting]
+    assert tasks.live_owned_tasks(tmp_path / "no-tasks", owner) == []
+
+
+def test_wait_owned_tasks_ends_when_tasks_finish_or_at_the_deadline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(tasks, "OWNED_WAIT_POLL_SECONDS", 0.01)
+    owner = tmp_path / "agent.log"
+    path, lock = owned_job(tmp_path, owner, "held")
+    assert lock is not None
+
+    def finish() -> None:
+        (path / "result.json").write_text("{}")
+        os.close(lock)
+
+    started = time.monotonic()
+    assert tasks.wait_owned_tasks(tmp_path, owner, 0.2) == [path]
+    assert time.monotonic() - started >= 0.2
+    assert tasks.wait_owned_tasks(tmp_path, owner, 0) == [path]
+    timer = threading.Timer(0.2, finish)
+    timer.start()
+    try:
+        assert tasks.wait_owned_tasks(tmp_path, owner, 30) == []
+    finally:
+        timer.join()
+    # Waiting never asks a task to stop.
+    assert not (path / "stop.json").exists()
+
+
+@pytest.mark.asyncio
+async def test_waiting_for_owned_tasks_lets_a_real_task_finish(
+    runtime: wrappers.RunModelCheckTests, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FAKE_JAVA_SECONDS", "1")
+    monkeypatch.setattr(tasks, "OWNED_WAIT_POLL_SECONDS", 0.05)
+    started = await tasks.start_tlc(**start_args(runtime))
+    owner = runtime.work / "agent.log"
+    assert tasks.live_owned_tasks(runtime.work, runtime.work / "another-agent.log") == []
+    assert [path.name for path in tasks.live_owned_tasks(runtime.work, owner)] == [started["task_id"]]
+    assert tasks.wait_owned_tasks(runtime.work, owner, 30) == []
+    assert tasks.status(started["task_id"])["status"] == "exited"
 
 
 @pytest.mark.asyncio

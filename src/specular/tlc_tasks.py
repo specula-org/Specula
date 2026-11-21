@@ -25,6 +25,9 @@ from specular.context_control import write_json
 
 ROOT = Path(__file__).resolve().parents[2]
 MAX_WAIT_SECONDS = 3600
+# A task without a worker record is still starting for this long after its request.
+START_GRACE_SECONDS = 30
+OWNED_WAIT_POLL_SECONDS = 5
 CLIENT_TIMEOUT_MS = (MAX_WAIT_SECONDS + 120) * 1000
 _LAUNCHER_LOCKS: dict[tuple[Path, Path], tuple[Path, int]] = {}
 _LOCK_GUARD = threading.Lock()
@@ -182,7 +185,7 @@ def status(task_id: str) -> dict[str, Any]:
         # The result may have been committed between reading it and probing liveness.
         if result.is_file():
             return dict(json.loads(result.read_text()))
-    elif time.time() - request["created_at"] > 30:
+    elif time.time() - request["created_at"] > START_GRACE_SECONDS:
         state = "interrupted"
     return {
         "task_id": task_id,
@@ -365,6 +368,38 @@ def worker(path: Path) -> None:
             write_json(path / "result.json", result)
         finally:
             os.close(worker_lock)
+
+
+def live_owned_tasks(work: Path, owner: Path) -> list[Path]:
+    """Return this owner's unfinished tasks whose worker is running or still starting."""
+    live = []
+    for request_file in (work / ".tlc-tasks/jobs").glob("*/request.json"):
+        path = request_file.parent
+        try:
+            request = json.loads(request_file.read_text())
+            if request["owner"] != str(owner.resolve()) or (path / "result.json").exists():
+                continue
+            if (path / "worker.json").is_file():
+                if not _lock_is_held(path / "worker.lock"):
+                    continue
+            elif time.time() - request["created_at"] > START_GRACE_SECONDS:
+                continue
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+        live.append(path)
+    return live
+
+
+def wait_owned_tasks(work: Path, owner: Path, timeout: float) -> list[Path]:
+    """Let this owner's tasks end on their own budgets, for at most ``timeout`` seconds.
+
+    Returns the tasks still running at the deadline. Waiting neither stops nor
+    extends a task; the caller decides what to do with the ones left.
+    """
+    deadline = time.monotonic() + timeout
+    while (live := live_owned_tasks(work, owner)) and (remaining := deadline - time.monotonic()) > 0:
+        time.sleep(min(OWNED_WAIT_POLL_SECONDS, remaining))
+    return live
 
 
 def stop_owned_tasks(work: Path, owner: Path) -> None:

@@ -186,6 +186,23 @@ def _policy_recovery_prompt(prompt: str) -> str:
     return prompt.rstrip() + _POLICY_RECOVERY_NOTE
 
 
+# A content-policy stop ends an agent turn, not the TLC tasks that turn started.
+# Before the retry or teardown, wait for them as long as one wait_tlc call could
+# have: long enough for typical checks to leave their results on disk, without
+# holding the run indefinitely on a task with a long or disabled time budget.
+POLICY_TLC_WAIT_SECONDS: float = tlc_tasks.MAX_WAIT_SECONDS
+
+
+def _wait_policy_tlc(name: str, work_dir: Path, log: Path) -> None:
+    """Wait (bounded) for the running TLC tasks owned by a policy-stopped turn."""
+    live = tlc_tasks.live_owned_tasks(work_dir, log)
+    if not live:
+        return
+    print(f"[{_ts()}] {name}: waiting for {len(live)} running TLC task(s) to finish before continuing", flush=True)
+    left = tlc_tasks.wait_owned_tasks(work_dir, log, POLICY_TLC_WAIT_SECONDS)
+    print(f"[{_ts()}] {name}: TLC wait over ({len(left)} task(s) still running)", flush=True)
+
+
 def _parse_policy_retries(raw: str) -> int:
     """Parse a continuation count shared by pipeline, phases, and reviews."""
     if not re.fullmatch(r"[0-9]+", raw):
@@ -723,11 +740,14 @@ class Phase:
                 completed.append((agent, rc))
                 # A completed adapter can still leave background descendants in
                 # its session. They are phase-scoped and must not outlive it.
-                if rc == POLICY_BLOCKED_RC and agent.policy_attempt < self._policy_retries:
-                    # The policy retry continues this conversation and can still
-                    # wait for its TLC tasks, which run in their own sessions.
+                if rc == POLICY_BLOCKED_RC:
+                    # TLC tasks run in their own sessions. Stop the agent, then
+                    # let them finish before the retry or the teardown below.
                     self._terminate_processes([agent.proc], announce=False)
-                else:
+                    _wait_policy_tlc(agent.name, agent.work_dir, agent.log)
+                # A policy retry continues this conversation, so its TLC tasks
+                # keep running; any other end stops them with the agent.
+                if not (rc == POLICY_BLOCKED_RC and agent.policy_attempt < self._policy_retries):
                     self._terminate_agents([agent], announce=False)
         return live, completed
 
@@ -1899,6 +1919,8 @@ def run_agent_blocking(
         *_system_prompt_argv(prompt_file),
     ]
     state = policy_state if policy_state is not None else PolicyRetryState()
+    # Parallel confirmation turns share a phase key; name the target and finding.
+    tlc_wait_name = " ".join(filter(None, (resume_target, resume_finding_id))) or phase_key
     claim = resumelib.ResumeClaim(attempt=1, manual=False, resumable=False)
     if resume_logical is not None:
         checkpoint_model, checkpoint_effort = _checkpoint_tuning(adapter, model, effort)
@@ -1998,6 +2020,8 @@ def run_agent_blocking(
                     cwd=run_cwd,
                     pass_fds=resumelib.inherited_run_lock_fds(),
                 ).returncode
+                if rc == POLICY_BLOCKED_RC:
+                    _wait_policy_tlc(tlc_wait_name, work_dir, log_file)
                 # The policy retry below continues this conversation; keep its TLC tasks.
                 keep_tlc_tasks = rc == POLICY_BLOCKED_RC and policy_attempt < policy_retries
             finally:
