@@ -1112,6 +1112,7 @@ class Phase:
         stop_launching = False
         waiting_announced = False
         retry_limit = self._rate_limit_retries()
+        kept_tlc_tasks: dict[str, progress.RunningAgent] = {}
         with _cleanup_on_signal():
             try:
                 while pending or running:
@@ -1125,12 +1126,15 @@ class Phase:
                             break
                         request = pending.pop(ready_index)
                         name = self.target_name(request.target)
+                        kept = kept_tlc_tasks.pop(name, None)
                         if not dry_run:
                             try:
                                 self.invalidate_target_output(ws, name)
                             except (OSError, UnicodeError, ValueError) as exc:
                                 print(f"ERROR: cannot invalidate output for {name}: {exc}")
                                 failures.append((name, 1))
+                                if kept is not None:
+                                    tlc_tasks.stop_owned_tasks(kept.work_dir, kept.log)
                                 continue
                             started_names.add(name)
                         _resource_start_target(name, ws.work_dir(name))
@@ -1177,6 +1181,7 @@ class Phase:
                         if rc == POLICY_BLOCKED_RC:
                             if completed_agent.policy_attempt < self._policy_retries:
                                 _resource_pause_target(completed_agent.name)
+                                kept_tlc_tasks[completed_agent.name] = completed_agent
                                 next_policy_attempt = completed_agent.policy_attempt + 1
                                 print(
                                     f"[{_ts()}] {completed_agent.name}: provider policy interrupted the run; "
@@ -1270,6 +1275,9 @@ class Phase:
                                 f"[{_ts()}] Rate limit stopped new launches; "
                                 f"skipping {len(skipped)} unstarted target(s): {', '.join(skipped)}"
                             )
+                        for dropped in kept_tlc_tasks.values():
+                            tlc_tasks.stop_owned_tasks(dropped.work_dir, dropped.log)
+                        kept_tlc_tasks.clear()
                         pending.clear()
                         rate_limited.clear()
                         pause_for_rate_limit = False
@@ -1956,90 +1964,96 @@ def run_agent_blocking(
                     retry_reason=state.retry_reason,
                 )
 
-        while True:
-            policy_attempt = state.policy_attempt
-            state.invocation_attempt += 1
-            archived_attempts: dict[Path, Path] = {}
-            if state.invocation_attempt > 1:
-                archived_attempts = _archive_attempt(attempt_files, state.invocation_attempt - 1)
-            persist_cursor()
-            # A turn seeded from another session may fail before the provider
-            # records its request, so every retry replays that request.
-            resumable = resume_state.is_file() and resume_from is None
-            prompt_reason = "policy" if policy_attempt > 0 and not resumable else state.retry_reason
-            current_prompt = _retry_prompt(
-                prompt,
-                prompt_reason,
-                resumable=resumable,
-                manual_extra=manual_prompt_extra if state.retry_reason == "manual" else "",
-            )
-            if resume_from is not None and state.retry_reason == "manual":
-                current_prompt += manual_prompt_extra  # like every other manual continuation
-            prompt_file.write_text(current_prompt)
-            with contextlib.suppress(OSError):
-                log_file.unlink()
-            if adapter.stem == "codex":
+        keep_tlc_tasks = False
+        try:
+            while True:
+                policy_attempt = state.policy_attempt
+                state.invocation_attempt += 1
+                archived_attempts: dict[Path, Path] = {}
+                if state.invocation_attempt > 1:
+                    archived_attempts = _archive_attempt(attempt_files, state.invocation_attempt - 1)
+                persist_cursor()
+                # A turn seeded from another session may fail before the provider
+                # records its request, so every retry replays that request.
+                resumable = resume_state.is_file() and resume_from is None
+                prompt_reason = "policy" if policy_attempt > 0 and not resumable else state.retry_reason
+                current_prompt = _retry_prompt(
+                    prompt,
+                    prompt_reason,
+                    resumable=resumable,
+                    manual_extra=manual_prompt_extra if state.retry_reason == "manual" else "",
+                )
+                if resume_from is not None and state.retry_reason == "manual":
+                    current_prompt += manual_prompt_extra  # like every other manual continuation
+                prompt_file.write_text(current_prompt)
                 with contextlib.suppress(OSError):
-                    last_message_file.unlink()
+                    log_file.unlink()
+                if adapter.stem == "codex":
+                    with contextlib.suppress(OSError):
+                        last_message_file.unlink()
 
-            usage_path = log_file.with_suffix(".usage.json")
-            _resource_note_agent(
-                work_dir,
-                log_file,
-                attempt=state.invocation_attempt,
-                archived_usage_path=archived_attempts.get(usage_path),
-            )
-            keep_tlc_tasks = False
-            try:
-                tlc_tasks.prepare_environment(env, log_file, SPECULAR_ROOT)
-                rc = subprocess.run(
-                    cmd,
-                    env=env,
-                    cwd=run_cwd,
-                    pass_fds=resumelib.inherited_run_lock_fds(),
-                ).returncode
-                # The policy retry below continues this conversation; keep its TLC tasks.
-                keep_tlc_tasks = rc == POLICY_BLOCKED_RC and policy_attempt < policy_retries
-            finally:
-                if not keep_tlc_tasks:
-                    tlc_tasks.stop_owned_tasks(work_dir, log_file)
-            persist_cursor()
-            # Codex stdout is a complete CLI transcript, not the assistant's final
-            # response. The adapter keeps that transcript in `log_file` for
-            # diagnosis and asks `codex exec --output-last-message` for the response
-            # separately. A missing Codex sidecar is an incomplete turn; never
-            # reinterpret the CLI transcript as an assistant answer. Other
-            # adapters' log contract remains result-only.
-            result_file = last_message_file if adapter.stem == "codex" else log_file
-            text = result_file.read_text(errors="replace") if result_file.is_file() else ""
-            # Resource runtime is target-level wall time. A Phase 4a target can
-            # have sibling turns running, so only outer target schedulers pause it.
-            transient_limit = _transient_resume_limit(rc, transient_resumes)
-            if transient_limit is not None and state.transient_attempt < transient_limit:
-                state.transient_attempt += 1
-                state.retry_reason = "transient"
-                persist_cursor()
-                delay = _transient_resume_delay(state.transient_attempt)
-                mode = "resuming the exact session" if resume_state.is_file() else "retrying the original request"
-                print(
-                    f"[{_ts()}] {_transient_failure_label(rc).capitalize()}; {mode} "
-                    f"({state.transient_attempt}/{transient_limit}) after {delay:g}s"
+                usage_path = log_file.with_suffix(".usage.json")
+                _resource_note_agent(
+                    work_dir,
+                    log_file,
+                    attempt=state.invocation_attempt,
+                    archived_usage_path=archived_attempts.get(usage_path),
                 )
-                time.sleep(delay)
-                continue
-            if rc == POLICY_BLOCKED_RC and policy_attempt < policy_retries:
-                state.policy_attempt = policy_attempt + 1
-                state.retry_reason = "policy"
+                keep_tlc_tasks = False
+                try:
+                    tlc_tasks.prepare_environment(env, log_file, SPECULAR_ROOT)
+                    rc = subprocess.run(
+                        cmd,
+                        env=env,
+                        cwd=run_cwd,
+                        pass_fds=resumelib.inherited_run_lock_fds(),
+                    ).returncode
+                    # The policy retry below continues this conversation; keep its TLC tasks.
+                    keep_tlc_tasks = rc == POLICY_BLOCKED_RC and policy_attempt < policy_retries
+                finally:
+                    if not keep_tlc_tasks:
+                        tlc_tasks.stop_owned_tasks(work_dir, log_file)
                 persist_cursor()
-                print(
-                    f"[{_ts()}] Provider policy interrupted the agent turn; retrying with a revised request "
-                    f"({state.policy_attempt}/{policy_retries})"
-                )
-                continue
-            if rc == quota.RATE_LIMIT_RC:
-                state.retry_reason = "rate_limit"
-                persist_cursor()
-            return rc, text
+                # Codex stdout is a complete CLI transcript, not the assistant's final
+                # response. The adapter keeps that transcript in `log_file` for
+                # diagnosis and asks `codex exec --output-last-message` for the response
+                # separately. A missing Codex sidecar is an incomplete turn; never
+                # reinterpret the CLI transcript as an assistant answer. Other
+                # adapters' log contract remains result-only.
+                result_file = last_message_file if adapter.stem == "codex" else log_file
+                text = result_file.read_text(errors="replace") if result_file.is_file() else ""
+                # Resource runtime is target-level wall time. A Phase 4a target can
+                # have sibling turns running, so only outer target schedulers pause it.
+                transient_limit = _transient_resume_limit(rc, transient_resumes)
+                if transient_limit is not None and state.transient_attempt < transient_limit:
+                    state.transient_attempt += 1
+                    state.retry_reason = "transient"
+                    persist_cursor()
+                    delay = _transient_resume_delay(state.transient_attempt)
+                    mode = "resuming the exact session" if resume_state.is_file() else "retrying the original request"
+                    print(
+                        f"[{_ts()}] {_transient_failure_label(rc).capitalize()}; {mode} "
+                        f"({state.transient_attempt}/{transient_limit}) after {delay:g}s"
+                    )
+                    time.sleep(delay)
+                    continue
+                if rc == POLICY_BLOCKED_RC and policy_attempt < policy_retries:
+                    state.policy_attempt = policy_attempt + 1
+                    state.retry_reason = "policy"
+                    persist_cursor()
+                    print(
+                        f"[{_ts()}] Provider policy interrupted the agent turn; retrying with a revised request "
+                        f"({state.policy_attempt}/{policy_retries})"
+                    )
+                    continue
+                if rc == quota.RATE_LIMIT_RC:
+                    state.retry_reason = "rate_limit"
+                    persist_cursor()
+                return rc, text
+        except BaseException:
+            if keep_tlc_tasks:
+                tlc_tasks.stop_owned_tasks(work_dir, log_file)
+            raise
 
 
 class CodeAnalysisPhase(Phase):

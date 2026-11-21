@@ -3059,6 +3059,31 @@ class TestRunAgentBlocking(PhaseCase):
                 self.assertEqual((root / "seen").read_text().split(), ["running"] * exit_after)
                 self.assertTrue((job / "stop.json").is_file())
 
+    def test_policy_retry_that_fails_to_start_stops_kept_tlc_tasks(self) -> None:
+        root = self.tmp()
+        log = root / "turn.log"
+        prompt = root / "prompt.md"
+        job = self.work_dir() / ".tlc-tasks/jobs/task-1"
+        job.mkdir(parents=True)
+        (job / "request.json").write_text(json.dumps({"owner": str(log.resolve())}))
+        adapter = root / "adapter.sh"
+        adapter.write_text(f'#!/bin/sh\nrm -f "{prompt}"\nmkdir "{prompt}"\nexit 76\n')
+        adapter.chmod(0o755)
+
+        with self.assertRaises(OSError):
+            phaselib.run_agent_blocking(
+                adapter,
+                "original prompt",
+                prompt,
+                log,
+                phase_key="bug_confirmation",
+                work_dir=self.work_dir(),
+                claude_alias="profile",
+                policy_retries=2,
+            )
+
+        self.assertTrue((job / "stop.json").is_file())
+
     def test_fresh_blocking_turn_fails_if_stale_resume_state_cannot_be_cleared(self) -> None:
         marker = self.tmp() / "launched"
         adapter = self.tmp() / "adapter.sh"
@@ -4276,6 +4301,58 @@ class TestProgressReporting(PhaseCase):
         self.assertFalse((counts / "b").exists())
         self.assertIn("skipping 1 unstarted target(s): b", out)
         self.assertNotIn("All agents launched. Waiting...", out)
+
+    def test_rate_limit_stop_ends_tlc_tasks_kept_for_a_dropped_policy_retry(self) -> None:
+        marks = self.tmp()
+        self.write_adapter(
+            'name=$(basename "$(dirname "$SPECULAR_WORK_DIR")")\n'
+            f'printf x >> "{marks}/$name"\n'
+            f'if [ "$name" = b ]; then touch "{marks}/b-done"; exit 75; fi\n'
+            'for arg do case "$arg" in --log=*) log=${arg#*=} ;; esac; done\n'
+            'owner="$(cd "$(dirname "$log")" && pwd -P)/$(basename "$log")"\n'
+            'job="$SPECULAR_WORK_DIR/.tlc-tasks/jobs/task-1"\n'
+            'mkdir -p "$job"\n'
+            'printf \'{"owner": "%s"}\' "$owner" > "$job/request.json"\n'
+            f'while [ ! -e "{marks}/b-done" ]; do sleep 0.01; done\n'
+            "sleep 0.1\n"
+            "exit 76\n"
+        )
+        self.patch_attr(phaselib, "AGENT_TERMINATION_GRACE_SECONDS", 0.05)
+        rc, out = self.run_phase(
+            "code_analysis",
+            ["--max-parallel=2", f"--agent={self.adapter.stem}", self.artifact_flag(), "a|g|Go|r", "b|g|Go|r"],
+        )
+        self.assertEqual(rc, quota.RATE_LIMIT_RC, out)
+        self.assertEqual((marks / "a").read_text(), "x")
+        self.assertIn("skipping 1 unstarted target(s): a", out)
+        self.assertTrue((self.work_dir("a") / ".tlc-tasks/jobs/task-1/stop.json").is_file())
+
+    def test_policy_retry_whose_relaunch_fails_stops_kept_tlc_tasks(self) -> None:
+        self.write_adapter(
+            'for arg do case "$arg" in --log=*) log=${arg#*=} ;; esac; done\n'
+            'owner="$(cd "$(dirname "$log")" && pwd -P)/$(basename "$log")"\n'
+            'job="$SPECULAR_WORK_DIR/.tlc-tasks/jobs/task-1"\n'
+            'mkdir -p "$job"\n'
+            'printf \'{"owner": "%s"}\' "$owner" > "$job/request.json"\n'
+            "exit 76\n"
+        )
+        calls: list[str] = []
+        original = phaselib.Phase.invalidate_target_output
+
+        def invalidate(phase: phaselib.Phase, ws: phaselib.Workspace, name: str) -> None:
+            calls.append(name)
+            if len(calls) > 1:
+                raise OSError("disk full")
+            original(phase, ws, name)
+
+        self.patch_attr(phaselib.Phase, "invalidate_target_output", invalidate)
+        self.patch_attr(phaselib, "AGENT_TERMINATION_GRACE_SECONDS", 0.05)
+        rc, out = self.run_fake()
+        self.assertEqual(rc, 1, out)
+        # First launch, the failed relaunch, and the phase's cleanup of unpublished output.
+        self.assertEqual(calls, [NAME, NAME, NAME])
+        self.assertIn(f"ERROR: cannot invalidate output for {NAME}: disk full", out)
+        self.assertTrue((self.work_dir() / ".tlc-tasks/jobs/task-1/stop.json").is_file())
 
     def test_rate_limit_retries_are_bounded_per_target(self) -> None:
         count = self.tmp() / "count"
