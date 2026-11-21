@@ -182,7 +182,8 @@ Specular is used by researchers and engineers at organizations including:
 </p>
 
 <p align="center">
-  <a href="https://milvus.io"><img src="docs/logos/milvus.png" height="29" alt="Milvus"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://shopee.com"><img src="docs/logos/shopee.png" height="35" alt="Shopee"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://milvus.io"><img src="docs/logos/milvus.png" height="27" alt="Milvus"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
   <a href="https://ozone.apache.org#gh-light-mode-only"><img src="docs/logos/ozone.png" height="25" alt="Apache Ozone"></a><a href="https://ozone.apache.org#gh-dark-mode-only"><img src="docs/logos/ozone-dark.png" height="25" alt="Apache Ozone"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
   <a href="https://ratis.apache.org#gh-light-mode-only"><img src="docs/logos/ratis.png" height="27" alt="Apache Ratis"></a><a href="https://ratis.apache.org#gh-dark-mode-only"><img src="docs/logos/ratis-dark.png" height="27" alt="Apache Ratis"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
   <a href="https://asterinas.github.io"><img src="docs/logos/asterinas.png" height="31" alt="Asterinas"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
