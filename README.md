@@ -165,7 +165,7 @@ Specular is used by researchers and engineers at organizations including:
 
 <p align="center">
   <a href="https://www.google.com"><img src="docs/logos/google.png" height="37" alt="Google"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <a href="https://www.microsoft.com"><img src="docs/logos/microsoft.png" height="28" alt="Microsoft"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://www.microsoft.com"><img src="docs/logos/microsoft.png" height="26" alt="Microsoft"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
   <a href="https://www.amazon.com#gh-light-mode-only"><img src="docs/logos/amazon.png" height="35" alt="Amazon"></a><a href="https://www.amazon.com#gh-dark-mode-only"><img src="docs/logos/amazon-dark.png" height="35" alt="Amazon"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
   <a href="https://www.nvidia.com#gh-light-mode-only"><img src="docs/logos/nvidia.png" height="25" alt="NVIDIA"></a><a href="https://www.nvidia.com#gh-dark-mode-only"><img src="docs/logos/nvidia-dark.png" height="25" alt="NVIDIA"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
   <a href="https://www.oracle.com"><img src="docs/logos/oracle.png" height="16" alt="Oracle"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
@@ -173,16 +173,15 @@ Specular is used by researchers and engineers at organizations including:
 </p>
 
 <p align="center">
-  <a href="https://www.alibabagroup.com#gh-light-mode-only"><img src="docs/logos/alibaba.png" height="20" alt="Alibaba Group"></a><a href="https://www.alibabagroup.com#gh-dark-mode-only"><img src="docs/logos/alibaba-dark.png" height="20" alt="Alibaba Group"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <a href="https://www.uber.com#gh-light-mode-only"><img src="docs/logos/uber.png" height="24" alt="Uber"></a><a href="https://www.uber.com#gh-dark-mode-only"><img src="docs/logos/uber-dark.png" height="24" alt="Uber"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <a href="https://www.antgroup.com#gh-light-mode-only"><img src="docs/logos/ant-group.png" height="43" alt="Ant Group"></a><a href="https://www.antgroup.com#gh-dark-mode-only"><img src="docs/logos/ant-group-dark.png" height="43" alt="Ant Group"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <a href="https://www.mongodb.com#gh-light-mode-only"><img src="docs/logos/mongodb.png" height="32" alt="MongoDB"></a><a href="https://www.mongodb.com#gh-dark-mode-only"><img src="docs/logos/mongodb-dark.png" height="32" alt="MongoDB"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <a href="https://www.datadoghq.com#gh-light-mode-only"><img src="docs/logos/datadog.png" height="31" alt="Datadog"></a><a href="https://www.datadoghq.com#gh-dark-mode-only"><img src="docs/logos/datadog-dark.png" height="31" alt="Datadog"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://www.alibabagroup.com#gh-light-mode-only"><img src="docs/logos/alibaba.png" height="18" alt="Alibaba Group"></a><a href="https://www.alibabagroup.com#gh-dark-mode-only"><img src="docs/logos/alibaba-dark.png" height="18" alt="Alibaba Group"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://www.uber.com#gh-light-mode-only"><img src="docs/logos/uber.png" height="22" alt="Uber"></a><a href="https://www.uber.com#gh-dark-mode-only"><img src="docs/logos/uber-dark.png" height="22" alt="Uber"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://www.antgroup.com#gh-light-mode-only"><img src="docs/logos/ant-group.png" height="39" alt="Ant Group"></a><a href="https://www.antgroup.com#gh-dark-mode-only"><img src="docs/logos/ant-group-dark.png" height="39" alt="Ant Group"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://www.mongodb.com#gh-light-mode-only"><img src="docs/logos/mongodb.png" height="30" alt="MongoDB"></a><a href="https://www.mongodb.com#gh-dark-mode-only"><img src="docs/logos/mongodb-dark.png" height="30" alt="MongoDB"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://www.datadoghq.com#gh-light-mode-only"><img src="docs/logos/datadog.png" height="29" alt="Datadog"></a><a href="https://www.datadoghq.com#gh-dark-mode-only"><img src="docs/logos/datadog-dark.png" height="29" alt="Datadog"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
   <a href="https://www.cloudera.com"><img src="docs/logos/cloudera.png" height="16" alt="Cloudera"></a>
 </p>
 
 <p align="center">
-  <a href="https://shopee.com"><img src="docs/logos/shopee.png" height="48" alt="Shopee"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
   <a href="https://milvus.io"><img src="docs/logos/milvus.png" height="29" alt="Milvus"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
   <a href="https://ozone.apache.org#gh-light-mode-only"><img src="docs/logos/ozone.png" height="25" alt="Apache Ozone"></a><a href="https://ozone.apache.org#gh-dark-mode-only"><img src="docs/logos/ozone-dark.png" height="25" alt="Apache Ozone"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
   <a href="https://ratis.apache.org#gh-light-mode-only"><img src="docs/logos/ratis.png" height="27" alt="Apache Ratis"></a><a href="https://ratis.apache.org#gh-dark-mode-only"><img src="docs/logos/ratis-dark.png" height="27" alt="Apache Ratis"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
