@@ -174,14 +174,15 @@ Specular is used by researchers and engineers at organizations including:
 
 <p align="center">
   <a href="https://www.alibabagroup.com#gh-light-mode-only"><img src="docs/logos/alibaba.png" height="20" alt="Alibaba Group"></a><a href="https://www.alibabagroup.com#gh-dark-mode-only"><img src="docs/logos/alibaba-dark.png" height="20" alt="Alibaba Group"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://www.uber.com#gh-light-mode-only"><img src="docs/logos/uber.png" height="24" alt="Uber"></a><a href="https://www.uber.com#gh-dark-mode-only"><img src="docs/logos/uber-dark.png" height="24" alt="Uber"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
   <a href="https://www.antgroup.com#gh-light-mode-only"><img src="docs/logos/ant-group.png" height="43" alt="Ant Group"></a><a href="https://www.antgroup.com#gh-dark-mode-only"><img src="docs/logos/ant-group-dark.png" height="43" alt="Ant Group"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
   <a href="https://www.mongodb.com#gh-light-mode-only"><img src="docs/logos/mongodb.png" height="32" alt="MongoDB"></a><a href="https://www.mongodb.com#gh-dark-mode-only"><img src="docs/logos/mongodb-dark.png" height="32" alt="MongoDB"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
   <a href="https://www.datadoghq.com#gh-light-mode-only"><img src="docs/logos/datadog.png" height="31" alt="Datadog"></a><a href="https://www.datadoghq.com#gh-dark-mode-only"><img src="docs/logos/datadog-dark.png" height="31" alt="Datadog"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <a href="https://www.cloudera.com"><img src="docs/logos/cloudera.png" height="16" alt="Cloudera"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <a href="https://shopee.com"><img src="docs/logos/shopee.png" height="48" alt="Shopee"></a>
+  <a href="https://www.cloudera.com"><img src="docs/logos/cloudera.png" height="16" alt="Cloudera"></a>
 </p>
 
 <p align="center">
+  <a href="https://shopee.com"><img src="docs/logos/shopee.png" height="48" alt="Shopee"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
   <a href="https://milvus.io"><img src="docs/logos/milvus.png" height="29" alt="Milvus"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
   <a href="https://ozone.apache.org#gh-light-mode-only"><img src="docs/logos/ozone.png" height="25" alt="Apache Ozone"></a><a href="https://ozone.apache.org#gh-dark-mode-only"><img src="docs/logos/ozone-dark.png" height="25" alt="Apache Ozone"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
   <a href="https://ratis.apache.org#gh-light-mode-only"><img src="docs/logos/ratis.png" height="27" alt="Apache Ratis"></a><a href="https://ratis.apache.org#gh-dark-mode-only"><img src="docs/logos/ratis-dark.png" height="27" alt="Apache Ratis"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
@@ -190,8 +191,8 @@ Specular is used by researchers and engineers at organizations including:
 </p>
 
 <p align="center">
-  <a href="https://www.berkeley.edu#gh-light-mode-only"><img src="docs/logos/berkeley.png" height="35" alt="UC Berkeley"></a><a href="https://www.berkeley.edu#gh-dark-mode-only"><img src="docs/logos/berkeley-dark.png" height="35" alt="UC Berkeley"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
   <a href="https://illinois.edu#gh-light-mode-only"><img src="docs/logos/uiuc.png" height="32" alt="University of Illinois Urbana-Champaign"></a><a href="https://illinois.edu#gh-dark-mode-only"><img src="docs/logos/uiuc-dark.png" height="32" alt="University of Illinois Urbana-Champaign"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://www.berkeley.edu#gh-light-mode-only"><img src="docs/logos/berkeley.png" height="35" alt="UC Berkeley"></a><a href="https://www.berkeley.edu#gh-dark-mode-only"><img src="docs/logos/berkeley-dark.png" height="35" alt="UC Berkeley"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
   <a href="https://www.purdue.edu#gh-light-mode-only"><img src="docs/logos/purdue.png" height="36" alt="Purdue University"></a><a href="https://www.purdue.edu#gh-dark-mode-only"><img src="docs/logos/purdue-dark.png" height="36" alt="Purdue University"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
   <a href="https://www.nyu.edu#gh-light-mode-only"><img src="docs/logos/nyu.png" height="38" alt="New York University"></a><a href="https://www.nyu.edu#gh-dark-mode-only"><img src="docs/logos/nyu-dark.png" height="38" alt="New York University"></a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
   <a href="https://www.virginia.edu#gh-light-mode-only"><img src="docs/logos/uva.png" height="36" alt="University of Virginia"></a><a href="https://www.virginia.edu#gh-dark-mode-only"><img src="docs/logos/uva-dark.png" height="36" alt="University of Virginia"></a>
